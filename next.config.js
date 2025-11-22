@@ -8,6 +8,9 @@ const nextConfig = {
   eslint: {
     ignoreDuringBuilds: false,
   },
+  experimental: {
+    serverComponentsExternalPackages: ['@supabase/supabase-js', '@supabase/ssr', '@supabase/realtime-js']
+  },
   webpack: (config, { dev, isServer }) => {
     // Enable WebAssembly support
     config.experiments = {
@@ -22,10 +25,14 @@ const nextConfig = {
       type: 'webassembly/async',
     });
     
-    // FIX: Polyfill process.version for Supabase compatibility in Edge Runtime
+    // FIX: Enhanced polyfills for Supabase compatibility in Edge Runtime
     config.plugins.push(
       new webpack.DefinePlugin({
         'process.version': JSON.stringify('v18.0.0'),
+        'process.versions': JSON.stringify({
+          node: '18.0.0',
+          v8: '10.0.0'
+        }),
       })
     );
     

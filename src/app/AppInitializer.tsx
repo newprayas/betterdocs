@@ -127,9 +127,7 @@ export function AppInitializer() {
         try {
           console.log('[APP INIT]', 'Initializing Gemini service...');
           // Use fallback model if settings.model is undefined (for backward compatibility)
-          // FIX: Use type assertion (as any) to access model property safely
-          // This resolves the "Property 'model' does not exist on type 'AppSettings'" error
-          const model = (settings as any).model || 'gemini-2.5-flash-lite';
+          const model = settings.model || 'gemini-2.5-flash-lite';
           await geminiService.initialize(settings.geminiApiKey, model, 'text-embedding-004');
           console.log('[APP INIT]', 'Gemini service initialized successfully');
         } catch (error) {
@@ -139,7 +137,7 @@ export function AppInitializer() {
 
       initializeGemini();
     }
-  }, [isClient, settings?.geminiApiKey, (settings as any)?.model]); // Also update dependency
+  }, [isClient, settings?.geminiApiKey, settings?.model]); // Also update dependency
 
   // This component doesn't render anything
   return null;
