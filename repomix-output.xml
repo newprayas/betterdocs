@@ -55,6 +55,7 @@ or other automated processes.</purpose><file_format>The content is organized as 
       ConfirmDialog.tsx
       EmptyState.tsx
       ErrorBoundary.tsx
+      RouteErrorBoundary.tsx
     document/
       DocumentCard.tsx
       DocumentLibrary.tsx
@@ -234,224 +235,6 @@ export async function GET(request: Request) {
 
     // return the user to an error page with instructions
     return NextResponse.redirect(`${origin}/auth/auth-code-error?error=No+code+provided`)
-}</file><file path="src/app/login/page.tsx">&apos;use client&apos;
-
-import { createClient } from &apos;@/utils/supabase/client&apos;
-import { useState, useEffect } from &apos;react&apos;
-import { useRouter } from &apos;next/navigation&apos;
-
-export default function LoginPage() {
-    const [email, setEmail] = useState(&apos;&apos;)
-    const [password, setPassword] = useState(&apos;&apos;)
-    const [loading, setLoading] = useState(false)
-    const [error, setError] = useState&lt;string | null&gt;(null)
-    const [message, setMessage] = useState&lt;string | null&gt;(null)
-    const router = useRouter()
-    const supabase = createClient()
-
-    // Debug logging for component mount
-    useEffect(() =&gt; {
-        console.log(&apos;🔍 [LOGIN-PAGE] Component mounted, current path:&apos;, window.location.pathname)
-        console.log(&apos;🔍 [LOGIN-PAGE] Router object available:&apos;, !!router)
-    }, [])
-
-    useEffect(() =&gt; {
-        const params = new URLSearchParams(window.location.search)
-        const error = params.get(&apos;error&apos;)
-        const error_description = params.get(&apos;error_description&apos;)
-        const hashParams = new URLSearchParams(window.location.hash.substring(1))
-        const hashError = hashParams.get(&apos;error&apos;)
-        const hashErrorDescription = hashParams.get(&apos;error_description&apos;)
-
-        if (error || hashError) {
-            setError(error_description || hashErrorDescription || &apos;An error occurred during authentication&apos;)
-        }
-    }, [])
-
-    const handleLogin = async (e: React.FormEvent) =&gt; {
-        e.preventDefault()
-        setLoading(true)
-        setError(null)
-        setMessage(null)
-
-        const { error } = await supabase.auth.signInWithPassword({
-            email,
-            password,
-        })
-
-        if (error) {
-            setError(error.message)
-        } else {
-            router.push(&apos;/&apos;)
-            router.refresh()
-        }
-        setLoading(false)
-    }
-
-    const handleSignUp = async (e: React.FormEvent) =&gt; {
-        e.preventDefault()
-        setLoading(true)
-        setError(null)
-        setMessage(null)
-
-        if (password.length &lt; 6) {
-            setError(&apos;Password must be at least 6 characters&apos;)
-            setLoading(false)
-            return
-        }
-
-        const { error } = await supabase.auth.signUp({
-            email,
-            password,
-            options: {
-                emailRedirectTo: `${location.origin}/auth/callback`,
-            },
-        })
-
-        if (error) {
-            setError(error.message)
-        } else {
-            setMessage(&apos;Check your email for the confirmation link.&apos;)
-        }
-        setLoading(false)
-    }
-
-    return (
-        &lt;div className=&quot;flex min-h-screen flex-col items-center justify-center bg-gray-900 px-6 py-12 lg:px-8&quot;&gt;
-            &lt;div className=&quot;sm:mx-auto sm:w-full sm:max-w-sm flex flex-col items-center&quot;&gt;
-                &lt;div className=&quot;h-16 w-16 bg-blue-500 rounded-lg flex items-center justify-center mb-4&quot;&gt;
-                    &lt;svg
-                        className=&quot;h-10 w-10 text-white&quot;
-                        fill=&quot;none&quot;
-                        viewBox=&quot;0 0 24 24&quot;
-                        stroke=&quot;currentColor&quot;
-                    &gt;
-                        &lt;path
-                            strokeLinecap=&quot;round&quot;
-                            strokeLinejoin=&quot;round&quot;
-                            strokeWidth={2}
-                            d=&quot;M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z&quot;
-                        /&gt;
-                    &lt;/svg&gt;
-                &lt;/div&gt;
-                &lt;h1 className=&quot;text-2xl font-bold text-white mb-2&quot;&gt;Better Docs&lt;/h1&gt;
-                &lt;p className=&quot;text-sm text-gray-400 mb-6&quot;&gt;Made with ❤️ by Prayas&lt;/p&gt;
-                &lt;h2 className=&quot;text-center text-xl font-semibold leading-9 tracking-tight text-white&quot;&gt;
-                    Have an account? &lt;br /&gt; ✨ Sign in ✨
-                &lt;/h2&gt;
-            &lt;/div&gt;
-
-            &lt;div className=&quot;mt-10 sm:mx-auto sm:w-full sm:max-w-sm&quot;&gt;
-                &lt;form className=&quot;space-y-6&quot; onSubmit={handleLogin}&gt;
-                    &lt;div&gt;
-                        &lt;label htmlFor=&quot;email&quot; className=&quot;block text-sm font-medium leading-6 text-white&quot;&gt;
-                            Email address
-                        &lt;/label&gt;
-                        &lt;div className=&quot;mt-2&quot;&gt;
-                            &lt;input
-                                id=&quot;email&quot;
-                                name=&quot;email&quot;
-                                type=&quot;email&quot;
-                                autoComplete=&quot;email&quot;
-                                required
-                                value={email}
-                                onChange={(e) =&gt; setEmail(e.target.value)}
-                                className=&quot;block w-full rounded-md border-0 bg-white/5 py-1.5 text-white shadow-sm ring-1 ring-inset ring-white/10 focus:ring-2 focus:ring-inset focus:ring-indigo-500 sm:text-sm sm:leading-6&quot;
-                            /&gt;
-                        &lt;/div&gt;
-                    &lt;/div&gt;
-
-                    &lt;div&gt;
-                        &lt;div className=&quot;flex items-center justify-between&quot;&gt;
-                            &lt;label htmlFor=&quot;password&quot; className=&quot;block text-sm font-medium leading-6 text-white&quot;&gt;
-                                Password
-                            &lt;/label&gt;
-                        &lt;/div&gt;
-                        &lt;div className=&quot;mt-2&quot;&gt;
-                            &lt;input
-                                id=&quot;password&quot;
-                                name=&quot;password&quot;
-                                type=&quot;password&quot;
-                                autoComplete=&quot;current-password&quot;
-                                required
-                                value={password}
-                                onChange={(e) =&gt; setPassword(e.target.value)}
-                                className=&quot;block w-full rounded-md border-0 bg-white/5 py-1.5 text-white shadow-sm ring-1 ring-inset ring-white/10 focus:ring-2 focus:ring-inset focus:ring-indigo-500 sm:text-sm sm:leading-6&quot;
-                            /&gt;
-                        &lt;/div&gt;
-                    &lt;/div&gt;
-
-                    {error &amp;&amp; (
-                        &lt;div className=&quot;text-red-400 text-sm text-center&quot;&gt;{error}&lt;/div&gt;
-                    )}
-
-                    {message &amp;&amp; (
-                        &lt;div className=&quot;text-green-400 text-sm text-center&quot;&gt;{message}&lt;/div&gt;
-                    )}
-
-                    &lt;div&gt;
-                        &lt;button
-                            type=&quot;submit&quot;
-                            disabled={loading}
-                            className=&quot;flex w-full justify-center rounded-md bg-indigo-500 px-3 py-1.5 text-sm font-semibold leading-6 text-white shadow-sm hover:bg-indigo-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500 disabled:opacity-50&quot;
-                        &gt;
-                            {loading ? &apos;Loading...&apos; : &apos;Sign in&apos;}
-                        &lt;/button&gt;
-                    &lt;/div&gt;
-                &lt;/form&gt;
-
-                &lt;p className=&quot;mt-10 text-center text-sm text-blue-400&quot;&gt;
-                    Don&apos;t have an account already?
-                &lt;/p&gt;
-                &lt;div className=&quot;mt-4 text-center&quot;&gt;
-                    &lt;button
-                        type=&quot;button&quot;
-                        onClick={async () =&gt; {
-                          console.log(&apos;🔍 [LOGIN-PAGE] &quot;Make a New account&quot; button clicked&apos;)
-                          console.log(&apos;🔍 [LOGIN-PAGE] Current URL before navigation:&apos;, window.location.href)
-                          console.log(&apos;🔍 [LOGIN-PAGE] Router object:&apos;, router)
-                          console.log(&apos;🔍 [LOGIN-PAGE] Router.push function:&apos;, typeof router.push)
-                          console.log(&apos;🔍 [LOGIN-PAGE] Window object available:&apos;, typeof window !== &apos;undefined&apos;)
-                          console.log(&apos;🔍 [LOGIN-PAGE] Document object available:&apos;, typeof document !== &apos;undefined&apos;)
-                          console.log(&apos;🔍 [LOGIN-PAGE] Router has push:&apos;, typeof router.push === &apos;function&apos;)
-                          console.log(&apos;🔍 [LOGIN-PAGE] Router has replace:&apos;, typeof router.replace === &apos;function&apos;)
-                          console.log(&apos;🔍 [LOGIN-PAGE] Router has prefetch:&apos;, typeof router.prefetch === &apos;function&apos;)
-                          console.log(&apos;🔍 [LOGIN-PAGE] Router has back:&apos;, typeof router.back === &apos;function&apos;)
-                          console.log(&apos;🔍 [LOGIN-PAGE] Router has forward:&apos;, typeof router.forward === &apos;function&apos;)
-                          
-                          try {
-                            console.log(&apos;🔍 [LOGIN-PAGE] Starting navigation to /signup...&apos;)
-                            const result = await router.push(&apos;/signup&apos;)
-                            console.log(&apos;🔍 [LOGIN-PAGE] Router.push returned:&apos;, result)
-                            console.log(&apos;🔍 [LOGIN-PAGE] Navigation promise resolved&apos;)
-                          } catch (error) {
-                            console.error(&apos;🔍 [LOGIN-PAGE] Navigation error:&apos;, error)
-                          }
-                          
-                          // Check if navigation happened after multiple delays
-                          setTimeout(() =&gt; {
-                            console.log(&apos;🔍 [LOGIN-PAGE] 100ms after navigation, current URL:&apos;, window.location.href)
-                            console.log(&apos;🔍 [LOGIN-PAGE] Current pathname:&apos;, window.location.pathname)
-                          }, 100)
-                          
-                          setTimeout(() =&gt; {
-                            console.log(&apos;🔍 [LOGIN-PAGE] 500ms after navigation, current URL:&apos;, window.location.href)
-                            console.log(&apos;🔍 [LOGIN-PAGE] Current pathname:&apos;, window.location.pathname)
-                          }, 500)
-                          
-                          setTimeout(() =&gt; {
-                            console.log(&apos;🔍 [LOGIN-PAGE] 1000ms after navigation, current URL:&apos;, window.location.href)
-                            console.log(&apos;🔍 [LOGIN-PAGE] Current pathname:&apos;, window.location.pathname)
-                          }, 1000)
-                        }}
-                        className=&quot;font-semibold leading-6 text-indigo-400 hover:text-indigo-300 bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-md transition-colors&quot;
-                    &gt;
-                        Make a New account 🎉
-                    &lt;/button&gt;
-                &lt;/div&gt;
-            &lt;/div&gt;
-        &lt;/div&gt;
-    )
 }</file><file path="src/app/onboarding/page.tsx">&apos;use client&apos;;
 
 import React, { useState } from &apos;react&apos;;
@@ -746,417 +529,6 @@ export default function OnboardingPage() {
           )}
         &lt;/div&gt;
       &lt;/main&gt;
-    &lt;/div&gt;
-  );
-}</file><file path="src/app/session/[id]/page.tsx">&apos;use client&apos;;
-
-import React, { useEffect, useState, useRef } from &apos;react&apos;;
-
-export const dynamic = &apos;force-dynamic&apos;;
-import { useParams, useRouter } from &apos;next/navigation&apos;;
-import { useSessionStore, useChatStore, useDocumentStore, useSettingsStore } from &apos;../../../store&apos;;
-import { TabBar, ChatTabs } from &apos;../../../components/layout&apos;;
-import { ChatList, MessageInput, PhrasePills } from &apos;../../../components/chat&apos;;
-import { DocumentList, JsonUpload, DocumentLibrary } from &apos;../../../components/document&apos;;
-import { Button, DropdownMenu, DropdownMenuItem } from &apos;../../../components/ui&apos;;
-import { Loading } from &apos;../../../components/ui&apos;;
-import { EmptyState } from &apos;../../../components/common&apos;;
-import { Header } from &apos;../../../components/layout&apos;;
-import { documentProcessor } from &apos;../../../services/rag&apos;;
-
-export default function SessionPage() {
-  const params = useParams();
-  const router = useRouter();
-  const sessionId = params.id as string;
-
-  const {
-    currentSession,
-    setCurrentSessionId,
-    deleteSession,
-    isLoading: sessionLoading,
-  } = useSessionStore();
-
-  const {
-    messages,
-    isLoading: messagesLoading,
-    sendMessage,
-    clearHistory,
-    isStreaming,
-  } = useChatStore();
-
-  const {
-    documents,
-    loadDocuments,
-    isUploading: documentsLoading,
-  } = useDocumentStore();
-
-  const { settings } = useSettingsStore();
-  const { userId } = useSessionStore();
-
-  const [activeTab, setActiveTab] = useState(&apos;chat&apos;);
-  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
-  const [isLibraryOpen, setIsLibraryOpen] = useState(false);
-  const [messageInput, setMessageInput] = useState(&apos;&apos;);
-  const messageInputRef = useRef&lt;HTMLTextAreaElement&gt;(null);
-
-  // Load session data on mount (client-side only)
-  useEffect(() =&gt; {
-    if (typeof window !== &apos;undefined&apos; &amp;&amp; sessionId) {
-      setCurrentSessionId(sessionId);
-      loadDocuments(sessionId);
-    }
-  }, [sessionId, setCurrentSessionId, loadDocuments]);
-
-  // Redirect if session not found (client-side only)
-  useEffect(() =&gt; {
-    if (typeof window !== &apos;undefined&apos; &amp;&amp; !sessionLoading &amp;&amp; !currentSession) {
-      router.push(&apos;/&apos;);
-    }
-  }, [currentSession, sessionLoading, router]);
-
-  const handleSendMessage = async (content: string) =&gt; {
-    if (!sessionId) return;
-    
-    try {
-      await sendMessage(sessionId, content);
-      setMessageInput(&apos;&apos;); // Clear the input after sending
-    } catch (error) {
-      console.error(&apos;Failed to send message:&apos;, error);
-    }
-  };
-
-  const handlePhraseSelect = (phrase: string) =&gt; {
-    // Append the selected phrase to the current message input with an extra space
-    const newMessage = messageInput ? `${messageInput} ${phrase} ` : `${phrase} `;
-    setMessageInput(newMessage);
-    
-    // Focus the input field and position cursor at the end
-    requestAnimationFrame(() =&gt; {
-      if (messageInputRef.current) {
-        messageInputRef.current.focus();
-        const length = messageInputRef.current.value.length;
-        messageInputRef.current.setSelectionRange(length, length);
-      }
-    });
-  };
-
-  const handleDeleteSession = async () =&gt; {
-    if (!sessionId) return;
-    
-    try {
-      await deleteSession(sessionId);
-      router.push(&apos;/&apos;);
-    } catch (error) {
-      console.error(&apos;Failed to delete session:&apos;, error);
-    }
-  };
-
-  const handleClearHistory = async () =&gt; {
-    if (!sessionId) return;
-    
-    try {
-      await clearHistory(sessionId);
-    } catch (error) {
-      console.error(&apos;Failed to clear history:&apos;, error);
-    }
-  };
-
-
-  if (sessionLoading) {
-    return (
-      &lt;div className=&quot;min-h-screen bg-gray-50 dark:bg-gray-900&quot;&gt;
-        &lt;Header /&gt;
-        &lt;div className=&quot;flex justify-center items-center h-64&quot;&gt;
-          &lt;Loading size=&quot;lg&quot; text=&quot;Loading session...&quot; /&gt;
-        &lt;/div&gt;
-      &lt;/div&gt;
-    );
-  }
-
-  if (!currentSession) {
-    return (
-      &lt;div className=&quot;min-h-screen bg-gray-50 dark:bg-gray-900&quot;&gt;
-        &lt;Header /&gt;
-        &lt;div className=&quot;container mx-auto px-4 py-8&quot;&gt;
-          &lt;EmptyState
-            title=&quot;Session not found&quot;
-            description=&quot;The session you&apos;re looking for doesn&apos;t exist or has been deleted.&quot;
-            action={
-              &lt;Button onClick={() =&gt; router.push(&apos;/&apos;)}&gt;
-                Go Back Home
-              &lt;/Button&gt;
-            }
-          /&gt;
-        &lt;/div&gt;
-      &lt;/div&gt;
-    );
-  }
-
-  return (
-    &lt;div className=&quot;min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col&quot;&gt;
-      {/* Sticky Header */}
-      &lt;div className=&quot;sticky top-0 z-40 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700&quot;&gt;
-        &lt;Header
-          title={currentSession.name}
-          actions={null} // Remove actions from header, moving to tab bar
-        /&gt;
-      &lt;/div&gt;
-
-      {/* Sticky Tab Navigation */}
-      &lt;div className=&quot;sticky top-14 sm:top-16 z-30 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700&quot;&gt;
-        &lt;div className=&quot;container mx-auto px-3 sm:px-4&quot;&gt;
-          &lt;TabBar
-            tabs={ChatTabs.ChatDocuments}
-            activeTab={activeTab}
-            onTabChange={setActiveTab}
-            variant=&quot;underline&quot;
-            actions={
-              &lt;DropdownMenu
-                trigger={
-                  &lt;Button variant=&quot;ghost&quot; size=&quot;sm&quot; className=&quot;p-2&quot;&gt;
-                    &lt;svg
-                      className=&quot;h-4 w-4 sm:h-5 sm:w-5 text-gray-700 dark:text-gray-200&quot;
-                      fill=&quot;none&quot;
-                      viewBox=&quot;0 0 24 24&quot;
-                      stroke=&quot;currentColor&quot;
-                    &gt;
-                      &lt;path
-                        strokeLinecap=&quot;round&quot;
-                        strokeLinejoin=&quot;round&quot;
-                        strokeWidth={2}
-                        d=&quot;M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z&quot;
-                      /&gt;
-                    &lt;/svg&gt;
-                  &lt;/Button&gt;
-                }
-              &gt;
-                &lt;DropdownMenuItem onClick={handleClearHistory} disabled={messages.length === 0}&gt;
-                  Clear History
-                &lt;/DropdownMenuItem&gt;
-                &lt;DropdownMenuItem
-                  onClick={() =&gt; setIsDeleteDialogOpen(true)}
-                  variant=&quot;danger&quot;
-                &gt;
-                  Delete Session
-                &lt;/DropdownMenuItem&gt;
-              &lt;/DropdownMenu&gt;
-            }
-          /&gt;
-        &lt;/div&gt;
-      &lt;/div&gt;
-
-      {/* Tab Content */}
-      &lt;div className=&quot;flex-1 container mx-auto px-4 pt-6 pb-0 overflow-hidden flex flex-col&quot;&gt;
-        {activeTab === &apos;chat&apos; &amp;&amp; (
-          &lt;div className=&quot;flex-1 flex flex-col min-h-0&quot;&gt;
-            {messages.length === 0 &amp;&amp; !messagesLoading ? (
-              // This wrapper controls the layout to ensure input stays at bottom
-              &lt;div className=&quot;flex flex-col flex-1 min-h-0&quot;&gt;
-                {/* This wrapper grows to fill all available space */}
-                &lt;div className=&quot;flex-1 flex items-center justify-center&quot;&gt;
-                  &lt;EmptyState
-                    title=&quot;Start a conversation&quot;
-                    description=&quot;Ask a question about your documents to get started&quot;
-                    icon={
-                      &lt;svg
-                        className=&quot;w-12 h-12 text-gray-400&quot;
-                        fill=&quot;none&quot;
-                        viewBox=&quot;0 0 24 24&quot;
-                        stroke=&quot;currentColor&quot;
-                      &gt;
-                        &lt;path
-                          strokeLinecap=&quot;round&quot;
-                          strokeLinejoin=&quot;round&quot;
-                          strokeWidth={2}
-                          d=&quot;M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z&quot;
-                        /&gt;
-                      &lt;/svg&gt;
-                    }
-                  /&gt;
-                &lt;/div&gt;
-                
-                {/* API Key Configuration Button */}
-                {!settings?.geminiApiKey &amp;&amp; (
-                  &lt;div className=&quot;flex-shrink-0 mt-4 max-w-4xl mx-auto w-full&quot;&gt;
-                    &lt;Button
-                      onClick={() =&gt; router.push(&apos;/settings&apos;)}
-                      variant=&quot;primary&quot;
-                      className=&quot;w-full&quot;
-                    &gt;
-                      Set API Key First
-                    &lt;/Button&gt;
-                  &lt;/div&gt;
-                )}
-                
-                {/* Phrase Pills */}
-                &lt;div className=&quot;flex-shrink-0 mt-4 max-w-4xl mx-auto w-full&quot;&gt;
-                  &lt;PhrasePills
-                    onPhraseSelect={handlePhraseSelect}
-                    className=&quot;bg-gray-100 dark:bg-gray-800 rounded-lg&quot;
-                  /&gt;
-                &lt;/div&gt;
-                
-                {/* Message Input is now properly positioned at the bottom */}
-                &lt;div className=&quot;flex-shrink-0 mt-4 max-w-4xl mx-auto w-full&quot;&gt;
-                  &lt;MessageInput
-                    sessionId={sessionId}
-                    disabled={isStreaming || !settings?.geminiApiKey}
-                    placeholder={
-                      !settings?.geminiApiKey
-                        ? &apos;Please configure your API key in settings&apos;
-                        : &apos;Ask a question about your documents...&apos;
-                    }
-                    value={messageInput}
-                    onChange={setMessageInput}
-                    inputRef={messageInputRef}
-                  /&gt;
-                &lt;/div&gt;
-              &lt;/div&gt;
-            ) : (
-              &lt;&gt;
-                &lt;div className=&quot;flex-1 overflow-y-auto min-h-0&quot;&gt;
-                  &lt;ChatList
-                    sessionId={sessionId}
-                    className=&quot;max-w-4xl mx-auto&quot;
-                  /&gt;
-                &lt;/div&gt;
-                
-                {/* API Key Configuration Button */}
-                {!settings?.geminiApiKey &amp;&amp; (
-                  &lt;div className=&quot;flex-shrink-0 mt-4 max-w-4xl mx-auto w-full&quot;&gt;
-                    &lt;Button
-                      onClick={() =&gt; router.push(&apos;/settings&apos;)}
-                      variant=&quot;primary&quot;
-                      className=&quot;w-full&quot;
-                    &gt;
-                      Set API Key First
-                    &lt;/Button&gt;
-                  &lt;/div&gt;
-                )}
-                
-                {/* Phrase Pills */}
-                &lt;div className=&quot;flex-shrink-0 mt-4 max-w-4xl mx-auto w-full&quot;&gt;
-                  &lt;PhrasePills
-                    onPhraseSelect={handlePhraseSelect}
-                    className=&quot;bg-gray-100 dark:bg-gray-800 rounded-lg&quot;
-                  /&gt;
-                &lt;/div&gt;
-                
-                {/* Message Input */}
-                &lt;div className=&quot;flex-shrink-0 mt-4 max-w-4xl mx-auto w-full&quot;&gt;
-                  &lt;MessageInput
-                    sessionId={sessionId}
-                    disabled={isStreaming || !settings?.geminiApiKey}
-                    placeholder={
-                      !settings?.geminiApiKey
-                        ? &apos;Please configure your API key in settings&apos;
-                        : &apos;Ask a question about your documents...&apos;
-                    }
-                    value={messageInput}
-                    onChange={setMessageInput}
-                    inputRef={messageInputRef}
-                  /&gt;
-                &lt;/div&gt;
-              &lt;/&gt;
-            )}
-          &lt;/div&gt;
-        )}
-
-        {activeTab === &apos;documents&apos; &amp;&amp; (
-          &lt;div className=&quot;max-w-6xl mx-auto flex-1 overflow-y-auto&quot;&gt;
-            &lt;div className=&quot;space-y-6 pb-6&quot;&gt;
-              &lt;div className=&quot;sticky top-0 bg-gray-50 dark:bg-gray-900 py-6 z-10&quot;&gt;
-                &lt;h2 className=&quot;text-lg font-semibold text-gray-900 dark:text-white mb-4&quot;&gt;
-                  Documents ({documents.length})
-                &lt;/h2&gt;
-                
-                &lt;div className=&quot;flex flex-col items-center gap-4 mb-4&quot;&gt;
-                  &lt;Button
-                    variant=&quot;primary&quot;
-                    onClick={() =&gt; setIsLibraryOpen(true)}
-                    size=&quot;lg&quot;
-                    className=&quot;text-lg px-8 py-3&quot;
-                  &gt;
-                    &lt;span className=&quot;mr-2&quot;&gt;🏥&lt;/span&gt; Library
-                  &lt;/Button&gt;
-                  
-                  &lt;div className=&quot;text-center&quot;&gt;
-                    &lt;p className=&quot;text-yellow-500 mb-2&quot;&gt;Can&apos;t find the book in the library?&lt;/p&gt;
-                    &lt;p className=&quot;text-yellow-500 mb-4&quot;&gt;No worries! 🥳&lt;/p&gt;
-                    &lt;Button
-                      variant=&quot;secondary&quot;
-                      onClick={() =&gt; window.open(&apos;https://t.me/prayas_ojha&apos;, &apos;_blank&apos;)}
-                      size=&quot;md&quot;
-                      className=&quot;text-sm px-4 py-2&quot;
-                    &gt;
-                      🎉 Request book 🎉
-                    &lt;/Button&gt;
-                    &lt;p className=&quot;text-yellow-500 mt-4&quot;&gt;We will try to add the resource you want to library ❤️&lt;/p&gt;
-                  &lt;/div&gt;
-                &lt;/div&gt;
-              &lt;/div&gt;
-              
-              {documents.length === 0 &amp;&amp; !documentsLoading ? (
-                &lt;div className=&quot;text-center py-12&quot;&gt;
-                  &lt;p className=&quot;text-gray-500 dark:text-gray-400 text-lg mb-2&quot;&gt;
-                    No documents yet!
-                  &lt;/p&gt;
-                  &lt;p className=&quot;text-yellow-500 text-lg&quot;&gt;
-                    Go to the library to add books 🎉
-                  &lt;/p&gt;
-                &lt;/div&gt;
-              ) : (
-                &lt;DocumentList
-                  documents={documents}
-                  loading={documentsLoading}
-                  variant=&quot;grid&quot;
-                /&gt;
-              )}
-            &lt;/div&gt;
-          &lt;/div&gt;
-        )}
-      &lt;/div&gt;
-
-      {/* Delete Confirmation Dialog */}
-      {isDeleteDialogOpen &amp;&amp; (
-        &lt;div className=&quot;fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4&quot;&gt;
-          &lt;div className=&quot;bg-white dark:bg-gray-800 rounded-lg p-4 sm:p-6 max-w-md w-full mx-4&quot;&gt;
-            &lt;h3 className=&quot;text-base sm:text-lg font-semibold text-gray-900 dark:text-white mb-3 sm:mb-4&quot;&gt;
-              Delete Session
-            &lt;/h3&gt;
-            
-            &lt;p className=&quot;text-sm sm:text-base text-gray-600 dark:text-gray-300 mb-4 sm:mb-6&quot;&gt;
-              Are you sure you want to delete &quot;{currentSession.name}&quot;? This action cannot be undone and will remove all messages and documents.
-            &lt;/p&gt;
-            
-            &lt;div className=&quot;flex gap-2 sm:gap-3&quot;&gt;
-              &lt;Button
-                variant=&quot;outline&quot;
-                onClick={() =&gt; setIsDeleteDialogOpen(false)}
-                className=&quot;flex-1&quot;
-              &gt;
-                Cancel
-              &lt;/Button&gt;
-              
-              &lt;Button
-                variant=&quot;danger&quot;
-                onClick={handleDeleteSession}
-                className=&quot;flex-1&quot;
-              &gt;
-                Delete
-              &lt;/Button&gt;
-            &lt;/div&gt;
-          &lt;/div&gt;
-        &lt;/div&gt;
-      )}
-
-      {/* Document Library Modal */}
-      {isLibraryOpen &amp;&amp; (
-        &lt;DocumentLibrary
-          sessionId={sessionId}
-          onClose={() =&gt; setIsLibraryOpen(false)}
-        /&gt;
-      )}
     &lt;/div&gt;
   );
 }</file><file path="src/app/settings/page.tsx">&apos;use client&apos;;
@@ -1805,52 +1177,6 @@ export default function SignUpPage() {
             &lt;/div&gt;
         &lt;/div&gt;
     )
-}</file><file path="src/app/layout.tsx">import type { Metadata, Viewport } from &apos;next&apos;;
-import { Inter } from &apos;next/font/google&apos;;
-import Script from &apos;next/script&apos;;
-import &apos;../styles/globals.css&apos;;
-import &apos;../styles/mobile-touch.css&apos;;
-import { AppInitializer } from &apos;./AppInitializer&apos;;
-import SubscriptionModal from &apos;@/components/SubscriptionModal&apos;;
-
-const inter = Inter({ subsets: [&apos;latin&apos;] });
-
-export const metadata: Metadata = {
-  title: &apos;Meddy - Chat with Documents Privately&apos;,
-  description: &apos;Private RAG chat application for documents&apos;,
-  manifest: &apos;/manifest.json&apos;,
-};
-
-export const viewport: Viewport = {
-  width: &apos;device-width&apos;,
-  initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
-  themeColor: &apos;#020617&apos;,
-  viewportFit: &apos;cover&apos;,
-};
-
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  return (
-    &lt;html lang=&quot;en&quot; className=&quot;dark&quot;&gt;
-      &lt;body className={`${inter.className} bg-slate-950 text-slate-200 antialiased`}&gt;
-        &lt;Script
-          id=&quot;error-suppression&quot;
-          strategy=&quot;beforeInteractive&quot;
-          src=&quot;/error-suppression.js&quot;
-        /&gt;
-        &lt;div id=&quot;root&quot; className=&quot;min-h-screen flex flex-col&quot;&gt;
-          &lt;AppInitializer /&gt;
-          &lt;SubscriptionModal /&gt;
-          {children}
-        &lt;/div&gt;
-      &lt;/body&gt;
-    &lt;/html&gt;
-  );
 }</file><file path="src/app/page.tsx">&apos;use client&apos;;
 
 import React, { useEffect, useState } from &apos;react&apos;;
@@ -3724,6 +3050,171 @@ export class ErrorBoundary extends Component&lt;Props, State&gt; {
 
     return this.props.children;
   }
+}</file><file path="src/components/common/RouteErrorBoundary.tsx">&apos;use client&apos;;
+
+import React from &apos;react&apos;;
+import { useEffect } from &apos;react&apos;;
+import { useRouter } from &apos;next/navigation&apos;;
+
+interface RouteErrorBoundaryState {
+  hasError: boolean;
+  error?: Error;
+  errorInfo?: React.ErrorInfo;
+}
+
+export class RouteErrorBoundary extends React.Component&lt;
+  React.PropsWithChildren&lt;{}&gt;,
+  RouteErrorBoundaryState
+&gt; {
+  constructor(props: React.PropsWithChildren&lt;{}&gt;) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError(error: Error): RouteErrorBoundaryState {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error(&apos;🚨 [ROUTE_ERROR_BOUNDARY] Caught routing error:&apos;, {
+      error: error.message,
+      stack: error.stack,
+      componentStack: errorInfo.componentStack,
+      timestamp: new Date().toISOString(),
+      userAgent: navigator.userAgent,
+      currentUrl: window.location.href
+    });
+
+    this.setState({ error, errorInfo });
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return &lt;ErrorFallback error={this.state.error} errorInfo={this.state.errorInfo} /&gt;;
+    }
+
+    return this.props.children;
+  }
+}
+
+function ErrorFallback({ error, errorInfo }: { error?: Error; errorInfo?: React.ErrorInfo }) {
+  const router = useRouter();
+
+  useEffect(() =&gt; {
+    // Log detailed error information for debugging
+    console.log(&apos;🔍 [ROUTE_ERROR_FALLBACK] Error details:&apos;, {
+      errorMessage: error?.message,
+      errorStack: error?.stack,
+      componentStack: errorInfo?.componentStack,
+      currentPath: window.location.pathname,
+      referrer: document.referrer,
+      timestamp: new Date().toISOString()
+    });
+  }, [error, errorInfo]);
+
+  const handleReload = () =&gt; {
+    window.location.reload();
+  };
+
+  const handleGoHome = () =&gt; {
+    router.push(&apos;/&apos;);
+  };
+
+  return (
+    &lt;div className=&quot;min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col items-center justify-center px-4&quot;&gt;
+      &lt;div className=&quot;max-w-md w-full text-center&quot;&gt;
+        &lt;div className=&quot;mb-6&quot;&gt;
+          &lt;div className=&quot;mx-auto w-16 h-16 bg-red-100 dark:bg-red-900 rounded-full flex items-center justify-center mb-4&quot;&gt;
+            &lt;svg
+              className=&quot;w-8 h-8 text-red-600 dark:text-red-400&quot;
+              fill=&quot;none&quot;
+              viewBox=&quot;0 0 24 24&quot;
+              stroke=&quot;currentColor&quot;
+            &gt;
+              &lt;path
+                strokeLinecap=&quot;round&quot;
+                strokeLinejoin=&quot;round&quot;
+                strokeWidth={2}
+                d=&quot;M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z&quot;
+              /&gt;
+            &lt;/svg&gt;
+          &lt;/div&gt;
+          
+          &lt;h1 className=&quot;text-2xl font-bold text-gray-900 dark:text-white mb-2&quot;&gt;
+            Navigation Error
+          &lt;/h1&gt;
+          
+          &lt;p className=&quot;text-gray-600 dark:text-gray-300 mb-6&quot;&gt;
+            Something went wrong while loading this page. This might be a routing issue.
+          &lt;/p&gt;
+
+          {process.env.NODE_ENV === &apos;development&apos; &amp;&amp; error &amp;&amp; (
+            &lt;div className=&quot;mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md text-left&quot;&gt;
+              &lt;p className=&quot;text-sm font-medium text-red-800 dark:text-red-200 mb-2&quot;&gt;
+                Error Details (Development Mode):
+              &lt;/p&gt;
+              &lt;p className=&quot;text-xs text-red-600 dark:text-red-400 font-mono break-all&quot;&gt;
+                {error.message}
+              &lt;/p&gt;
+            &lt;/div&gt;
+          )}
+        &lt;/div&gt;
+
+        &lt;div className=&quot;space-y-3&quot;&gt;
+          &lt;button
+            onClick={handleReload}
+            className=&quot;w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors&quot;
+          &gt;
+            Reload Page
+          &lt;/button&gt;
+          
+          &lt;button
+            onClick={handleGoHome}
+            className=&quot;w-full px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-md hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors&quot;
+          &gt;
+            Go to Home
+          &lt;/button&gt;
+        &lt;/div&gt;
+
+        &lt;div className=&quot;mt-6 text-xs text-gray-500 dark:text-gray-400&quot;&gt;
+          Error ID: {Date.now()}
+        &lt;/div&gt;
+      &lt;/div&gt;
+    &lt;/div&gt;
+  );
+}
+
+// Hook for functional components to catch errors
+export function useRouteErrorHandler() {
+  const router = useRouter();
+
+  const handleRouteError = (error: Error, context?: string) =&gt; {
+    console.error(&apos;🚨 [ROUTE_ERROR_HANDLER] Route error:&apos;, {
+      error: error.message,
+      stack: error.stack,
+      context,
+      currentPath: window.location.pathname,
+      timestamp: new Date().toISOString()
+    });
+
+    // In production, you might want to send this to an error reporting service
+    if (process.env.NODE_ENV === &apos;production&apos;) {
+      // Example: sendToErrorReporting(error, context);
+    }
+  };
+
+  const safeNavigate = (path: string, context?: string) =&gt; {
+    try {
+      console.log(&apos;🔍 [SAFE_NAVIGATE] Navigating to:&apos;, path, { context });
+      router.push(path);
+    } catch (error) {
+      handleRouteError(error as Error, `navigation to ${path}`);
+      // Fallback navigation
+      window.location.href = path;
+    }
+  };
+
+  return { handleRouteError, safeNavigate };
 }</file><file path="src/components/document/DocumentCard.tsx">import React, { useState } from &apos;react&apos;;
 import { Document } from &apos;../../types&apos;;
 import { Button } from &apos;../ui/Button&apos;;
@@ -18387,6 +17878,723 @@ module.exports = {
   },
   &quot;include&quot;: [&quot;next-env.d.ts&quot;, &quot;**/*.ts&quot;, &quot;**/*.tsx&quot;, &quot;.next/types/**/*.ts&quot;],
   &quot;exclude&quot;: [&quot;node_modules&quot;]
+}</file><file path="src/app/login/page.tsx">&apos;use client&apos;
+
+import { createClient } from &apos;@/utils/supabase/client&apos;
+import { useState, useEffect } from &apos;react&apos;
+import { useRouter } from &apos;next/navigation&apos;
+
+export default function LoginPage() {
+    const [email, setEmail] = useState(&apos;&apos;)
+    const [password, setPassword] = useState(&apos;&apos;)
+    const [loading, setLoading] = useState(false)
+    const [error, setError] = useState&lt;string | null&gt;(null)
+    const [message, setMessage] = useState&lt;string | null&gt;(null)
+    const router = useRouter()
+    const supabase = createClient()
+
+    // Debug logging for component mount
+    useEffect(() =&gt; {
+        console.log(&apos;🔍 [LOGIN-PAGE] Component mounted, current path:&apos;, window.location.pathname)
+        console.log(&apos;🔍 [LOGIN-PAGE] Router object available:&apos;, !!router)
+    }, [])
+
+    useEffect(() =&gt; {
+        const params = new URLSearchParams(window.location.search)
+        const error = params.get(&apos;error&apos;)
+        const error_description = params.get(&apos;error_description&apos;)
+        const redirectedFrom = params.get(&apos;redirectedFrom&apos;)
+        const hashParams = new URLSearchParams(window.location.hash.substring(1))
+        const hashError = hashParams.get(&apos;error&apos;)
+        const hashErrorDescription = hashParams.get(&apos;error_description&apos;)
+
+        if (error || hashError) {
+            setError(error_description || hashErrorDescription || &apos;An error occurred during authentication&apos;)
+        }
+
+        // Log redirect information for debugging
+        if (redirectedFrom) {
+            console.log(&apos;🔍 [LOGIN-PAGE] User redirected from:&apos;, redirectedFrom)
+            // Store the intended destination for after successful login
+            sessionStorage.setItem(&apos;intendedDestination&apos;, redirectedFrom)
+        }
+    }, [])
+
+    const handleLogin = async (e: React.FormEvent) =&gt; {
+        e.preventDefault()
+        setLoading(true)
+        setError(null)
+        setMessage(null)
+
+        const { error } = await supabase.auth.signInWithPassword({
+            email,
+            password,
+        })
+
+        if (error) {
+            setError(error.message)
+        } else {
+            // Check if there&apos;s an intended destination
+            const intendedDestination = sessionStorage.getItem(&apos;intendedDestination&apos;)
+            sessionStorage.removeItem(&apos;intendedDestination&apos;) // Clear after use
+            
+            if (intendedDestination &amp;&amp; intendedDestination !== &apos;/login&apos;) {
+                console.log(&apos;🔍 [LOGIN-PAGE] Redirecting to intended destination:&apos;, intendedDestination)
+                router.push(intendedDestination)
+            } else {
+                router.push(&apos;/&apos;)
+            }
+            router.refresh()
+        }
+        setLoading(false)
+    }
+
+    const handleSignUp = async (e: React.FormEvent) =&gt; {
+        e.preventDefault()
+        setLoading(true)
+        setError(null)
+        setMessage(null)
+
+        if (password.length &lt; 6) {
+            setError(&apos;Password must be at least 6 characters&apos;)
+            setLoading(false)
+            return
+        }
+
+        const { error } = await supabase.auth.signUp({
+            email,
+            password,
+            options: {
+                emailRedirectTo: `${location.origin}/auth/callback`,
+            },
+        })
+
+        if (error) {
+            setError(error.message)
+        } else {
+            setMessage(&apos;Check your email for the confirmation link.&apos;)
+        }
+        setLoading(false)
+    }
+
+    return (
+        &lt;div className=&quot;flex min-h-screen flex-col items-center justify-center bg-gray-900 px-6 py-12 lg:px-8&quot;&gt;
+            &lt;div className=&quot;sm:mx-auto sm:w-full sm:max-w-sm flex flex-col items-center&quot;&gt;
+                &lt;div className=&quot;h-16 w-16 bg-blue-500 rounded-lg flex items-center justify-center mb-4&quot;&gt;
+                    &lt;svg
+                        className=&quot;h-10 w-10 text-white&quot;
+                        fill=&quot;none&quot;
+                        viewBox=&quot;0 0 24 24&quot;
+                        stroke=&quot;currentColor&quot;
+                    &gt;
+                        &lt;path
+                            strokeLinecap=&quot;round&quot;
+                            strokeLinejoin=&quot;round&quot;
+                            strokeWidth={2}
+                            d=&quot;M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z&quot;
+                        /&gt;
+                    &lt;/svg&gt;
+                &lt;/div&gt;
+                &lt;h1 className=&quot;text-2xl font-bold text-white mb-2&quot;&gt;Better Docs&lt;/h1&gt;
+                &lt;p className=&quot;text-sm text-gray-400 mb-6&quot;&gt;Made with ❤️ by Prayas&lt;/p&gt;
+                &lt;h2 className=&quot;text-center text-xl font-semibold leading-9 tracking-tight text-white&quot;&gt;
+                    Have an account? &lt;br /&gt; ✨ Sign in ✨
+                &lt;/h2&gt;
+            &lt;/div&gt;
+
+            &lt;div className=&quot;mt-10 sm:mx-auto sm:w-full sm:max-w-sm&quot;&gt;
+                &lt;form className=&quot;space-y-6&quot; onSubmit={handleLogin}&gt;
+                    &lt;div&gt;
+                        &lt;label htmlFor=&quot;email&quot; className=&quot;block text-sm font-medium leading-6 text-white&quot;&gt;
+                            Email address
+                        &lt;/label&gt;
+                        &lt;div className=&quot;mt-2&quot;&gt;
+                            &lt;input
+                                id=&quot;email&quot;
+                                name=&quot;email&quot;
+                                type=&quot;email&quot;
+                                autoComplete=&quot;email&quot;
+                                required
+                                value={email}
+                                onChange={(e) =&gt; setEmail(e.target.value)}
+                                className=&quot;block w-full rounded-md border-0 bg-white/5 py-1.5 text-white shadow-sm ring-1 ring-inset ring-white/10 focus:ring-2 focus:ring-inset focus:ring-indigo-500 sm:text-sm sm:leading-6&quot;
+                            /&gt;
+                        &lt;/div&gt;
+                    &lt;/div&gt;
+
+                    &lt;div&gt;
+                        &lt;div className=&quot;flex items-center justify-between&quot;&gt;
+                            &lt;label htmlFor=&quot;password&quot; className=&quot;block text-sm font-medium leading-6 text-white&quot;&gt;
+                                Password
+                            &lt;/label&gt;
+                        &lt;/div&gt;
+                        &lt;div className=&quot;mt-2&quot;&gt;
+                            &lt;input
+                                id=&quot;password&quot;
+                                name=&quot;password&quot;
+                                type=&quot;password&quot;
+                                autoComplete=&quot;current-password&quot;
+                                required
+                                value={password}
+                                onChange={(e) =&gt; setPassword(e.target.value)}
+                                className=&quot;block w-full rounded-md border-0 bg-white/5 py-1.5 text-white shadow-sm ring-1 ring-inset ring-white/10 focus:ring-2 focus:ring-inset focus:ring-indigo-500 sm:text-sm sm:leading-6&quot;
+                            /&gt;
+                        &lt;/div&gt;
+                    &lt;/div&gt;
+
+                    {error &amp;&amp; (
+                        &lt;div className=&quot;text-red-400 text-sm text-center&quot;&gt;{error}&lt;/div&gt;
+                    )}
+
+                    {message &amp;&amp; (
+                        &lt;div className=&quot;text-green-400 text-sm text-center&quot;&gt;{message}&lt;/div&gt;
+                    )}
+
+                    &lt;div&gt;
+                        &lt;button
+                            type=&quot;submit&quot;
+                            disabled={loading}
+                            className=&quot;flex w-full justify-center rounded-md bg-indigo-500 px-3 py-1.5 text-sm font-semibold leading-6 text-white shadow-sm hover:bg-indigo-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500 disabled:opacity-50&quot;
+                        &gt;
+                            {loading ? &apos;Loading...&apos; : &apos;Sign in&apos;}
+                        &lt;/button&gt;
+                    &lt;/div&gt;
+                &lt;/form&gt;
+
+                &lt;p className=&quot;mt-10 text-center text-sm text-blue-400&quot;&gt;
+                    Don&apos;t have an account already?
+                &lt;/p&gt;
+                &lt;div className=&quot;mt-4 text-center&quot;&gt;
+                    &lt;button
+                        type=&quot;button&quot;
+                        onClick={async () =&gt; {
+                          console.log(&apos;🔍 [LOGIN-PAGE] &quot;Make a New account&quot; button clicked&apos;)
+                          console.log(&apos;🔍 [LOGIN-PAGE] Current URL before navigation:&apos;, window.location.href)
+                          console.log(&apos;🔍 [LOGIN-PAGE] Router object:&apos;, router)
+                          console.log(&apos;🔍 [LOGIN-PAGE] Router.push function:&apos;, typeof router.push)
+                          console.log(&apos;🔍 [LOGIN-PAGE] Window object available:&apos;, typeof window !== &apos;undefined&apos;)
+                          console.log(&apos;🔍 [LOGIN-PAGE] Document object available:&apos;, typeof document !== &apos;undefined&apos;)
+                          console.log(&apos;🔍 [LOGIN-PAGE] Router has push:&apos;, typeof router.push === &apos;function&apos;)
+                          console.log(&apos;🔍 [LOGIN-PAGE] Router has replace:&apos;, typeof router.replace === &apos;function&apos;)
+                          console.log(&apos;🔍 [LOGIN-PAGE] Router has prefetch:&apos;, typeof router.prefetch === &apos;function&apos;)
+                          console.log(&apos;🔍 [LOGIN-PAGE] Router has back:&apos;, typeof router.back === &apos;function&apos;)
+                          console.log(&apos;🔍 [LOGIN-PAGE] Router has forward:&apos;, typeof router.forward === &apos;function&apos;)
+                          
+                          try {
+                            console.log(&apos;🔍 [LOGIN-PAGE] Starting navigation to /signup...&apos;)
+                            const result = await router.push(&apos;/signup&apos;)
+                            console.log(&apos;🔍 [LOGIN-PAGE] Router.push returned:&apos;, result)
+                            console.log(&apos;🔍 [LOGIN-PAGE] Navigation promise resolved&apos;)
+                          } catch (error) {
+                            console.error(&apos;🔍 [LOGIN-PAGE] Navigation error:&apos;, error)
+                          }
+                          
+                          // Check if navigation happened after multiple delays
+                          setTimeout(() =&gt; {
+                            console.log(&apos;🔍 [LOGIN-PAGE] 100ms after navigation, current URL:&apos;, window.location.href)
+                            console.log(&apos;🔍 [LOGIN-PAGE] Current pathname:&apos;, window.location.pathname)
+                          }, 100)
+                          
+                          setTimeout(() =&gt; {
+                            console.log(&apos;🔍 [LOGIN-PAGE] 500ms after navigation, current URL:&apos;, window.location.href)
+                            console.log(&apos;🔍 [LOGIN-PAGE] Current pathname:&apos;, window.location.pathname)
+                          }, 500)
+                          
+                          setTimeout(() =&gt; {
+                            console.log(&apos;🔍 [LOGIN-PAGE] 1000ms after navigation, current URL:&apos;, window.location.href)
+                            console.log(&apos;🔍 [LOGIN-PAGE] Current pathname:&apos;, window.location.pathname)
+                          }, 1000)
+                        }}
+                        className=&quot;font-semibold leading-6 text-indigo-400 hover:text-indigo-300 bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-md transition-colors&quot;
+                    &gt;
+                        Make a New account 🎉
+                    &lt;/button&gt;
+                &lt;/div&gt;
+            &lt;/div&gt;
+        &lt;/div&gt;
+    )
+}</file><file path="src/app/session/[id]/page.tsx">&apos;use client&apos;;
+
+import React, { useEffect, useState, useRef } from &apos;react&apos;;
+
+export const dynamic = &apos;force-dynamic&apos;;
+import { useParams, useRouter } from &apos;next/navigation&apos;;
+import { useSessionStore, useChatStore, useDocumentStore, useSettingsStore } from &apos;../../../store&apos;;
+import { TabBar, ChatTabs } from &apos;../../../components/layout&apos;;
+import { ChatList, MessageInput, PhrasePills } from &apos;../../../components/chat&apos;;
+import { DocumentList, JsonUpload, DocumentLibrary } from &apos;../../../components/document&apos;;
+import { Button, DropdownMenu, DropdownMenuItem } from &apos;../../../components/ui&apos;;
+import { Loading } from &apos;../../../components/ui&apos;;
+import { EmptyState } from &apos;../../../components/common&apos;;
+import { Header } from &apos;../../../components/layout&apos;;
+import { documentProcessor } from &apos;../../../services/rag&apos;;
+import { useRouteErrorHandler } from &apos;../../../components/common/RouteErrorBoundary&apos;;
+
+export default function SessionPage() {
+  const params = useParams();
+  const router = useRouter();
+  const { handleRouteError, safeNavigate } = useRouteErrorHandler();
+  const sessionId = params.id as string;
+
+  // Validate session ID format
+  useEffect(() =&gt; {
+    if (!sessionId) {
+      handleRouteError(new Error(&apos;Session ID is missing&apos;), &apos;Session page load&apos;);
+      safeNavigate(&apos;/&apos;, &apos;Invalid session ID&apos;);
+      return;
+    }
+
+    // Basic validation for session ID format (UUID or similar)
+    const validIdPattern = /^[a-zA-Z0-9\-_]{10,}$/;
+    if (!validIdPattern.test(sessionId)) {
+      console.error(&apos;🔍 [SESSION_PAGE] Invalid session ID format:&apos;, sessionId);
+      handleRouteError(new Error(`Invalid session ID format: ${sessionId}`), &apos;Session ID validation&apos;);
+      safeNavigate(&apos;/&apos;, &apos;Invalid session ID format&apos;);
+      return;
+    }
+
+    console.log(&apos;🔍 [SESSION_PAGE] Loading session with valid ID:&apos;, sessionId);
+  }, [sessionId, handleRouteError, safeNavigate]);
+
+  const {
+    currentSession,
+    setCurrentSessionId,
+    deleteSession,
+    isLoading: sessionLoading,
+  } = useSessionStore();
+
+  const {
+    messages,
+    isLoading: messagesLoading,
+    sendMessage,
+    clearHistory,
+    isStreaming,
+  } = useChatStore();
+
+  const {
+    documents,
+    loadDocuments,
+    isUploading: documentsLoading,
+  } = useDocumentStore();
+
+  const { settings } = useSettingsStore();
+  const { userId } = useSessionStore();
+
+  const [activeTab, setActiveTab] = useState(&apos;chat&apos;);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [isLibraryOpen, setIsLibraryOpen] = useState(false);
+  const [messageInput, setMessageInput] = useState(&apos;&apos;);
+  const messageInputRef = useRef&lt;HTMLTextAreaElement&gt;(null);
+
+  // Load session data on mount (client-side only)
+  useEffect(() =&gt; {
+    if (typeof window !== &apos;undefined&apos; &amp;&amp; sessionId) {
+      setCurrentSessionId(sessionId);
+      loadDocuments(sessionId);
+    }
+  }, [sessionId, setCurrentSessionId, loadDocuments]);
+
+  // Redirect if session not found (client-side only)
+  useEffect(() =&gt; {
+    if (typeof window !== &apos;undefined&apos; &amp;&amp; !sessionLoading &amp;&amp; !currentSession) {
+      router.push(&apos;/&apos;);
+    }
+  }, [currentSession, sessionLoading, router]);
+
+  const handleSendMessage = async (content: string) =&gt; {
+    if (!sessionId) return;
+    
+    try {
+      await sendMessage(sessionId, content);
+      setMessageInput(&apos;&apos;); // Clear the input after sending
+    } catch (error) {
+      console.error(&apos;Failed to send message:&apos;, error);
+    }
+  };
+
+  const handlePhraseSelect = (phrase: string) =&gt; {
+    // Append the selected phrase to the current message input with an extra space
+    const newMessage = messageInput ? `${messageInput} ${phrase} ` : `${phrase} `;
+    setMessageInput(newMessage);
+    
+    // Focus the input field and position cursor at the end
+    requestAnimationFrame(() =&gt; {
+      if (messageInputRef.current) {
+        messageInputRef.current.focus();
+        const length = messageInputRef.current.value.length;
+        messageInputRef.current.setSelectionRange(length, length);
+      }
+    });
+  };
+
+  const handleDeleteSession = async () =&gt; {
+    if (!sessionId) return;
+    
+    try {
+      await deleteSession(sessionId);
+      router.push(&apos;/&apos;);
+    } catch (error) {
+      console.error(&apos;Failed to delete session:&apos;, error);
+    }
+  };
+
+  const handleClearHistory = async () =&gt; {
+    if (!sessionId) return;
+    
+    try {
+      await clearHistory(sessionId);
+    } catch (error) {
+      console.error(&apos;Failed to clear history:&apos;, error);
+    }
+  };
+
+
+  if (sessionLoading) {
+    return (
+      &lt;div className=&quot;min-h-screen bg-gray-50 dark:bg-gray-900&quot;&gt;
+        &lt;Header /&gt;
+        &lt;div className=&quot;flex justify-center items-center h-64&quot;&gt;
+          &lt;Loading size=&quot;lg&quot; text=&quot;Loading session...&quot; /&gt;
+        &lt;/div&gt;
+      &lt;/div&gt;
+    );
+  }
+
+  if (!currentSession) {
+    return (
+      &lt;div className=&quot;min-h-screen bg-gray-50 dark:bg-gray-900&quot;&gt;
+        &lt;Header /&gt;
+        &lt;div className=&quot;container mx-auto px-4 py-8&quot;&gt;
+          &lt;EmptyState
+            title=&quot;Session not found&quot;
+            description=&quot;The session you&apos;re looking for doesn&apos;t exist or has been deleted.&quot;
+            action={
+              &lt;Button onClick={() =&gt; router.push(&apos;/&apos;)}&gt;
+                Go Back Home
+              &lt;/Button&gt;
+            }
+          /&gt;
+        &lt;/div&gt;
+      &lt;/div&gt;
+    );
+  }
+
+  return (
+    &lt;div className=&quot;min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col&quot;&gt;
+      {/* Sticky Header */}
+      &lt;div className=&quot;sticky top-0 z-40 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700&quot;&gt;
+        &lt;Header
+          title={currentSession.name}
+          actions={null} // Remove actions from header, moving to tab bar
+        /&gt;
+      &lt;/div&gt;
+
+      {/* Sticky Tab Navigation */}
+      &lt;div className=&quot;sticky top-14 sm:top-16 z-30 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700&quot;&gt;
+        &lt;div className=&quot;container mx-auto px-3 sm:px-4&quot;&gt;
+          &lt;TabBar
+            tabs={ChatTabs.ChatDocuments}
+            activeTab={activeTab}
+            onTabChange={setActiveTab}
+            variant=&quot;underline&quot;
+            actions={
+              &lt;DropdownMenu
+                trigger={
+                  &lt;Button variant=&quot;ghost&quot; size=&quot;sm&quot; className=&quot;p-2&quot;&gt;
+                    &lt;svg
+                      className=&quot;h-4 w-4 sm:h-5 sm:w-5 text-gray-700 dark:text-gray-200&quot;
+                      fill=&quot;none&quot;
+                      viewBox=&quot;0 0 24 24&quot;
+                      stroke=&quot;currentColor&quot;
+                    &gt;
+                      &lt;path
+                        strokeLinecap=&quot;round&quot;
+                        strokeLinejoin=&quot;round&quot;
+                        strokeWidth={2}
+                        d=&quot;M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z&quot;
+                      /&gt;
+                    &lt;/svg&gt;
+                  &lt;/Button&gt;
+                }
+              &gt;
+                &lt;DropdownMenuItem onClick={handleClearHistory} disabled={messages.length === 0}&gt;
+                  Clear History
+                &lt;/DropdownMenuItem&gt;
+                &lt;DropdownMenuItem
+                  onClick={() =&gt; setIsDeleteDialogOpen(true)}
+                  variant=&quot;danger&quot;
+                &gt;
+                  Delete Session
+                &lt;/DropdownMenuItem&gt;
+              &lt;/DropdownMenu&gt;
+            }
+          /&gt;
+        &lt;/div&gt;
+      &lt;/div&gt;
+
+      {/* Tab Content */}
+      &lt;div className=&quot;flex-1 container mx-auto px-4 pt-6 pb-0 overflow-hidden flex flex-col&quot;&gt;
+        {activeTab === &apos;chat&apos; &amp;&amp; (
+          &lt;div className=&quot;flex-1 flex flex-col min-h-0&quot;&gt;
+            {messages.length === 0 &amp;&amp; !messagesLoading ? (
+              // This wrapper controls the layout to ensure input stays at bottom
+              &lt;div className=&quot;flex flex-col flex-1 min-h-0&quot;&gt;
+                {/* This wrapper grows to fill all available space */}
+                &lt;div className=&quot;flex-1 flex items-center justify-center&quot;&gt;
+                  &lt;EmptyState
+                    title=&quot;Start a conversation&quot;
+                    description=&quot;Ask a question about your documents to get started&quot;
+                    icon={
+                      &lt;svg
+                        className=&quot;w-12 h-12 text-gray-400&quot;
+                        fill=&quot;none&quot;
+                        viewBox=&quot;0 0 24 24&quot;
+                        stroke=&quot;currentColor&quot;
+                      &gt;
+                        &lt;path
+                          strokeLinecap=&quot;round&quot;
+                          strokeLinejoin=&quot;round&quot;
+                          strokeWidth={2}
+                          d=&quot;M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z&quot;
+                        /&gt;
+                      &lt;/svg&gt;
+                    }
+                  /&gt;
+                &lt;/div&gt;
+                
+                {/* API Key Configuration Button */}
+                {!settings?.geminiApiKey &amp;&amp; (
+                  &lt;div className=&quot;flex-shrink-0 mt-4 max-w-4xl mx-auto w-full&quot;&gt;
+                    &lt;Button
+                      onClick={() =&gt; router.push(&apos;/settings&apos;)}
+                      variant=&quot;primary&quot;
+                      className=&quot;w-full&quot;
+                    &gt;
+                      Set API Key First
+                    &lt;/Button&gt;
+                  &lt;/div&gt;
+                )}
+                
+                {/* Phrase Pills */}
+                &lt;div className=&quot;flex-shrink-0 mt-4 max-w-4xl mx-auto w-full&quot;&gt;
+                  &lt;PhrasePills
+                    onPhraseSelect={handlePhraseSelect}
+                    className=&quot;bg-gray-100 dark:bg-gray-800 rounded-lg&quot;
+                  /&gt;
+                &lt;/div&gt;
+                
+                {/* Message Input is now properly positioned at the bottom */}
+                &lt;div className=&quot;flex-shrink-0 mt-4 max-w-4xl mx-auto w-full&quot;&gt;
+                  &lt;MessageInput
+                    sessionId={sessionId}
+                    disabled={isStreaming || !settings?.geminiApiKey}
+                    placeholder={
+                      !settings?.geminiApiKey
+                        ? &apos;Please configure your API key in settings&apos;
+                        : &apos;Ask a question about your documents...&apos;
+                    }
+                    value={messageInput}
+                    onChange={setMessageInput}
+                    inputRef={messageInputRef}
+                  /&gt;
+                &lt;/div&gt;
+              &lt;/div&gt;
+            ) : (
+              &lt;&gt;
+                &lt;div className=&quot;flex-1 overflow-y-auto min-h-0&quot;&gt;
+                  &lt;ChatList
+                    sessionId={sessionId}
+                    className=&quot;max-w-4xl mx-auto&quot;
+                  /&gt;
+                &lt;/div&gt;
+                
+                {/* API Key Configuration Button */}
+                {!settings?.geminiApiKey &amp;&amp; (
+                  &lt;div className=&quot;flex-shrink-0 mt-4 max-w-4xl mx-auto w-full&quot;&gt;
+                    &lt;Button
+                      onClick={() =&gt; router.push(&apos;/settings&apos;)}
+                      variant=&quot;primary&quot;
+                      className=&quot;w-full&quot;
+                    &gt;
+                      Set API Key First
+                    &lt;/Button&gt;
+                  &lt;/div&gt;
+                )}
+                
+                {/* Phrase Pills */}
+                &lt;div className=&quot;flex-shrink-0 mt-4 max-w-4xl mx-auto w-full&quot;&gt;
+                  &lt;PhrasePills
+                    onPhraseSelect={handlePhraseSelect}
+                    className=&quot;bg-gray-100 dark:bg-gray-800 rounded-lg&quot;
+                  /&gt;
+                &lt;/div&gt;
+                
+                {/* Message Input */}
+                &lt;div className=&quot;flex-shrink-0 mt-4 max-w-4xl mx-auto w-full&quot;&gt;
+                  &lt;MessageInput
+                    sessionId={sessionId}
+                    disabled={isStreaming || !settings?.geminiApiKey}
+                    placeholder={
+                      !settings?.geminiApiKey
+                        ? &apos;Please configure your API key in settings&apos;
+                        : &apos;Ask a question about your documents...&apos;
+                    }
+                    value={messageInput}
+                    onChange={setMessageInput}
+                    inputRef={messageInputRef}
+                  /&gt;
+                &lt;/div&gt;
+              &lt;/&gt;
+            )}
+          &lt;/div&gt;
+        )}
+
+        {activeTab === &apos;documents&apos; &amp;&amp; (
+          &lt;div className=&quot;max-w-6xl mx-auto flex-1 overflow-y-auto&quot;&gt;
+            &lt;div className=&quot;space-y-6 pb-6&quot;&gt;
+              &lt;div className=&quot;sticky top-0 bg-gray-50 dark:bg-gray-900 py-6 z-10&quot;&gt;
+                &lt;h2 className=&quot;text-lg font-semibold text-gray-900 dark:text-white mb-4&quot;&gt;
+                  Documents ({documents.length})
+                &lt;/h2&gt;
+                
+                &lt;div className=&quot;flex flex-col items-center gap-4 mb-4&quot;&gt;
+                  &lt;Button
+                    variant=&quot;primary&quot;
+                    onClick={() =&gt; setIsLibraryOpen(true)}
+                    size=&quot;lg&quot;
+                    className=&quot;text-lg px-8 py-3&quot;
+                  &gt;
+                    &lt;span className=&quot;mr-2&quot;&gt;🏥&lt;/span&gt; Library
+                  &lt;/Button&gt;
+                  
+                  &lt;div className=&quot;text-center&quot;&gt;
+                    &lt;p className=&quot;text-yellow-500 mb-2&quot;&gt;Can&apos;t find the book in the library?&lt;/p&gt;
+                    &lt;p className=&quot;text-yellow-500 mb-4&quot;&gt;No worries! 🥳&lt;/p&gt;
+                    &lt;Button
+                      variant=&quot;secondary&quot;
+                      onClick={() =&gt; window.open(&apos;https://t.me/prayas_ojha&apos;, &apos;_blank&apos;)}
+                      size=&quot;md&quot;
+                      className=&quot;text-sm px-4 py-2&quot;
+                    &gt;
+                      🎉 Request book 🎉
+                    &lt;/Button&gt;
+                    &lt;p className=&quot;text-yellow-500 mt-4&quot;&gt;We will try to add the resource you want to library ❤️&lt;/p&gt;
+                  &lt;/div&gt;
+                &lt;/div&gt;
+              &lt;/div&gt;
+              
+              {documents.length === 0 &amp;&amp; !documentsLoading ? (
+                &lt;div className=&quot;text-center py-12&quot;&gt;
+                  &lt;p className=&quot;text-gray-500 dark:text-gray-400 text-lg mb-2&quot;&gt;
+                    No documents yet!
+                  &lt;/p&gt;
+                  &lt;p className=&quot;text-yellow-500 text-lg&quot;&gt;
+                    Go to the library to add books 🎉
+                  &lt;/p&gt;
+                &lt;/div&gt;
+              ) : (
+                &lt;DocumentList
+                  documents={documents}
+                  loading={documentsLoading}
+                  variant=&quot;grid&quot;
+                /&gt;
+              )}
+            &lt;/div&gt;
+          &lt;/div&gt;
+        )}
+      &lt;/div&gt;
+
+      {/* Delete Confirmation Dialog */}
+      {isDeleteDialogOpen &amp;&amp; (
+        &lt;div className=&quot;fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4&quot;&gt;
+          &lt;div className=&quot;bg-white dark:bg-gray-800 rounded-lg p-4 sm:p-6 max-w-md w-full mx-4&quot;&gt;
+            &lt;h3 className=&quot;text-base sm:text-lg font-semibold text-gray-900 dark:text-white mb-3 sm:mb-4&quot;&gt;
+              Delete Session
+            &lt;/h3&gt;
+            
+            &lt;p className=&quot;text-sm sm:text-base text-gray-600 dark:text-gray-300 mb-4 sm:mb-6&quot;&gt;
+              Are you sure you want to delete &quot;{currentSession.name}&quot;? This action cannot be undone and will remove all messages and documents.
+            &lt;/p&gt;
+            
+            &lt;div className=&quot;flex gap-2 sm:gap-3&quot;&gt;
+              &lt;Button
+                variant=&quot;outline&quot;
+                onClick={() =&gt; setIsDeleteDialogOpen(false)}
+                className=&quot;flex-1&quot;
+              &gt;
+                Cancel
+              &lt;/Button&gt;
+              
+              &lt;Button
+                variant=&quot;danger&quot;
+                onClick={handleDeleteSession}
+                className=&quot;flex-1&quot;
+              &gt;
+                Delete
+              &lt;/Button&gt;
+            &lt;/div&gt;
+          &lt;/div&gt;
+        &lt;/div&gt;
+      )}
+
+      {/* Document Library Modal */}
+      {isLibraryOpen &amp;&amp; (
+        &lt;DocumentLibrary
+          sessionId={sessionId}
+          onClose={() =&gt; setIsLibraryOpen(false)}
+        /&gt;
+      )}
+    &lt;/div&gt;
+  );
+}</file><file path="src/app/layout.tsx">import type { Metadata, Viewport } from &apos;next&apos;;
+import { Inter } from &apos;next/font/google&apos;;
+import Script from &apos;next/script&apos;;
+import &apos;../styles/globals.css&apos;;
+import &apos;../styles/mobile-touch.css&apos;;
+import { AppInitializer } from &apos;./AppInitializer&apos;;
+import SubscriptionModal from &apos;@/components/SubscriptionModal&apos;;
+import { RouteErrorBoundary } from &apos;@/components/common/RouteErrorBoundary&apos;;
+
+const inter = Inter({ subsets: [&apos;latin&apos;] });
+
+export const metadata: Metadata = {
+  title: &apos;Meddy - Chat with Documents Privately&apos;,
+  description: &apos;Private RAG chat application for documents&apos;,
+  manifest: &apos;/manifest.json&apos;,
+};
+
+export const viewport: Viewport = {
+  width: &apos;device-width&apos;,
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  themeColor: &apos;#020617&apos;,
+  viewportFit: &apos;cover&apos;,
+};
+
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    &lt;html lang=&quot;en&quot; className=&quot;dark&quot;&gt;
+      &lt;body className={`${inter.className} bg-slate-950 text-slate-200 antialiased`}&gt;
+        &lt;Script
+          id=&quot;error-suppression&quot;
+          strategy=&quot;beforeInteractive&quot;
+          src=&quot;/error-suppression.js&quot;
+        /&gt;
+        &lt;RouteErrorBoundary&gt;
+          &lt;div id=&quot;root&quot; className=&quot;min-h-screen flex flex-col&quot;&gt;
+            &lt;AppInitializer /&gt;
+            &lt;SubscriptionModal /&gt;
+            {children}
+          &lt;/div&gt;
+        &lt;/RouteErrorBoundary&gt;
+      &lt;/body&gt;
+    &lt;/html&gt;
+  );
 }</file><file path="src/components/ui/Modal.tsx">import React, { useEffect, useRef } from &apos;react&apos;;
 import ReactDOM from &apos;react-dom&apos;;
 import clsx from &apos;clsx&apos;;
@@ -20085,6 +20293,65 @@ export interface ApiKeyValidationResult {
     details?: any;
   };
   responseTime?: number;
+}</file><file path="package.json">{
+  &quot;name&quot;: &quot;rag-web&quot;,
+  &quot;version&quot;: &quot;1.0.0&quot;,
+  &quot;description&quot;: &quot;Meddy - Chat with your documents privately on Web&quot;,
+  &quot;private&quot;: true,
+  &quot;scripts&quot;: {
+    &quot;dev&quot;: &quot;next dev&quot;,
+    &quot;build&quot;: &quot;next build&quot;,
+    &quot;start&quot;: &quot;next start&quot;,
+    &quot;lint&quot;: &quot;next lint&quot;,
+    &quot;type-check&quot;: &quot;tsc --noEmit&quot;,
+    &quot;format&quot;: &quot;prettier --write .&quot;,
+    &quot;test-modal&quot;: &quot;node test-modal-terminal.js&quot;
+  },
+  &quot;dependencies&quot;: {
+    &quot;@google/genai&quot;: &quot;^0.2.0&quot;,
+    &quot;@headlessui/react&quot;: &quot;^1.7.0&quot;,
+    &quot;@heroicons/react&quot;: &quot;^2.0.0&quot;,
+    &quot;@hookform/resolvers&quot;: &quot;^3.3.0&quot;,
+    &quot;@supabase/ssr&quot;: &quot;^0.7.0&quot;,
+    &quot;@supabase/supabase-js&quot;: &quot;^2.83.0&quot;,
+    &quot;@tailwindcss/aspect-ratio&quot;: &quot;^0.4.2&quot;,
+    &quot;@tailwindcss/forms&quot;: &quot;^0.5.10&quot;,
+    &quot;@tailwindcss/typography&quot;: &quot;^0.5.19&quot;,
+    &quot;clsx&quot;: &quot;^2.0.0&quot;,
+    &quot;date-fns&quot;: &quot;^2.30.0&quot;,
+    &quot;dexie&quot;: &quot;^3.2.0&quot;,
+    &quot;dexie-react-hooks&quot;: &quot;^1.1.0&quot;,
+    &quot;file-saver&quot;: &quot;^2.0.0&quot;,
+    &quot;lodash-es&quot;: &quot;^4.17.0&quot;,
+    &quot;next&quot;: &quot;^14.0.0&quot;,
+    &quot;process&quot;: &quot;^0.11.10&quot;,
+    &quot;react&quot;: &quot;^18.0.0&quot;,
+    &quot;react-dom&quot;: &quot;^18.0.0&quot;,
+    &quot;react-hook-form&quot;: &quot;^7.47.0&quot;,
+    &quot;react-markdown&quot;: &quot;^9.0.0&quot;,
+    &quot;rehype-highlight&quot;: &quot;^7.0.0&quot;,
+    &quot;remark-gfm&quot;: &quot;^4.0.0&quot;,
+    &quot;tailwindcss&quot;: &quot;^3.3.0&quot;,
+    &quot;typescript&quot;: &quot;^5.0.0&quot;,
+    &quot;uuid&quot;: &quot;^9.0.0&quot;,
+    &quot;zod&quot;: &quot;^3.22.0&quot;,
+    &quot;zustand&quot;: &quot;^4.4.0&quot;
+  },
+  &quot;devDependencies&quot;: {
+    &quot;@types/file-saver&quot;: &quot;^2.0.0&quot;,
+    &quot;@types/lodash-es&quot;: &quot;^4.17.0&quot;,
+    &quot;@types/node&quot;: &quot;^20.0.0&quot;,
+    &quot;@types/react&quot;: &quot;^18.0.0&quot;,
+    &quot;@types/react-dom&quot;: &quot;^18.0.0&quot;,
+    &quot;@types/uuid&quot;: &quot;^9.0.0&quot;,
+    &quot;autoprefixer&quot;: &quot;^10.0.0&quot;,
+    &quot;eslint&quot;: &quot;^8.0.0&quot;,
+    &quot;eslint-config-next&quot;: &quot;^14.0.0&quot;,
+    &quot;postcss&quot;: &quot;^8.0.0&quot;,
+    &quot;prettier&quot;: &quot;^3.0.0&quot;,
+    &quot;prettier-plugin-tailwindcss&quot;: &quot;^0.5.0&quot;,
+    &quot;puppeteer&quot;: &quot;^24.30.0&quot;
+  }
 }</file><file path="src/middleware.ts">import { createServerClient, type CookieOptions } from &apos;@supabase/ssr&apos;
 import { NextResponse, type NextRequest } from &apos;next/server&apos;
 
@@ -20092,6 +20359,13 @@ export const runtime = &apos;nodejs&apos;;
 
 export async function middleware(request: NextRequest) {
     console.log(&apos;🔍 [MIDDLEWARE] Processing request for:&apos;, request.nextUrl.pathname)
+    
+    // Skip middleware for static assets and API routes
+    if (request.nextUrl.pathname.startsWith(&apos;/_next/&apos;) ||
+        request.nextUrl.pathname.startsWith(&apos;/api/&apos;) ||
+        request.nextUrl.pathname.includes(&apos;.&apos;)) {
+        return NextResponse.next()
+    }
     
     let response = NextResponse.next({
         request: {
@@ -20152,7 +20426,9 @@ export async function middleware(request: NextRequest) {
     // If no user and not on login or signup page, redirect to login
     if (!user &amp;&amp; !request.nextUrl.pathname.startsWith(&apos;/login&apos;) &amp;&amp; !request.nextUrl.pathname.startsWith(&apos;/signup&apos;)) {
         console.log(&apos;🔍 [MIDDLEWARE] No user detected, redirecting to login from:&apos;, request.nextUrl.pathname)
-        return NextResponse.redirect(new URL(&apos;/login&apos;, request.url))
+        const redirectUrl = new URL(&apos;/login&apos;, request.url)
+        redirectUrl.searchParams.set(&apos;redirectedFrom&apos;, request.nextUrl.pathname)
+        return NextResponse.redirect(redirectUrl)
     }
 
     // If user is logged in and on login page, redirect to home
@@ -20197,69 +20473,12 @@ export const config = {
          * - _next/image (image optimization files)
          * - favicon.ico (favicon file)
          * - auth/callback (auth callback)
+         * - api routes (if any)
+         * - static assets
          * Feel free to modify this pattern to include more paths.
          */
-        &apos;/((?!_next/static|_next/image|favicon.ico|auth/callback|.*\\.(?:svg|png|jpg|jpeg|gif|webp|js|css|json)$).*)&apos;,
+        &apos;/((?!_next/static|_next/image|favicon.ico|auth/callback|api/|.*\\.(?:svg|png|jpg|jpeg|gif|webp|js|css|json)$).*)&apos;,
     ],
-}</file><file path="package.json">{
-  &quot;name&quot;: &quot;rag-web&quot;,
-  &quot;version&quot;: &quot;1.0.0&quot;,
-  &quot;description&quot;: &quot;Meddy - Chat with your documents privately on Web&quot;,
-  &quot;private&quot;: true,
-  &quot;scripts&quot;: {
-    &quot;dev&quot;: &quot;next dev&quot;,
-    &quot;build&quot;: &quot;next build&quot;,
-    &quot;start&quot;: &quot;next start&quot;,
-    &quot;lint&quot;: &quot;next lint&quot;,
-    &quot;type-check&quot;: &quot;tsc --noEmit&quot;,
-    &quot;format&quot;: &quot;prettier --write .&quot;,
-    &quot;test-modal&quot;: &quot;node test-modal-terminal.js&quot;
-  },
-  &quot;dependencies&quot;: {
-    &quot;@google/genai&quot;: &quot;^0.2.0&quot;,
-    &quot;@headlessui/react&quot;: &quot;^1.7.0&quot;,
-    &quot;@heroicons/react&quot;: &quot;^2.0.0&quot;,
-    &quot;@hookform/resolvers&quot;: &quot;^3.3.0&quot;,
-    &quot;@supabase/ssr&quot;: &quot;^0.7.0&quot;,
-    &quot;@supabase/supabase-js&quot;: &quot;^2.83.0&quot;,
-    &quot;@tailwindcss/aspect-ratio&quot;: &quot;^0.4.2&quot;,
-    &quot;@tailwindcss/forms&quot;: &quot;^0.5.10&quot;,
-    &quot;@tailwindcss/typography&quot;: &quot;^0.5.19&quot;,
-    &quot;clsx&quot;: &quot;^2.0.0&quot;,
-    &quot;date-fns&quot;: &quot;^2.30.0&quot;,
-    &quot;dexie&quot;: &quot;^3.2.0&quot;,
-    &quot;dexie-react-hooks&quot;: &quot;^1.1.0&quot;,
-    &quot;file-saver&quot;: &quot;^2.0.0&quot;,
-    &quot;lodash-es&quot;: &quot;^4.17.0&quot;,
-    &quot;next&quot;: &quot;^14.0.0&quot;,
-    &quot;process&quot;: &quot;^0.11.10&quot;,
-    &quot;react&quot;: &quot;^18.0.0&quot;,
-    &quot;react-dom&quot;: &quot;^18.0.0&quot;,
-    &quot;react-hook-form&quot;: &quot;^7.47.0&quot;,
-    &quot;react-markdown&quot;: &quot;^9.0.0&quot;,
-    &quot;rehype-highlight&quot;: &quot;^7.0.0&quot;,
-    &quot;remark-gfm&quot;: &quot;^4.0.0&quot;,
-    &quot;tailwindcss&quot;: &quot;^3.3.0&quot;,
-    &quot;typescript&quot;: &quot;^5.0.0&quot;,
-    &quot;uuid&quot;: &quot;^9.0.0&quot;,
-    &quot;zod&quot;: &quot;^3.22.0&quot;,
-    &quot;zustand&quot;: &quot;^4.4.0&quot;
-  },
-  &quot;devDependencies&quot;: {
-    &quot;@types/file-saver&quot;: &quot;^2.0.0&quot;,
-    &quot;@types/lodash-es&quot;: &quot;^4.17.0&quot;,
-    &quot;@types/node&quot;: &quot;^20.0.0&quot;,
-    &quot;@types/react&quot;: &quot;^18.0.0&quot;,
-    &quot;@types/react-dom&quot;: &quot;^18.0.0&quot;,
-    &quot;@types/uuid&quot;: &quot;^9.0.0&quot;,
-    &quot;autoprefixer&quot;: &quot;^10.0.0&quot;,
-    &quot;eslint&quot;: &quot;^8.0.0&quot;,
-    &quot;eslint-config-next&quot;: &quot;^14.0.0&quot;,
-    &quot;postcss&quot;: &quot;^8.0.0&quot;,
-    &quot;prettier&quot;: &quot;^3.0.0&quot;,
-    &quot;prettier-plugin-tailwindcss&quot;: &quot;^0.5.0&quot;,
-    &quot;puppeteer&quot;: &quot;^24.30.0&quot;
-  }
 }</file><file path="src/app/AppInitializer.tsx">&apos;use client&apos;;
 
 import { useEffect, useState } from &apos;react&apos;;
