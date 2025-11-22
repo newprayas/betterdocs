@@ -23,12 +23,20 @@ export default function LoginPage() {
         const params = new URLSearchParams(window.location.search)
         const error = params.get('error')
         const error_description = params.get('error_description')
+        const redirectedFrom = params.get('redirectedFrom')
         const hashParams = new URLSearchParams(window.location.hash.substring(1))
         const hashError = hashParams.get('error')
         const hashErrorDescription = hashParams.get('error_description')
 
         if (error || hashError) {
             setError(error_description || hashErrorDescription || 'An error occurred during authentication')
+        }
+
+        // Log redirect information for debugging
+        if (redirectedFrom) {
+            console.log('🔍 [LOGIN-PAGE] User redirected from:', redirectedFrom)
+            // Store the intended destination for after successful login
+            sessionStorage.setItem('intendedDestination', redirectedFrom)
         }
     }, [])
 
@@ -46,7 +54,16 @@ export default function LoginPage() {
         if (error) {
             setError(error.message)
         } else {
-            router.push('/')
+            // Check if there's an intended destination
+            const intendedDestination = sessionStorage.getItem('intendedDestination')
+            sessionStorage.removeItem('intendedDestination') // Clear after use
+            
+            if (intendedDestination && intendedDestination !== '/login') {
+                console.log('🔍 [LOGIN-PAGE] Redirecting to intended destination:', intendedDestination)
+                router.push(intendedDestination)
+            } else {
+                router.push('/')
+            }
             router.refresh()
         }
         setLoading(false)

@@ -5,6 +5,7 @@ import '../styles/globals.css';
 import '../styles/mobile-touch.css';
 import { AppInitializer } from './AppInitializer';
 import SubscriptionModal from '@/components/SubscriptionModal';
+import { RouteErrorBoundary } from '@/components/common/RouteErrorBoundary';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -36,11 +37,13 @@ export default function RootLayout({
           strategy="beforeInteractive"
           src="/error-suppression.js"
         />
-        <div id="root" className="min-h-screen flex flex-col">
-          <AppInitializer />
-          <SubscriptionModal />
-          {children}
-        </div>
+        <RouteErrorBoundary>
+          <div id="root" className="min-h-screen flex flex-col">
+            <AppInitializer />
+            <SubscriptionModal />
+            {children}
+          </div>
+        </RouteErrorBoundary>
       </body>
     </html>
   );

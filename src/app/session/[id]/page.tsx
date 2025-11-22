@@ -13,11 +13,33 @@ import { Loading } from '../../../components/ui';
 import { EmptyState } from '../../../components/common';
 import { Header } from '../../../components/layout';
 import { documentProcessor } from '../../../services/rag';
+import { useRouteErrorHandler } from '../../../components/common/RouteErrorBoundary';
 
 export default function SessionPage() {
   const params = useParams();
   const router = useRouter();
+  const { handleRouteError, safeNavigate } = useRouteErrorHandler();
   const sessionId = params.id as string;
+
+  // Validate session ID format
+  useEffect(() => {
+    if (!sessionId) {
+      handleRouteError(new Error('Session ID is missing'), 'Session page load');
+      safeNavigate('/', 'Invalid session ID');
+      return;
+    }
+
+    // Basic validation for session ID format (UUID or similar)
+    const validIdPattern = /^[a-zA-Z0-9\-_]{10,}$/;
+    if (!validIdPattern.test(sessionId)) {
+      console.error('🔍 [SESSION_PAGE] Invalid session ID format:', sessionId);
+      handleRouteError(new Error(`Invalid session ID format: ${sessionId}`), 'Session ID validation');
+      safeNavigate('/', 'Invalid session ID format');
+      return;
+    }
+
+    console.log('🔍 [SESSION_PAGE] Loading session with valid ID:', sessionId);
+  }, [sessionId, handleRouteError, safeNavigate]);
 
   const {
     currentSession,

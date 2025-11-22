@@ -6,6 +6,13 @@ export const runtime = 'nodejs';
 export async function middleware(request: NextRequest) {
     console.log('🔍 [MIDDLEWARE] Processing request for:', request.nextUrl.pathname)
     
+    // Skip middleware for static assets and API routes
+    if (request.nextUrl.pathname.startsWith('/_next/') ||
+        request.nextUrl.pathname.startsWith('/api/') ||
+        request.nextUrl.pathname.includes('.')) {
+        return NextResponse.next()
+    }
+    
     let response = NextResponse.next({
         request: {
             headers: request.headers,
@@ -65,7 +72,9 @@ export async function middleware(request: NextRequest) {
     // If no user and not on login or signup page, redirect to login
     if (!user && !request.nextUrl.pathname.startsWith('/login') && !request.nextUrl.pathname.startsWith('/signup')) {
         console.log('🔍 [MIDDLEWARE] No user detected, redirecting to login from:', request.nextUrl.pathname)
-        return NextResponse.redirect(new URL('/login', request.url))
+        const redirectUrl = new URL('/login', request.url)
+        redirectUrl.searchParams.set('redirectedFrom', request.nextUrl.pathname)
+        return NextResponse.redirect(redirectUrl)
     }
 
     // If user is logged in and on login page, redirect to home
@@ -110,8 +119,10 @@ export const config = {
          * - _next/image (image optimization files)
          * - favicon.ico (favicon file)
          * - auth/callback (auth callback)
+         * - api routes (if any)
+         * - static assets
          * Feel free to modify this pattern to include more paths.
          */
-        '/((?!_next/static|_next/image|favicon.ico|auth/callback|.*\\.(?:svg|png|jpg|jpeg|gif|webp|js|css|json)$).*)',
+        '/((?!_next/static|_next/image|favicon.ico|auth/callback|api/|.*\\.(?:svg|png|jpg|jpeg|gif|webp|js|css|json)$).*)',
     ],
 }
