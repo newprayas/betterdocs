@@ -12,8 +12,14 @@ interface ModalProps {
   closeOnBackdropClick?: boolean;
 }
 
-// Synchronous function to get or create the portal container
-function getOrCreatePortalContainer(): HTMLDivElement {
+// Synchronous function to get or create the portal container - SSR-safe
+function getOrCreatePortalContainer(): HTMLDivElement | null {
+  // Check if we're in a browser environment
+  if (typeof window === 'undefined' || typeof document === 'undefined') {
+    console.log('🔍 Modal: SSR detected, skipping portal container creation');
+    return null;
+  }
+  
   // Check if container already exists to prevent duplicates
   let container = document.querySelector('[data-modal-portal="true"]') as HTMLDivElement;
   
@@ -46,14 +52,16 @@ export const Modal: React.FC<ModalProps> = ({
   // Create a ref for the portal container that's initialized immediately
   const portalContainerRef = useRef<HTMLDivElement | null>(null);
   
-  // Initialize portal container synchronously on first render
+  // Initialize portal container synchronously on first render (SSR-safe)
   if (!portalContainerRef.current) {
     portalContainerRef.current = getOrCreatePortalContainer();
-    console.log('✅ Modal: Portal container initialized synchronously', {
-      container: portalContainerRef.current,
-      bodyChildren: document.body.children.length,
-      containerStyles: portalContainerRef.current.style.cssText
-    });
+    if (portalContainerRef.current) {
+      console.log('✅ Modal: Portal container initialized synchronously', {
+        container: portalContainerRef.current,
+        bodyChildren: typeof document !== 'undefined' ? document.body.children.length : 'N/A (SSR)',
+        containerStyles: portalContainerRef.current.style.cssText
+      });
+    }
   }
 
   // Cleanup effect for portal container
@@ -75,28 +83,32 @@ export const Modal: React.FC<ModalProps> = ({
     };
 
     if (isOpen) {
-      document.addEventListener('keydown', handleEscape);
-      document.body.style.overflow = 'hidden';
-      isRenderedRef.current = true;
-      
-      // Debug: Log body styles
-      console.log('🔍 Modal: Body styles after setting overflow:hidden', {
-        overflow: document.body.style.overflow,
-        computedOverflow: window.getComputedStyle(document.body).overflow
-      });
+      if (typeof document !== 'undefined') {
+        document.addEventListener('keydown', handleEscape);
+        document.body.style.overflow = 'hidden';
+        isRenderedRef.current = true;
+        
+        // Debug: Log body styles (SSR-safe)
+        console.log('🔍 Modal: Body styles after setting overflow:hidden', {
+          overflow: document.body.style.overflow,
+          computedOverflow: typeof window !== 'undefined' ? window.getComputedStyle(document.body).overflow : 'N/A (SSR)'
+        });
+      }
     } else {
       isRenderedRef.current = false;
     }
 
     return () => {
-      document.removeEventListener('keydown', handleEscape);
-      document.body.style.overflow = 'unset';
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('keydown', handleEscape);
+        document.body.style.overflow = 'unset';
+      }
     };
   }, [isOpen, onClose]);
 
   // Debug modal content after it's mounted
   useEffect(() => {
-    if (isOpen && modalRef.current) {
+    if (isOpen && modalRef.current && typeof window !== 'undefined') {
       console.log('🔍 Modal: Modal content node mounted', {
         node: modalRef.current,
         className: modalRef.current.className,
@@ -143,7 +155,7 @@ export const Modal: React.FC<ModalProps> = ({
     <div
       className="fixed inset-0 z-50 overflow-y-auto"
       ref={(node) => {
-        if (node) {
+        if (node && typeof window !== 'undefined') {
           console.log('🔍 Modal: Modal root node created', {
             node,
             className: node.className,
@@ -158,7 +170,7 @@ export const Modal: React.FC<ModalProps> = ({
           className="fixed inset-0 bg-black bg-opacity-50 transition-opacity"
           onClick={handleBackdropClick}
           ref={(node) => {
-            if (node) {
+            if (node && typeof window !== 'undefined') {
               console.log('🔍 Modal: Backdrop node created', {
                 node,
                 className: node.className,
@@ -220,7 +232,7 @@ export const Modal: React.FC<ModalProps> = ({
   console.log('🔍 Modal: About to render via portal', {
     hasPortalContainer: !!portalContainerRef.current,
     portalContainer: portalContainerRef.current,
-    portalContainerChildren: portalContainerRef.current?.childNodes.length,
+    portalContainerChildren: portalContainerRef.current?.childNodes.length || 0,
     isOpen,
     isRendered: isRenderedRef.current,
     timestamp: new Date().toISOString()
@@ -237,7 +249,7 @@ export const Modal: React.FC<ModalProps> = ({
     return null;
   }
 
-  // Use portal to render at document.body level
+  // Use portal to render at document.body level (SSR-safe)
   const renderStartTime = Date.now();
   const portalResult = ReactDOM.createPortal(modalContent, portalContainerRef.current);
   const renderEndTime = Date.now();
@@ -249,26 +261,28 @@ export const Modal: React.FC<ModalProps> = ({
     timestamp: new Date().toISOString()
   });
 
-  // Debug: Check if modal is actually in DOM after render
-  setTimeout(() => {
-    if (portalContainerRef.current && isRenderedRef.current) {
-      const modalElements = portalContainerRef.current.querySelectorAll('[class*="fixed"], [class*="modal"]');
-      console.log('🔍 Modal: DOM check after render', {
-        modalElements: modalElements.length,
-        portalContainerHTML: portalContainerRef.current.innerHTML.substring(0, 200) + '...',
-        portalContainerVisible: portalContainerRef.current.offsetParent !== null,
-        portalContainerStyles: window.getComputedStyle(portalContainerRef.current).cssText,
-        isRendered: isRenderedRef.current,
-        timestamp: new Date().toISOString()
-      });
-    } else {
-      console.log('🔍 Modal: DOM check skipped - no container or not rendered', {
-        hasContainer: !!portalContainerRef.current,
-        isRendered: isRenderedRef.current,
-        timestamp: new Date().toISOString()
-      });
-    }
-  }, 100);
+  // Debug: Check if modal is actually in DOM after render (SSR-safe)
+  if (typeof window !== 'undefined') {
+    setTimeout(() => {
+      if (portalContainerRef.current && isRenderedRef.current) {
+        const modalElements = portalContainerRef.current.querySelectorAll('[class*="fixed"], [class*="modal"]');
+        console.log('🔍 Modal: DOM check after render', {
+          modalElements: modalElements.length,
+          portalContainerHTML: portalContainerRef.current.innerHTML.substring(0, 200) + '...',
+          portalContainerVisible: portalContainerRef.current.offsetParent !== null,
+          portalContainerStyles: window.getComputedStyle(portalContainerRef.current).cssText,
+          isRendered: isRenderedRef.current,
+          timestamp: new Date().toISOString()
+        });
+      } else {
+        console.log('🔍 Modal: DOM check skipped - no container or not rendered', {
+          hasContainer: !!portalContainerRef.current,
+          isRendered: isRenderedRef.current,
+          timestamp: new Date().toISOString()
+        });
+      }
+    }, 100);
+  }
 
   return portalResult;
 };

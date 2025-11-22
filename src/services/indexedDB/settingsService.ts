@@ -35,6 +35,7 @@ export class SettingsService {
       id: this.getSettingsId(userId),
       userId,
       geminiApiKey: '',
+      model: 'gemini-2.5-flash-lite',
       temperature: 0.7,
       maxTokens: 4096,
       similarityThreshold: 0.7,

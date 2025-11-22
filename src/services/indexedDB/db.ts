@@ -67,6 +67,22 @@ export class RAGDatabase extends Dexie {
       embeddings: '&id, documentId, sessionId, chunkIndex, content, source, page, embedding, tokenCount, embeddingNorm, createdAt', // Embeddings linked to document/session
       settings: '&id, userId, geminiApiKey, temperature, maxTokens, similarityThreshold, chunkSize, chunkOverlap, theme, fontSize, showSources, autoSave, dataRetention, enableAnalytics, crashReporting, debugMode, logLevel',
     });
+
+    // NEW: Version 5 to add 'model' to settings
+    this.version(5).stores({
+      sessions: '&id, userId, name, description, systemPrompt, createdAt, updatedAt, documentCount',
+      messages: '&id, sessionId, role, content, timestamp, citationsJson',
+      documents: '&id, userId, sessionId, filename, fileSize, status, pageCount, processedAt, createdAt, enabled, originalPath, storedPath, mimeType, checksum, title, author, language, ingestError',
+      embeddings: '&id, documentId, sessionId, chunkIndex, content, source, page, embedding, tokenCount, embeddingNorm, createdAt',
+      settings: '&id, userId, geminiApiKey, model, temperature, maxTokens, similarityThreshold, chunkSize, chunkOverlap, theme, fontSize, showSources, autoSave, dataRetention, enableAnalytics, crashReporting, debugMode, logLevel',
+    }).upgrade(tx => {
+      // Upgrade existing settings to have a default model
+      return tx.table('settings').toCollection().modify(setting => {
+        if (!setting.model) {
+          setting.model = 'gemini-2.5-flash-lite';
+        }
+      });
+    });
   }
 }
 

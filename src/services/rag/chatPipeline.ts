@@ -224,6 +224,7 @@ export class ChatPipeline {
       settings || {
         userId: session.userId,
         geminiApiKey: '',
+        model: 'gemini-2.5-flash-lite',
         temperature: 0.7,
         maxTokens: 2048,
         similarityThreshold: 0.7,
@@ -315,6 +316,7 @@ export class ChatPipeline {
       settings || {
         userId: session.userId,
         geminiApiKey: '',
+        model: 'gemini-2.5-flash-lite',
         temperature: 0.7,
         maxTokens: 2048,
         similarityThreshold: 0.7,
@@ -445,6 +447,7 @@ export class ChatPipeline {
       settings || {
         userId: session.userId,
         geminiApiKey: '',
+        model: 'gemini-2.5-flash-lite',
         temperature: 0.7,
         maxTokens: 2048,
         similarityThreshold: 0.7,
@@ -487,6 +490,7 @@ export class ChatPipeline {
           const settingsForFormatting = settings || {
             userId: session.userId,
             geminiApiKey: '',
+            model: 'gemini-2.5-flash-lite',
             temperature: 0.7,
             maxTokens: 2048,
             similarityThreshold: 0.7,

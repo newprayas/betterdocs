@@ -7,6 +7,7 @@ export interface AppSettings {
   // API Configuration
   geminiApiKey: string;
   apiEndpoint?: string;
+  model: string;
 
   // Chat Settings
   temperature: number;
@@ -36,6 +37,7 @@ export interface AppSettings {
 export interface SettingsUpdate {
   geminiApiKey?: string;
   apiEndpoint?: string;
+  model?: string;
   temperature?: number;
   maxTokens?: number;
   similarityThreshold?: number;
