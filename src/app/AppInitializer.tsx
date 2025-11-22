@@ -126,7 +126,9 @@ export function AppInitializer() {
       const initializeGemini = async () => {
         try {
           console.log('[APP INIT]', 'Initializing Gemini service...');
-          await geminiService.initialize(settings.geminiApiKey, settings.model, 'text-embedding-004');
+          // Use fallback model if settings.model is undefined (for backward compatibility)
+          const model = settings.model || 'gemini-2.5-flash-lite';
+          await geminiService.initialize(settings.geminiApiKey, model, 'text-embedding-004');
           console.log('[APP INIT]', 'Gemini service initialized successfully');
         } catch (error) {
           console.error('[APP INIT ERROR]', 'Failed to initialize Gemini service:', error);
@@ -135,7 +137,7 @@ export function AppInitializer() {
 
       initializeGemini();
     }
-  }, [isClient, settings?.geminiApiKey, settings?.model]);
+  }, [isClient, settings?.geminiApiKey, settings?.model || 'gemini-2.5-flash-lite']);
 
   // This component doesn't render anything
   return null;

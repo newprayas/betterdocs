@@ -20,13 +20,6 @@ const nextConfig = {
       type: 'webassembly/async',
     });
     
-    // FIX: Polyfill process.version for Supabase in Edge Runtime
-    config.plugins.push(
-      new (require('webpack')).DefinePlugin({
-        'process.version': JSON.stringify('v18.0.0'),
-      })
-    );
-    
     return config;
   },
   // Headers for security
