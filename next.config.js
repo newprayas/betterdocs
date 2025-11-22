@@ -1,4 +1,6 @@
 /** @type {import('next').NextConfig} */
+const webpack = require('webpack');
+
 const nextConfig = {
   typescript: {
     ignoreBuildErrors: false,
@@ -19,6 +21,13 @@ const nextConfig = {
       test: /\.wasm$/,
       type: 'webassembly/async',
     });
+    
+    // FIX: Polyfill process.version for Supabase compatibility in Edge Runtime
+    config.plugins.push(
+      new webpack.DefinePlugin({
+        'process.version': JSON.stringify('v18.0.0'),
+      })
+    );
     
     return config;
   },
