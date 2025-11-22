@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fix Settings Model</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 10px 0;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        .status {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        .success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .info {
+            background-color: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Fix Settings Model</h1>
+        <p>This tool will update your Gemini model settings from the deprecated <code>gemini-1.5-flash</code> to the new <code>gemini-2.5-flash-lite</code>.</p>
+        
+        <button onclick="fixSettings()">Update Model Settings</button>
+        <button onclick="checkSettings()">Check Current Settings</button>
+        <button onclick="clearAllSettings()">Clear All Settings (Reset)</button>
+        
+        <div id="status"></div>
+    </div>
+
+    <script>
+        function updateStatus(message, type = 'info') {
+            const statusDiv = document.getElementById('status');
+            statusDiv.innerHTML = `<div class="status ${type}">${message}</div>`;
+        }
+
+        async function openDB() {
+            return new Promise((resolve, reject) => {
+                const request = indexedDB.open('RAGChatDB', 1);
+                
+                request.onerror = () => reject(request.error);
+                request.onsuccess = () => resolve(request.result);
+                
+                request.onupgradeneeded = (event) => {
+                    const db = event.target.result;
+                    if (!db.objectStoreNames.contains('settings')) {
+                        db.createObjectStore('settings', { keyPath: 'id' });
+                    }
+                };
+            });
+        }
+
+        async function getSettings(db) {
+            return new Promise((resolve, reject) => {
+                const transaction = db.transaction(['settings'], 'readonly');
+                const store = transaction.objectStore('settings');
+                const request = store.get('app-settings');
+                
+                request.onerror = () => reject(request.error);
+                request.onsuccess = () => resolve(request.result);
+            });
+        }
+
+        async function saveSettings(db, settings) {
+            return new Promise((resolve, reject) => {
+                const transaction = db.transaction(['settings'], 'readwrite');
+                const store = transaction.objectStore('settings');
+                const request = store.put(settings);
+                
+                request.onerror = () => reject(request.error);
+                request.onsuccess = () => resolve(request.result);
+            });
+        }
+
+        async function checkSettings() {
+            try {
+                updateStatus('Opening database...', 'info');
+                const db = await openDB();
+                
+                updateStatus('Reading current settings...', 'info');
+                const settings = await getSettings(db);
+                
+                if (settings) {
+                    updateStatus(`
+                        <strong>Current Settings:</strong><br>
+                        Model: ${settings.model || 'Not set'}<br>
+                        API Key: ${settings.geminiApiKey ? 'Set (' + settings.geminiApiKey.length + ' characters)' : 'Not set'}<br>
+                        Temperature: ${settings.temperature || 'Not set'}<br>
+                        Max Tokens: ${settings.maxTokens || 'Not set'}<br>
+                        Max Context Chunks: ${settings.maxContextChunks || 'Not set'}
+                    `, 'info');
+                } else {
+                    updateStatus('No settings found in database', 'error');
+                }
+                
+                db.close();
+            } catch (error) {
+                updateStatus(`Error: ${error.message}`, 'error');
+            }
+        }
+
+        async function fixSettings() {
+            try {
+                updateStatus('Opening database...', 'info');
+                const db = await openDB();
+                
+                updateStatus('Reading current settings...', 'info');
+                let settings = await getSettings(db);
+                
+                if (!settings) {
+                    updateStatus('No existing settings found, creating new settings...', 'info');
+                    settings = {
+                        id: 'default',
+                        model: 'gemini-2.5-flash-lite',
+                        embeddingModel: 'text-embedding-004',
+                        maxContext: 10,
+                        apiKey: ''
+                    };
+                } else {
+                    const oldModel = settings.model;
+                    if (oldModel === 'gemini-1.5-flash') {
+                        settings.model = 'gemini-2.5-flash-lite';
+                        updateStatus(`Updated model from ${oldModel} to ${settings.model}`, 'success');
+                    } else if (oldModel === 'gemini-2.5-flash-lite') {
+                        updateStatus('Model already set to gemini-2.5-flash-lite', 'success');
+                    } else {
+                        updateStatus(`Current model is ${oldModel}, updating to gemini-2.5-flash-lite`, 'info');
+                        settings.model = 'gemini-2.5-flash-lite';
+                    }
+                    
+                    // Ensure other settings have proper defaults
+                    if (!settings.embeddingModel) {
+                        settings.embeddingModel = 'text-embedding-004';
+                    }
+                    if (!settings.maxContext) {
+                        settings.maxContext = 10;
+                    }
+                }
+                
+                updateStatus('Saving updated settings...', 'info');
+                await saveSettings(db, settings);
+                
+                updateStatus(`
+                    <strong>Settings Updated Successfully!</strong><br>
+                    Model: ${settings.model}<br>
+                    Embedding Model: ${settings.embeddingModel}<br>
+                    Max Context: ${settings.maxContext}<br>
+                    <br>
+                    <strong>Next Steps:</strong><br>
+                    1. Refresh your application page<br>
+                    2. Check the console logs to verify the new model is being used<br>
+                    3. Try sending a message to test the fix
+                `, 'success');
+                
+                db.close();
+            } catch (error) {
+                updateStatus(`Error: ${error.message}`, 'error');
+            }
+        }
+
+        async function clearAllSettings() {
+            if (!confirm('Are you sure you want to clear all settings? This will reset everything to defaults.')) {
+                return;
+            }
+            
+            try {
+                updateStatus('Opening database...', 'info');
+                const db = await openDB();
+                
+                updateStatus('Clearing all settings...', 'info');
+                const transaction = db.transaction(['settings'], 'readwrite');
+                const store = transaction.objectStore('settings');
+                const request = store.clear();
+                
+                request.onerror = () => {
+                    throw new Error(request.error);
+                };
+                
+                request.onsuccess = async () => {
+                    updateStatus('All settings cleared. Creating new default settings...', 'info');
+                    
+                    const defaultSettings = {
+                        id: 'default',
+                        model: 'gemini-2.5-flash-lite',
+                        embeddingModel: 'text-embedding-004',
+                        maxContext: 10,
+                        apiKey: ''
+                    };
+                    
+                    await saveSettings(db, defaultSettings);
+                    
+                    updateStatus(`
+                        <strong>Settings Reset Complete!</strong><br>
+                        Default settings created with:<br>
+                        Model: ${defaultSettings.model}<br>
+                        Embedding Model: ${defaultSettings.embeddingModel}<br>
+                        Max Context: ${defaultSettings.maxContext}<br>
+                        <br>
+                        <strong>Next Steps:</strong><br>
+                        1. Refresh your application page<br>
+                        2. Enter your API key in the settings<br>
+                        3. Test the chat functionality
+                    `, 'success');
+                    
+                    db.close();
+                };
+            } catch (error) {
+                updateStatus(`Error: ${error.message}`, 'error');
+            }
+        }
+
+        // Check settings on page load
+        window.addEventListener('load', () => {
+            updateStatus('Settings fix tool loaded. Click "Check Current Settings" to see your current configuration.', 'info');
+        });
+    </script>
+</body>
+</html>

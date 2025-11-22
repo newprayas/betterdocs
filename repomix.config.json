@@ -1,0 +1,62 @@
+{
+  "output": {
+    "filePath": "repomix-output.xml",
+    "style": "xml",
+    "parsableStyle": true,
+    "compress": false,
+    "headerText": "RAG Web Application - Main App Logic Files",
+    "fileSummary": true,
+    "directoryStructure": true,
+    "removeComments": false,
+    "removeEmptyLines": false,
+    "topFilesLength": 10,
+    "showLineNumbers": false,
+    "copyToClipboard": true,
+    "includeEmptyDirectories": false
+  },
+  "include": [
+    "src/app/**/*.tsx",
+    "src/app/**/*.ts",
+    "src/services/**/*.ts",
+    "src/store/**/*.ts",
+    "src/types/**/*.ts",
+    "src/utils/**/*.ts",
+    "src/components/**/*.tsx",
+    "src/middleware.ts",
+    "package.json",
+    "tsconfig.json",
+    "next.config.js",
+    "tailwind.config.js",
+    "README.md"
+  ],
+  "ignore": {
+    "useGitignore": true,
+    "useDefaultPatterns": true,
+    "customPatterns": [
+      "*.test.js",
+      "test-*.js",
+      "debug-*.js",
+      "fix-*.js",
+      "create-*.js",
+      "direct-*.js",
+      "model-*.js",
+      "terminal-*.js",
+      "update-*.js",
+      "force-*.js",
+      "*.log",
+      ".next/**",
+      "node_modules/**",
+      ".git/**",
+      "coverage/**",
+      "dist/**",
+      "build/**",
+      ".kilocode/**",
+      "tsconfig.tsbuildinfo",
+      "*.env*",
+      ".DS_Store"
+    ]
+  },
+  "security": {
+    "enableSecurityCheck": true
+  }
+}

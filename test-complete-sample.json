@@ -1,0 +1,61 @@
+{
+  "format_version": "1.0",
+  "export_metadata": {
+    "exported_at": "2024-01-15T10:30:00.000Z",
+    "source_system": "LocalDocs AI",
+    "document_id": "doc_123456",
+    "session_id": "session_789"
+  },
+  "document_metadata": {
+    "id": "doc_123456",
+    "filename": "sample_document.pdf",
+    "file_size": 1024000,
+    "page_count": 10,
+    "processed_at": "2024-01-15T10:00:00.000Z",
+    "created_at": "2024-01-15T09:00:00.000Z",
+    "chunk_count": 3,
+    "embedding_model": "gemini-embedding-001",
+    "chunk_settings": {
+      "chunk_size": 1000,
+      "chunk_overlap": 200
+    }
+  },
+  "chunks": [
+    {
+      "id": "chunk_1",
+      "text": "This is the first chunk of the document. It contains important information about the topic being discussed. The content is meaningful and provides context for the reader.",
+      "embedding": [0.1, 0.2, 0.3, 0.4, 0.5],
+      "metadata": {
+        "document_id": "doc_123456",
+        "page": 1,
+        "chunk_index": 0,
+        "source": "sample_document.pdf"
+      },
+      "embedding_dimensions": 5
+    },
+    {
+      "id": "chunk_2",
+      "text": "This is the second chunk from page 260 of the document. It contains specific information that should be cited correctly with the right page number.",
+      "embedding": [0.6, 0.7, 0.8, 0.9, 1.0],
+      "metadata": {
+        "document_id": "doc_123456",
+        "page": 260,
+        "chunk_index": 1,
+        "source": "sample_document.pdf"
+      },
+      "embedding_dimensions": 5
+    },
+    {
+      "id": "chunk_3",
+      "text": "This is the third chunk from page 500 of the document. It contains more information that demonstrates the page numbering issue.",
+      "embedding": [0.2, 0.3, 0.4, 0.5, 0.6],
+      "metadata": {
+        "document_id": "doc_123456",
+        "page": 500,
+        "chunk_index": 2,
+        "source": "sample_document.pdf"
+      },
+      "embedding_dimensions": 5
+    }
+  ]
+}

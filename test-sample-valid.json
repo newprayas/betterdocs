@@ -1,0 +1,27 @@
+
+{
+  "format_version": "1.0",
+  "export_metadata": {
+    "exported_at": "2024-01-15T10:30:00.000Z",
+    "source_system": "LocalDocs AI",
+    "document_id": "doc_123456",
+    "session_id": "session_789"
+  },
+  "document_metadata": {
+    "id": "doc_123456",
+    "filename": "sample_document.pdf",
+    "file_size": 1024000,
+    "page_count": 10,
+    "processed_at": "2024-01-15T10:00:00.000Z",
+    "created_at": "2024-01-15T09:00:00.000Z",
+    "chunk_count": 3,
+    "embedding_model": "gemini-embedding-001",
+    "chunk_settings": {
+      "chunk_size": 1000,
+      "chunk_overlap": 200
+    }
+  },
+  "chunks": [
+    {
+      "id": "chunk_1",
+      "text": "This is the first chunk of the document. It contains important information about the topic being discussed. The content is meaningful and provides context for the reader.",

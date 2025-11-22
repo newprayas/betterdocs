@@ -1,0 +1,244 @@
+/* Mobile Touch Interactions */
+
+/* Improve touch targets for better mobile experience */
+.touch-manipulation {
+  touch-action: manipulation;
+}
+
+/* Prevent double-tap zoom on touch devices */
+input, textarea, button, a, select {
+  touch-action: manipulation;
+}
+
+/* Better scrolling for mobile */
+.scrollbar-thin {
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+}
+
+/* Improve tap feedback */
+button, .btn, [role="button"] {
+  -webkit-tap-highlight-color: rgba(0, 0, 0, 0.1);
+  transition: background-color 0.1s ease;
+}
+
+/* Remove hover effects on touch devices */
+@media (hover: none) and (pointer: coarse) {
+  button:hover, .btn:hover, [role="button"]:hover {
+    background-color: inherit;
+  }
+  
+  button:active, .btn:active, [role="button"]:active {
+    background-color: rgba(0, 0, 0, 0.05);
+  }
+}
+
+/* Improve input focus on mobile */
+input:focus, textarea:focus, select:focus {
+  outline: 2px solid #3b82f6;
+  outline-offset: 2px;
+}
+
+/* Better mobile dropdown menus */
+.dropdown-menu {
+  -webkit-overflow-scrolling: touch;
+  max-height: 50vh;
+  overflow-y: auto;
+}
+
+/* Mobile-friendly modal dialogs */
+.modal {
+  -webkit-overflow-scrolling: touch;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+/* Improve drag and drop on mobile */
+.drag-drop-zone {
+  touch-action: pan-y;
+}
+
+/* Better mobile card interactions */
+.card, .document-card, .session-card {
+  -webkit-tap-highlight-color: rgba(59, 130, 246, 0.1);
+}
+
+/* Mobile-friendly sidebar */
+.sidebar {
+  -webkit-overflow-scrolling: touch;
+  overflow-y: auto;
+  height: 100vh;
+}
+
+/* Better mobile tab navigation */
+.tab-bar {
+  touch-action: pan-x;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Improve mobile chat input */
+.chat-input {
+  touch-action: manipulation;
+  resize: none;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* Better mobile message bubbles */
+.message-bubble {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Mobile-friendly switches and toggles */
+.switch, .toggle {
+  touch-action: manipulation;
+  min-height: 44px;
+  min-width: 44px;
+}
+
+/* Improve mobile file upload */
+.file-upload {
+  touch-action: manipulation;
+}
+
+/* Better mobile progress indicators */
+.progress-bar {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Mobile-friendly citations panel */
+.citation-panel {
+  -webkit-overflow-scrolling: touch;
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+/* Improve mobile search */
+.search-input {
+  touch-action: manipulation;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+/* Better mobile empty states */
+.empty-state {
+  touch-action: manipulation;
+}
+
+/* Mobile-friendly loading states */
+.loading {
+  touch-action: manipulation;
+}
+
+/* Improve mobile error states */
+.error-state {
+  touch-action: manipulation;
+}
+
+/* Better mobile confirmation dialogs */
+.confirm-dialog {
+  -webkit-overflow-scrolling: touch;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+/* Mobile-friendly tooltips */
+.tooltip {
+  touch-action: manipulation;
+  pointer-events: none;
+}
+
+/* Improve mobile keyboard handling */
+@media (max-width: 768px) {
+  /* Only prevent viewport shrink when keyboard is active */
+  html, body {
+    height: 100%;
+  }
+  
+  /* Better mobile viewport handling */
+  .mobile-keyboard-active {
+    height: 100vh;
+    overflow: hidden;
+  }
+}
+
+/* Better mobile scrolling performance */
+.smooth-scroll {
+  -webkit-overflow-scrolling: touch;
+  scroll-behavior: smooth;
+}
+
+/* Improve mobile touch feedback */
+.touch-feedback {
+  -webkit-tap-highlight-color: rgba(59, 130, 246, 0.2);
+  transition: transform 0.1s ease;
+}
+
+.touch-feedback:active {
+  transform: scale(0.98);
+}
+
+/* Better mobile sidebar transitions */
+.sidebar-transition {
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  will-change: transform;
+}
+
+/* Improve mobile modal animations */
+.modal-backdrop {
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+}
+
+/* Better mobile button sizing */
+.mobile-button {
+  min-height: 44px;
+  min-width: 44px;
+  padding: 8px 16px;
+  touch-action: manipulation;
+}
+
+/* Improve mobile list interactions */
+.mobile-list-item {
+  min-height: 44px;
+  padding: 12px 16px;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: rgba(59, 130, 246, 0.1);
+}
+
+/* Better mobile card interactions */
+.mobile-card {
+  margin: 8px;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: rgba(59, 130, 246, 0.1);
+}
+
+/* Improve mobile input interactions */
+.mobile-input {
+  font-size: 16px; /* Prevent zoom on iOS */
+  padding: 12px 16px;
+  border-radius: 8px;
+  touch-action: manipulation;
+}
+
+/* Better mobile textarea interactions */
+.mobile-textarea {
+  font-size: 16px; /* Prevent zoom on iOS */
+  padding: 12px 16px;
+  border-radius: 8px;
+  touch-action: manipulation;
+  resize: none;
+  min-height: 44px;
+}
+
+/* Improve mobile select interactions */
+.mobile-select {
+  font-size: 16px; /* Prevent zoom on iOS */
+  padding: 12px 16px;
+  border-radius: 8px;
+  touch-action: manipulation;
+  -webkit-appearance: none;
+  appearance: none;
+}

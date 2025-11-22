@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Force Update Settings</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        button {
+            background-color: #dc3545;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 10px 0;
+        }
+        button:hover {
+            background-color: #c82333;
+        }
+        .status {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        .success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .info {
+            background-color: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        .warning {
+            background-color: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Force Update Settings</h1>
+        <p><strong>⚠️ Warning:</strong> This will completely reset all settings and caches to fix the model issue.</p>
+        <p>This tool will:</p>
+        <ul>
+            <li>Clear all IndexedDB data</li>
+            <li>Clear all localStorage data (including Zustand cache)</li>
+            <li>Recreate settings with the correct model</li>
+        </ul>
+        
+        <button onclick="forceResetSettings()">⚠️ Force Reset All Settings</button>
+        <button onclick="checkAllData()">🔍 Check Current Data</button>
+        
+        <div id="status"></div>
+    </div>
+
+    <script>
+        function updateStatus(message, type = 'info') {
+            const statusDiv = document.getElementById('status');
+            statusDiv.innerHTML = `<div class="status ${type}">${message}</div>`;
+        }
+
+        async function openDB() {
+            return new Promise((resolve, reject) => {
+                const request = indexedDB.open('RAGChatDB', 1);
+                
+                request.onerror = () => reject(request.error);
+                request.onsuccess = () => resolve(request.result);
+                
+                request.onupgradeneeded = (event) => {
+                    const db = event.target.result;
+                    if (!db.objectStoreNames.contains('settings')) {
+                        db.createObjectStore('settings', { keyPath: 'id' });
+                    }
+                };
+            });
+        }
+
+        async function checkAllData() {
+            try {
+                let output = '<h3>Current Data Analysis:</h3>';
+                
+                // Check IndexedDB
+                output += '<h4>IndexedDB:</h4>';
+                const db = await openDB();
+                
+                // Check all object stores
+                const storeNames = db.objectStoreNames;
+                output += `<p>Object stores: ${Array.from(storeNames).join(', ')}</p>`;
+                
+                // Check settings store
+                if (storeNames.contains('settings')) {
+                    const transaction = db.transaction(['settings'], 'readonly');
+                    const store = transaction.objectStore('settings');
+                    
+                    // Get all entries
+                    const getAllRequest = store.getAll();
+                    getAllRequest.onsuccess = () => {
+                        const settings = getAllRequest.result;
+                        output += '<h5>Settings entries:</h5>';
+                        if (settings.length === 0) {
+                            output += '<p>No settings found</p>';
+                        } else {
+                            settings.forEach(setting => {
+                                output += `<pre>${JSON.stringify(setting, null, 2)}</pre>`;
+                            });
+                        }
+                        
+                        // Check localStorage
+                        output += '<h4>LocalStorage:</h4>';
+                        for (let i = 0; i < localStorage.length; i++) {
+                            const key = localStorage.key(i);
+                            const value = localStorage.getItem(key);
+                            output += `<p><strong>${key}:</strong> ${value ? value.substring(0, 100) + '...' : 'empty'}</p>`;
+                        }
+                        
+                        updateStatus(output, 'info');
+                    };
+                } else {
+                    output += '<p>No settings store found</p>';
+                    updateStatus(output, 'info');
+                }
+                
+                db.close();
+            } catch (error) {
+                updateStatus(`Error: ${error.message}`, 'error');
+            }
+        }
+
+        async function forceResetSettings() {
+            if (!confirm('⚠️ This will delete ALL settings and data. Are you absolutely sure?')) {
+                return;
+            }
+            
+            try {
+                updateStatus('Starting force reset...', 'warning');
+                
+                // 1. Clear localStorage completely
+                updateStatus('Clearing localStorage...', 'warning');
+                localStorage.clear();
+                
+                // 2. Delete and recreate IndexedDB
+                updateStatus('Deleting IndexedDB...', 'warning');
+                await new Promise((resolve, reject) => {
+                    const deleteRequest = indexedDB.deleteDatabase('RAGChatDB');
+                    deleteRequest.onsuccess = resolve;
+                    deleteRequest.onerror = reject;
+                });
+                
+                // Wait a bit for deletion to complete
+                await new Promise(resolve => setTimeout(resolve, 500));
+                
+                // 3. Create fresh database and settings
+                updateStatus('Creating fresh database...', 'info');
+                const db = await openDB();
+                
+                // 4. Create correct settings
+                const correctSettings = {
+                    id: 'app-settings',
+                    model: 'gemini-2.5-flash-lite',
+                    temperature: 0.7,
+                    maxTokens: 4096,
+                    systemPrompt: 'You are a helpful AI assistant. Answer questions based on the provided context.',
+                    similarityThreshold: 0.7,
+                    maxContextChunks: 5,
+                    chunkSize: 1000,
+                    chunkOverlap: 200,
+                    theme: 'dark',
+                    fontSize: 'medium',
+                    showSources: true,
+                    autoSave: true,
+                    dataRetention: 'never',
+                    enableAnalytics: false,
+                    crashReporting: false,
+                    debugMode: false,
+                    logLevel: 'error',
+                    geminiApiKey: '' // Will be set by user
+                };
+                
+                updateStatus('Saving correct settings...', 'info');
+                const transaction = db.transaction(['settings'], 'readwrite');
+                const store = transaction.objectStore('settings');
+                await store.put(correctSettings);
+                
+                db.close();
+                
+                updateStatus(`
+                    <strong>✅ Force Reset Complete!</strong><br><br>
+                    <h3>What was done:</h3>
+                    <ul>
+                        <li>✅ Cleared all localStorage (including Zustand cache)</li>
+                        <li>✅ Deleted and recreated IndexedDB</li>
+                        <li>✅ Created fresh settings with model: <code>${correctSettings.model}</code></li>
+                    </ul>
+                    
+                    <h3>Next Steps:</h3>
+                    <ol>
+                        <li><strong>Close this browser tab</strong></li>
+                        <li><strong>Completely close your application tab</strong></li>
+                        <li><strong>Restart your dev server</strong> (Ctrl+C, then npm run dev)</li>
+                        <li><strong>Open a fresh browser tab</strong> to your app</li>
+                        <li><strong>Enter your API key</strong> in settings</li>
+                        <li><strong>Check console logs</strong> for: <code>[GEMINI INIT] Requested model name: gemini-2.5-flash-lite</code></li>
+                    </ol>
+                    
+                    <p><strong>Important:</strong> You must completely close all browser tabs and restart the dev server to ensure all caches are cleared!</p>
+                `, 'success');
+                
+            } catch (error) {
+                updateStatus(`Error during reset: ${error.message}`, 'error');
+            }
+        }
+
+        // Check data on page load
+        window.addEventListener('load', () => {
+            updateStatus('Force reset tool loaded. Click "Check Current Data" to see what\'s stored, or "Force Reset All Settings" to fix the issue.', 'info');
+        });
+    </script>
+</body>
+</html>
