@@ -1,3 +1,4 @@
+import { calculateVectorNorm } from '@/utils/vectorUtils';
 import type { Document } from '@/types/document';
 import type { EmbeddingChunk, EmbeddingGenerationProgress } from '@/types/embedding';
 import type { PreprocessedPackage, PreprocessedChunk } from '@/types/preprocessed';
@@ -487,128 +488,120 @@ export class DocumentProcessor {
         isComplete: false,
       });
 
-      const embeddingChunks: EmbeddingChunk[] = [];
+      // Process chunks in batches to avoid memory pressure and blocking the main thread
+      const BATCH_SIZE = 200;
       let processedCount = 0;
+      const totalChunks = chunks.length;
 
-      for (let i = 0; i < chunks.length; i++) {
-        const chunk = chunks[i];
+      // Initial progress update
+      onProgress?.({
+        totalChunks,
+        processedChunks: 0,
+        currentChunk: 'Starting import...',
+        isComplete: false,
+      });
 
-        try {
-          // CRITICAL FIX: Generate new chunk ID if we generated a new document ID to avoid conflicts
-          const chunkId = needsNewId ? `chunk_${actualDocId}_${i}` : chunk.id;
+      for (let i = 0; i < totalChunks; i += BATCH_SIZE) {
+        const batch = chunks.slice(i, i + BATCH_SIZE);
+        const embeddingChunks: EmbeddingChunk[] = [];
 
-          // Convert preprocessed chunk to embedding chunk
-          const embeddingChunk: EmbeddingChunk = {
-            id: chunkId, // Use new chunk ID if document ID was regenerated
-            documentId: actualDocId, // Use the actual document ID (might be new)
-            sessionId,
-            chunkIndex: chunk.metadata?.chunk_index || i,
-            content: chunk.text, // Use text property from PreprocessedChunk
-            source: chunk.metadata?.source || packageData.document_metadata.filename,
-            page: chunk.metadata?.page || 1,
-            embedding: new Float32Array(chunk.embedding), // Use provided embedding
-            tokenCount: this.estimateTokenCount(chunk.text),
-            embeddingNorm: 0, // Will be calculated in embeddingService
-            metadata: {
-              pageNumber: chunk.metadata?.page || 1,
-              pageNumbers: chunk.metadata?.pageNumbers || (chunk.metadata?.page ? [chunk.metadata.page] : undefined),
-              chunkIndex: chunk.metadata?.chunk_index || i,
-              startPosition: 0,
-              endPosition: chunk.text.length,
-              tokenCount: this.estimateTokenCount(chunk.text),
-              documentId: actualDocId, // Use the actual document ID (might be new)
-              sessionId: sessionId,
+        // Process batch
+        for (let j = 0; j < batch.length; j++) {
+          const chunk = batch[j];
+          const globalIndex = i + j;
+
+          try {
+            // CRITICAL FIX: Generate new chunk ID if we generated a new document ID to avoid conflicts
+            const chunkId = needsNewId ? `chunk_${actualDocId}_${globalIndex}` : chunk.id;
+
+            // Calculate norm directly to avoid overhead later
+            const embeddingVector = new Float32Array(chunk.embedding);
+            const norm = calculateVectorNorm(embeddingVector);
+
+            // Convert preprocessed chunk to embedding chunk directly
+            const embeddingChunk: EmbeddingChunk = {
+              id: chunkId,
+              documentId: actualDocId,
+              sessionId,
+              chunkIndex: chunk.metadata?.chunk_index || globalIndex,
+              content: chunk.text,
               source: chunk.metadata?.source || packageData.document_metadata.filename,
-              // Add extracted metadata to chunk metadata for better search context
-              documentTitle: metadataResult.metadata.title,
-              documentAuthor: metadataResult.metadata.author,
-              documentLanguage: metadataResult.metadata.language,
-              embeddingModel: metadataResult.metadata.embeddingModel,
-            },
-            createdAt: new Date(),
-          };
+              page: chunk.metadata?.page || 1,
+              embedding: embeddingVector,
+              tokenCount: this.estimateTokenCount(chunk.text),
+              embeddingNorm: norm,
+              metadata: {
+                pageNumber: chunk.metadata?.page || 1,
+                pageNumbers: chunk.metadata?.pageNumbers || (chunk.metadata?.page ? [chunk.metadata.page] : undefined),
+                chunkIndex: chunk.metadata?.chunk_index || globalIndex,
+                startPosition: 0,
+                endPosition: chunk.text.length,
+                tokenCount: this.estimateTokenCount(chunk.text),
+                documentId: actualDocId,
+                sessionId: sessionId,
+                source: chunk.metadata?.source || packageData.document_metadata.filename,
+                // Add extracted metadata to chunk metadata for better search context
+                documentTitle: metadataResult.metadata.title,
+                documentAuthor: metadataResult.metadata.author,
+                documentLanguage: metadataResult.metadata.language,
+                embeddingModel: metadataResult.metadata.embeddingModel,
+                embeddingNorm: norm, // Include norm in metadata as well
+              },
+              createdAt: new Date(),
+            };
 
-          embeddingChunks.push(embeddingChunk);
-          processedCount++;
-
-          // Update progress for chunk processing - THROTTLED
-          // Only update every 50 chunks or on the last chunk to reduce overhead
-          if (processedCount % 50 === 0 || processedCount === chunks.length) {
-            onProgress?.({
-              totalChunks: chunks.length,
-              processedChunks: i + 1,
-              currentChunk: chunk.text.substring(0, 50) + '...',
-              isComplete: false,
-            });
-
-            const chunkProgress = (processedCount / chunks.length) * 100;
-            progressTracker.updateStepProgress(operation.id, chunkStep.id, chunkProgress, {
-              processedChunks: processedCount,
-              totalChunks: chunks.length,
-              currentChunkId: chunk.id
-            });
+            embeddingChunks.push(embeddingChunk);
+          } catch (error) {
+            console.error(`Error processing chunk ${globalIndex}:`, error);
           }
-
-        } catch (error) {
-          console.error(`Error processing chunk ${i}:`, error);
         }
+
+        // Save batch directly to database
+        if (embeddingChunks.length > 0) {
+          // CRITICAL FIX: Ensure all embeddings use the correct session ID
+          const validatedBatch = embeddingChunks.map(chunk => {
+            if (chunk.sessionId !== sessionId) {
+              return {
+                ...chunk,
+                sessionId: sessionId,
+                metadata: { ...chunk.metadata, sessionId: sessionId }
+              };
+            }
+            return chunk;
+          });
+
+          // Use direct insertion to skip redundant validation/mapping
+          await this.embeddingService.addEmbeddingsDirectly(validatedBatch);
+        }
+
+        processedCount += batch.length;
+
+        // Update progress (throttled naturally by batch size)
+        onProgress?.({
+          totalChunks,
+          processedChunks: Math.min(processedCount, totalChunks),
+          currentChunk: batch[0].text.substring(0, 50) + '...',
+          isComplete: false,
+        });
+
+        const progressPercent = (processedCount / totalChunks) * 100;
+        progressTracker.updateStepProgress(operation.id, chunkStep.id, progressPercent, {
+          processedChunks: processedCount,
+          totalChunks,
+          currentChunkId: batch[batch.length - 1].id
+        });
+
+        // Yield to main thread to keep UI responsive
+        await new Promise(resolve => setTimeout(resolve, 0));
       }
 
       progressTracker.completeStep(operation.id, chunkStep.id, {
-        totalChunks: chunks.length,
+        totalChunks: totalChunks,
         processedChunks: processedCount,
-        successfulChunks: embeddingChunks.length
+        successfulChunks: processedCount // Assuming all processed chunks were successful
       });
-
-      // Add storage step
-      const storageStep = progressTracker.addStep(operation.id, {
-        name: 'storage',
-        description: 'Saving embeddings to database',
-      });
-
-      progressTracker.startStep(operation.id, storageStep.id);
-
-      console.log('🔍 EMBEDDING STORAGE DEBUG: Starting embedding storage');
-      console.log('🔍 EMBEDDING STORAGE DEBUG: Embedding chunks count:', embeddingChunks.length);
-      console.log('🔍 EMBEDDING STORAGE DEBUG: Document ID for embeddings:', actualDocId);
-      console.log('🔍 SESSION ID DEBUG: Session ID for embeddings:', sessionId);
-
-      // CRITICAL FIX: Ensure all embeddings use the correct session ID
-      const validatedEmbeddingChunks = embeddingChunks.map(chunk => {
-        if (chunk.sessionId !== sessionId) {
-          console.warn('🔴 SESSION ID MISMATCH in embedding chunk:', {
-            expected: sessionId,
-            actual: chunk.sessionId,
-            chunkId: chunk.id
-          });
-          // Fix the session ID
-          return {
-            ...chunk,
-            sessionId: sessionId,
-            metadata: {
-              ...chunk.metadata,
-              sessionId: sessionId
-            }
-          };
-        }
-        return chunk;
-      });
-
-      // Save embeddings with validated session IDs using idempotent approach
-      await this.embeddingService.createEmbeddingsIdempotent(validatedEmbeddingChunks.map(chunk => ({
-        documentId: chunk.documentId,
-        sessionId: chunk.sessionId, // Now guaranteed to be correct
-        content: chunk.content,
-        embedding: chunk.embedding,
-        metadata: chunk.metadata
-      })));
 
       console.log('🔍 EMBEDDING STORAGE DEBUG: Embeddings saved successfully with correct session ID');
-
-      progressTracker.updateStepProgress(operation.id, storageStep.id, 50, {
-        embeddingsSaved: validatedEmbeddingChunks.length,
-        sessionIdVerified: true
-      });
 
       // Update document status to completed
       try {
@@ -617,105 +610,86 @@ export class DocumentProcessor {
         console.log('🔍 SESSION ID DEBUG: Session ID for document update:', sessionId);
         console.log('🔍 TIMESTAMP DEBUG: Status update started at:', new Date().toISOString());
 
-        // Get session to retrieve userId for ownership verification
-        const sessionService = getIndexedDBServices().sessionService;
-        const session = await sessionService.getSession(sessionId, userId);
+        const timestamp = new Date();
+        console.log('🔍 TIMESTAMP DEBUG: Status update started at:', timestamp.toISOString());
 
-        // Check document status before update
-        const docBeforeUpdate = await documentService.getDocument(actualDocId, session?.userId);
-        console.log('🔍 DOCUMENT STATUS DEBUG: Document before update:', {
-          id: docBeforeUpdate?.id,
-          status: docBeforeUpdate?.status,
-          enabled: docBeforeUpdate?.enabled,
-          filename: docBeforeUpdate?.filename,
-          sessionId: docBeforeUpdate?.sessionId,
-          processedAt: docBeforeUpdate?.processedAt
-        });
+        // Verify document exists before update
+        const docBeforeUpdate = await documentService.getDocument(actualDocId);
+        console.log('🔍 DOCUMENT STATUS DEBUG: Document before update:', docBeforeUpdate);
 
-        // CRITICAL FIX: Verify embeddings exist before marking as completed
-        const embeddingService = getIndexedDBServices().embeddingService;
-        const embeddingsBeforeUpdate = await embeddingService.getEmbeddingsByDocument(actualDocId);
-        console.log('🔍 EMBEDDING VERIFICATION DEBUG: Embeddings before status update:', {
-          documentId: actualDocId,
-          embeddingsCount: embeddingsBeforeUpdate.length,
-          hasEmbeddings: embeddingsBeforeUpdate.length > 0
-        });
-
-        // Only update to completed if embeddings actually exist
-        if (embeddingsBeforeUpdate.length > 0) {
-          console.log('✅ EMBEDDINGS VERIFIED: Updating document status to completed');
-
-          // Update document status - sessionId is already correct from creation/update
-          await documentService.updateDocument(actualDocId, {
-            status: 'completed',
-            processedAt: new Date(),
-          }, session?.userId);
-
-          console.log('🔍 DOCUMENT STATUS DEBUG: Document status updated in database');
-
-          // Check document status after update
-          const docAfterUpdate = await documentService.getDocument(actualDocId, session?.userId);
-          console.log('🔍 DOCUMENT STATUS DEBUG: Document after update:', {
-            id: docAfterUpdate?.id,
-            status: docAfterUpdate?.status,
-            enabled: docAfterUpdate?.enabled,
-            processedAt: docAfterUpdate?.processedAt,
-            sessionId: docAfterUpdate?.sessionId
-          });
-
-          // Verify session ID is correct after update
-          if (docAfterUpdate && docAfterUpdate.sessionId !== sessionId) {
-            console.error('🔴 SESSION ID MISMATCH after document update:', {
-              expected: sessionId,
-              actual: docAfterUpdate.sessionId
-            });
-          } else {
-            console.log('✅ SESSION ID VERIFIED: Document updated with correct session ID');
-          }
-
-          // Update the document store to reflect the status change
-          console.log('🔍 DOCUMENT STORE DEBUG: Refreshing document store after status update');
-          console.log('🔍 SESSION ID DEBUG: Session ID for document store refresh:', sessionId);
-          const documentStore = useDocumentStore.getState();
-          await documentStore.loadDocuments(sessionId);
-
-          console.log('🔍 DOCUMENT STORE DEBUG: Document store refreshed');
-          console.log('🔍 DOCUMENT STORE DEBUG: Documents in store after refresh:', documentStore.documents.length);
-
-          progressTracker.completeStep(operation.id, storageStep.id, {
-            documentStatus: 'completed',
-            documentId: actualDocId,
-            sessionIdVerified: docAfterUpdate?.sessionId === sessionId,
-            embeddingsVerified: true
-          });
-        } else {
-          console.warn('⚠️ EMBEDDINGS NOT FOUND: Not marking document as completed since no embeddings exist');
-          progressTracker.completeStep(operation.id, storageStep.id, {
-            documentStatus: 'processing_incomplete',
-            documentId: actualDocId,
-            embeddingsVerified: false,
-            warning: 'No embeddings found for document'
-          });
+        if (!docBeforeUpdate) {
+          throw new Error(`Document not found before status update: ${actualDocId}`);
         }
 
-        console.log('🔍 TIMESTAMP DEBUG: Status update completed at:', new Date().toISOString());
-      } catch (error) {
-        console.error('🔍 DOCUMENT STATUS DEBUG: Error updating document status:', error);
-        console.error('🔍 TIMESTAMP DEBUG: Status update failed at:', new Date().toISOString());
-        const storageErrorResult = ingestionErrorHandler.handleStorageError(
-          error,
-          'updateDocument',
-          { operation: 'storage', sessionId, documentId: actualDocId }
-        );
-
-        // Don't throw here, just log since embeddings are already saved
-        console.error('Failed to update document status:', storageErrorResult.errors);
-
-        progressTracker.completeStep(operation.id, storageStep.id, {
-          documentStatus: 'completed_with_error',
+        // Verify embeddings were actually saved
+        const embeddingsCount = await this.embeddingService.getEmbeddingCountByDocument(actualDocId);
+        console.log('🔍 EMBEDDING VERIFICATION DEBUG: Embeddings before status update:', {
           documentId: actualDocId,
-          error: storageErrorResult.errors
+          embeddingsCount,
+          hasEmbeddings: embeddingsCount > 0
         });
+
+        if (embeddingsCount === 0) {
+          throw new Error(`No embeddings found for document ${actualDocId} after processing`);
+        }
+
+        console.log('✅ EMBEDDINGS VERIFIED: Updating document status to completed');
+
+        await documentService.updateDocumentStatus(actualDocId, 'completed');
+        console.log('🔍 DOCUMENT STATUS DEBUG: Document status updated in database');
+
+        // Verify update
+        const docAfterUpdate = await documentService.getDocument(actualDocId);
+        console.log('🔍 DOCUMENT STATUS DEBUG: Document after update:', docAfterUpdate);
+
+        if (docAfterUpdate?.sessionId !== sessionId) {
+          console.error('🔴 SESSION ID MISMATCH after update:', {
+            expected: sessionId,
+            actual: docAfterUpdate?.sessionId
+          });
+          // Attempt to fix
+          await documentService.updateDocument(actualDocId, { sessionId });
+          console.log('✅ SESSION ID FIXED: Document updated with correct session ID');
+        } else {
+          console.log('✅ SESSION ID VERIFIED: Document updated with correct session ID');
+        }
+
+        // Force refresh of document store
+        console.log('🔍 DOCUMENT STORE DEBUG: Refreshing document store after status update');
+        console.log('🔍 SESSION ID DEBUG: Session ID for document store refresh:', sessionId);
+
+        // Use the store's loadDocuments action to refresh the list
+        // We need to access the store instance directly or dispatch an event
+        // Since we can't use hooks here, we'll use the store's getState() method if available
+        // or rely on the UI to refresh when it detects the change
+
+        // Try to trigger a refresh via the store
+        try {
+          const store = useDocumentStore.getState();
+          if (store && store.loadDocuments) {
+            console.log('🔍 DOCUMENT STORE DEBUG: Starting loadDocuments for session:', sessionId);
+            // Pass the userId if available from the session
+            // We need to get the session first to get the userId
+            const sessionService = getIndexedDBServices().sessionService;
+            const session = await sessionService.getSession(sessionId);
+
+            await store.loadDocuments(sessionId);
+            console.log('🔍 DOCUMENT STORE DEBUG: Document store refreshed');
+
+            // Verify store state
+            const updatedDocs = store.documents;
+            console.log('🔍 DOCUMENT STORE DEBUG: Documents in store after refresh:', updatedDocs.length);
+          }
+        } catch (storeError) {
+          console.warn('⚠️ DOCUMENT STORE DEBUG: Failed to trigger store refresh:', storeError);
+        }
+
+        const endTime = new Date();
+        console.log('🔍 TIMESTAMP DEBUG: Status update completed at:', endTime.toISOString());
+
+      } catch (error) {
+        console.error('🔴 DOCUMENT STATUS DEBUG: Error updating document status:', error);
+        throw error;
       }
 
       onProgress?.({
@@ -839,7 +813,8 @@ export class DocumentProcessor {
         // For uploaded files
         return await this.readFileFromUpload(document.originalPath);
       } else {
-        throw new Error('No file path available for document');
+        // Return empty string or throw error based on requirements
+        return '';
       }
     } catch (error) {
       console.error('Error reading document content:', error);

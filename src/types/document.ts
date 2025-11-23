@@ -39,6 +39,7 @@ export interface DocumentCreate {
 }
 
 export interface DocumentUpdate {
+  sessionId?: string;
   status?: Document['status'];
   pageCount?: number;
   processedAt?: Date;

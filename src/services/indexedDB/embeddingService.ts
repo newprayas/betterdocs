@@ -111,6 +111,23 @@ export class EmbeddingService {
   }
 
   /**
+   * Add embeddings directly without re-validation or re-mapping (for efficient batch processing)
+   * This assumes the chunks are already fully formed and validated
+   */
+  async addEmbeddingsDirectly(chunks: EmbeddingChunk[]): Promise<void> {
+    if (!db) throw new Error('Database not initialized');
+    if (chunks.length === 0) return;
+
+    // console.log(`🔍 EMBEDDING SERVICE DEBUG: Direct batch insert of ${chunks.length} chunks`);
+
+    if (!db) throw new Error('Database not initialized');
+    await db.transaction('rw', db.embeddings, async () => {
+      if (!db) throw new Error('Database not initialized');
+      await db.embeddings.bulkAdd(chunks);
+    });
+  }
+
+  /**
    * Get all embeddings for a document
    */
   async getEmbeddingsByDocument(documentId: string): Promise<EmbeddingChunk[]> {
