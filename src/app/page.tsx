@@ -44,7 +44,9 @@ export default function HomePage() {
   };
 
   const handleSessionSelect = (session: Session) => {
+    console.log('🔍 [HOME] Session selected:', session.id, session.name);
     setCurrentSession(session);
+    console.log('🔍 [HOME] Navigating to:', `/session/${session.id}`);
     router.push(`/session/${session.id}`);
   };
 
