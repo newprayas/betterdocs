@@ -8,9 +8,7 @@ const nextConfig = {
   eslint: {
     ignoreDuringBuilds: false,
   },
-  experimental: {
-    serverComponentsExternalPackages: ['@supabase/supabase-js', '@supabase/ssr', '@supabase/realtime-js']
-  },
+
   webpack: (config, { dev, isServer }) => {
     // Enable WebAssembly support
     config.experiments = {
@@ -18,13 +16,13 @@ const nextConfig = {
       asyncWebAssembly: true,
       layers: true,
     };
-    
+
     // Add support for WebAssembly files
     config.module.rules.push({
       test: /\.wasm$/,
       type: 'webassembly/async',
     });
-    
+
     // FIX: Enhanced polyfills for Supabase compatibility in Edge Runtime
     config.plugins.push(
       new webpack.DefinePlugin({
@@ -35,7 +33,7 @@ const nextConfig = {
         }),
       })
     );
-    
+
     return config;
   },
   // Headers for security
