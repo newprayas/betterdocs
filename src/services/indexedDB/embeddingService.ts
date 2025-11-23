@@ -51,7 +51,7 @@ export class EmbeddingService {
       documentIds: [...new Set(embeddings.map(e => e.documentId))],
       sessionIds: [...new Set(embeddings.map(e => e.sessionId))]
     });
-    
+
     const embeddingChunks: EmbeddingChunk[] = embeddings.map(data => {
       // Validate embedding
       if (!validateVector(data.embedding, 768)) {
@@ -93,22 +93,20 @@ export class EmbeddingService {
     });
 
     if (!db) throw new Error('Database not initialized');
-    
+
+    console.log('🔍 EMBEDDING SERVICE DEBUG: Starting transaction to save embeddings');
     console.log('🔍 EMBEDDING SERVICE DEBUG: Starting transaction to save embeddings');
     await db.transaction('rw', db.embeddings, async () => {
-      console.log('🔍 EMBEDDING SERVICE DEBUG: Transaction started, adding embeddings');
-      await Promise.all(embeddingChunks.map(chunk => {
-        if (!db) throw new Error('Database not initialized');
-        console.log('🔍 EMBEDDING SERVICE DEBUG: Adding chunk:', {
-          id: chunk.id,
-          documentId: chunk.documentId,
-          sessionId: chunk.sessionId
-        });
-        return db.embeddings.add(chunk);
-      }));
-      console.log('🔍 EMBEDDING SERVICE DEBUG: All embeddings added to transaction');
+      console.log('🔍 EMBEDDING SERVICE DEBUG: Transaction started, adding embeddings via bulkAdd');
+
+      if (!db) throw new Error('Database not initialized');
+
+      // Use bulkAdd for much better performance
+      await db.embeddings.bulkAdd(embeddingChunks);
+
+      console.log('🔍 EMBEDDING SERVICE DEBUG: All embeddings added to transaction via bulkAdd');
     });
-    
+
     console.log('🔍 EMBEDDING SERVICE DEBUG: Transaction completed successfully');
   }
 
@@ -121,7 +119,7 @@ export class EmbeddingService {
       .where('documentId')
       .equals(documentId)
       .sortBy('chunkIndex');
-    
+
     // Ensure createdAt is a Date object (handles IndexedDB serialization)
     return embeddings.map(embedding => ({
       ...embedding,
@@ -134,7 +132,7 @@ export class EmbeddingService {
    */
   async getEmbeddingsBySession(sessionId: string, userId?: string): Promise<EmbeddingChunk[]> {
     if (!db) throw new Error('Database not initialized');
-    
+
     // If userId is provided, verify session ownership
     if (userId) {
       const session = await db.sessions.get(sessionId);
@@ -142,12 +140,12 @@ export class EmbeddingService {
         return []; // Return empty array if session doesn't exist or doesn't belong to user
       }
     }
-    
+
     const embeddings = await db.embeddings
       .where('sessionId')
       .equals(sessionId)
       .toArray();
-    
+
     // Ensure createdAt is a Date object (handles IndexedDB serialization)
     return embeddings.map(embedding => ({
       ...embedding,
@@ -161,7 +159,7 @@ export class EmbeddingService {
   async getEnabledEmbeddingsBySession(sessionId: string, userId?: string): Promise<EmbeddingChunk[]> {
     // First get enabled documents for the session
     if (!db) throw new Error('Database not initialized');
-    
+
     // If userId is provided, verify session ownership
     if (userId) {
       const session = await db.sessions.get(sessionId);
@@ -169,7 +167,7 @@ export class EmbeddingService {
         return []; // Return empty array if session doesn't exist or doesn't belong to user
       }
     }
-    
+
     const enabledDocuments = await db.documents
       .where('sessionId')
       .equals(sessionId)
@@ -188,7 +186,7 @@ export class EmbeddingService {
       .where('documentId')
       .anyOf(documentIds)
       .toArray();
-    
+
     // Ensure createdAt is a Date object (handles IndexedDB serialization)
     return embeddings.map(embedding => ({
       ...embedding,
@@ -219,26 +217,26 @@ export class EmbeddingService {
    */
   async createEmbeddingsIdempotent(embeddings: EmbeddingChunkCreate[]): Promise<void> {
     if (!embeddings || embeddings.length === 0) return;
-    
+
     const documentId = embeddings[0].documentId;
     console.log('🔍 EMBEDDING SERVICE DEBUG: createEmbeddingsIdempotent called for document:', documentId);
-    
+
     try {
       // First check if embeddings already exist
       const existingEmbeddings = await this.embeddingsExistForDocument(documentId);
-      
+
       if (existingEmbeddings) {
         console.log('🔍 EMBEDDING SERVICE DEBUG: Existing embeddings found, deleting before creating new ones');
         // Delete existing embeddings to avoid key constraint errors
         await this.deleteEmbeddingsByDocument(documentId);
       }
-      
+
       // Create new embeddings
       await this.createEmbeddingsBatch(embeddings);
       console.log('🔍 EMBEDDING SERVICE DEBUG: Embeddings created successfully with idempotent approach');
     } catch (error) {
       console.error('🔴 EMBEDDING SERVICE ERROR: Failed to create embeddings idempotently:', error);
-      
+
       // Check if it's a constraint violation
       if (error instanceof Error && error.name === 'ConstraintError') {
         console.log('🔍 EMBEDDING SERVICE DEBUG: Constraint error detected, attempting cleanup and retry');
@@ -287,7 +285,7 @@ export class EmbeddingService {
   async searchEmbeddingsByContent(sessionId: string, query: string, userId?: string): Promise<EmbeddingChunk[]> {
     const embeddings = await this.getEnabledEmbeddingsBySession(sessionId, userId);
     const lowerQuery = query.toLowerCase();
-    
+
     // Note: embeddings are already processed by getEnabledEmbeddingsBySession
     // so createdAt is already ensured to be a Date object
     return embeddings.filter(embedding =>
@@ -305,7 +303,7 @@ export class EmbeddingService {
     userId?: string
   ): Promise<EmbeddingChunk[]> {
     if (!db) throw new Error('Database not initialized');
-    
+
     // If userId is provided, verify session ownership
     if (userId) {
       const session = await db.sessions.get(sessionId);
@@ -313,14 +311,14 @@ export class EmbeddingService {
         return []; // Return empty array if session doesn't exist or doesn't belong to user
       }
     }
-    
+
     const embeddings = await db.embeddings
       .where('sessionId')
       .equals(sessionId)
       .offset(offset)
       .limit(limit)
       .toArray();
-    
+
     // Ensure createdAt is a Date object (handles IndexedDB serialization)
     return embeddings.map(embedding => ({
       ...embedding,
