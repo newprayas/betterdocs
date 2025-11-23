@@ -374,8 +374,8 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
           {/* Controls Row */}
           <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
             {/* Category Filter Pills */}
-            <div className="flex-1 min-w-0 overflow-x-auto no-scrollbar mask-linear-fade">
-              <div className="flex items-center gap-2 pb-1">
+            <div className="flex-1 min-w-0 w-full sm:w-auto sm:overflow-x-auto sm:no-scrollbar sm:mask-linear-fade">
+              <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 pb-1">
                 {categories.map(category => {
                   const isSelected = selectedCategory === category;
                   return (
