@@ -26,9 +26,9 @@ const nextConfig = {
     // FIX: Enhanced polyfills for Supabase compatibility in Edge Runtime
     config.plugins.push(
       new webpack.DefinePlugin({
-        'process.version': JSON.stringify('v18.0.0'),
+        'process.version': JSON.stringify('v20.0.0'),
         'process.versions': JSON.stringify({
-          node: '18.0.0',
+          node: '20.0.0',
           v8: '10.0.0'
         }),
       })

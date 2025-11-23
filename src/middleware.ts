@@ -1,17 +1,19 @@
 import { createServerClient, type CookieOptions } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
+export const runtime = 'experimental-edge'
+
 
 export async function middleware(request: NextRequest) {
     console.log('🔍 [MIDDLEWARE] Processing request for:', request.nextUrl.pathname)
-    
+
     // Skip middleware for static assets and API routes
     if (request.nextUrl.pathname.startsWith('/_next/') ||
         request.nextUrl.pathname.startsWith('/api/') ||
         request.nextUrl.pathname.includes('.')) {
         return NextResponse.next()
     }
-    
+
     let response = NextResponse.next({
         request: {
             headers: request.headers,
