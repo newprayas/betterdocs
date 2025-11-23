@@ -5,7 +5,7 @@ import { libraryService } from '@/services/libraryService';
 import type { LibraryItem } from '@/types/library';
 import { documentProcessor } from '@/services/rag';
 import { useDocumentStore } from '@/store';
-import { Button, Card, Loading, DropdownMenu, DropdownMenuItem } from '@/components/ui';
+import { Button, Card, Loading } from '@/components/ui';
 
 interface DocumentLibraryProps {
   sessionId: string;
@@ -29,7 +29,7 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
   const [isBatchProcessing, setIsBatchProcessing] = useState(false);
   const [processingStatus, setProcessingStatus] = useState<ProcessingStatus>({});
   const [error, setError] = useState<string | null>(null);
-  
+
   const { userId, loadDocuments } = useDocumentStore();
 
   // Fetch books on mount
@@ -70,7 +70,7 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
       newSelectedBooks.add(bookId);
     }
     setSelectedBooks(newSelectedBooks);
-    
+
     // Update select all checkbox state
     setSelectAll(newSelectedBooks.size === filteredBooks.length && filteredBooks.length > 0);
   };
@@ -88,7 +88,7 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
   // Process a single book
   const processSingleBook = async (book: LibraryItem): Promise<void> => {
     if (!userId) throw new Error("User ID is required");
-    
+
     console.log('🔍 PROCESS SINGLE BOOK DEBUG: Starting processing for book:', {
       bookId: book.id,
       bookName: book.name,
@@ -96,7 +96,7 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
       userId: userId.substring(0, 8) + '...',
       timestamp: new Date().toISOString()
     });
-    
+
     setProcessingStatus(prev => ({
       ...prev,
       [book.id]: { status: 'processing', progress: 0 }
@@ -119,7 +119,7 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
         sessionId,
         chunksCount: jsonData.chunks?.length || 0
       });
-      
+
       const operationId = await documentProcessor.processPreprocessedPackage(
         sessionId,
         jsonData,
@@ -133,7 +133,7 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
             isComplete: progress.isComplete,
             progressPercent: Math.round((progress.processedChunks / progress.totalChunks) * 100)
           });
-          
+
           setProcessingStatus(prev => ({
             ...prev,
             [book.id]: {
@@ -161,7 +161,7 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
         stack: err instanceof Error ? err.stack : 'No stack trace',
         timestamp: new Date().toISOString()
       });
-      
+
       setProcessingStatus(prev => ({
         ...prev,
         [book.id]: {
@@ -179,24 +179,24 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
 
     setIsBatchProcessing(true);
     const selectedBooksList = filteredBooks.filter(book => selectedBooks.has(book.id));
-    
+
     try {
       // Process all selected books
       await Promise.all(selectedBooksList.map(book => processSingleBook(book)));
-      
+
       // Wait a moment for the final status updates
       await new Promise(resolve => setTimeout(resolve, 1000));
-      
+
       // Refresh UI to get the actual document status from database
       await loadDocuments(sessionId);
-      
+
       // CRITICAL FIX: Get accurate success/failure counts by checking actual document status
       // rather than relying on processingStatus which might have race conditions
       const { documents } = useDocumentStore.getState();
-      
+
       console.log('🔍 SUCCESS COUNT DEBUG: Documents in store after processing:', documents.length);
       console.log('🔍 SUCCESS COUNT DEBUG: Processing status:', processingStatus);
-      
+
       // Enhanced logging for debugging document matching
       console.log('🔍 DOCUMENT STORE DEBUG: All documents in store:', documents.map(doc => ({
         id: doc.id,
@@ -206,35 +206,35 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
         sessionId: doc.sessionId,
         enabled: doc.enabled
       })));
-      
+
       console.log('🔍 SELECTED BOOKS DEBUG: All selected books:', selectedBooksList.map(book => ({
         id: book.id,
         name: book.name,
         url: book.url
       })));
-      
+
       // Count successful and failed downloads by checking actual document status
       let successful = 0;
       let failed = 0;
-      
+
       for (const book of selectedBooksList) {
         console.log('🔍 MATCHING DEBUG: Attempting to match book:', {
           bookId: book.id,
           bookName: book.name,
           bookUrl: book.url
         });
-        
+
         // Enhanced matching logic with multiple fallback strategies
         let document = documents.find(doc =>
           doc.filename === book.name ||
           doc.title === book.name ||
           doc.id.includes(book.id)
         );
-        
+
         // If not found with exact matches, try fuzzy matching
         if (!document) {
           console.log('🔍 MATCHING DEBUG: Exact match failed, trying fuzzy matching');
-          
+
           // Try matching by extracting filename from URL
           const urlFilename = book.url.split('/').pop()?.split('.')[0];
           if (urlFilename) {
@@ -248,7 +248,7 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
               found: !!document
             });
           }
-          
+
           // Try matching by book ID parts (in case of UUID regeneration)
           if (!document && book.id.includes('_')) {
             const bookIdParts = book.id.split('_');
@@ -266,7 +266,7 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
               }
             }
           }
-          
+
           // Try matching by normalized name (lowercase, no special chars)
           if (!document) {
             const normalizedName = book.name.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -275,8 +275,8 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
               const normalizedTitle = doc.title?.toLowerCase().replace(/[^a-z0-9]/g, '') || '';
               const normalizedId = doc.id.toLowerCase().replace(/[^a-z0-9]/g, '');
               return normalizedFilename.includes(normalizedName) ||
-                     normalizedTitle.includes(normalizedName) ||
-                     normalizedId.includes(normalizedName);
+                normalizedTitle.includes(normalizedName) ||
+                normalizedId.includes(normalizedName);
             });
             console.log('🔍 MATCHING DEBUG: Normalized name matching:', {
               normalizedName,
@@ -284,7 +284,7 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
             });
           }
         }
-        
+
         console.log('🔍 DOCUMENT STATUS DEBUG:', {
           bookId: book.id,
           bookName: book.name,
@@ -295,10 +295,10 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
           documentStatus: document?.status,
           processingStatus: processingStatus[book.id]?.status
         });
-        
+
         // Use actual document status if available, fallback to processing status
         const actualStatus = document?.status || processingStatus[book.id]?.status;
-        
+
         if (actualStatus === 'completed') {
           successful++;
           console.log('🔍 COUNT DEBUG: Counted as successful - Book:', book.name, 'Document:', document?.filename);
@@ -320,21 +320,21 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
           }
         }
       }
-      
+
       console.log('🔍 FINAL COUNT DEBUG:', { successful, failed, total: selectedBooksList.length });
-      
+
       if (failed === 0) {
         alert(`Successfully added ${successful} document(s) to your library!`);
       } else {
         alert(`Added ${successful} document(s). ${failed} document(s) failed to process.`);
       }
-      
+
       // Clear selections and close modal
       setSelectedBooks(new Set());
       setSelectAll(false);
       setProcessingStatus({});
       onClose();
-      
+
     } catch (err) {
       console.error(err);
       alert(`Error during batch processing: ${err instanceof Error ? err.message : 'Unknown error'}`);
@@ -346,7 +346,7 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
   // Handle single book download (legacy support)
   const handleDownload = async (book: LibraryItem) => {
     if (!userId) return alert("Please log in first");
-    
+
     setSelectedBooks(new Set([book.id]));
     await handleBatchDownload();
   };
@@ -354,7 +354,7 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
       <Card className="w-full max-w-5xl h-[85vh] flex flex-col bg-gray-50 dark:bg-slate-900 shadow-2xl">
-        
+
         {/* Header */}
         <div className="p-6 border-b border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 rounded-t-lg">
           <div className="flex justify-between items-center mb-4">
@@ -370,34 +370,32 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
               </svg>
             </Button>
           </div>
-          
+
           {/* Controls Row */}
           <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
-            {/* Category Filter */}
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Filter:</span>
-              <DropdownMenu
-                trigger={
-                  <Button variant="outline" size="sm" className="flex items-center gap-2">
-                    <span>{selectedCategory}</span>
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                    </svg>
-                  </Button>
-                }
-              >
-                {categories.map(category => (
-                  <DropdownMenuItem
-                    key={category}
-                    onClick={() => setSelectedCategory(category)}
-                    closeOnClick={true}
-                  >
-                    {category}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenu>
+            {/* Category Filter Pills */}
+            <div className="flex-1 min-w-0 overflow-x-auto no-scrollbar mask-linear-fade">
+              <div className="flex items-center gap-2 pb-1">
+                {categories.map(category => {
+                  const isSelected = selectedCategory === category;
+                  return (
+                    <button
+                      key={category}
+                      onClick={() => setSelectedCategory(category)}
+                      className={`
+                        px-4 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-all duration-200 border
+                        ${isSelected
+                          ? 'bg-gray-900 dark:bg-white text-white dark:text-black border-gray-900 dark:border-white'
+                          : 'bg-transparent text-gray-700 dark:text-white border-gray-300 dark:border-white hover:border-gray-400 dark:hover:border-gray-200'}
+                      `}
+                    >
+                      {category}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-            
+
             {/* Selection Controls */}
             <div className="flex items-center gap-4">
               <label className="flex items-center gap-2 cursor-pointer">
@@ -412,7 +410,7 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
                   Select All ({filteredBooks.length})
                 </span>
               </label>
-              
+
               {selectedBooks.size > 0 && (
                 <div>
                   <Button
@@ -463,21 +461,21 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {filteredBooks.map((book) => {
-                 const isSelected = selectedBooks.has(book.id);
-                 const status = processingStatus[book.id];
-                 const isProcessing = status?.status === 'processing';
-                 const isCompleted = status?.status === 'completed';
-                 const hasError = status?.status === 'error';
-                 
-                 return (
+                const isSelected = selectedBooks.has(book.id);
+                const status = processingStatus[book.id];
+                const isProcessing = status?.status === 'processing';
+                const isCompleted = status?.status === 'completed';
+                const hasError = status?.status === 'error';
+
+                return (
                   <div
                     key={book.id}
                     className={`
                       relative bg-white dark:bg-slate-800 p-5 rounded-xl border
                       ${isProcessing ? 'border-blue-500 ring-1 ring-blue-500' :
                         isCompleted ? 'border-green-500 ring-1 ring-green-500' :
-                        hasError ? 'border-red-500 ring-1 ring-red-500' :
-                        'border-gray-200 dark:border-slate-700'}
+                          hasError ? 'border-red-500 ring-1 ring-red-500' :
+                            'border-gray-200 dark:border-slate-700'}
                       ${isSelected ? 'ring-2 ring-blue-500' : ''}
                       shadow-sm hover:shadow-md transition-all duration-200 flex flex-col
                     `}
@@ -492,7 +490,7 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
                         className="w-5 h-5 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2 cursor-pointer"
                       />
                     </div>
-                    
+
                     {/* Category Badge */}
                     <div className="absolute top-5 right-5">
                       <span className="px-2 py-1 text-[10px] uppercase tracking-wider font-bold bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-gray-300 rounded-md">
@@ -556,7 +554,7 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
                       </span>
                     </div>
                   </div>
-                 );
+                );
               })}
             </div>
           )}
