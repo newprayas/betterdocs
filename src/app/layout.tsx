@@ -6,6 +6,7 @@ import '../styles/mobile-touch.css';
 import { AppInitializer } from './AppInitializer';
 import SubscriptionModal from '@/components/SubscriptionModal';
 import { RouteErrorBoundary } from '@/components/common/RouteErrorBoundary';
+import { InstallPrompt } from '@/components/common/InstallPrompt';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -22,6 +23,7 @@ export const viewport: Viewport = {
   userScalable: false,
   themeColor: '#020617',
   viewportFit: 'cover',
+  interactiveWidget: 'resizes-content',
 };
 
 export default function RootLayout({
@@ -41,6 +43,7 @@ export default function RootLayout({
           <div id="root" className="min-h-screen flex flex-col">
             <AppInitializer />
             <SubscriptionModal />
+            <InstallPrompt />
             {children}
           </div>
         </RouteErrorBoundary>

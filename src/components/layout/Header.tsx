@@ -71,7 +71,7 @@ export const Header: React.FC<HeaderProps> = ({
               </div>
               <div className="ml-3 sm:ml-4 min-w-0">
                 <h1 className="text-lg sm:text-xl font-semibold text-gray-900 dark:text-white truncate">
-                  {title || 'Better Docs'}
+                  {title || 'MEDDY'}
                 </h1>
               </div>
             </Link>
@@ -151,7 +151,7 @@ export const SimpleHeader: React.FC = () => {
             </div>
             <div className="ml-3 sm:ml-4 flex flex-col min-w-0">
               <h1 className="text-lg sm:text-xl font-semibold text-gray-900 dark:text-white truncate">
-                Better Docs
+                MEDDY
               </h1>
               <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-300 truncate">
                 Made with ❤️ by Prayas

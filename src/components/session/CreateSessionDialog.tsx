@@ -20,13 +20,13 @@ export const CreateSessionDialog: React.FC<CreateSessionDialogProps> = ({
   const [description, setDescription] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
-  
+
   const { createSession } = useSessionStore();
   const router = useRouter();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!name.trim()) {
       setError('Session name is required');
       return;
@@ -76,15 +76,15 @@ export const CreateSessionDialog: React.FC<CreateSessionDialogProps> = ({
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
           <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">
-            Create New Session
+            Create New Chat
           </h2>
         </div>
 
         {/* Session Name */}
         <div>
           <Input
-            label="Session Name"
-            placeholder="Enter a name for this session"
+            label="Subject Name"
+            placeholder="Subject name like : MEDICINE, SURGERY etc"
             value={name}
             onChange={(e) => setName(e.target.value)}
             required
@@ -101,7 +101,7 @@ export const CreateSessionDialog: React.FC<CreateSessionDialogProps> = ({
           <textarea
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            placeholder="Brief description of this session's purpose"
+            placeholder="Brief description of this chat's purpose"
             rows={3}
             disabled={isLoading}
             className={`
@@ -135,14 +135,14 @@ export const CreateSessionDialog: React.FC<CreateSessionDialogProps> = ({
           >
             Cancel
           </Button>
-          
+
           <Button
             type="submit"
             loading={isLoading}
             disabled={!name.trim()}
             className="flex-1"
           >
-            Create Session
+            Create Chat
           </Button>
         </div>
       </form>

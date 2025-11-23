@@ -1,5 +1,5 @@
 {
-  "name": "Meddy - Chat with Documents Privately",
+  "name": "MEDDY",
   "short_name": "Meddy",
   "description": "Private RAG chat application for documents",
   "start_url": "/",
@@ -20,6 +20,9 @@
       "type": "image/png"
     }
   ],
-  "categories": ["productivity", "utilities"],
+  "categories": [
+    "productivity",
+    "utilities"
+  ],
   "lang": "en"
 }

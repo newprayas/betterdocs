@@ -54,6 +54,7 @@ const PhrasePill: React.FC<PhrasePillProps> = ({
       role="button"
       tabIndex={0}
       onClick={onClick}
+      onMouseDown={(e) => e.preventDefault()}
       onKeyDown={handleKeyDown}
       aria-pressed={isSelected}
       aria-label={`Select phrase: ${phrase}`}
@@ -64,22 +65,22 @@ const PhrasePill: React.FC<PhrasePillProps> = ({
         'transition-all duration-200 ease-in-out',
         'touch-manipulation',
         'min-h-[32px] sm:min-h-[36px]',
-        
+
         // Grey background with white border and text
         'bg-gray-600 text-white border border-white',
-        
+
         // Hover and active states
         'hover:bg-gray-500 hover:scale-105 active:scale-95',
-        
+
         // Focus styles for accessibility
         'focus:outline-none focus:ring-2 focus:ring-white focus:ring-offset-2 focus:ring-offset-gray-600',
-        
+
         // Selected state
         isSelected && 'bg-blue-500 border-blue-300 hover:bg-blue-600',
-        
+
         // Mobile touch feedback
         '-webkit-tap-highlight-color: rgba(255, 255, 255, 0.2)',
-        
+
         className
       )}
     >
@@ -159,12 +160,12 @@ export const PhrasePills: React.FC<PhrasePillsProps> = ({
   // Initialize scroll position check
   useEffect(() => {
     checkScrollPosition();
-    
+
     // Add resize listener
     const handleResize = () => {
       checkScrollPosition();
     };
-    
+
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, [phrases]);
@@ -203,7 +204,7 @@ export const PhrasePills: React.FC<PhrasePillsProps> = ({
           </button>
         )}
       </div>
-      
+
       <div className="hidden sm:flex absolute right-0 top-0 bottom-0 z-10 items-center pointer-events-none">
         {canScrollRight && (
           <button
@@ -242,14 +243,14 @@ export const PhrasePills: React.FC<PhrasePillsProps> = ({
           'flex gap-2 sm:gap-3 overflow-x-auto scrollbar-thin',
           'scrollbar-thumb-gray-600 scrollbar-track-transparent',
           'px-3 sm:px-4 py-3',
-          
+
           // Mobile touch optimization
           'touch-pan-x -webkit-overflow-scrolling: touch',
           'snap-x snap-mandatory',
-          
+
           // Prevent text selection while scrolling
           'select-none',
-          
+
           // Hide scrollbar on mobile for cleaner look
           'sm:scrollbar-thin',
           '[&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]',
@@ -276,7 +277,7 @@ export const PhrasePills: React.FC<PhrasePillsProps> = ({
             />
           </div>
         ))}
-        
+
         {/* Add some spacing at the end for better scroll experience */}
         <div className="w-4 sm:w-8 flex-shrink-0" />
       </div>

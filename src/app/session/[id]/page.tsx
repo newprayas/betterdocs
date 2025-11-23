@@ -88,7 +88,7 @@ export default function SessionPage() {
 
   const handleSendMessage = async (content: string) => {
     if (!sessionId) return;
-    
+
     try {
       await sendMessage(sessionId, content);
       setMessageInput(''); // Clear the input after sending
@@ -101,7 +101,7 @@ export default function SessionPage() {
     // Append the selected phrase to the current message input with an extra space
     const newMessage = messageInput ? `${messageInput} ${phrase} ` : `${phrase} `;
     setMessageInput(newMessage);
-    
+
     // Focus the input field and position cursor at the end
     requestAnimationFrame(() => {
       if (messageInputRef.current) {
@@ -114,7 +114,7 @@ export default function SessionPage() {
 
   const handleDeleteSession = async () => {
     if (!sessionId) return;
-    
+
     try {
       await deleteSession(sessionId);
       router.push('/');
@@ -125,7 +125,7 @@ export default function SessionPage() {
 
   const handleClearHistory = async () => {
     if (!sessionId) return;
-    
+
     try {
       await clearHistory(sessionId);
     } catch (error) {
@@ -226,27 +226,46 @@ export default function SessionPage() {
               <div className="flex flex-col flex-1 min-h-0">
                 {/* This wrapper grows to fill all available space */}
                 <div className="flex-1 flex items-center justify-center">
-                  <EmptyState
-                    title="Start a conversation"
-                    description="Ask a question about your documents to get started"
-                    icon={
-                      <svg
-                        className="w-12 h-12 text-gray-400"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
-                        />
-                      </svg>
-                    }
-                  />
+                  {documents.length === 0 ? (
+                    <EmptyState
+                      title="No books added, Add books to chat 🥳"
+                      description=""
+                      icon={
+                        <div className="text-4xl mb-2">📚</div>
+                      }
+                      action={
+                        <Button
+                          onClick={() => setActiveTab('documents')}
+                          variant="primary"
+                          size="lg"
+                        >
+                          ADD BOOKS
+                        </Button>
+                      }
+                    />
+                  ) : (
+                    <EmptyState
+                      title="Start a conversation"
+                      description="Ask a question about your documents to get started"
+                      icon={
+                        <svg
+                          className="w-12 h-12 text-gray-400"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
+                          />
+                        </svg>
+                      }
+                    />
+                  )}
                 </div>
-                
+
                 {/* API Key Configuration Button */}
                 {!settings?.geminiApiKey && (
                   <div className="flex-shrink-0 mt-4 max-w-4xl mx-auto w-full">
@@ -259,7 +278,7 @@ export default function SessionPage() {
                     </Button>
                   </div>
                 )}
-                
+
                 {/* Phrase Pills */}
                 <div className="flex-shrink-0 mt-4 max-w-4xl mx-auto w-full">
                   <PhrasePills
@@ -267,7 +286,7 @@ export default function SessionPage() {
                     className="bg-gray-100 dark:bg-gray-800 rounded-lg"
                   />
                 </div>
-                
+
                 {/* Message Input is now properly positioned at the bottom */}
                 <div className="flex-shrink-0 mt-4 max-w-4xl mx-auto w-full">
                   <MessageInput
@@ -292,7 +311,7 @@ export default function SessionPage() {
                     className="max-w-4xl mx-auto"
                   />
                 </div>
-                
+
                 {/* API Key Configuration Button */}
                 {!settings?.geminiApiKey && (
                   <div className="flex-shrink-0 mt-4 max-w-4xl mx-auto w-full">
@@ -305,7 +324,7 @@ export default function SessionPage() {
                     </Button>
                   </div>
                 )}
-                
+
                 {/* Phrase Pills */}
                 <div className="flex-shrink-0 mt-4 max-w-4xl mx-auto w-full">
                   <PhrasePills
@@ -313,7 +332,7 @@ export default function SessionPage() {
                     className="bg-gray-100 dark:bg-gray-800 rounded-lg"
                   />
                 </div>
-                
+
                 {/* Message Input */}
                 <div className="flex-shrink-0 mt-4 max-w-4xl mx-auto w-full">
                   <MessageInput
@@ -341,7 +360,7 @@ export default function SessionPage() {
                 <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
                   Documents ({documents.length})
                 </h2>
-                
+
                 <div className="flex flex-col items-center gap-4 mb-4">
                   <Button
                     variant="primary"
@@ -351,7 +370,7 @@ export default function SessionPage() {
                   >
                     <span className="mr-2">🏥</span> Library
                   </Button>
-                  
+
                   <div className="text-center">
                     <p className="text-yellow-500 mb-2">Can't find the book in the library?</p>
                     <p className="text-yellow-500 mb-4">No worries! 🥳</p>
@@ -367,7 +386,7 @@ export default function SessionPage() {
                   </div>
                 </div>
               </div>
-              
+
               {documents.length === 0 && !documentsLoading ? (
                 <div className="text-center py-12">
                   <p className="text-gray-500 dark:text-gray-400 text-lg mb-2">
@@ -396,11 +415,11 @@ export default function SessionPage() {
             <h3 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-white mb-3 sm:mb-4">
               Delete Session
             </h3>
-            
+
             <p className="text-sm sm:text-base text-gray-600 dark:text-gray-300 mb-4 sm:mb-6">
               Are you sure you want to delete "{currentSession.name}"? This action cannot be undone and will remove all messages and documents.
             </p>
-            
+
             <div className="flex gap-2 sm:gap-3">
               <Button
                 variant="outline"
@@ -409,7 +428,7 @@ export default function SessionPage() {
               >
                 Cancel
               </Button>
-              
+
               <Button
                 variant="danger"
                 onClick={handleDeleteSession}
