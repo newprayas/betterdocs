@@ -152,7 +152,7 @@ export class DocumentProcessor {
       try {
         const existingEmbeddings = await this.embeddingService.getEmbeddingsByDocument(document.id);
         embeddingsWereSaved = existingEmbeddings.length > 0;
-        
+
         console.log('🔍 EMBEDDING VERIFICATION DEBUG (processDocument):', {
           documentId: document.id,
           embeddingsFound: existingEmbeddings.length,
@@ -190,14 +190,14 @@ export class DocumentProcessor {
     onProgress?: (progress: EmbeddingGenerationProgress) => void
   ): Promise<string> {
     console.log('🚀 DocumentProcessor: Starting preprocessed package processing');
-    
+
     // Early validation of userId
     if (!userId) {
       const errorMsg = 'User ID is required for document processing';
       console.error('❌ DocumentProcessor: userId validation failed:', errorMsg);
       throw new Error(errorMsg);
     }
-    
+
     console.log('📋 DocumentProcessor: Package info:', {
       sessionId,
       userId,
@@ -353,19 +353,19 @@ export class DocumentProcessor {
       // Get session to retrieve userId for ownership verification
       const sessionService = getIndexedDBServices().sessionService;
       const session = await sessionService.getSession(currentSessionId, userId);
-      
+
       // CRITICAL FIX: Check if document exists across ALL sessions, not just the current one
       let document = await documentService.getDocument(packageDocId, session?.userId);
       let actualDocId: string;
       let needsNewId = false;
 
       console.log('🔍 DOCUMENT ID DEBUG: Checking for existing document in current session:', !!document);
-      
+
       // If document doesn't exist in current session, check if it exists in any session
       if (!document) {
         const existingDocAcrossSessions = await documentService.getDocumentAcrossAllSessions(packageDocId);
         console.log('🔍 DOCUMENT ID DEBUG: Checking for existing document across all sessions:', !!existingDocAcrossSessions);
-        
+
         if (existingDocAcrossSessions) {
           console.log('🔍 DOCUMENT ID DEBUG: Document exists in another session:', {
             id: existingDocAcrossSessions.id,
@@ -404,13 +404,13 @@ export class DocumentProcessor {
       } else {
         // Generate a new ID if the document exists in another session to avoid conflicts
         const finalDocId = needsNewId ? crypto.randomUUID() : packageDocId;
-        
+
         console.log('🔍 DOCUMENT ID DEBUG: Creating new document', {
           originalPackageId: packageDocId,
           needsNewId,
           finalDocId
         });
-        
+
         // Create new document with extracted metadata
         // CRITICAL FIX: Always use the current session ID, not the one from package metadata
         const documentCreate = {
@@ -493,17 +493,10 @@ export class DocumentProcessor {
       for (let i = 0; i < chunks.length; i++) {
         const chunk = chunks[i];
 
-        onProgress?.({
-          totalChunks: chunks.length,
-          processedChunks: i,
-          currentChunk: chunk.text.substring(0, 50) + '...',
-          isComplete: false,
-        });
-
         try {
           // CRITICAL FIX: Generate new chunk ID if we generated a new document ID to avoid conflicts
           const chunkId = needsNewId ? `chunk_${actualDocId}_${i}` : chunk.id;
-          
+
           // Convert preprocessed chunk to embedding chunk
           const embeddingChunk: EmbeddingChunk = {
             id: chunkId, // Use new chunk ID if document ID was regenerated
@@ -538,13 +531,23 @@ export class DocumentProcessor {
           embeddingChunks.push(embeddingChunk);
           processedCount++;
 
-          // Update progress for chunk processing
-          const chunkProgress = (processedCount / chunks.length) * 100;
-          progressTracker.updateStepProgress(operation.id, chunkStep.id, chunkProgress, {
-            processedChunks: processedCount,
-            totalChunks: chunks.length,
-            currentChunkId: chunk.id
-          });
+          // Update progress for chunk processing - THROTTLED
+          // Only update every 50 chunks or on the last chunk to reduce overhead
+          if (processedCount % 50 === 0 || processedCount === chunks.length) {
+            onProgress?.({
+              totalChunks: chunks.length,
+              processedChunks: i + 1,
+              currentChunk: chunk.text.substring(0, 50) + '...',
+              isComplete: false,
+            });
+
+            const chunkProgress = (processedCount / chunks.length) * 100;
+            progressTracker.updateStepProgress(operation.id, chunkStep.id, chunkProgress, {
+              processedChunks: processedCount,
+              totalChunks: chunks.length,
+              currentChunkId: chunk.id
+            });
+          }
 
         } catch (error) {
           console.error(`Error processing chunk ${i}:`, error);
@@ -617,7 +620,7 @@ export class DocumentProcessor {
         // Get session to retrieve userId for ownership verification
         const sessionService = getIndexedDBServices().sessionService;
         const session = await sessionService.getSession(sessionId, userId);
-        
+
         // Check document status before update
         const docBeforeUpdate = await documentService.getDocument(actualDocId, session?.userId);
         console.log('🔍 DOCUMENT STATUS DEBUG: Document before update:', {
@@ -641,7 +644,7 @@ export class DocumentProcessor {
         // Only update to completed if embeddings actually exist
         if (embeddingsBeforeUpdate.length > 0) {
           console.log('✅ EMBEDDINGS VERIFIED: Updating document status to completed');
-          
+
           // Update document status - sessionId is already correct from creation/update
           await documentService.updateDocument(actualDocId, {
             status: 'completed',
@@ -752,19 +755,19 @@ export class DocumentProcessor {
           const documentService = getIndexedDBServices().documentService;
           const sessionService = getIndexedDBServices().sessionService;
           const session = await sessionService.getSession(sessionId, userId);
-          
+
           // Check if document exists in current session or across all sessions
           let document = await documentService.getDocument(packageData.document_metadata.id, session?.userId);
           if (!document) {
             document = await documentService.getDocumentAcrossAllSessions(packageData.document_metadata.id);
           }
-          
+
           if (document) {
             actualDocumentId = document.id;
             // Check if embeddings exist for this document
             const existingEmbeddings = await embeddingService.getEmbeddingsByDocument(document.id);
             embeddingsWereSaved = existingEmbeddings.length > 0;
-            
+
             console.log('🔍 EMBEDDING VERIFICATION DEBUG:', {
               documentId: document.id,
               embeddingsFound: existingEmbeddings.length,
@@ -813,7 +816,7 @@ export class DocumentProcessor {
 
       const errorMessage = ingestionErrorHandler.createUserFriendlyMessage(mainErrorResult.errors);
       progressTracker.failOperation(operation.id, errorMessage);
-      
+
       // Only throw the error if core processing failed
       if (!embeddingsWereSaved) {
         throw new Error(errorMessage);
