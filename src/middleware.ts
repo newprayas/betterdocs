@@ -1,20 +1,20 @@
-import { createServerClient, type CookieOptions } from '@supabase/ssr'
+// import { createServerClient, type CookieOptions } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
 export const runtime = 'experimental-edge'
 
-
 export async function middleware(request: NextRequest) {
-    try {
-        console.log('🔍 [MIDDLEWARE] Processing request for:', request.nextUrl.pathname)
+    console.log('🔍 [MIDDLEWARE] Processing request for:', request.nextUrl.pathname)
 
+    // TEMPORARY DEBUG: Supabase disabled to check for Edge Runtime crash
+    /*
+    try {
         // Check for required environment variables
         if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
             console.error('❌ [MIDDLEWARE] Missing Supabase environment variables')
-            // Allow request to proceed to avoid 404, but it might fail later
             return NextResponse.next()
         }
-
+        
         // Skip middleware for static assets and API routes
         if (request.nextUrl.pathname.startsWith('/_next/') ||
             request.nextUrl.pathname.startsWith('/api/') ||
@@ -123,6 +123,9 @@ export async function middleware(request: NextRequest) {
         // In case of error, allow the request to proceed instead of crashing with 404
         return NextResponse.next()
     }
+    */
+
+    return NextResponse.next()
 }
 
 export const config = {
