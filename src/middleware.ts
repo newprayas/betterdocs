@@ -5,111 +5,124 @@ export const runtime = 'experimental-edge'
 
 
 export async function middleware(request: NextRequest) {
-    console.log('🔍 [MIDDLEWARE] Processing request for:', request.nextUrl.pathname)
+    try {
+        console.log('🔍 [MIDDLEWARE] Processing request for:', request.nextUrl.pathname)
 
-    // Skip middleware for static assets and API routes
-    if (request.nextUrl.pathname.startsWith('/_next/') ||
-        request.nextUrl.pathname.startsWith('/api/') ||
-        request.nextUrl.pathname.includes('.')) {
+        // Check for required environment variables
+        if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+            console.error('❌ [MIDDLEWARE] Missing Supabase environment variables')
+            // Allow request to proceed to avoid 404, but it might fail later
+            return NextResponse.next()
+        }
+
+        // Skip middleware for static assets and API routes
+        if (request.nextUrl.pathname.startsWith('/_next/') ||
+            request.nextUrl.pathname.startsWith('/api/') ||
+            request.nextUrl.pathname.includes('.')) {
+            return NextResponse.next()
+        }
+
+        let response = NextResponse.next({
+            request: {
+                headers: request.headers,
+            },
+        })
+
+        const supabase = createServerClient(
+            process.env.NEXT_PUBLIC_SUPABASE_URL!,
+            process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+            {
+                cookies: {
+                    get(name: string) {
+                        return request.cookies.get(name)?.value
+                    },
+                    set(name: string, value: string, options: CookieOptions) {
+                        request.cookies.set({
+                            name,
+                            value,
+                            ...options,
+                        })
+                        response = NextResponse.next({
+                            request: {
+                                headers: request.headers,
+                            },
+                        })
+                        response.cookies.set({
+                            name,
+                            value,
+                            ...options,
+                        })
+                    },
+                    remove(name: string, options: CookieOptions) {
+                        request.cookies.set({
+                            name,
+                            value: '',
+                            ...options,
+                        })
+                        response = NextResponse.next({
+                            request: {
+                                headers: request.headers,
+                            },
+                        })
+                        response.cookies.set({
+                            name,
+                            value: '',
+                            ...options,
+                        })
+                    },
+                },
+            }
+        )
+
+        const {
+            data: { user },
+        } = await supabase.auth.getUser()
+
+        // If no user and not on login or signup page, redirect to login
+        if (!user && !request.nextUrl.pathname.startsWith('/login') && !request.nextUrl.pathname.startsWith('/signup')) {
+            console.log('🔍 [MIDDLEWARE] No user detected, redirecting to login from:', request.nextUrl.pathname)
+            const redirectUrl = new URL('/login', request.url)
+            redirectUrl.searchParams.set('redirectedFrom', request.nextUrl.pathname)
+            return NextResponse.redirect(redirectUrl)
+        }
+
+        // If user is logged in and on login page, redirect to home
+        if (user && request.nextUrl.pathname.startsWith('/login')) {
+            return NextResponse.redirect(new URL('/', request.url))
+        }
+
+        // Access Control Logic
+        if (user) {
+            // Check profile for subscription status
+            const { data: profile } = await supabase
+                .from('profiles')
+                .select('*')
+                .eq('id', user.id)
+                .single()
+
+            if (profile) {
+                const now = new Date()
+                const trialStart = new Date(profile.trial_start_date)
+                const trialEnd = new Date(trialStart.getTime() + 30 * 24 * 60 * 60 * 1000) // 30 days
+                const isSubscribed = profile.is_subscribed
+                const isTrialActive = now < trialEnd
+
+                // If trial expired and not subscribed, we might want to block access or show a modal.
+                // For middleware, we can redirect to a "payment required" page or let the app handle the modal.
+                // The user requested a modal, so we'll let the app handle it, but we pass a header or cookie to indicate status?
+                // Or we can just let the client-side check handle the modal display.
+
+                // However, to be secure, we should probably block API routes if expired.
+                // For now, let's just ensure they are logged in. The modal will be handled in the layout.
+            }
+        }
+
+        return response
+    } catch (error) {
+        console.error('❌ [MIDDLEWARE ERROR]:', error)
+        // In case of error, allow the request to proceed instead of crashing with 404
         return NextResponse.next()
     }
-
-    let response = NextResponse.next({
-        request: {
-            headers: request.headers,
-        },
-    })
-
-    const supabase = createServerClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-        {
-            cookies: {
-                get(name: string) {
-                    return request.cookies.get(name)?.value
-                },
-                set(name: string, value: string, options: CookieOptions) {
-                    request.cookies.set({
-                        name,
-                        value,
-                        ...options,
-                    })
-                    response = NextResponse.next({
-                        request: {
-                            headers: request.headers,
-                        },
-                    })
-                    response.cookies.set({
-                        name,
-                        value,
-                        ...options,
-                    })
-                },
-                remove(name: string, options: CookieOptions) {
-                    request.cookies.set({
-                        name,
-                        value: '',
-                        ...options,
-                    })
-                    response = NextResponse.next({
-                        request: {
-                            headers: request.headers,
-                        },
-                    })
-                    response.cookies.set({
-                        name,
-                        value: '',
-                        ...options,
-                    })
-                },
-            },
-        }
-    )
-
-    const {
-        data: { user },
-    } = await supabase.auth.getUser()
-
-    // If no user and not on login or signup page, redirect to login
-    if (!user && !request.nextUrl.pathname.startsWith('/login') && !request.nextUrl.pathname.startsWith('/signup')) {
-        console.log('🔍 [MIDDLEWARE] No user detected, redirecting to login from:', request.nextUrl.pathname)
-        const redirectUrl = new URL('/login', request.url)
-        redirectUrl.searchParams.set('redirectedFrom', request.nextUrl.pathname)
-        return NextResponse.redirect(redirectUrl)
-    }
-
-    // If user is logged in and on login page, redirect to home
-    if (user && request.nextUrl.pathname.startsWith('/login')) {
-        return NextResponse.redirect(new URL('/', request.url))
-    }
-
-    // Access Control Logic
-    if (user) {
-        // Check profile for subscription status
-        const { data: profile } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('id', user.id)
-            .single()
-
-        if (profile) {
-            const now = new Date()
-            const trialStart = new Date(profile.trial_start_date)
-            const trialEnd = new Date(trialStart.getTime() + 30 * 24 * 60 * 60 * 1000) // 30 days
-            const isSubscribed = profile.is_subscribed
-            const isTrialActive = now < trialEnd
-
-            // If trial expired and not subscribed, we might want to block access or show a modal.
-            // For middleware, we can redirect to a "payment required" page or let the app handle the modal.
-            // The user requested a modal, so we'll let the app handle it, but we pass a header or cookie to indicate status?
-            // Or we can just let the client-side check handle the modal display.
-
-            // However, to be secure, we should probably block API routes if expired.
-            // For now, let's just ensure they are logged in. The modal will be handled in the layout.
-        }
-    }
-
-    return response
 }
 
 export const config = {
