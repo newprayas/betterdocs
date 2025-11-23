@@ -371,8 +371,12 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
             </Button>
           </div>
 
-          {/* Controls Row */}
-          <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
+        </div>
+
+        {/* Content Area */}
+        <div className="flex-1 overflow-y-auto p-6">
+          {/* Controls Row - Moved inside scrollable area */}
+          <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between mb-6">
             {/* Category Filter Pills */}
             <div className="flex-1 min-w-0 w-full sm:w-auto sm:overflow-x-auto sm:no-scrollbar sm:mask-linear-fade">
               <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 pb-1">
@@ -438,10 +442,6 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
               )}
             </div>
           </div>
-        </div>
-
-        {/* Content Area */}
-        <div className="flex-1 overflow-y-auto p-6">
           {isLoadingList ? (
             <div className="flex flex-col items-center justify-center h-64 space-y-4">
               <Loading size="lg" />
