@@ -371,6 +371,25 @@ export default function SessionPage() {
                     <span className="mr-2">🏥</span> Library
                   </Button>
 
+                  {documents.length > 0 && (
+                    <Button
+                      variant="ghost"
+                      onClick={() => setActiveTab('chat')}
+                      size="lg"
+                      className="text-lg px-8 py-3 bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300 hover:bg-green-200 dark:hover:bg-green-900/50 border border-green-200 dark:border-green-800"
+                    >
+                      <svg
+                        className="w-5 h-5 mr-2"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+                      </svg>
+                      Start chatting
+                    </Button>
+                  )}
+
                   <div className="text-center">
                     <p className="text-yellow-500 mb-2">Can't find the book in the library?</p>
                     <p className="text-yellow-500 mb-4">No worries! 🥳</p>

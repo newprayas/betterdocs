@@ -386,7 +386,7 @@ export default function SettingsPage() {
                     </a>
                   </p>
                   <p className="text-sm text-gray-500 dark:text-gray-400 mt-4 mb-2">
-                    🎉 Watch a easy 30 seconds video on how to get API KEY:
+                    🎉 Click the link above and follow EASY 7 STEPS shown below to get API KEY 🎉
                   </p>
                   <div className="mt-2 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
                     <img
