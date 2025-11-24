@@ -375,11 +375,11 @@ export default function SessionPage() {
                     <Button
                       variant="ghost"
                       onClick={() => setActiveTab('chat')}
-                      size="lg"
-                      className="text-lg px-8 py-3 bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300 hover:bg-green-200 dark:hover:bg-green-900/50 border border-green-200 dark:border-green-800"
+                      size="md"
+                      className="text-sm px-4 py-2 bg-green-400 hover:bg-green-500 dark:bg-green-500 dark:hover:bg-green-600 text-white rounded-full shadow-sm transition-colors duration-200"
                     >
                       <svg
-                        className="w-5 h-5 mr-2"
+                        className="w-4 h-4 mr-2"
                         fill="none"
                         viewBox="0 0 24 24"
                         stroke="currentColor"
