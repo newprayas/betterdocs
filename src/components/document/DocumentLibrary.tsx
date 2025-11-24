@@ -61,6 +61,21 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
     return books.filter(book => book.category === selectedCategory);
   }, [books, selectedCategory]);
 
+  // Calculate total progress for batch processing
+  const totalProgress = useMemo(() => {
+    if (selectedBooks.size === 0) return 0;
+    let total = 0;
+    selectedBooks.forEach(bookId => {
+      const status = processingStatus[bookId];
+      if (status?.status === 'completed') {
+        total += 100;
+      } else if (status?.progress) {
+        total += status.progress;
+      }
+    });
+    return Math.round(total / selectedBooks.size);
+  }, [selectedBooks, processingStatus]);
+
   // Handle individual book selection
   const handleBookSelection = (bookId: string) => {
     const newSelectedBooks = new Set(selectedBooks);
@@ -435,7 +450,23 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
                       </>
                     )}
                   </Button>
-                  <p className="text-white text-sm mt-2">
+
+                  {isBatchProcessing && (
+                    <div className="w-full mt-3 mb-1 min-w-[200px]">
+                      <div className="flex justify-between text-xs mb-1 text-gray-600 dark:text-gray-400">
+                        <span>Overall Progress</span>
+                        <span>{totalProgress}%</span>
+                      </div>
+                      <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                        <div
+                          className="bg-blue-600 h-2 rounded-full transition-all duration-300 ease-out"
+                          style={{ width: `${totalProgress}%` }}
+                        ></div>
+                      </div>
+                    </div>
+                  )}
+
+                  <p className="text-gray-500 dark:text-gray-400 text-xs mt-2 text-center">
                     {isBatchProcessing && "Please wait, it can take up to 1 minute ❤️"}
                   </p>
                 </div>
