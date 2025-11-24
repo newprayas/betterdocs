@@ -66,7 +66,7 @@ export default function SettingsPage() {
   const handleSettingChange = (field: string, value: any) => {
     setLocalSettings(prev => ({ ...prev, [field]: value }));
     setHasChanges(true);
-    
+
     // Re-enable save button if API key is changed from saved value
     if (field === 'geminiApiKey' && value !== savedApiKey) {
       setIsApiKeySaved(false);
@@ -276,7 +276,7 @@ export default function SettingsPage() {
                     placeholder="Enter your Gemini API key"
                     className="w-full mb-4"
                   />
-                  
+
                   <div className="flex items-center gap-2">
                     <Button
                       variant="outline"
@@ -284,11 +284,11 @@ export default function SettingsPage() {
                         if (localSettings.geminiApiKey) {
                           try {
                             console.log('[SETTINGS PAGE] Testing and saving API key...');
-                            
+
                             // Test connection first
                             const { geminiService } = await import('../../services/gemini');
                             const result = await geminiService.validateApiKey(localSettings.geminiApiKey);
-                            
+
                             if (result.isValid) {
                               // Save API key if test is successful
                               await updateSettings({ geminiApiKey: localSettings.geminiApiKey });
@@ -296,7 +296,7 @@ export default function SettingsPage() {
                               setSavedApiKey(localSettings.geminiApiKey);
                               setIsApiKeySaved(true);
                               console.log('[SETTINGS PAGE] API key saved and tested successfully');
-                              
+
                               // Show success banner
                               setShowSaveBanner('success');
                               setTimeout(() => setShowSaveBanner(null), 3000);
@@ -385,17 +385,16 @@ export default function SettingsPage() {
                       [Google AI Studio - Click here ✨]
                     </a>
                   </p>
-                  <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
-                    🎉 Watch a easy 30 seconds video on how to get API KEY - :{' '}
-                    <a
-                      href="https://www.youtube.com/shorts/gimu4UFFMnM"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-blue-600 dark:text-blue-400 hover:underline"
-                    >
-                      https://www.youtube.com/shorts/gimu4UFFMnM
-                    </a>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 mt-4 mb-2">
+                    🎉 Watch a easy 30 seconds video on how to get API KEY:
                   </p>
+                  <div className="mt-2 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
+                    <img
+                      src="/ad24hz.gif"
+                      alt="How to get Gemini API Key"
+                      className="w-full h-auto max-w-full object-contain"
+                    />
+                  </div>
                 </div>
 
               </div>
