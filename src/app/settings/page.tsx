@@ -280,8 +280,8 @@ export default function SettingsPage() {
                   <div className="flex justify-center mt-6">
                     <Button
                       variant="primary"
-                      size="lg"
-                      className="w-full max-w-sm text-lg py-6 shadow-md hover:shadow-lg transition-all duration-200"
+                      size="md"
+                      className="w-full max-w-sm py-2 shadow-md hover:shadow-lg transition-all duration-200"
                       onClick={async () => {
                         if (localSettings.geminiApiKey) {
                           try {
@@ -374,13 +374,13 @@ export default function SettingsPage() {
                       href="https://makersuite.google.com/app/apikey"
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-yellow-600 dark:text-yellow-400 hover:underline"
+                      className="text-yellow-600 dark:text-yellow-400 hover:underline font-bold"
                     >
                       [Google AI Studio - Click here ✨]
                     </a>
                   </p>
                   <p className="text-sm text-gray-500 dark:text-gray-400 mt-4 mb-2">
-                    🎉 Click the link above and follow <span className="text-yellow-600 dark:text-yellow-400 font-bold">EASY 7 STEPS</span> shown below to get API KEY
+                    🎉 Click the link above and follow <span className="text-yellow-600 dark:text-yellow-400">EASY 7 STEPS</span> shown below to get API KEY
                   </p>
                   <div className="mt-2 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
                     <img
