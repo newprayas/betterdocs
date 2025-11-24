@@ -277,9 +277,11 @@ export default function SettingsPage() {
                     className="w-full mb-4"
                   />
 
-                  <div className="flex items-center gap-2">
+                  <div className="flex justify-center mt-6">
                     <Button
-                      variant="outline"
+                      variant="primary"
+                      size="lg"
+                      className="w-full max-w-sm text-lg py-6 shadow-md hover:shadow-lg transition-all duration-200"
                       onClick={async () => {
                         if (localSettings.geminiApiKey) {
                           try {
@@ -314,20 +316,7 @@ export default function SettingsPage() {
                       }}
                       disabled={!localSettings.geminiApiKey || isApiKeySaved}
                     >
-                      Save API Key
-                    </Button>
-                    <Button
-                      variant="outline"
-                      onClick={handleTestConnection}
-                      disabled={isTestingConnection || !localSettings.geminiApiKey}
-                      className={clsx(
-                        connectionStatus === 'success' && 'bg-green-50 border-green-200 text-green-700',
-                        connectionStatus === 'error' && 'bg-red-50 border-red-200 text-red-700'
-                      )}
-                    >
-                      {isTestingConnection ? 'Testing...' :
-                        connectionStatus === 'success' ? '✓ Connected' :
-                          connectionStatus === 'error' ? '✗ Failed' : 'Test Connection'}
+                      {isApiKeySaved ? '✓ API Key Saved' : 'Save API Key'}
                     </Button>
                   </div>
 
@@ -374,6 +363,11 @@ export default function SettingsPage() {
                     </div>
                   )}
 
+                  <div className="mt-4 mb-4">
+                    <p className="font-semibold text-gray-900 dark:text-white">📚 What is API key?</p>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">It is a simple code needed to chat with your documents</p>
+                  </div>
+
                   <p className="text-sm text-gray-500 dark:text-gray-400 mt-4">
                     ✅ Get your API key from{' '}
                     <a
@@ -386,7 +380,7 @@ export default function SettingsPage() {
                     </a>
                   </p>
                   <p className="text-sm text-gray-500 dark:text-gray-400 mt-4 mb-2">
-                    🎉 Click the link above and follow EASY 7 STEPS shown below to get API KEY 🎉
+                    🎉 Click the link above and follow <span className="text-yellow-600 dark:text-yellow-400 font-bold">EASY 7 STEPS</span> shown below to get API KEY
                   </p>
                   <div className="mt-2 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
                     <img
