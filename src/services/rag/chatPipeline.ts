@@ -63,6 +63,73 @@ export class ChatPipeline {
   }
 
   /**
+   * Rewrites the user query based on chat history to make it standalone.
+   * Solves the "What are its causes?" problem.
+   */
+  private async generateStandaloneQuery(
+    content: string,
+    history: any[],
+    apiKey: string,
+    model: string
+  ): Promise<string> {
+    // 1. Cost Optimization: If no history, no need to rewrite.
+    if (!history || history.length === 0) {
+      console.log('[QUERY REWRITER]', 'Skipping rewrite - No history.');
+      return content;
+    }
+
+    // 2. Cost Optimization: Limit history to last 4 messages (2 turns)
+    // This keeps input tokens low for the free tier.
+    const recentHistory = history.slice(-4).map(msg =>
+      `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}`
+    ).join('\n');
+
+    const prompt = `
+      Task: Rewrite the last user question to be a standalone query based on the conversation history.
+      Rules:
+      1. Replace pronouns (it, they, this) with specific nouns from history.
+      2. Keep the query concise.
+      3. If the question is already standalone, return it exactly as is.
+      4. Do NOT answer the question.
+
+      Conversation History:
+      ${recentHistory}
+
+      Last User Question:
+      ${content}
+
+      Standalone Query:
+    `;
+
+    try {
+      // Use a specialized instance for rewriting to avoid interfering with main chat state
+      // We reuse the existing Gemini service structure but make a quick generation call
+      const { geminiService } = await import('../gemini/geminiService');
+      
+      // Note: We rely on the service already being initialized in AppInitializer,
+      // but we pass options to ensure we use a fast/cheap configuration.
+      const rewrittenQuery = await geminiService.generateResponse(
+        prompt,
+        undefined,
+        undefined,
+        {
+          temperature: 0.1, // Low temperature for deterministic rewriting
+          maxTokens: 100,   // Very low output tokens (saves limits)
+        }
+      );
+
+      const cleanedQuery = rewrittenQuery.trim();
+      console.log('[QUERY REWRITER]', `Original: "${content}" -> Rewritten: "${cleanedQuery}"`);
+      return cleanedQuery;
+
+    } catch (error) {
+      console.error('[QUERY REWRITER ERROR]', error);
+      // Fallback: If API fails (rate limit), use original query so the app doesn't crash
+      return content;
+    }
+  }
+
+  /**
    * Send a message and get AI response with RAG context
    */
   async sendMessage(
@@ -83,6 +150,33 @@ export class ChatPipeline {
       if (!sessionForDocuments) {
         throw new Error('Session not found');
       }
+
+      // 1. FETCH HISTORY (NEW STEP)
+      // We need the history BEFORE we do the search
+      console.log('[HISTORY]', 'Fetching chat history for context awareness...');
+      const history = await this.indexedDBServices.messageService.getMessagesBySession(
+        sessionId,
+        sessionForDocuments.userId
+      );
+
+      // Get Settings for model info
+      const settings = await this.indexedDBServices.settingsService.getSettings(sessionForDocuments.userId);
+      const apiKey = settings?.geminiApiKey || '';
+      const model = settings?.model || 'gemini-2.5-flash-lite';
+
+      // 2. GENERATE STANDALONE QUERY (NEW STEP)
+      // This converts "What are its causes?" -> "What are the causes of cataract?"
+      console.log('[REWRITING]', 'Generating standalone query...');
+      const standaloneQuery = await this.generateStandaloneQuery(content, history, apiKey, model);
+      
+      // 🔴 PROMINENT LOG: Show the converted query for tracking
+      console.log('🔴 Converted query -:', `"${standaloneQuery}"`);
+      
+      // 3. ENHANCE THE REWRITTEN QUERY, NOT THE ORIGINAL
+      // Modify this line to pass 'standaloneQuery' instead of 'content'
+      const enhancedQuery = await this.enhanceQueryWithContext(sessionId, standaloneQuery);
+      console.log('[FINAL SEARCH QUERY]', enhancedQuery);
+
       const documents = await this.indexedDBServices.documentService.getDocumentsBySession(sessionId, sessionForDocuments.userId);
       console.log('[DOCUMENT STATUS]', `Found ${documents.length} total documents in session ${sessionId}`);
       console.log('[DOCUMENT STATUS]', 'Document details:', documents.map(doc => ({
@@ -113,26 +207,23 @@ export class ChatPipeline {
         return;
       }
 
-      // Enhance the query with context information
-      const enhancedQuery = await this.enhanceQueryWithContext(sessionId, content);
-      console.log('[FINAL QUERY FOR LLM]', enhancedQuery);
-
-      // Generate query embedding using the Gemini embedding service
+      // 4. GENERATE EMBEDDING USING THE REWRITTEN QUERY
       console.log('[EMBEDDING GENERATION]', 'Creating vector embedding for enhanced query...');
       const queryEmbedding = await embeddingService.generateEmbedding(enhancedQuery);
       console.log('[EMBEDDING GENERATED]', `Vector created with ${queryEmbedding.length} dimensions`);
 
-      // Use enhanced hybrid search for better results
-      console.log('[VECTOR SEARCH]', 'Performing hybrid search to find relevant context...');
+      // 5. PERFORM SEARCH USING THE REWRITTEN QUERY
+      console.log('[VECTOR SEARCH]', 'Performing hybrid search...');
       const searchResults = await vectorSearchService.searchHybridEnhanced(
         queryEmbedding,
         sessionId,
-        enhancedQuery,
+        enhancedQuery, // Use the enhanced, rewritten query here
         {
           maxResults: 15,
           useDynamicWeighting: true,
           textWeight: 0.3,
-          vectorWeight: 0.7
+          vectorWeight: 0.7,
+          userId: sessionForDocuments.userId // Ensure userId is passed
         }
       );
       console.log('[SEARCH RESULTS]', `${searchResults.length} relevant chunks found`);
@@ -159,12 +250,14 @@ export class ChatPipeline {
       const context = this.buildContext(searchResults);
       console.log('[CONTEXT CREATED]', `Context string length: ${context.length} characters`);
 
-      // Generate response with context using simplified citation system
-      console.log('[RESPONSE GENERATION]', 'Generating simplified contextual response with RAG...');
+      // ... The rest of the function (Context Building, LLM Generation) remains the same ...
+      // IMPORTANT: The final LLM call (generateSimplifiedContextualResponse)
+      // should use the standalone query for better context understanding
+      
       await this.generateSimplifiedContextualResponse(
         sessionId,
-        enhancedQuery,
-        context,
+        standaloneQuery, // Use the rewritten query instead of original content
+        this.buildContext(searchResults),
         searchResults,
         onStreamEvent
       );

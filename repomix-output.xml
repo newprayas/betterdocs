@@ -14679,1380 +14679,7 @@ export class SettingsService {
   }
 }
 
-export const settingsService = new SettingsService();</file><file path="src/services/rag/citationService.ts">import type { VectorSearchResult } from &apos;@/types/embedding&apos;;
-import type { Citation as MessageCitation } from &apos;@/types/message&apos;;
-import type { SimplifiedCitation, SimplifiedCitationGroup, PageGroup } from &apos;@/types/citation&apos;;
-
-export interface Citation {
-  document: string;
-  page?: number;
-  pages?: number[]; // Multiple pages for combined chunks
-  pageRange?: string; // Formatted page range like &quot;5-7&quot; or &quot;5,7,9&quot;
-  excerpt: string;
-  sourceIndex: number;
-  chunkId: string;
-  fullContent?: string; // Full chunk content for display
-}
-
-export interface ProcessedCitations {
-  citations: Citation[];
-  renumberedResponse: string;
-  usedSourceIndices: number[];
-  validationWarnings: string[]; // Add validation warnings
-}
-
-
-export class CitationService {
-  /**
-   * Extract citations from AI response and process them
-   * Filters unused citations and renumbers them sequentially
-   * Enhanced with robust validation and page number accuracy
-   */
-  processCitations(
-    response: string,
-    searchResults: VectorSearchResult[]
-  ): ProcessedCitations {
-    console.log(&apos;\n=== CITATION PROCESSING DEBUG START ===&apos;);
-    console.log(&apos;[CITATION INPUT]&apos;, `Processing citations for response with ${searchResults.length} search results`);
-    
-    // Extract all citation references from response
-    const citationMatches = this.extractCitationReferences(response);
-    console.log(&apos;[CITATION MATCHES]&apos;, `Found ${citationMatches.length} citation references:`, citationMatches.map(m =&gt; `[${m.index}] at position ${m.position}`));
-    
-    const usedSourceIndices = new Set&lt;number&gt;();
-    const validationWarnings: string[] = [];
-
-    // Log all search results for reference
-    console.log(&apos;[SEARCH RESULTS]&apos;, &apos;Available search results:&apos;);
-    searchResults.forEach((result, index) =&gt; {
-      console.log(`[RESULT ${index}]`, {
-        chunkId: result.chunk.id,
-        documentTitle: result.document.title,
-        similarity: result.similarity,
-        chunkPage: result.chunk.page,
-        metadataPageNumber: result.chunk.metadata?.pageNumber,
-        isCombined: result.chunk.metadata?.isCombined,
-        originalChunkCount: result.chunk.metadata?.originalChunkCount,
-        combinedChunkIds: result.chunk.metadata?.combinedChunkIds,
-        contentPreview: result.chunk.content.substring(0, 100) + &apos;...&apos;
-      });
-    });
-
-    // Filter valid citations and collect used indices
-    const validCitations: Citation[] = [];
-    
-    for (const match of citationMatches) {
-      const sourceIndex = match.index;
-      
-      // CRITICAL FIX: Convert 1-based citation to 0-based index
-      // LLM citations are 1-based (CONTEXT SOURCE 1, 2, 3, 4, 5) but searchResults array is 0-based
-      const correctedSourceIndex = sourceIndex - 1;
-      console.log(`[CITATION INDEX MAPPING]`, `Citation [${sourceIndex}] -&gt; searchResults[${correctedSourceIndex}] (CONTEXT SOURCE ${sourceIndex})`);
-      
-      // Strict validation: source index must exist in search results
-      if (correctedSourceIndex &gt;= 0 &amp;&amp; correctedSourceIndex &lt; searchResults.length) {
-        const result = searchResults[correctedSourceIndex];
-        
-        console.log(`[PROCESSING CITATION [${sourceIndex}]]`, {
-          chunkId: result.chunk.id,
-          documentTitle: result.document.title,
-          chunkPage: result.chunk.page,
-          metadataPageNumber: result.chunk.metadata?.pageNumber,
-          isCombined: result.chunk.metadata?.isCombined,
-          correctedIndex: correctedSourceIndex,
-          contextSource: `CONTEXT SOURCE ${sourceIndex}`,
-          mappingCorrect: true
-        });
-        
-        // Enhanced page number detection - handle combined chunks with multiple pages
-        const pageInfo = this.detectPageNumber(
-          result.chunk.content,
-          result.chunk.metadata?.pageNumber,
-          result.chunk.page,
-          result.chunk.metadata?.pageNumbers
-        );
-        
-        console.log(`[PAGE DETECTION [${sourceIndex}]]`, {
-          contentPage: result.chunk.page,
-          metadataPage: result.chunk.metadata?.pageNumber,
-          metadataPageNumbers: result.chunk.metadata?.pageNumbers,
-          pageInfo,
-          isCombined: result.chunk.metadata?.isCombined,
-          detectionPriority: &apos;metadata.pageNumbers &gt; chunk.page &gt; metadata.pageNumber &gt; content extraction&apos;
-        });
-        
-        // Create citation with full content and enhanced page information
-        const citation: Citation = {
-          document: result.document.title || result.document.fileName,
-          page: pageInfo.page,
-          pages: pageInfo.pages,
-          pageRange: pageInfo.pageRange,
-          excerpt: this.createExcerpt(result.chunk.content),
-          sourceIndex, // Keep original sourceIndex for display
-          chunkId: result.chunk.id,
-          fullContent: result.chunk.content, // Store full content for display
-        };
-
-        console.log(`[CITATION CREATED [${sourceIndex}]]`, {
-          document: citation.document,
-          page: citation.page,
-          pages: citation.pages,
-          pageRange: citation.pageRange,
-          excerpt: citation.excerpt.substring(0, 80) + &apos;...&apos;
-        });
-
-        validCitations.push(citation);
-        usedSourceIndices.add(sourceIndex);
-      } else {
-        // Add warning for invalid citation
-        const warning = `Invalid citation [${sourceIndex}]: Source index out of range (corrected: ${correctedSourceIndex}, available: 0-${searchResults.length - 1})`;
-        validationWarnings.push(warning);
-        console.log(&apos;[INVALID CITATION]&apos;, {
-          citationNumber: sourceIndex,
-          correctedIndex: correctedSourceIndex,
-          contextSource: `CONTEXT SOURCE ${sourceIndex}`,
-          mappingFailed: true,
-          reason: &apos;Index out of range&apos;,
-          availableRange: `0-${searchResults.length - 1}`
-        });
-      }
-    }
-
-    // Remove duplicates and sort by source index
-    const uniqueCitations = this.removeDuplicateCitations(validCitations)
-      .sort((a, b) =&gt; a.sourceIndex - b.sourceIndex);
-
-    console.log(&apos;[UNIQUE CITATIONS]&apos;, `After duplicate removal: ${uniqueCitations.length} citations`);
-    uniqueCitations.forEach((citation, index) =&gt; {
-      console.log(`[UNIQUE ${index}]`, {
-        sourceIndex: citation.sourceIndex,
-        document: citation.document,
-        page: citation.page,
-        pages: citation.pages,
-        pageRange: citation.pageRange,
-        chunkId: citation.chunkId
-      });
-    });
-
-    // NEW: Validate that cited content actually matches the sources
-    const contentValidationResult = this.validateCitationContent(response, uniqueCitations, searchResults);
-    validationWarnings.push(...contentValidationResult.warnings);
-    
-    // Filter out citations that failed content validation
-    const validatedCitations = uniqueCitations.filter((citation, index) =&gt; {
-      const isValid = contentValidationResult.validCitationIndices.has(index);
-      if (!isValid) {
-        console.log(`[CONTENT VALIDATION FAILED]`, `Citation [${citation.sourceIndex}] removed - content doesn&apos;t match source`);
-      }
-      return isValid;
-    });
-
-    // Renumber citations in response and remove invalid ones
-    const renumberedResponse = this.renumberCitationsAndRemoveInvalid(response, validatedCitations, validationWarnings);
-
-    console.log(&apos;[CITATION RESULT]&apos;, {
-      originalCitations: citationMatches.length,
-      validCitations: validCitations.length,
-      uniqueCitations: uniqueCitations.length,
-      validatedCitations: validatedCitations.length,
-      contentValidationWarnings: contentValidationResult.warnings.length,
-      finalPageNumbers: validatedCitations.map(c =&gt; ({
-        document: c.document,
-        page: c.page,
-        pages: c.pages,
-        pageRange: c.pageRange
-      }))
-    });
-    console.log(&apos;=== CITATION PROCESSING DEBUG END ===\n&apos;);
-
-    return {
-      citations: validatedCitations,
-      renumberedResponse,
-      usedSourceIndices: Array.from(usedSourceIndices).sort((a, b) =&gt; a - b),
-      validationWarnings,
-    };
-  }
-
-  /**
-   * Extract citation references from text using regex
-   * Looks for patterns like [1], [2], etc.
-   */
-  private extractCitationReferences(text: string): Array&lt;{ index: number; position: number }&gt; {
-    const citationPattern = /\[(\d+)\]/g;
-    const matches: Array&lt;{ index: number; position: number }&gt; = [];
-    let match;
-
-    while ((match = citationPattern.exec(text)) !== null) {
-      const index = parseInt(match[1], 10);
-      matches.push({
-        index,
-        position: match.index,
-      });
-    }
-
-    return matches;
-  }
-
-  /**
-   * Remove duplicate citations (same document and page)
-   * Enhanced to handle combined chunks properly
-   */
-  private removeDuplicateCitations(citations: Citation[]): Citation[] {
-    const seen = new Set&lt;string&gt;();
-    const unique: Citation[] = [];
-
-    for (const citation of citations) {
-      // Create a more sophisticated key that handles multiple pages
-      let key: string;
-      if (citation.pages &amp;&amp; citation.pages.length &gt; 0) {
-        // For combined chunks, use sorted page numbers as part of the key
-        const sortedPages = [...citation.pages].sort((a, b) =&gt; a - b).join(&apos;,&apos;);
-        key = `${citation.document}_${sortedPages}`;
-      } else if (citation.page) {
-        // For single pages, use the page number
-        key = `${citation.document}_${citation.page}`;
-      } else {
-        // For no page information
-        key = `${citation.document}_unknown`;
-      }
-      
-      if (!seen.has(key)) {
-        seen.add(key);
-        unique.push(citation);
-      }
-    }
-
-    return unique;
-  }
-
-  /**
-   * Enhanced page number detection with priority order
-   * Priority: 1. metadata.pageNumbers (for combined chunks), 2. chunk.page (direct page field), 3. metadata.pageNumber, 4. content extraction
-   */
-  private detectPageNumber(
-    content: string,
-    metadataPageNumber?: number,
-    chunkPage?: number,
-    metadataPageNumbers?: number[]
-  ): { page?: number; pages?: number[]; pageRange?: string } {
-    console.log(&apos;[PAGE DETECTION]&apos;, {
-      chunkPage,
-      metadataPageNumber,
-      metadataPageNumbers,
-      contentPreview: content.substring(0, 50) + &apos;...&apos;,
-      checkingPriority: &apos;metadata.pageNumbers &gt; chunk.page &gt; metadata.pageNumber &gt; content extraction&apos;
-    });
-    
-    // Priority 1: For combined chunks, use pageNumbers array
-    if (metadataPageNumbers &amp;&amp; metadataPageNumbers.length &gt; 0) {
-      const sortedPages = [...metadataPageNumbers].sort((a, b) =&gt; a - b);
-      const pageRange = this.formatPageRange(sortedPages);
-      console.log(&apos;[PAGE DETECTION RESULT]&apos;, `Using metadata.pageNumbers: ${sortedPages.join(&apos;, &apos;)} (range: ${pageRange})`);
-      return {
-        page: sortedPages[0], // Primary page for compatibility
-        pages: sortedPages,
-        pageRange
-      };
-    }
-    
-    // Priority 2: Use direct page field from chunk if available
-    if (chunkPage &amp;&amp; chunkPage &gt; 0) {
-      console.log(&apos;[PAGE DETECTION RESULT]&apos;, `Using chunk.page: ${chunkPage}`);
-      return { page: chunkPage };
-    }
-    
-    // Priority 3: Use metadata pageNumber if available
-    if (metadataPageNumber &amp;&amp; metadataPageNumber &gt; 0) {
-      console.log(&apos;[PAGE DETECTION RESULT]&apos;, `Using metadata.pageNumber: ${metadataPageNumber}`);
-      return { page: metadataPageNumber };
-    }
-    
-    // Priority 4: Try to extract page number from content as fallback
-    const pagePatterns = [
-      /page\s+(\d+)/i,
-      /p\.?\s*(\d+)/i,
-      /第(\d+)页/,
-      /page\s+(\d+)\s+of/i,
-    ];
-
-    for (const pattern of pagePatterns) {
-      const match = content.match(pattern);
-      if (match &amp;&amp; match[1]) {
-        const extractedPage = parseInt(match[1], 10);
-        // Only use extracted page if it&apos;s reasonable (not 0 or negative)
-        if (extractedPage &gt; 0) {
-          console.log(&apos;[PAGE DETECTION RESULT]&apos;, `Using content extraction: ${extractedPage}`);
-          return { page: extractedPage };
-        }
-      }
-    }
-
-    console.log(&apos;[PAGE DETECTION RESULT]&apos;, &apos;No valid page number found&apos;);
-    // Return undefined if no valid page number found
-    return {};
-  }
-
-  /**
-   * Format page numbers into a readable range or list
-   */
-  private formatPageRange(pages: number[]): string {
-    if (pages.length === 0) return &apos;&apos;;
-    if (pages.length === 1) return `${pages[0]}`;
-    
-    // Check if pages are consecutive
-    const isConsecutive = pages.every((page, index) =&gt; {
-      return index === 0 || page === pages[index - 1] + 1;
-    });
-    
-    if (isConsecutive) {
-      return `${pages[0]}-${pages[pages.length - 1]}`;
-    } else {
-      // For non-consecutive pages, show them as a list
-      return pages.join(&apos;, &apos;);
-    }
-  }
-
-  /**
-   * Renumber citations in response text sequentially and remove invalid ones
-   * Changes [5], [2], [8] to [1], [2], [3] and removes citations that don&apos;t exist
-   */
-  private renumberCitationsAndRemoveInvalid(
-    response: string,
-    citations: Citation[],
-    validationWarnings: string[]
-  ): string {
-    let renumbered = response;
-    
-    // Create set of valid source indices
-    const validSourceIndices = new Set(citations.map(c =&gt; c.sourceIndex));
-    
-    // Create mapping from original indices to new indices
-    const indexMap = new Map&lt;number, number&gt;();
-    citations.forEach((citation, newIndex) =&gt; {
-      indexMap.set(citation.sourceIndex, newIndex + 1);
-    });
-
-    // Remove invalid citations first
-    const invalidCitationPattern = /\[(\d+)\]/g;
-    renumbered = renumbered.replace(invalidCitationPattern, (match, indexStr) =&gt; {
-      const index = parseInt(indexStr, 10);
-      if (!validSourceIndices.has(index)) {
-        // Remove this invalid citation
-        validationWarnings.push(`Removed invalid citation [${index}] from response`);
-        return &apos;&apos;;
-      }
-      return match; // Keep valid citations for now
-    });
-
-    // Now renumber the remaining valid citations
-    for (const [originalIndex, newIndex] of indexMap) {
-      const regex = new RegExp(`\\[${originalIndex}\\]`, &apos;g&apos;);
-      renumbered = renumbered.replace(regex, `[${newIndex}]`);
-    }
-
-    // Clean up any double spaces but preserve newlines for list formatting
-    // Fix: Don&apos;t convert newlines to spaces as this breaks bullet point lists
-    // 🟢 FIXED: Only clean up punctuation spacing, leave indentation alone
-    renumbered = renumbered.replace(/ +([.,;:!])/g, &apos;$1&apos;);
-
-    return renumbered.trim();
-  }
-
-  /**
-   * Create a concise excerpt from chunk content for preview
-   * Full content will be available via fullContent property
-   */
-  private createExcerpt(content: string, maxLength: number = 300): string {
-    if (content.length &lt;= maxLength) {
-      return content;
-    }
-
-    // Try to end at sentence boundary
-    const truncated = content.substring(0, maxLength);
-    const lastSentenceEnd = Math.max(
-      truncated.lastIndexOf(&apos;.&apos;),
-      truncated.lastIndexOf(&apos;!&apos;),
-      truncated.lastIndexOf(&apos;?&apos;)
-    );
-
-    if (lastSentenceEnd &gt; maxLength * 0.7) {
-      return truncated.substring(0, lastSentenceEnd + 1);
-    }
-
-    return truncated + &apos;...&apos;;
-  }
-
-  /**
-   * Format citations for display at the end of response in Vancouver style
-   */
-  formatCitationsForDisplay(citations: Citation[]): string {
-    if (citations.length === 0) {
-      return &apos;&apos;;
-    }
-
-    const sources = citations.map((citation, index) =&gt; {
-      let pageInfo = &apos;&apos;;
-      if (citation.pageRange) {
-        pageInfo = `. pp. ${citation.pageRange}`;
-      } else if (citation.pages &amp;&amp; citation.pages.length &gt; 1) {
-        pageInfo = `. pp. ${citation.pages.join(&apos;, &apos;)}`;
-      } else if (citation.page) {
-        pageInfo = `. p. ${citation.page}`;
-      }
-      return `${index + 1}. ${citation.document}${pageInfo}`;
-    });
-
-    return &apos;\n\n**Vancouver Style References:**\n&apos; + sources.join(&apos;\n&apos;);
-  }
-
-  /**
-   * Enhanced validation of citation format in response
-   */
-  validateCitationFormat(response: string, availableSources: number): {
-    isValid: boolean;
-    errors: string[];
-    warnings: string[];
-  } {
-    const errors: string[] = [];
-    const warnings: string[] = [];
-
-    // Check for citation references
-    const citationMatches = this.extractCitationReferences(response);
-    
-    if (citationMatches.length === 0) {
-      warnings.push(&apos;No citations found in response&apos;);
-    }
-
-    // Check for invalid citation numbers (out of range)
-    for (const match of citationMatches) {
-      if (match.index &gt;= availableSources) {
-        errors.push(`Citation [${match.index}] is invalid - only ${availableSources} sources available (0-${availableSources - 1})`);
-      }
-      if (match.index &lt; 0) {
-        errors.push(`Citation [${match.index}] is invalid - negative index`);
-      }
-    }
-
-    // Check for consecutive citations without context
-    const consecutivePattern = /\[\d+\]\s*\[\d+\]/g;
-    const consecutiveMatches = response.match(consecutivePattern);
-    if (consecutiveMatches &amp;&amp; consecutiveMatches.length &gt; 0) {
-      warnings.push(&apos;Found consecutive citations without context between them&apos;);
-    }
-
-    // Check for citations at the very end (might be missing context)
-    const endCitationPattern = /\[\d+\]\s*$/;
-    if (endCitationPattern.test(response.trim())) {
-      warnings.push(&apos;Citation appears at the very end without context&apos;);
-    }
-
-    // Check for citation gaps (e.g., [1], [3] without [2])
-    const usedIndices = citationMatches.map(m =&gt; m.index).sort((a, b) =&gt; a - b);
-    for (let i = 1; i &lt; usedIndices.length; i++) {
-      if (usedIndices[i] &gt; usedIndices[i - 1] + 1) {
-        warnings.push(`Citation gap detected between [${usedIndices[i - 1]}] and [${usedIndices[i]}]`);
-      }
-    }
-
-    return {
-      isValid: errors.length === 0,
-      errors,
-      warnings,
-    };
-  }
-
-  /**
-   * Extract citation metadata for storage in the correct MessageCitation format
-   * Enhanced to include full content and handle combined chunks
-   */
-  extractCitationMetadata(
-    citations: Citation[],
-    searchResults: VectorSearchResult[]
-  ): MessageCitation[] {
-    return citations.map(citation =&gt; {
-      // Find the corresponding search result to check if it&apos;s a combined chunk
-      const searchResult = searchResults.find(result =&gt; result.chunk.id === citation.chunkId);
-      
-      // Handle combined chunks by including metadata about the original chunks
-      let enhancedExcerpt = citation.fullContent || citation.excerpt;
-      let additionalMetadata: any = {};
-      
-      if (searchResult?.chunk.metadata?.isCombined) {
-        additionalMetadata = {
-          isCombined: true,
-          originalChunkCount: searchResult.chunk.metadata.originalChunkCount,
-          combinedChunkIds: searchResult.chunk.metadata.combinedChunkIds,
-        };
-        
-        // For combined chunks, we might want to add a note about the combination
-        if (searchResult.chunk.metadata.originalChunkCount &amp;&amp; searchResult.chunk.metadata.originalChunkCount &gt; 1) {
-          enhancedExcerpt = `[Combined from ${searchResult.chunk.metadata.originalChunkCount} chunks]\n\n${enhancedExcerpt}`;
-        }
-      }
-      
-      return {
-        document: citation.document,
-        page: citation.page,
-        pages: citation.pages,
-        pageRange: citation.pageRange,
-        excerpt: enhancedExcerpt,
-        ...additionalMetadata,
-      };
-    });
-  }
-
-  /**
-   * Create citation links for interactive UI
-   */
-  createCitationLinks(citations: Citation[]): Array&lt;{
-    id: string;
-    text: string;
-    documentId: string;
-    pageNumber?: number;
-    chunkId: string;
-  }&gt; {
-    return citations.map((citation, index) =&gt; ({
-      id: `citation-${index + 1}`,
-      text: `[${index + 1}]`,
-      documentId: citation.document,
-      pageNumber: citation.page,
-      pages: citation.pages,
-      pageRange: citation.pageRange,
-      chunkId: citation.chunkId,
-    }));
-  }
-
-  /**
-   * Merge citations from multiple responses
-   */
-  mergeCitations(citationGroups: ProcessedCitations[]): ProcessedCitations {
-    const allCitations: Citation[] = [];
-    const allUsedIndices: number[] = [];
-    const allValidationWarnings: string[] = [];
-    let mergedResponse = &apos;&apos;;
-
-    for (let i = 0; i &lt; citationGroups.length; i++) {
-      const group = citationGroups[i];
-      
-      // Offset citation indices for merged response
-      const offsetCitations = group.citations.map(citation =&gt; ({
-        ...citation,
-        sourceIndex: citation.sourceIndex + allUsedIndices.length,
-      }));
-
-      allCitations.push(...offsetCitations);
-      allUsedIndices.push(...group.usedSourceIndices);
-      allValidationWarnings.push(...(group.validationWarnings || []));
-      
-      if (i === 0) {
-        mergedResponse = group.renumberedResponse;
-      } else {
-        // Append response with adjusted citation numbers
-        mergedResponse += &apos;\n\n&apos; + this.adjustCitationIndices(
-          group.renumberedResponse,
-          allUsedIndices.length
-        );
-      }
-    }
-
-    return {
-      citations: this.removeDuplicateCitations(allCitations),
-      renumberedResponse: mergedResponse,
-      usedSourceIndices: allUsedIndices,
-      validationWarnings: allValidationWarnings,
-    };
-  }
-
-  /**
-   * Adjust citation indices by offset
-   */
-  private adjustCitationIndices(text: string, offset: number): string {
-    const citationPattern = /\[(\d+)\]/g;
-    
-    return text.replace(citationPattern, (match, index) =&gt; {
-      const newIndex = parseInt(index, 10) + offset;
-      return `[${newIndex}]`;
-    });
-  }
-
-  /**
-   * NEW: Validate that cited content actually appears in the cited sources
-   * Enhanced with confidence scoring and more lenient validation criteria
-   */
-  private validateCitationContent(
-    response: string,
-    citations: Citation[],
-    searchResults: VectorSearchResult[]
-  ): {
-    validCitationIndices: Set&lt;number&gt;;
-    warnings: string[];
-  } {
-    const validCitationIndices = new Set&lt;number&gt;();
-    const warnings: string[] = [];
-
-    console.log(&apos;\n=== CONTENT VALIDATION START ===&apos;);
-    console.log(&apos;[VALIDATION INPUT]&apos;, `Checking ${citations.length} citations against their sources`);
-    console.log(&apos;[CITATION JOURNEY]&apos;, `Response length: ${response.length} characters`);
-    console.log(&apos;[CITATION JOURNEY]&apos;, `Available search results: ${searchResults.length} sources`);
-
-    // Extract text segments that should be supported by each citation
-    const citationContexts = this.extractCitationContexts(response);
-    console.log(&apos;[CITATION JOURNEY]&apos;, `Extracted contexts for ${citationContexts.size} citations`);
-    
-    // Log detailed citation journey
-    citationContexts.forEach((context, index) =&gt; {
-      console.log(`[CITATION JOURNEY CONTEXT ${index}]`, {
-        citationNumber: index,
-        contextLength: context.length,
-        contextPreview: context.substring(0, 100) + &apos;...&apos;,
-        expectedSourceIndex: index - 1, // 0-based
-        contextSource: &apos;CONTEXT SOURCE &apos; + index
-      });
-    });
-
-    for (let i = 0; i &lt; citations.length; i++) {
-      const citation = citations[i];
-      const sourceIndex = citation.sourceIndex;
-      
-      // Get the source content - CRITICAL FIX: Convert 1-based citation to 0-based index
-      // LLM citations are 1-based (CONTEXT SOURCE 1, 2, 3, 4, 5) but searchResults array is 0-based
-      const correctedSourceIndex = sourceIndex - 1;
-      console.log(`[CITATION INDEX MAPPING]`, `Citation [${sourceIndex}] -&gt; searchResults[${correctedSourceIndex}] (CONTEXT SOURCE ${sourceIndex})`);
-      
-      const sourceResult = searchResults[correctedSourceIndex];
-      if (!sourceResult) {
-        warnings.push(`Citation [${sourceIndex}]: Source not found in search results (corrected index: ${correctedSourceIndex})`);
-        continue;
-      }
-
-      const sourceContent = sourceResult.chunk.content.toLowerCase();
-      const citationContext = citationContexts.get(sourceIndex);
-      
-      if (!citationContext) {
-        warnings.push(`Citation [${sourceIndex}]: No context found for citation`);
-        continue;
-      }
-
-      // Check if the cited context actually appears in the source
-      const contextLower = citationContext.toLowerCase();
-      const contentMatch = this.checkContentMatchWithConfidence(contextLower, sourceContent);
-      
-      console.log(`[VALIDATING CITATION [${sourceIndex}]]`, {
-        citationNumber: sourceIndex,
-        sourceIndex: correctedSourceIndex, // 0-based
-        contextLength: citationContext.length,
-        sourceContentLength: sourceContent.length,
-        confidenceScore: contentMatch.confidence,
-        isValid: contentMatch.confidence &gt;= 0.2, // Accept citations with 20%+ confidence (less strict)
-        contextPreview: citationContext.substring(0, 100) + &apos;...&apos;,
-        sourcePreview: sourceContent.substring(0, 100) + &apos;...&apos;,
-        sourcePage: sourceResult.chunk.metadata?.pageNumber || sourceResult.chunk.page,
-        sourceDocument: sourceResult.document.title || sourceResult.document.fileName,
-        validationReason: contentMatch.reason
-      });
-
-      // Use confidence scoring instead of binary validation - LESS STRICT: lowered threshold from 0.3 to 0.2
-      if (contentMatch.confidence &gt;= 0.2) {
-        validCitationIndices.add(i);
-        if (contentMatch.confidence &lt; 0.5) { // Lowered from 0.6 to 0.5
-          warnings.push(`Citation [${sourceIndex}]: Low confidence match (${Math.round(contentMatch.confidence * 100)}%) - ${contentMatch.reason}`);
-        }
-      } else {
-        warnings.push(`Citation [${sourceIndex}]: Rejected - ${contentMatch.reason} (confidence: ${Math.round(contentMatch.confidence * 100)}%)`);
-      }
-    }
-
-    console.log(&apos;[VALIDATION RESULT]&apos;, {
-      totalCitations: citations.length,
-      validCitations: validCitationIndices.size,
-      invalidCitations: citations.length - validCitationIndices.size,
-      warnings: warnings.length
-    });
-    console.log(&apos;=== CONTENT VALIDATION END ===\n&apos;);
-
-    return { validCitationIndices, warnings };
-  }
-
-  /**
-   * Extract the text context that each citation should support
-   */
-  private extractCitationContexts(response: string): Map&lt;number, string&gt; {
-    console.log(&apos;\n=== CITATION CONTEXT EXTRACTION START ===&apos;);
-    console.log(&apos;[CONTEXT EXTRACTION]&apos;, `Extracting contexts from response of ${response.length} characters`);
-    
-    const citationContexts = new Map&lt;number, string&gt;();
-    const citationPattern = /\[(\d+)\]/g;
-    let match;
-    let lastIndex = 0;
-
-    while ((match = citationPattern.exec(response)) !== null) {
-      const citationIndex = parseInt(match[1], 10);
-      const citationPosition = match.index;
-      
-      console.log(`[CONTEXT EXTRACTION MATCH]`, {
-        citationNumber: citationIndex,
-        citationPosition: citationPosition,
-        citationText: match[0],
-        lastPosition: lastIndex
-      });
-      
-      // Extract text from last position to this citation, preserving newlines
-      const textSegment = response.substring(lastIndex, citationPosition).replace(/[ \t]+/g, &apos; &apos;).trim();
-      
-      console.log(`[CONTEXT EXTRACTION SEGMENT]`, {
-        citationNumber: citationIndex,
-        segmentLength: textSegment.length,
-        segmentPreview: textSegment.substring(0, 80) + (textSegment.length &gt; 80 ? &apos;...&apos; : &apos;&apos;),
-        willStore: textSegment.length &gt; 10 || citationContexts.size === 0
-      });
-      
-      // If this is the first citation or we have meaningful text, store it
-      if (textSegment.length &gt; 10 || citationContexts.size === 0) {
-        citationContexts.set(citationIndex, textSegment);
-      } else if (citationContexts.size &gt; 0) {
-        // If text segment is too short, append to previous citation&apos;s context
-        const lastKey = Array.from(citationContexts.keys()).pop();
-        if (lastKey !== undefined) {
-          const existingContext = citationContexts.get(lastKey) || &apos;&apos;;
-          citationContexts.set(lastKey, existingContext + &apos; &apos; + textSegment);
-        }
-      }
-      
-      lastIndex = citationPosition + match[0].length;
-    }
-
-    console.log(&apos;[CONTEXT EXTRACTION RESULT]&apos;, `Extracted ${citationContexts.size} citation contexts`);
-    console.log(&apos;=== CITATION CONTEXT EXTRACTION END ===\n&apos;);
-
-    return citationContexts;
-  }
-
-  /**
-   * Check if the cited context actually matches the source content with confidence scoring
-   * ENHANCED: More lenient validation with better medical term handling
-   */
-  private checkContentMatchWithConfidence(context: string, sourceContent: string): {
-    confidence: number;
-    reason: string;
-  } {
-    console.log(&apos;\n=== CONTENT MATCH ANALYSIS START ===&apos;);
-    console.log(&apos;[CONTENT MATCH INPUT]&apos;, {
-      contextLength: context.length,
-      sourceLength: sourceContent.length,
-      contextPreview: context.substring(0, 100) + &apos;...&apos;,
-      sourcePreview: sourceContent.substring(0, 100) + &apos;...&apos;
-    });
-
-    // Remove common words and normalize for comparison
-    const normalizedContext = this.normalizeTextForComparison(context);
-    const normalizedSource = this.normalizeTextForComparison(sourceContent);
-
-    let confidence = 0;
-    let reasons: string[] = [];
-
-    // 1. Check for direct phrase matches (reduced from 3 to 2 consecutive words for more leniency)
-    const contextWords = normalizedContext.split(/\s+/);
-    const sourceWords = normalizedSource.split(/\s+/);
-    
-    let maxMatchLength = 0;
-    let totalPhraseMatches = 0;
-    
-    for (let i = 0; i &lt;= contextWords.length - 2; i++) { // Reduced from 3 to 2
-      const phrase = contextWords.slice(i, i + 2).join(&apos; &apos;);
-      if (normalizedSource.includes(phrase)) {
-        totalPhraseMatches++;
-        maxMatchLength = Math.max(maxMatchLength, 2);
-        
-        // Check for longer matches
-        for (let j = 3; j &lt;= contextWords.length - i; j++) {
-          const longerPhrase = contextWords.slice(i, i + j).join(&apos; &apos;);
-          if (normalizedSource.includes(longerPhrase)) {
-            maxMatchLength = j;
-          } else {
-            break;
-          }
-        }
-      }
-    }
-
-    // Calculate phrase match confidence
-    if (maxMatchLength &gt;= 2) { // Reduced from 3 to 2
-      const phraseConfidence = Math.min(0.8, (maxMatchLength / 8) + (totalPhraseMatches * 0.15)); // More lenient calculation
-      confidence = Math.max(confidence, phraseConfidence);
-      reasons.push(`${maxMatchLength}+ consecutive words match`);
-    }
-
-    // 2. Check for key term overlap (reduced from 2 to 1 important term for more leniency)
-    const importantTerms = this.extractImportantTerms(context);
-    const matchingTerms = importantTerms.filter(term =&gt;
-      normalizedSource.includes(term.toLowerCase())
-    );
-
-    const hasTermOverlap = matchingTerms.length &gt;= 1 || // Reduced from 2 to 1
-                          (matchingTerms.length &gt;= 1 &amp;&amp; importantTerms.length &lt;= 1);
-
-    if (hasTermOverlap) {
-      const termConfidence = Math.min(0.7, (matchingTerms.length / Math.max(importantTerms.length, 1)) * 0.9); // More lenient
-      confidence = Math.max(confidence, termConfidence);
-      reasons.push(`${matchingTerms.length}/${importantTerms.length} key terms match`);
-    }
-
-    // 3. Enhanced semantic similarity check with lower threshold
-    const semanticSimilarity = this.calculateSemanticSimilarity(normalizedContext, normalizedSource);
-    if (semanticSimilarity &gt; 0.2) { // Reduced from 0.3 to 0.2
-      const semanticConfidence = Math.min(0.6, semanticSimilarity * 0.8); // More lenient
-      confidence = Math.max(confidence, semanticConfidence);
-      reasons.push(`semantic similarity: ${Math.round(semanticSimilarity * 100)}%`);
-    }
-
-    // 4. Enhanced medical/scientific term matching with higher boost
-    const medicalTerms = this.extractMedicalTerms(context);
-    const matchingMedicalTerms = medicalTerms.filter(term =&gt;
-      normalizedSource.includes(term.toLowerCase())
-    );
-    
-    if (matchingMedicalTerms.length &gt; 0) {
-      confidence += 0.15 * (matchingMedicalTerms.length / Math.max(medicalTerms.length, 1)); // Increased from 0.1 to 0.15
-      reasons.push(`${matchingMedicalTerms.length} medical terms match`);
-    }
-
-    // 5. NEW: Add partial match consideration for medical content
-    const medicalTermBoost = this.calculateMedicalTermMatch(context, sourceContent);
-    if (medicalTermBoost &gt; 0) {
-      confidence = Math.min(confidence + medicalTermBoost, 1.0);
-      reasons.push(`medical term relevance: ${Math.round(medicalTermBoost * 100)}%`);
-    }
-
-    // Cap confidence at 1.0
-    confidence = Math.min(confidence, 1.0);
-
-    let reason = &apos;&apos;;
-    if (confidence &lt; 0.2) { // Updated threshold to match new validation
-      if (maxMatchLength &gt; 0) {
-        reason = `Only found ${maxMatchLength} consecutive matching words (need at least 2)`;
-      } else if (matchingTerms.length &gt; 0) {
-        reason = `Only ${matchingTerms.length} key terms match (need at least 1)`;
-      } else {
-        reason = &apos;No meaningful content match found between citation and source&apos;;
-      }
-    } else {
-      reason = reasons.join(&apos;; &apos;);
-    }
-
-    console.log(&apos;[CONTENT MATCH RESULT]&apos;, {
-      confidence: Math.round(confidence * 100) + &apos;%&apos;,
-      reason: reason,
-      phraseMatches: totalPhraseMatches,
-      termMatches: matchingTerms.length,
-      medicalMatches: matchingMedicalTerms.length,
-      semanticSimilarity: Math.round(semanticSimilarity * 100) + &apos;%&apos;
-    });
-    console.log(&apos;=== CONTENT MATCH ANALYSIS END ===\n&apos;);
-
-    return { confidence, reason };
-  }
-
-  /**
-   * NEW: Calculate medical term match boost for better validation
-   */
-  private calculateMedicalTermMatch(context: string, sourceContent: string): number {
-    const medicalTerms = [
-      &apos;glaucoma&apos;, &apos;cataract&apos;, &apos;diabetes&apos;, &apos;hypertension&apos;, &apos;ophthalmoscopy&apos;, &apos;ultrasound&apos;,
-      &apos;diagnosis&apos;, &apos;treatment&apos;, &apos;symptom&apos;, &apos;therapy&apos;, &apos;medication&apos;, &apos;surgery&apos;, &apos;examination&apos;,
-      &apos;retina&apos;, &apos;cornea&apos;, &apos;lens&apos;, &apos;optic&apos;, &apos;vision&apos;, &apos;eye&apos;, &apos;ocular&apos;, &apos;ophthalmic&apos;,
-      &apos;intraocular&apos;, &apos;pressure&apos;, &apos;fluid&apos;, &apos;injection&apos;, &apos;laser&apos;, &apos;phacoemulsification&apos;
-    ];
-
-    const contextLower = context.toLowerCase();
-    const sourceLower = sourceContent.toLowerCase();
-
-    let matchCount = 0;
-    for (const term of medicalTerms) {
-      if (contextLower.includes(term) &amp;&amp; sourceLower.includes(term)) {
-        matchCount++;
-      }
-    }
-
-    // Return boost based on medical term overlap
-    return Math.min(matchCount * 0.1, 0.3); // Max 30% boost
-  }
-
-  /**
-   * Calculate semantic similarity between two texts using Jaccard similarity
-   * This is a simplified semantic similarity check
-   */
-  private calculateSemanticSimilarity(text1: string, text2: string): number {
-    const words1 = new Set(text1.split(/\s+/).filter(w =&gt; w.length &gt; 2));
-    const words2 = new Set(text2.split(/\s+/).filter(w =&gt; w.length &gt; 2));
-    
-    const intersection = new Set([...words1].filter(x =&gt; words2.has(x)));
-    const union = new Set([...words1, ...words2]);
-    
-    if (union.size === 0) return 0;
-    return intersection.size / union.size;
-  }
-
-  /**
-   * Legacy method for backward compatibility
-   */
-  private checkContentMatch(context: string, sourceContent: string): {
-    isValid: boolean;
-    reason: string;
-  } {
-    const result = this.checkContentMatchWithConfidence(context, sourceContent);
-    return {
-      isValid: result.confidence &gt;= 0.3,
-      reason: result.reason
-    };
-  }
-
-  /**
-   * Normalize text for comparison by removing punctuation and common words
-   */
-  private normalizeTextForComparison(text: string): string {
-    const commonWords = new Set([
-      &apos;the&apos;, &apos;a&apos;, &apos;an&apos;, &apos;and&apos;, &apos;or&apos;, &apos;but&apos;, &apos;in&apos;, &apos;on&apos;, &apos;at&apos;, &apos;to&apos;, &apos;for&apos;,
-      &apos;of&apos;, &apos;with&apos;, &apos;by&apos;, &apos;is&apos;, &apos;are&apos;, &apos;was&apos;, &apos;were&apos;, &apos;be&apos;, &apos;been&apos;, &apos;have&apos;,
-      &apos;has&apos;, &apos;had&apos;, &apos;do&apos;, &apos;does&apos;, &apos;did&apos;, &apos;will&apos;, &apos;would&apos;, &apos;could&apos;, &apos;should&apos;,
-      &apos;this&apos;, &apos;that&apos;, &apos;these&apos;, &apos;those&apos;, &apos;i&apos;, &apos;you&apos;, &apos;he&apos;, &apos;she&apos;, &apos;it&apos;, &apos;we&apos;, &apos;they&apos;
-    ]);
-
-    return text
-      .toLowerCase()
-      .replace(/[^\w\s]/g, &apos; &apos;) // Replace punctuation with spaces
-      .replace(/[ \t]+/g, &apos; &apos;) // Only replace spaces and tabs, NOT newlines
-      .trim()
-      .split(/\s+/)
-      .filter(word =&gt; !commonWords.has(word) &amp;&amp; word.length &gt; 1)
-      .join(&apos; &apos;);
-  }
-
-  /**
-   * Extract important terms (nouns and specific terminology) from text
-   * Enhanced with better medical/scientific term identification
-   */
-  private extractImportantTerms(text: string): string[] {
-    // Enhanced medical and scientific terms
-    const medicalTerms = [
-      &apos;cataract&apos;, &apos;glaucoma&apos;, &apos;diabetes&apos;, &apos;hypertension&apos;, &apos;ophthalmoscopy&apos;, &apos;ultrasound&apos;,
-      &apos;diagnosis&apos;, &apos;treatment&apos;, &apos;symptom&apos;, &apos;therapy&apos;, &apos;medication&apos;, &apos;surgery&apos;, &apos;examination&apos;,
-      &apos;retina&apos;, &apos;cornea&apos;, &apos;lens&apos;, &apos;optic&apos;, &apos;vision&apos;, &apos;eye&apos;, &apos;ocular&apos;, &apos;ophthalmic&apos;,
-      &apos;intraocular&apos;, &apos;pressure&apos;, &apos;fluid&apos;, &apos;injection&apos;, &apos;laser&apos;, &apos;phacoemulsification&apos;,
-      &apos;biometry&apos;, &apos;keratometry&apos;, &apos;astigmatism&apos;, &apos;myopia&apos;, &apos;hyperopia&apos;, &apos;presbyopia&apos;
-    ];
-
-    const scientificTerms = [
-      &apos;analysis&apos;, &apos;research&apos;, &apos;study&apos;, &apos;clinical&apos;, &apos;trial&apos;, &apos;patient&apos;, &apos;outcome&apos;,
-      &apos;procedure&apos;, &apos;technique&apos;, &apos;method&apos;, &apos;result&apos;, &apos;conclusion&apos;, &apos;evidence&apos;,
-      &apos;parameter&apos;, &apos;measurement&apos;, &apos;assessment&apos;, &apos;evaluation&apos;, &apos;diagnostic&apos;
-    ];
-
-    // Create patterns for matching
-    const importantPatterns = [
-      /\b[a-zA-Z]{4,}\b/g, // Words with 4+ characters
-      new RegExp(`\\b(?:${medicalTerms.join(&apos;|&apos;)})\\b`, &apos;gi&apos;), // Medical terms
-      new RegExp(`\\b(?:${scientificTerms.join(&apos;|&apos;)})\\b`, &apos;gi&apos;), // Scientific terms
-      /\b(?:[A-Z][a-z]+(?:[A-Z][a-z]+)*)\b/g, // CamelCase technical terms
-      /\b\d+(?:\.\d+)?(?:%|mg|ml|mm|cm)\b/g, // Measurements and units
-    ];
-
-    const allMatches: string[] = [];
-    importantPatterns.forEach(pattern =&gt; {
-      const matches = text.match(pattern);
-      if (matches) {
-        allMatches.push(...matches);
-      }
-    });
-
-    // Filter out common words and normalize
-    const commonWords = new Set([
-      &apos;this&apos;, &apos;that&apos;, &apos;with&apos;, &apos;from&apos;, &apos;they&apos;, &apos;have&apos;, &apos;been&apos;, &apos;said&apos;, &apos;each&apos;,
-      &apos;which&apos;, &apos;their&apos;, &apos;time&apos;, &apos;will&apos;, &apos;about&apos;, &apos;would&apos;, &apos;there&apos;, &apos;could&apos;
-    ]);
-
-    const filteredTerms = allMatches
-      .map(term =&gt; term.toLowerCase())
-      .filter(term =&gt; !commonWords.has(term) &amp;&amp; term.length &gt; 2);
-
-    // Return unique terms
-    return Array.from(new Set(filteredTerms));
-  }
-
-  /**
-   * Extract specifically medical terms from text
-   */
-  private extractMedicalTerms(text: string): string[] {
-    const medicalTerms = [
-      &apos;cataract&apos;, &apos;glaucoma&apos;, &apos;diabetes&apos;, &apos;hypertension&apos;, &apos;ophthalmoscopy&apos;, &apos;ultrasound&apos;,
-      &apos;diagnosis&apos;, &apos;treatment&apos;, &apos;symptom&apos;, &apos;therapy&apos;, &apos;medication&apos;, &apos;surgery&apos;, &apos;examination&apos;,
-      &apos;retina&apos;, &apos;cornea&apos;, &apos;lens&apos;, &apos;optic&apos;, &apos;vision&apos;, &apos;eye&apos;, &apos;ocular&apos;, &apos;ophthalmic&apos;,
-      &apos;intraocular&apos;, &apos;pressure&apos;, &apos;fluid&apos;, &apos;injection&apos;, &apos;laser&apos;, &apos;phacoemulsification&apos;,
-      &apos;biometry&apos;, &apos;keratometry&apos;, &apos;astigmatism&apos;, &apos;myopia&apos;, &apos;hyperopia&apos;, &apos;presbyopia&apos;
-    ];
-
-    const pattern = new RegExp(`\\b(?:${medicalTerms.join(&apos;|&apos;)})\\b`, &apos;gi&apos;);
-    const matches = text.match(pattern);
-    
-    return matches ? Array.from(new Set(matches.map(term =&gt; term.toLowerCase()))) : [];
-  }
-
-  /**
-   * NEW: Process citations using simplified page-based grouping
-   * Groups all chunks from the same page into a single citation
-   * ENHANCED: Added comprehensive logging and content validation
-   */
-  processSimplifiedCitations(
-    response: string,
-    searchResults: VectorSearchResult[]
-  ): SimplifiedCitationGroup {
-    console.log(&apos;\n=== SIMPLIFIED CITATION PROCESSING START ===&apos;);
-    console.log(&apos;[SIMPLIFIED INPUT]&apos;, `Processing ${searchResults.length} search results for simplified citations`);
-    console.log(&apos;[RESPONSE ANALYSIS]&apos;, `LLM Response length: ${response.length} characters`);
-    console.log(&apos;[RESPONSE PREVIEW]&apos;, response.substring(0, 200) + (response.length &gt; 200 ? &apos;...&apos; : &apos;&apos;));
-    
-    // Extract citation references from response
-    const citationMatches = this.extractCitationReferences(response);
-    console.log(&apos;[CITATION MATCHES]&apos;, `Found ${citationMatches.length} citation references:`, citationMatches.map(m =&gt; `[${m.index}] at position ${m.position}`));
-    
-    const usedSourceIndices = new Set&lt;number&gt;();
-    
-    // Group search results by page
-    const pageGroups = this.groupByPage(searchResults);
-    console.log(&apos;[PAGE GROUPS]&apos;, `Created ${pageGroups.length} page groups`);
-    
-    // Extract citation contexts for validation
-    const citationContexts = this.extractCitationContexts(response);
-    console.log(&apos;[CITATION CONTEXTS]&apos;, `Extracted contexts for ${citationContexts.size} citations`);
-    citationContexts.forEach((context, index) =&gt; {
-      console.log(`[CONTEXT ${index}]`, context.substring(0, 100) + (context.length &gt; 100 ? &apos;...&apos; : &apos;&apos;));
-    });
-
-    // Filter valid citations and create simplified citations
-    const validCitations: SimplifiedCitation[] = [];
-    const validationWarnings: string[] = [];
-    
-    for (const match of citationMatches) {
-      const sourceIndex = match.index;
-      
-      // CRITICAL FIX: Convert 1-based citation to 0-based index
-      // LLM citations are 1-based (CONTEXT SOURCE 1, 2, 3, 4, 5) but searchResults array is 0-based
-      const correctedSourceIndex = sourceIndex - 1;
-      console.log(`[SIMPLIFIED CITATION MAPPING]`, `Citation [${sourceIndex}] -&gt; searchResults[${correctedSourceIndex}] (CONTEXT SOURCE ${sourceIndex})`);
-      
-      if (correctedSourceIndex &gt;= 0 &amp;&amp; correctedSourceIndex &lt; searchResults.length) {
-        const result = searchResults[correctedSourceIndex];
-        const pageNumber = this.getEffectivePageNumber(result);
-        
-        console.log(`[PROCESSING CITATION [${sourceIndex}]]`, {
-          documentTitle: result.document.title || result.document.fileName,
-          pageNumber,
-          chunkId: result.chunk.id,
-          similarity: result.similarity,
-          chunkPreview: result.chunk.content.substring(0, 150) + &apos;...&apos;
-        });
-        
-        if (pageNumber !== undefined) {
-          // Find the page group for this result
-          const pageGroup = pageGroups.find(pg =&gt;
-            pg.documentId === result.document.id &amp;&amp; pg.page === pageNumber
-          );
-          
-          if (pageGroup) {
-            // Combine all content from this page
-            const combinedContent = pageGroup.chunks
-              .sort((a, b) =&gt; a.content.localeCompare(b.content)) // Sort for consistency
-              .map(chunk =&gt; chunk.content)
-              .join(&apos;\n---\n&apos;);
-            
-            // NEW: Validate that citation context matches the source content
-            const citationContext = citationContexts.get(sourceIndex);
-            let isValidCitation = true;
-            let validationReason = &apos;&apos;;
-            
-            if (citationContext) {
-              const validation = this.checkContentMatchWithConfidence(citationContext, combinedContent);
-              isValidCitation = validation.confidence &gt;= 0.2; // LESS STRICT: lowered threshold from 0.3 to 0.2
-              validationReason = validation.reason;
-              
-              console.log(`[CITATION VALIDATION [${sourceIndex}]]`, {
-                isValid: isValidCitation,
-                confidence: validation.confidence,
-                reason: validation.reason,
-                contextPreview: citationContext.substring(0, 80) + &apos;...&apos;,
-                sourcePreview: combinedContent.substring(0, 80) + &apos;...&apos;
-              });
-              
-              if (!isValidCitation) {
-                validationWarnings.push(`Citation [${sourceIndex}] validation failed: ${validationReason}`);
-              }
-            } else {
-              console.warn(`[VALIDATION WARNING]`, `No context found for citation [${sourceIndex}]`);
-              validationWarnings.push(`No context found for citation [${sourceIndex}]`);
-            }
-            
-            // Only add citation if it passes validation
-            if (isValidCitation) {
-              const simplifiedCitation: SimplifiedCitation = {
-                document: result.document.title || result.document.fileName,
-                page: pageNumber,
-                combinedContent,
-                sourceIndex,
-                chunkIds: pageGroup.chunks.map(chunk =&gt; chunk.id),
-                similarity: Math.max(...pageGroup.chunks.map(chunk =&gt; chunk.similarity))
-              };
-              
-              validCitations.push(simplifiedCitation);
-              usedSourceIndices.add(sourceIndex);
-              
-              console.log(`[VALID CITATION ADDED [${sourceIndex}]]`, {
-                document: simplifiedCitation.document,
-                page: simplifiedCitation.page,
-                chunkCount: simplifiedCitation.chunkIds.length,
-                similarity: simplifiedCitation.similarity,
-                correctedIndex: correctedSourceIndex,
-                contextSource: `CONTEXT SOURCE ${sourceIndex}`,
-                mappingCorrect: true
-              });
-            } else {
-              console.log(`[INVALID CITATION REJECTED [${sourceIndex}]]`, {
-                reason: validationReason,
-                correctedIndex: correctedSourceIndex,
-                contextSource: `CONTEXT SOURCE ${sourceIndex}`,
-                mappingFailed: true
-              });
-            }
-          } else {
-            console.warn(`[PAGE GROUP NOT FOUND]`, `No page group found for document ${result.document.id}, page ${pageNumber}`);
-            validationWarnings.push(`No page group found for citation [${sourceIndex}]`);
-          }
-        } else {
-          console.warn(`[PAGE NUMBER NOT FOUND]`, `No valid page number for citation [${sourceIndex}]`);
-          validationWarnings.push(`No valid page number for citation [${sourceIndex}]`);
-        }
-      } else {
-        console.warn(`[INVALID CITATION INDEX]`, `Citation [${sourceIndex}] is out of range (corrected index: ${correctedSourceIndex}, available: 0-${searchResults.length - 1})`);
-        validationWarnings.push(`Citation [${sourceIndex}] is out of range (corrected index: ${correctedSourceIndex})`);
-      }
-    }
-    
-    // Remove duplicates and sort by source index
-    const uniqueCitations = this.removeDuplicateSimplifiedCitations(validCitations)
-      .sort((a, b) =&gt; a.sourceIndex - b.sourceIndex);
-    
-    // Renumber citations in response
-    const renumberedResponse = this.renumberSimplifiedCitations(response, uniqueCitations);
-    
-    console.log(&apos;[SIMPLIFIED RESULT]&apos;, {
-      originalCitations: citationMatches.length,
-      validCitations: validCitations.length,
-      uniqueCitations: uniqueCitations.length,
-      rejectedCitations: citationMatches.length - validCitations.length,
-      pageGroups: pageGroups.length,
-      validationWarnings: validationWarnings.length
-    });
-    
-    if (validationWarnings.length &gt; 0) {
-      console.log(&apos;[VALIDATION WARNINGS]&apos;, validationWarnings);
-    }
-    
-    console.log(&apos;=== SIMPLIFIED CITATION PROCESSING END ===\n&apos;);
-    
-    return {
-      citations: uniqueCitations,
-      renumberedResponse,
-      usedSourceIndices: Array.from(usedSourceIndices).sort((a, b) =&gt; a - b),
-      validationWarnings
-    };
-  }
-
-  /**
-   * Group search results by document and page
-   */
-  private groupByPage(searchResults: VectorSearchResult[]): PageGroup[] {
-    const pageMap = new Map&lt;string, PageGroup&gt;();
-    
-    for (const result of searchResults) {
-      const pageNumber = this.getEffectivePageNumber(result);
-      
-      if (pageNumber !== undefined) {
-        const pageKey = `${result.document.id}_${pageNumber}`;
-        
-        if (!pageMap.has(pageKey)) {
-          pageMap.set(pageKey, {
-            documentId: result.document.id,
-            documentTitle: result.document.title || result.document.fileName,
-            page: pageNumber,
-            chunks: []
-          });
-        }
-        
-        const pageGroup = pageMap.get(pageKey)!;
-        pageGroup.chunks.push({
-          id: result.chunk.id,
-          content: result.chunk.content,
-          similarity: result.similarity
-        });
-      }
-    }
-    
-    return Array.from(pageMap.values());
-  }
-
-  /**
-   * Get effective page number from search result
-   */
-  private getEffectivePageNumber(result: VectorSearchResult): number | undefined {
-    // Priority 1: metadata.pageNumbers (for combined chunks)
-    if (result.chunk.metadata?.pageNumbers &amp;&amp; result.chunk.metadata.pageNumbers.length &gt; 0) {
-      return result.chunk.metadata.pageNumbers[0];
-    }
-    
-    // Priority 2: chunk.page
-    if (result.chunk.page &amp;&amp; result.chunk.page &gt; 0) {
-      return result.chunk.page;
-    }
-    
-    // Priority 3: metadata.pageNumber
-    if (result.chunk.metadata?.pageNumber &amp;&amp; result.chunk.metadata.pageNumber &gt; 0) {
-      return result.chunk.metadata.pageNumber;
-    }
-    
-    // Priority 4: Extract from content
-    const pagePatterns = [
-      /page\s+(\d+)/i,
-      /p\.?\s*(\d+)/i,
-      /第(\d+)页/,
-      /page\s+(\d+)\s+of/i,
-    ];
-
-    for (const pattern of pagePatterns) {
-      const match = result.chunk.content.match(pattern);
-      if (match &amp;&amp; match[1]) {
-        const extractedPage = parseInt(match[1], 10);
-        if (extractedPage &gt; 0) {
-          return extractedPage;
-        }
-      }
-    }
-    
-    return undefined;
-  }
-
-  /**
-   * Remove duplicate simplified citations
-   */
-  private removeDuplicateSimplifiedCitations(citations: SimplifiedCitation[]): SimplifiedCitation[] {
-    const seen = new Set&lt;string&gt;();
-    const unique: SimplifiedCitation[] = [];
-
-    for (const citation of citations) {
-      const key = `${citation.document}_${citation.page}`;
-      
-      if (!seen.has(key)) {
-        seen.add(key);
-        unique.push(citation);
-      }
-    }
-
-    return unique;
-  }
-
-  /**
-   * Renumber citations in simplified response
-   */
-  private renumberSimplifiedCitations(
-    response: string,
-    citations: SimplifiedCitation[]
-  ): string {
-    console.log(&apos;\n=== CITATION RENUMBERING DEBUG START ===&apos;);
-    console.log(&apos;[RENAMING INPUT]&apos;, {
-      responseLength: response.length,
-      hasNewlines: response.includes(&apos;\n&apos;),
-      newlineCount: (response.match(/\n/g) || []).length,
-      bulletCount: (response.match(/^\* /gm) || []).length,
-      firstFewLines: response.split(&apos;\n&apos;).slice(0, 5)
-    });
-    
-    let renumbered = response;
-    
-    // Create mapping from original indices to new indices
-    const indexMap = new Map&lt;number, number&gt;();
-    citations.forEach((citation, newIndex) =&gt; {
-      indexMap.set(citation.sourceIndex, newIndex + 1);
-    });
-
-    // Renumber citations
-    for (const [originalIndex, newIndex] of indexMap) {
-      const regex = new RegExp(`\\[${originalIndex}\\]`, &apos;g&apos;);
-      renumbered = renumbered.replace(regex, `[${newIndex}]`);
-    }
-
-    // DEBUG: Check before cleanup
-    console.log(&apos;[BEFORE CLEANUP]&apos;, {
-      hasNewlines: renumbered.includes(&apos;\n&apos;),
-      newlineCount: (renumbered.match(/\n/g) || []).length,
-      bulletCount: (renumbered.match(/^\* /gm) || []).length
-    });
-
-    // CRITICAL FIX: The replace(/[ \t]+/g, &apos; &apos;) is NOT the issue - it only replaces spaces and tabs
-    // The issue is likely elsewhere. Let&apos;s preserve newlines and only clean up spaces/tabs
-    console.log(&apos;[BEFORE CLEANUP]&apos;, {
-      hasNewlines: renumbered.includes(&apos;\n&apos;),
-      newlineCount: (renumbered.match(/\n/g) || []).length,
-      bulletCount: (renumbered.match(/^\* /gm) || []).length,
-      firstFewLines: renumbered.split(&apos;\n&apos;).slice(0, 5)
-    });
-    
-    // Only replace spaces and tabs, NOT newlines
-    // 🟢 FIXED: Only clean up punctuation spacing, leave indentation alone
-    renumbered = renumbered.replace(/ +([.,;:!])/g, &apos;$1&apos;);
-    
-    // DEBUG: Check after cleanup
-    console.log(&apos;[AFTER CLEANUP]&apos;, {
-      hasNewlines: renumbered.includes(&apos;\n&apos;),
-      newlineCount: (renumbered.match(/\n/g) || []).length,
-      bulletCount: (renumbered.match(/^\* /gm) || []).length,
-      firstFewLines: renumbered.split(&apos;\n&apos;).slice(0, 5),
-      fixApplied: &apos;Only spaces and tabs replaced, newlines preserved&apos;
-    });
-    
-    console.log(&apos;=== CITATION RENUMBERING DEBUG END ===\n&apos;);
-
-    return renumbered.trim();
-  }
-
-  /**
-   * Format simplified citations for display
-   */
-  formatSimplifiedCitationsForDisplay(citations: SimplifiedCitation[]): string {
-    if (citations.length === 0) {
-      return &apos;&apos;;
-    }
-
-    const sources = citations.map((citation, index) =&gt; {
-      return `${index + 1}. ${citation.document}. Page ${citation.page}`;
-    });
-
-    return &apos;\n\n**Vancouver Style References:**\n&apos; + sources.join(&apos;\n&apos;);
-  }
-
-  /**
-   * Convert simplified citations to message citation format for storage
-   */
-  convertSimplifiedToMessageCitations(citations: SimplifiedCitation[]): MessageCitation[] {
-    return citations.map((citation, index) =&gt; ({
-      document: citation.document,
-      page: citation.page,
-      excerpt: citation.combinedContent,
-      // Store additional metadata for debugging
-      chunkIds: citation.chunkIds,
-      similarity: citation.similarity
-    }));
-  }
-}
-
-// Singleton instance
-export const citationService = new CitationService();</file><file path="src/services/rag/responseFormatter.ts">/**
+export const settingsService = new SettingsService();</file><file path="src/services/rag/responseFormatter.ts">/**
  * Response Formatter Service
  * Uses LLM to convert paragraph-style responses to bullet point format while preserving citations
  */
@@ -17684,6 +16311,73 @@ export class ChatPipeline {
   }
 
   /**
+   * Rewrites the user query based on chat history to make it standalone.
+   * Solves the &quot;What are its causes?&quot; problem.
+   */
+  private async generateStandaloneQuery(
+    content: string,
+    history: any[],
+    apiKey: string,
+    model: string
+  ): Promise&lt;string&gt; {
+    // 1. Cost Optimization: If no history, no need to rewrite.
+    if (!history || history.length === 0) {
+      console.log(&apos;[QUERY REWRITER]&apos;, &apos;Skipping rewrite - No history.&apos;);
+      return content;
+    }
+
+    // 2. Cost Optimization: Limit history to last 4 messages (2 turns)
+    // This keeps input tokens low for the free tier.
+    const recentHistory = history.slice(-4).map(msg =&gt;
+      `${msg.role === &apos;user&apos; ? &apos;User&apos; : &apos;Assistant&apos;}: ${msg.content}`
+    ).join(&apos;\n&apos;);
+
+    const prompt = `
+      Task: Rewrite the last user question to be a standalone query based on the conversation history.
+      Rules:
+      1. Replace pronouns (it, they, this) with specific nouns from history.
+      2. Keep the query concise.
+      3. If the question is already standalone, return it exactly as is.
+      4. Do NOT answer the question.
+
+      Conversation History:
+      ${recentHistory}
+
+      Last User Question:
+      ${content}
+
+      Standalone Query:
+    `;
+
+    try {
+      // Use a specialized instance for rewriting to avoid interfering with main chat state
+      // We reuse the existing Gemini service structure but make a quick generation call
+      const { geminiService } = await import(&apos;../gemini/geminiService&apos;);
+      
+      // Note: We rely on the service already being initialized in AppInitializer,
+      // but we pass options to ensure we use a fast/cheap configuration.
+      const rewrittenQuery = await geminiService.generateResponse(
+        prompt,
+        undefined,
+        undefined,
+        {
+          temperature: 0.1, // Low temperature for deterministic rewriting
+          maxTokens: 100,   // Very low output tokens (saves limits)
+        }
+      );
+
+      const cleanedQuery = rewrittenQuery.trim();
+      console.log(&apos;[QUERY REWRITER]&apos;, `Original: &quot;${content}&quot; -&gt; Rewritten: &quot;${cleanedQuery}&quot;`);
+      return cleanedQuery;
+
+    } catch (error) {
+      console.error(&apos;[QUERY REWRITER ERROR]&apos;, error);
+      // Fallback: If API fails (rate limit), use original query so the app doesn&apos;t crash
+      return content;
+    }
+  }
+
+  /**
    * Send a message and get AI response with RAG context
    */
   async sendMessage(
@@ -17704,6 +16398,30 @@ export class ChatPipeline {
       if (!sessionForDocuments) {
         throw new Error(&apos;Session not found&apos;);
       }
+
+      // 1. FETCH HISTORY (NEW STEP)
+      // We need the history BEFORE we do the search
+      console.log(&apos;[HISTORY]&apos;, &apos;Fetching chat history for context awareness...&apos;);
+      const history = await this.indexedDBServices.messageService.getMessagesBySession(
+        sessionId,
+        sessionForDocuments.userId
+      );
+
+      // Get Settings for model info
+      const settings = await this.indexedDBServices.settingsService.getSettings(sessionForDocuments.userId);
+      const apiKey = settings?.geminiApiKey || &apos;&apos;;
+      const model = settings?.model || &apos;gemini-2.5-flash-lite&apos;;
+
+      // 2. GENERATE STANDALONE QUERY (NEW STEP)
+      // This converts &quot;What are its causes?&quot; -&gt; &quot;What are the causes of cataract?&quot;
+      console.log(&apos;[REWRITING]&apos;, &apos;Generating standalone query...&apos;);
+      const standaloneQuery = await this.generateStandaloneQuery(content, history, apiKey, model);
+      
+      // 3. ENHANCE THE REWRITTEN QUERY, NOT THE ORIGINAL
+      // Modify this line to pass &apos;standaloneQuery&apos; instead of &apos;content&apos;
+      const enhancedQuery = await this.enhanceQueryWithContext(sessionId, standaloneQuery);
+      console.log(&apos;[FINAL SEARCH QUERY]&apos;, enhancedQuery);
+
       const documents = await this.indexedDBServices.documentService.getDocumentsBySession(sessionId, sessionForDocuments.userId);
       console.log(&apos;[DOCUMENT STATUS]&apos;, `Found ${documents.length} total documents in session ${sessionId}`);
       console.log(&apos;[DOCUMENT STATUS]&apos;, &apos;Document details:&apos;, documents.map(doc =&gt; ({
@@ -17734,26 +16452,23 @@ export class ChatPipeline {
         return;
       }
 
-      // Enhance the query with context information
-      const enhancedQuery = await this.enhanceQueryWithContext(sessionId, content);
-      console.log(&apos;[FINAL QUERY FOR LLM]&apos;, enhancedQuery);
-
-      // Generate query embedding using the Gemini embedding service
+      // 4. GENERATE EMBEDDING USING THE REWRITTEN QUERY
       console.log(&apos;[EMBEDDING GENERATION]&apos;, &apos;Creating vector embedding for enhanced query...&apos;);
       const queryEmbedding = await embeddingService.generateEmbedding(enhancedQuery);
       console.log(&apos;[EMBEDDING GENERATED]&apos;, `Vector created with ${queryEmbedding.length} dimensions`);
 
-      // Use enhanced hybrid search for better results
-      console.log(&apos;[VECTOR SEARCH]&apos;, &apos;Performing hybrid search to find relevant context...&apos;);
+      // 5. PERFORM SEARCH USING THE REWRITTEN QUERY
+      console.log(&apos;[VECTOR SEARCH]&apos;, &apos;Performing hybrid search...&apos;);
       const searchResults = await vectorSearchService.searchHybridEnhanced(
         queryEmbedding,
         sessionId,
-        enhancedQuery,
+        enhancedQuery, // Use the enhanced, rewritten query here
         {
           maxResults: 15,
           useDynamicWeighting: true,
           textWeight: 0.3,
-          vectorWeight: 0.7
+          vectorWeight: 0.7,
+          userId: sessionForDocuments.userId // Ensure userId is passed
         }
       );
       console.log(&apos;[SEARCH RESULTS]&apos;, `${searchResults.length} relevant chunks found`);
@@ -17780,12 +16495,15 @@ export class ChatPipeline {
       const context = this.buildContext(searchResults);
       console.log(&apos;[CONTEXT CREATED]&apos;, `Context string length: ${context.length} characters`);
 
-      // Generate response with context using simplified citation system
-      console.log(&apos;[RESPONSE GENERATION]&apos;, &apos;Generating simplified contextual response with RAG...&apos;);
+      // ... The rest of the function (Context Building, LLM Generation) remains the same ...
+      // IMPORTANT: The final LLM call (generateSimplifiedContextualResponse)
+      // will still see the original chat history fetched from DB,
+      // so it knows the visual context of the chat.
+      
       await this.generateSimplifiedContextualResponse(
         sessionId,
-        enhancedQuery,
-        context,
+        content, // We can pass original content here for the user prompt part
+        this.buildContext(searchResults),
         searchResults,
         onStreamEvent
       );
@@ -18503,7 +17221,1394 @@ Remember: Your goal is to provide accurate, well-cited responses based SOLELY on
 }
 
 // Singleton instance
-export const chatPipeline = new ChatPipeline();</file><file path="src/services/rag/documentProcessor.ts">import { calculateVectorNorm } from &apos;@/utils/vectorUtils&apos;;
+export const chatPipeline = new ChatPipeline();</file><file path="src/services/rag/citationService.ts">import type { VectorSearchResult } from &apos;@/types/embedding&apos;;
+import type { Citation as MessageCitation } from &apos;@/types/message&apos;;
+import type { SimplifiedCitation, SimplifiedCitationGroup, PageGroup } from &apos;@/types/citation&apos;;
+
+export interface Citation {
+  document: string;
+  page?: number;
+  pages?: number[]; // Multiple pages for combined chunks
+  pageRange?: string; // Formatted page range like &quot;5-7&quot; or &quot;5,7,9&quot;
+  excerpt: string;
+  sourceIndex: number;
+  chunkId: string;
+  fullContent?: string; // Full chunk content for display
+}
+
+export interface ProcessedCitations {
+  citations: Citation[];
+  renumberedResponse: string;
+  usedSourceIndices: number[];
+  validationWarnings: string[]; // Add validation warnings
+}
+
+
+export class CitationService {
+  /**
+   * Extract citations from AI response and process them
+   * Filters unused citations and renumbers them sequentially
+   * Enhanced with robust validation and page number accuracy
+   */
+  processCitations(
+    response: string,
+    searchResults: VectorSearchResult[]
+  ): ProcessedCitations {
+    console.log(&apos;\n=== CITATION PROCESSING DEBUG START ===&apos;);
+    console.log(&apos;[CITATION INPUT]&apos;, `Processing citations for response with ${searchResults.length} search results`);
+    
+    // Extract all citation references from response
+    const citationMatches = this.extractCitationReferences(response);
+    console.log(&apos;[CITATION MATCHES]&apos;, `Found ${citationMatches.length} citation references:`, citationMatches.map(m =&gt; `[${m.index}] at position ${m.position}`));
+    
+    const usedSourceIndices = new Set&lt;number&gt;();
+    const validationWarnings: string[] = [];
+
+    // Log all search results for reference
+    console.log(&apos;[SEARCH RESULTS]&apos;, &apos;Available search results:&apos;);
+    searchResults.forEach((result, index) =&gt; {
+      console.log(`[RESULT ${index}]`, {
+        chunkId: result.chunk.id,
+        documentTitle: result.document.title,
+        similarity: result.similarity,
+        chunkPage: result.chunk.page,
+        metadataPageNumber: result.chunk.metadata?.pageNumber,
+        isCombined: result.chunk.metadata?.isCombined,
+        originalChunkCount: result.chunk.metadata?.originalChunkCount,
+        combinedChunkIds: result.chunk.metadata?.combinedChunkIds,
+        contentPreview: result.chunk.content.substring(0, 100) + &apos;...&apos;
+      });
+    });
+
+    // Filter valid citations and collect used indices
+    const validCitations: Citation[] = [];
+    
+    for (const match of citationMatches) {
+      const sourceIndex = match.index;
+      
+      // CRITICAL FIX: Convert 1-based citation to 0-based index
+      // LLM citations are 1-based (CONTEXT SOURCE 1, 2, 3, 4, 5) but searchResults array is 0-based
+      const correctedSourceIndex = sourceIndex - 1;
+      console.log(`[CITATION INDEX MAPPING]`, `Citation [${sourceIndex}] -&gt; searchResults[${correctedSourceIndex}] (CONTEXT SOURCE ${sourceIndex})`);
+      
+      // Strict validation: source index must exist in search results
+      if (correctedSourceIndex &gt;= 0 &amp;&amp; correctedSourceIndex &lt; searchResults.length) {
+        const result = searchResults[correctedSourceIndex];
+        
+        console.log(`[PROCESSING CITATION [${sourceIndex}]]`, {
+          chunkId: result.chunk.id,
+          documentTitle: result.document.title,
+          chunkPage: result.chunk.page,
+          metadataPageNumber: result.chunk.metadata?.pageNumber,
+          isCombined: result.chunk.metadata?.isCombined,
+          correctedIndex: correctedSourceIndex,
+          contextSource: `CONTEXT SOURCE ${sourceIndex}`,
+          mappingCorrect: true
+        });
+        
+        // Enhanced page number detection - handle combined chunks with multiple pages
+        const pageInfo = this.detectPageNumber(
+          result.chunk.content,
+          result.chunk.metadata?.pageNumber,
+          result.chunk.page,
+          result.chunk.metadata?.pageNumbers
+        );
+        
+        console.log(`[PAGE DETECTION [${sourceIndex}]]`, {
+          contentPage: result.chunk.page,
+          metadataPage: result.chunk.metadata?.pageNumber,
+          metadataPageNumbers: result.chunk.metadata?.pageNumbers,
+          pageInfo,
+          isCombined: result.chunk.metadata?.isCombined,
+          detectionPriority: &apos;metadata.pageNumbers &gt; chunk.page &gt; metadata.pageNumber &gt; content extraction&apos;
+        });
+        
+        // Create citation with full content and enhanced page information
+        const citation: Citation = {
+          document: result.document.title || result.document.fileName,
+          page: pageInfo.page,
+          pages: pageInfo.pages,
+          pageRange: pageInfo.pageRange,
+          excerpt: this.createExcerpt(result.chunk.content),
+          sourceIndex, // Keep original sourceIndex for display
+          chunkId: result.chunk.id,
+          fullContent: result.chunk.content, // Store full content for display
+        };
+
+        console.log(`[CITATION CREATED [${sourceIndex}]]`, {
+          document: citation.document,
+          page: citation.page,
+          pages: citation.pages,
+          pageRange: citation.pageRange,
+          excerpt: citation.excerpt.substring(0, 80) + &apos;...&apos;
+        });
+
+        validCitations.push(citation);
+        usedSourceIndices.add(sourceIndex);
+      } else {
+        // Add warning for invalid citation
+        const warning = `Invalid citation [${sourceIndex}]: Source index out of range (corrected: ${correctedSourceIndex}, available: 0-${searchResults.length - 1})`;
+        validationWarnings.push(warning);
+        console.log(&apos;[INVALID CITATION]&apos;, {
+          citationNumber: sourceIndex,
+          correctedIndex: correctedSourceIndex,
+          contextSource: `CONTEXT SOURCE ${sourceIndex}`,
+          mappingFailed: true,
+          reason: &apos;Index out of range&apos;,
+          availableRange: `0-${searchResults.length - 1}`
+        });
+      }
+    }
+
+    // Remove duplicates and sort by source index
+    const uniqueCitations = this.removeDuplicateCitations(validCitations)
+      .sort((a, b) =&gt; a.sourceIndex - b.sourceIndex);
+
+    console.log(&apos;[UNIQUE CITATIONS]&apos;, `After duplicate removal: ${uniqueCitations.length} citations`);
+    uniqueCitations.forEach((citation, index) =&gt; {
+      console.log(`[UNIQUE ${index}]`, {
+        sourceIndex: citation.sourceIndex,
+        document: citation.document,
+        page: citation.page,
+        pages: citation.pages,
+        pageRange: citation.pageRange,
+        chunkId: citation.chunkId
+      });
+    });
+
+    // NEW: Validate that cited content actually matches the sources
+    const contentValidationResult = this.validateCitationContent(response, uniqueCitations, searchResults);
+    validationWarnings.push(...contentValidationResult.warnings);
+    
+    // Filter out citations that failed content validation
+    const validatedCitations = uniqueCitations.filter((citation, index) =&gt; {
+      const isValid = contentValidationResult.validCitationIndices.has(index);
+      if (!isValid) {
+        console.log(`[CONTENT VALIDATION FAILED]`, `Citation [${citation.sourceIndex}] removed - content doesn&apos;t match source`);
+      }
+      return isValid;
+    });
+
+    // Renumber citations in response and remove invalid ones
+    const renumberedResponse = this.renumberCitationsAndRemoveInvalid(response, validatedCitations, validationWarnings);
+
+    console.log(&apos;[CITATION RESULT]&apos;, {
+      originalCitations: citationMatches.length,
+      validCitations: validCitations.length,
+      uniqueCitations: uniqueCitations.length,
+      validatedCitations: validatedCitations.length,
+      contentValidationWarnings: contentValidationResult.warnings.length,
+      finalPageNumbers: validatedCitations.map(c =&gt; ({
+        document: c.document,
+        page: c.page,
+        pages: c.pages,
+        pageRange: c.pageRange
+      }))
+    });
+    console.log(&apos;=== CITATION PROCESSING DEBUG END ===\n&apos;);
+
+    return {
+      citations: validatedCitations,
+      renumberedResponse,
+      usedSourceIndices: Array.from(usedSourceIndices).sort((a, b) =&gt; a - b),
+      validationWarnings,
+    };
+  }
+
+  /**
+   * Extract citation references from text using regex
+   * FIXED: Handles comma-separated citations like [2, 13]
+   */
+  private extractCitationReferences(text: string): Array&lt;{ index: number; position: number }&gt; {
+    // Pattern matches [1], [1,2], [1, 2, 3] etc.
+    const citationPattern = /\[([\d,\s]+)\]/g;
+    const matches: Array&lt;{ index: number; position: number }&gt; = [];
+    let match;
+
+    while ((match = citationPattern.exec(text)) !== null) {
+      // Split by comma and process each number found in the brackets
+      const indices = match[1].split(&apos;,&apos;).map(s =&gt; parseInt(s.trim(), 10));
+      
+      for (const index of indices) {
+        if (!isNaN(index)) {
+          matches.push({
+            index,
+            position: match.index,
+          });
+        }
+      }
+    }
+
+    return matches;
+  }
+
+  /**
+   * Remove duplicate citations (same document and page)
+   * Enhanced to handle combined chunks properly
+   */
+  private removeDuplicateCitations(citations: Citation[]): Citation[] {
+    const seen = new Set&lt;string&gt;();
+    const unique: Citation[] = [];
+
+    for (const citation of citations) {
+      // Create a more sophisticated key that handles multiple pages
+      let key: string;
+      if (citation.pages &amp;&amp; citation.pages.length &gt; 0) {
+        // For combined chunks, use sorted page numbers as part of the key
+        const sortedPages = [...citation.pages].sort((a, b) =&gt; a - b).join(&apos;,&apos;);
+        key = `${citation.document}_${sortedPages}`;
+      } else if (citation.page) {
+        // For single pages, use the page number
+        key = `${citation.document}_${citation.page}`;
+      } else {
+        // For no page information
+        key = `${citation.document}_unknown`;
+      }
+      
+      if (!seen.has(key)) {
+        seen.add(key);
+        unique.push(citation);
+      }
+    }
+
+    return unique;
+  }
+
+  /**
+   * Enhanced page number detection with priority order
+   * Priority: 1. metadata.pageNumbers (for combined chunks), 2. chunk.page (direct page field), 3. metadata.pageNumber, 4. content extraction
+   */
+  private detectPageNumber(
+    content: string,
+    metadataPageNumber?: number,
+    chunkPage?: number,
+    metadataPageNumbers?: number[]
+  ): { page?: number; pages?: number[]; pageRange?: string } {
+    console.log(&apos;[PAGE DETECTION]&apos;, {
+      chunkPage,
+      metadataPageNumber,
+      metadataPageNumbers,
+      contentPreview: content.substring(0, 50) + &apos;...&apos;,
+      checkingPriority: &apos;metadata.pageNumbers &gt; chunk.page &gt; metadata.pageNumber &gt; content extraction&apos;
+    });
+    
+    // Priority 1: For combined chunks, use pageNumbers array
+    if (metadataPageNumbers &amp;&amp; metadataPageNumbers.length &gt; 0) {
+      const sortedPages = [...metadataPageNumbers].sort((a, b) =&gt; a - b);
+      const pageRange = this.formatPageRange(sortedPages);
+      console.log(&apos;[PAGE DETECTION RESULT]&apos;, `Using metadata.pageNumbers: ${sortedPages.join(&apos;, &apos;)} (range: ${pageRange})`);
+      return {
+        page: sortedPages[0], // Primary page for compatibility
+        pages: sortedPages,
+        pageRange
+      };
+    }
+    
+    // Priority 2: Use direct page field from chunk if available
+    if (chunkPage &amp;&amp; chunkPage &gt; 0) {
+      console.log(&apos;[PAGE DETECTION RESULT]&apos;, `Using chunk.page: ${chunkPage}`);
+      return { page: chunkPage };
+    }
+    
+    // Priority 3: Use metadata pageNumber if available
+    if (metadataPageNumber &amp;&amp; metadataPageNumber &gt; 0) {
+      console.log(&apos;[PAGE DETECTION RESULT]&apos;, `Using metadata.pageNumber: ${metadataPageNumber}`);
+      return { page: metadataPageNumber };
+    }
+    
+    // Priority 4: Try to extract page number from content as fallback
+    const pagePatterns = [
+      /page\s+(\d+)/i,
+      /p\.?\s*(\d+)/i,
+      /第(\d+)页/,
+      /page\s+(\d+)\s+of/i,
+    ];
+
+    for (const pattern of pagePatterns) {
+      const match = content.match(pattern);
+      if (match &amp;&amp; match[1]) {
+        const extractedPage = parseInt(match[1], 10);
+        // Only use extracted page if it&apos;s reasonable (not 0 or negative)
+        if (extractedPage &gt; 0) {
+          console.log(&apos;[PAGE DETECTION RESULT]&apos;, `Using content extraction: ${extractedPage}`);
+          return { page: extractedPage };
+        }
+      }
+    }
+
+    console.log(&apos;[PAGE DETECTION RESULT]&apos;, &apos;No valid page number found&apos;);
+    // Return undefined if no valid page number found
+    return {};
+  }
+
+  /**
+   * Format page numbers into a readable range or list
+   */
+  private formatPageRange(pages: number[]): string {
+    if (pages.length === 0) return &apos;&apos;;
+    if (pages.length === 1) return `${pages[0]}`;
+    
+    // Check if pages are consecutive
+    const isConsecutive = pages.every((page, index) =&gt; {
+      return index === 0 || page === pages[index - 1] + 1;
+    });
+    
+    if (isConsecutive) {
+      return `${pages[0]}-${pages[pages.length - 1]}`;
+    } else {
+      // For non-consecutive pages, show them as a list
+      return pages.join(&apos;, &apos;);
+    }
+  }
+
+  /**
+   * Renumber citations in response text sequentially and remove invalid ones
+   * FIXED: Handles comma-separated lists like [2, 13] correctly
+   */
+  private renumberCitationsAndRemoveInvalid(
+    response: string,
+    citations: Citation[],
+    validationWarnings: string[]
+  ): string {
+    let renumbered = response;
+    
+    // Create set of valid source indices
+    const validSourceIndices = new Set(citations.map(c =&gt; c.sourceIndex));
+    
+    // Create mapping from original indices to new indices
+    const indexMap = new Map&lt;number, number&gt;();
+    citations.forEach((citation, newIndex) =&gt; {
+      indexMap.set(citation.sourceIndex, newIndex + 1);
+    });
+
+    // Replace both single [1] and multi [1, 2] citations
+    const citationGroupPattern = /\[([\d,\s]+)\]/g;
+    
+    renumbered = renumbered.replace(citationGroupPattern, (match, innerContent) =&gt; {
+        // Parse all numbers in the bracket
+        const indices = innerContent.split(&apos;,&apos;).map((s: string) =&gt; parseInt(s.trim(), 10));
+        
+        // Map to new valid indices
+        const newIndices = indices
+            .filter((idx: number) =&gt; {
+                if (!validSourceIndices.has(idx)) {
+                    // Only log warning once per invalid index
+                    if (!renumbered.includes(`invalid_logged_${idx}`)) {
+                        validationWarnings.push(`Removed invalid citation [${idx}] from response`);
+                    }
+                    return false;
+                }
+                return true;
+            })
+            .map((idx: number) =&gt; indexMap.get(idx))
+            .filter((idx: number | undefined): idx is number =&gt; idx !== undefined)
+            .sort((a: number, b: number) =&gt; a - b); // Sort for cleaner display
+            
+        // If no valid citations remain in this group, return empty string
+        if (newIndices.length === 0) {
+            return &apos;&apos;;
+        }
+        
+        // Return renumbered group
+        return `[${newIndices.join(&apos;, &apos;)}]`;
+    });
+
+    // Clean up punctuation spacing
+    renumbered = renumbered.replace(/ +([.,;:!])/g, &apos;$1&apos;);
+
+    return renumbered.trim();
+  }
+
+  /**
+   * Create a concise excerpt from chunk content for preview
+   * Full content will be available via fullContent property
+   */
+  private createExcerpt(content: string, maxLength: number = 300): string {
+    if (content.length &lt;= maxLength) {
+      return content;
+    }
+
+    // Try to end at sentence boundary
+    const truncated = content.substring(0, maxLength);
+    const lastSentenceEnd = Math.max(
+      truncated.lastIndexOf(&apos;.&apos;),
+      truncated.lastIndexOf(&apos;!&apos;),
+      truncated.lastIndexOf(&apos;?&apos;)
+    );
+
+    if (lastSentenceEnd &gt; maxLength * 0.7) {
+      return truncated.substring(0, lastSentenceEnd + 1);
+    }
+
+    return truncated + &apos;...&apos;;
+  }
+
+  /**
+   * Format citations for display at the end of response in Vancouver style
+   */
+  formatCitationsForDisplay(citations: Citation[]): string {
+    if (citations.length === 0) {
+      return &apos;&apos;;
+    }
+
+    const sources = citations.map((citation, index) =&gt; {
+      let pageInfo = &apos;&apos;;
+      if (citation.pageRange) {
+        pageInfo = `. pp. ${citation.pageRange}`;
+      } else if (citation.pages &amp;&amp; citation.pages.length &gt; 1) {
+        pageInfo = `. pp. ${citation.pages.join(&apos;, &apos;)}`;
+      } else if (citation.page) {
+        pageInfo = `. p. ${citation.page}`;
+      }
+      return `${index + 1}. ${citation.document}${pageInfo}`;
+    });
+
+    return &apos;\n\n**Vancouver Style References:**\n&apos; + sources.join(&apos;\n&apos;);
+  }
+
+  /**
+   * Enhanced validation of citation format in response
+   */
+  validateCitationFormat(response: string, availableSources: number): {
+    isValid: boolean;
+    errors: string[];
+    warnings: string[];
+  } {
+    const errors: string[] = [];
+    const warnings: string[] = [];
+
+    // Check for citation references
+    const citationMatches = this.extractCitationReferences(response);
+    
+    if (citationMatches.length === 0) {
+      warnings.push(&apos;No citations found in response&apos;);
+    }
+
+    // Check for invalid citation numbers (out of range)
+    for (const match of citationMatches) {
+      if (match.index &gt;= availableSources) {
+        errors.push(`Citation [${match.index}] is invalid - only ${availableSources} sources available (0-${availableSources - 1})`);
+      }
+      if (match.index &lt; 0) {
+        errors.push(`Citation [${match.index}] is invalid - negative index`);
+      }
+    }
+
+    // Check for consecutive citations without context
+    const consecutivePattern = /\[\d+\]\s*\[\d+\]/g;
+    const consecutiveMatches = response.match(consecutivePattern);
+    if (consecutiveMatches &amp;&amp; consecutiveMatches.length &gt; 0) {
+      warnings.push(&apos;Found consecutive citations without context between them&apos;);
+    }
+
+    // Check for citations at the very end (might be missing context)
+    const endCitationPattern = /\[\d+\]\s*$/;
+    if (endCitationPattern.test(response.trim())) {
+      warnings.push(&apos;Citation appears at the very end without context&apos;);
+    }
+
+    // Check for citation gaps (e.g., [1], [3] without [2])
+    const usedIndices = citationMatches.map(m =&gt; m.index).sort((a, b) =&gt; a - b);
+    for (let i = 1; i &lt; usedIndices.length; i++) {
+      if (usedIndices[i] &gt; usedIndices[i - 1] + 1) {
+        warnings.push(`Citation gap detected between [${usedIndices[i - 1]}] and [${usedIndices[i]}]`);
+      }
+    }
+
+    return {
+      isValid: errors.length === 0,
+      errors,
+      warnings,
+    };
+  }
+
+  /**
+   * Extract citation metadata for storage in the correct MessageCitation format
+   * Enhanced to include full content and handle combined chunks
+   */
+  extractCitationMetadata(
+    citations: Citation[],
+    searchResults: VectorSearchResult[]
+  ): MessageCitation[] {
+    return citations.map(citation =&gt; {
+      // Find the corresponding search result to check if it&apos;s a combined chunk
+      const searchResult = searchResults.find(result =&gt; result.chunk.id === citation.chunkId);
+      
+      // Handle combined chunks by including metadata about the original chunks
+      let enhancedExcerpt = citation.fullContent || citation.excerpt;
+      let additionalMetadata: any = {};
+      
+      if (searchResult?.chunk.metadata?.isCombined) {
+        additionalMetadata = {
+          isCombined: true,
+          originalChunkCount: searchResult.chunk.metadata.originalChunkCount,
+          combinedChunkIds: searchResult.chunk.metadata.combinedChunkIds,
+        };
+        
+        // For combined chunks, we might want to add a note about the combination
+        if (searchResult.chunk.metadata.originalChunkCount &amp;&amp; searchResult.chunk.metadata.originalChunkCount &gt; 1) {
+          enhancedExcerpt = `[Combined from ${searchResult.chunk.metadata.originalChunkCount} chunks]\n\n${enhancedExcerpt}`;
+        }
+      }
+      
+      return {
+        document: citation.document,
+        page: citation.page,
+        pages: citation.pages,
+        pageRange: citation.pageRange,
+        excerpt: enhancedExcerpt,
+        ...additionalMetadata,
+      };
+    });
+  }
+
+  /**
+   * Create citation links for interactive UI
+   */
+  createCitationLinks(citations: Citation[]): Array&lt;{
+    id: string;
+    text: string;
+    documentId: string;
+    pageNumber?: number;
+    chunkId: string;
+  }&gt; {
+    return citations.map((citation, index) =&gt; ({
+      id: `citation-${index + 1}`,
+      text: `[${index + 1}]`,
+      documentId: citation.document,
+      pageNumber: citation.page,
+      pages: citation.pages,
+      pageRange: citation.pageRange,
+      chunkId: citation.chunkId,
+    }));
+  }
+
+  /**
+   * Merge citations from multiple responses
+   */
+  mergeCitations(citationGroups: ProcessedCitations[]): ProcessedCitations {
+    const allCitations: Citation[] = [];
+    const allUsedIndices: number[] = [];
+    const allValidationWarnings: string[] = [];
+    let mergedResponse = &apos;&apos;;
+
+    for (let i = 0; i &lt; citationGroups.length; i++) {
+      const group = citationGroups[i];
+      
+      // Offset citation indices for merged response
+      const offsetCitations = group.citations.map(citation =&gt; ({
+        ...citation,
+        sourceIndex: citation.sourceIndex + allUsedIndices.length,
+      }));
+
+      allCitations.push(...offsetCitations);
+      allUsedIndices.push(...group.usedSourceIndices);
+      allValidationWarnings.push(...(group.validationWarnings || []));
+      
+      if (i === 0) {
+        mergedResponse = group.renumberedResponse;
+      } else {
+        // Append response with adjusted citation numbers
+        mergedResponse += &apos;\n\n&apos; + this.adjustCitationIndices(
+          group.renumberedResponse,
+          allUsedIndices.length
+        );
+      }
+    }
+
+    return {
+      citations: this.removeDuplicateCitations(allCitations),
+      renumberedResponse: mergedResponse,
+      usedSourceIndices: allUsedIndices,
+      validationWarnings: allValidationWarnings,
+    };
+  }
+
+  /**
+   * Adjust citation indices by offset
+   * FIXED: Handles comma-separated citations
+   */
+  private adjustCitationIndices(text: string, offset: number): string {
+    const citationPattern = /\[([\d,\s]+)\]/g;
+    
+    return text.replace(citationPattern, (match, innerContent) =&gt; {
+        const indices = innerContent.split(&apos;,&apos;).map((s: string) =&gt; parseInt(s.trim(), 10));
+        const newIndices = indices.map((idx: number) =&gt; idx + offset);
+        return `[${newIndices.join(&apos;, &apos;)}]`;
+    });
+  }
+
+  /**
+   * NEW: Validate that cited content actually appears in the cited sources
+   * Enhanced with confidence scoring and more lenient validation criteria
+   */
+  private validateCitationContent(
+    response: string,
+    citations: Citation[],
+    searchResults: VectorSearchResult[]
+  ): {
+    validCitationIndices: Set&lt;number&gt;;
+    warnings: string[];
+  } {
+    const validCitationIndices = new Set&lt;number&gt;();
+    const warnings: string[] = [];
+
+    console.log(&apos;\n=== CONTENT VALIDATION START ===&apos;);
+    console.log(&apos;[VALIDATION INPUT]&apos;, `Checking ${citations.length} citations against their sources`);
+    console.log(&apos;[CITATION JOURNEY]&apos;, `Response length: ${response.length} characters`);
+    console.log(&apos;[CITATION JOURNEY]&apos;, `Available search results: ${searchResults.length} sources`);
+
+    // Extract text segments that should be supported by each citation
+    const citationContexts = this.extractCitationContexts(response);
+    console.log(&apos;[CITATION JOURNEY]&apos;, `Extracted contexts for ${citationContexts.size} citations`);
+    
+    // Log detailed citation journey
+    citationContexts.forEach((context, index) =&gt; {
+      console.log(`[CITATION JOURNEY CONTEXT ${index}]`, {
+        citationNumber: index,
+        contextLength: context.length,
+        contextPreview: context.substring(0, 100) + &apos;...&apos;,
+        expectedSourceIndex: index - 1, // 0-based
+        contextSource: &apos;CONTEXT SOURCE &apos; + index
+      });
+    });
+
+    for (let i = 0; i &lt; citations.length; i++) {
+      const citation = citations[i];
+      const sourceIndex = citation.sourceIndex;
+      
+      // Get the source content - CRITICAL FIX: Convert 1-based citation to 0-based index
+      // LLM citations are 1-based (CONTEXT SOURCE 1, 2, 3, 4, 5) but searchResults array is 0-based
+      const correctedSourceIndex = sourceIndex - 1;
+      console.log(`[CITATION INDEX MAPPING]`, `Citation [${sourceIndex}] -&gt; searchResults[${correctedSourceIndex}] (CONTEXT SOURCE ${sourceIndex})`);
+      
+      const sourceResult = searchResults[correctedSourceIndex];
+      if (!sourceResult) {
+        warnings.push(`Citation [${sourceIndex}]: Source not found in search results (corrected index: ${correctedSourceIndex})`);
+        continue;
+      }
+
+      const sourceContent = sourceResult.chunk.content.toLowerCase();
+      const citationContext = citationContexts.get(sourceIndex);
+      
+      if (!citationContext) {
+        warnings.push(`Citation [${sourceIndex}]: No context found for citation`);
+        continue;
+      }
+
+      // Check if the cited context actually appears in the source
+      const contextLower = citationContext.toLowerCase();
+      const contentMatch = this.checkContentMatchWithConfidence(contextLower, sourceContent);
+      
+      console.log(`[VALIDATING CITATION [${sourceIndex}]]`, {
+        citationNumber: sourceIndex,
+        sourceIndex: correctedSourceIndex, // 0-based
+        contextLength: citationContext.length,
+        sourceContentLength: sourceContent.length,
+        confidenceScore: contentMatch.confidence,
+        isValid: contentMatch.confidence &gt;= 0.2, // Accept citations with 20%+ confidence (less strict)
+        contextPreview: citationContext.substring(0, 100) + &apos;...&apos;,
+        sourcePreview: sourceContent.substring(0, 100) + &apos;...&apos;,
+        sourcePage: sourceResult.chunk.metadata?.pageNumber || sourceResult.chunk.page,
+        sourceDocument: sourceResult.document.title || sourceResult.document.fileName,
+        validationReason: contentMatch.reason
+      });
+
+      // Use confidence scoring instead of binary validation - LESS STRICT: lowered threshold from 0.3 to 0.2
+      if (contentMatch.confidence &gt;= 0.2) {
+        validCitationIndices.add(i);
+        if (contentMatch.confidence &lt; 0.5) { // Lowered from 0.6 to 0.5
+          warnings.push(`Citation [${sourceIndex}]: Low confidence match (${Math.round(contentMatch.confidence * 100)}%) - ${contentMatch.reason}`);
+        }
+      } else {
+        warnings.push(`Citation [${sourceIndex}]: Rejected - ${contentMatch.reason} (confidence: ${Math.round(contentMatch.confidence * 100)}%)`);
+      }
+    }
+
+    console.log(&apos;[VALIDATION RESULT]&apos;, {
+      totalCitations: citations.length,
+      validCitations: validCitationIndices.size,
+      invalidCitations: citations.length - validCitationIndices.size,
+      warnings: warnings.length
+    });
+    console.log(&apos;=== CONTENT VALIDATION END ===\n&apos;);
+
+    return { validCitationIndices, warnings };
+  }
+
+  /**
+   * Extract the text context that each citation should support
+   * FIXED: Handles comma-separated citations by associating text with ALL citations in the group
+   */
+  private extractCitationContexts(response: string): Map&lt;number, string&gt; {
+    console.log(&apos;\n=== CITATION CONTEXT EXTRACTION START ===&apos;);
+    console.log(&apos;[CONTEXT EXTRACTION]&apos;, `Extracting contexts from response of ${response.length} characters`);
+    
+    const citationContexts = new Map&lt;number, string&gt;();
+    const citationPattern = /\[([\d,\s]+)\]/g;
+    let match;
+    let lastIndex = 0;
+
+    while ((match = citationPattern.exec(response)) !== null) {
+      const citationPosition = match.index;
+      
+      // Parse all indices in this group
+      const indices = match[1].split(&apos;,&apos;).map(s =&gt; parseInt(s.trim(), 10));
+      
+      // Extract text from last position to this citation group
+      const textSegment = response.substring(lastIndex, citationPosition).replace(/[ \t]+/g, &apos; &apos;).trim();
+      
+      console.log(`[CONTEXT EXTRACTION MATCH]`, {
+        citationNumbers: indices,
+        citationPosition: citationPosition,
+        citationText: match[0],
+        lastPosition: lastIndex,
+        segmentLength: textSegment.length
+      });
+      
+      // If this segment has text, associate it with all citations in this group
+      if (textSegment.length &gt; 10 || citationContexts.size === 0) {
+        indices.forEach(idx =&gt; {
+            citationContexts.set(idx, textSegment);
+        });
+      } else if (citationContexts.size &gt; 0) {
+        // If text segment is too short, append to previous citation&apos;s context
+        // (This is heuristic and might need refinement for multi-citation logic)
+        // For grouped citations like [1,2], they share context, so finding the last key works reasonably well
+        const lastKey = Array.from(citationContexts.keys()).pop();
+        if (lastKey !== undefined) {
+          const existingContext = citationContexts.get(lastKey) || &apos;&apos;;
+          const combinedContext = existingContext + &apos; &apos; + textSegment;
+          indices.forEach(idx =&gt; {
+              citationContexts.set(idx, combinedContext);
+          });
+        }
+      }
+      
+      lastIndex = citationPosition + match[0].length;
+    }
+
+    console.log(&apos;[CONTEXT EXTRACTION RESULT]&apos;, `Extracted ${citationContexts.size} citation contexts`);
+    console.log(&apos;=== CITATION CONTEXT EXTRACTION END ===\n&apos;);
+
+    return citationContexts;
+  }
+
+  /**
+   * Check if the cited context actually matches the source content with confidence scoring
+   * ENHANCED: More lenient validation with better medical term handling
+   */
+  private checkContentMatchWithConfidence(context: string, sourceContent: string): {
+    confidence: number;
+    reason: string;
+  } {
+    console.log(&apos;\n=== CONTENT MATCH ANALYSIS START ===&apos;);
+    console.log(&apos;[CONTENT MATCH INPUT]&apos;, {
+      contextLength: context.length,
+      sourceLength: sourceContent.length,
+      contextPreview: context.substring(0, 100) + &apos;...&apos;,
+      sourcePreview: sourceContent.substring(0, 100) + &apos;...&apos;
+    });
+
+    // Remove common words and normalize for comparison
+    const normalizedContext = this.normalizeTextForComparison(context);
+    const normalizedSource = this.normalizeTextForComparison(sourceContent);
+
+    let confidence = 0;
+    let reasons: string[] = [];
+
+    // 1. Check for direct phrase matches (reduced from 3 to 2 consecutive words for more leniency)
+    const contextWords = normalizedContext.split(/\s+/);
+    const sourceWords = normalizedSource.split(/\s+/);
+    
+    let maxMatchLength = 0;
+    let totalPhraseMatches = 0;
+    
+    for (let i = 0; i &lt;= contextWords.length - 2; i++) { // Reduced from 3 to 2
+      const phrase = contextWords.slice(i, i + 2).join(&apos; &apos;);
+      if (normalizedSource.includes(phrase)) {
+        totalPhraseMatches++;
+        maxMatchLength = Math.max(maxMatchLength, 2);
+        
+        // Check for longer matches
+        for (let j = 3; j &lt;= contextWords.length - i; j++) {
+          const longerPhrase = contextWords.slice(i, i + j).join(&apos; &apos;);
+          if (normalizedSource.includes(longerPhrase)) {
+            maxMatchLength = j;
+          } else {
+            break;
+          }
+        }
+      }
+    }
+
+    // Calculate phrase match confidence
+    if (maxMatchLength &gt;= 2) { // Reduced from 3 to 2
+      const phraseConfidence = Math.min(0.8, (maxMatchLength / 8) + (totalPhraseMatches * 0.15)); // More lenient calculation
+      confidence = Math.max(confidence, phraseConfidence);
+      reasons.push(`${maxMatchLength}+ consecutive words match`);
+    }
+
+    // 2. Check for key term overlap (reduced from 2 to 1 important term for more leniency)
+    const importantTerms = this.extractImportantTerms(context);
+    const matchingTerms = importantTerms.filter(term =&gt;
+      normalizedSource.includes(term.toLowerCase())
+    );
+
+    const hasTermOverlap = matchingTerms.length &gt;= 1 || // Reduced from 2 to 1
+                          (matchingTerms.length &gt;= 1 &amp;&amp; importantTerms.length &lt;= 1);
+
+    if (hasTermOverlap) {
+      const termConfidence = Math.min(0.7, (matchingTerms.length / Math.max(importantTerms.length, 1)) * 0.9); // More lenient
+      confidence = Math.max(confidence, termConfidence);
+      reasons.push(`${matchingTerms.length}/${importantTerms.length} key terms match`);
+    }
+
+    // 3. Enhanced semantic similarity check with lower threshold
+    const semanticSimilarity = this.calculateSemanticSimilarity(normalizedContext, normalizedSource);
+    if (semanticSimilarity &gt; 0.2) { // Reduced from 0.3 to 0.2
+      const semanticConfidence = Math.min(0.6, semanticSimilarity * 0.8); // More lenient
+      confidence = Math.max(confidence, semanticConfidence);
+      reasons.push(`semantic similarity: ${Math.round(semanticSimilarity * 100)}%`);
+    }
+
+    // 4. Enhanced medical/scientific term matching with higher boost
+    const medicalTerms = this.extractMedicalTerms(context);
+    const matchingMedicalTerms = medicalTerms.filter(term =&gt;
+      normalizedSource.includes(term.toLowerCase())
+    );
+    
+    if (matchingMedicalTerms.length &gt; 0) {
+      confidence += 0.15 * (matchingMedicalTerms.length / Math.max(medicalTerms.length, 1)); // Increased from 0.1 to 0.15
+      reasons.push(`${matchingMedicalTerms.length} medical terms match`);
+    }
+
+    // 5. NEW: Add partial match consideration for medical content
+    const medicalTermBoost = this.calculateMedicalTermMatch(context, sourceContent);
+    if (medicalTermBoost &gt; 0) {
+      confidence = Math.min(confidence + medicalTermBoost, 1.0);
+      reasons.push(`medical term relevance: ${Math.round(medicalTermBoost * 100)}%`);
+    }
+
+    // Cap confidence at 1.0
+    confidence = Math.min(confidence, 1.0);
+
+    let reason = &apos;&apos;;
+    if (confidence &lt; 0.2) { // Updated threshold to match new validation
+      if (maxMatchLength &gt; 0) {
+        reason = `Only found ${maxMatchLength} consecutive matching words (need at least 2)`;
+      } else if (matchingTerms.length &gt; 0) {
+        reason = `Only ${matchingTerms.length} key terms match (need at least 1)`;
+      } else {
+        reason = &apos;No meaningful content match found between citation and source&apos;;
+      }
+    } else {
+      reason = reasons.join(&apos;; &apos;);
+    }
+
+    console.log(&apos;[CONTENT MATCH RESULT]&apos;, {
+      confidence: Math.round(confidence * 100) + &apos;%&apos;,
+      reason: reason,
+      phraseMatches: totalPhraseMatches,
+      termMatches: matchingTerms.length,
+      medicalMatches: matchingMedicalTerms.length,
+      semanticSimilarity: Math.round(semanticSimilarity * 100) + &apos;%&apos;
+    });
+    console.log(&apos;=== CONTENT MATCH ANALYSIS END ===\n&apos;);
+
+    return { confidence, reason };
+  }
+
+  /**
+   * NEW: Calculate medical term match boost for better validation
+   */
+  private calculateMedicalTermMatch(context: string, sourceContent: string): number {
+    const medicalTerms = [
+      &apos;glaucoma&apos;, &apos;cataract&apos;, &apos;diabetes&apos;, &apos;hypertension&apos;, &apos;ophthalmoscopy&apos;, &apos;ultrasound&apos;,
+      &apos;diagnosis&apos;, &apos;treatment&apos;, &apos;symptom&apos;, &apos;therapy&apos;, &apos;medication&apos;, &apos;surgery&apos;, &apos;examination&apos;,
+      &apos;retina&apos;, &apos;cornea&apos;, &apos;lens&apos;, &apos;optic&apos;, &apos;vision&apos;, &apos;eye&apos;, &apos;ocular&apos;, &apos;ophthalmic&apos;,
+      &apos;intraocular&apos;, &apos;pressure&apos;, &apos;fluid&apos;, &apos;injection&apos;, &apos;laser&apos;, &apos;phacoemulsification&apos;
+    ];
+
+    const contextLower = context.toLowerCase();
+    const sourceLower = sourceContent.toLowerCase();
+
+    let matchCount = 0;
+    for (const term of medicalTerms) {
+      if (contextLower.includes(term) &amp;&amp; sourceLower.includes(term)) {
+        matchCount++;
+      }
+    }
+
+    // Return boost based on medical term overlap
+    return Math.min(matchCount * 0.1, 0.3); // Max 30% boost
+  }
+
+  /**
+   * Calculate semantic similarity between two texts using Jaccard similarity
+   * This is a simplified semantic similarity check
+   */
+  private calculateSemanticSimilarity(text1: string, text2: string): number {
+    const words1 = new Set(text1.split(/\s+/).filter(w =&gt; w.length &gt; 2));
+    const words2 = new Set(text2.split(/\s+/).filter(w =&gt; w.length &gt; 2));
+    
+    const intersection = new Set([...words1].filter(x =&gt; words2.has(x)));
+    const union = new Set([...words1, ...words2]);
+    
+    if (union.size === 0) return 0;
+    return intersection.size / union.size;
+  }
+
+  /**
+   * Legacy method for backward compatibility
+   */
+  private checkContentMatch(context: string, sourceContent: string): {
+    isValid: boolean;
+    reason: string;
+  } {
+    const result = this.checkContentMatchWithConfidence(context, sourceContent);
+    return {
+      isValid: result.confidence &gt;= 0.3,
+      reason: result.reason
+    };
+  }
+
+  /**
+   * Normalize text for comparison by removing punctuation and common words
+   */
+  private normalizeTextForComparison(text: string): string {
+    const commonWords = new Set([
+      &apos;the&apos;, &apos;a&apos;, &apos;an&apos;, &apos;and&apos;, &apos;or&apos;, &apos;but&apos;, &apos;in&apos;, &apos;on&apos;, &apos;at&apos;, &apos;to&apos;, &apos;for&apos;,
+      &apos;of&apos;, &apos;with&apos;, &apos;by&apos;, &apos;is&apos;, &apos;are&apos;, &apos;was&apos;, &apos;were&apos;, &apos;be&apos;, &apos;been&apos;, &apos;have&apos;,
+      &apos;has&apos;, &apos;had&apos;, &apos;do&apos;, &apos;does&apos;, &apos;did&apos;, &apos;will&apos;, &apos;would&apos;, &apos;could&apos;, &apos;should&apos;,
+      &apos;this&apos;, &apos;that&apos;, &apos;these&apos;, &apos;those&apos;, &apos;i&apos;, &apos;you&apos;, &apos;he&apos;, &apos;she&apos;, &apos;it&apos;, &apos;we&apos;, &apos;they&apos;
+    ]);
+
+    return text
+      .toLowerCase()
+      .replace(/[^\w\s]/g, &apos; &apos;) // Replace punctuation with spaces
+      .replace(/[ \t]+/g, &apos; &apos;) // Only replace spaces and tabs, NOT newlines
+      .trim()
+      .split(/\s+/)
+      .filter(word =&gt; !commonWords.has(word) &amp;&amp; word.length &gt; 1)
+      .join(&apos; &apos;);
+  }
+
+  /**
+   * Extract important terms (nouns and specific terminology) from text
+   * Enhanced with better medical/scientific term identification
+   */
+  private extractImportantTerms(text: string): string[] {
+    // Enhanced medical and scientific terms
+    const medicalTerms = [
+      &apos;cataract&apos;, &apos;glaucoma&apos;, &apos;diabetes&apos;, &apos;hypertension&apos;, &apos;ophthalmoscopy&apos;, &apos;ultrasound&apos;,
+      &apos;diagnosis&apos;, &apos;treatment&apos;, &apos;symptom&apos;, &apos;therapy&apos;, &apos;medication&apos;, &apos;surgery&apos;, &apos;examination&apos;,
+      &apos;retina&apos;, &apos;cornea&apos;, &apos;lens&apos;, &apos;optic&apos;, &apos;vision&apos;, &apos;eye&apos;, &apos;ocular&apos;, &apos;ophthalmic&apos;,
+      &apos;intraocular&apos;, &apos;pressure&apos;, &apos;fluid&apos;, &apos;injection&apos;, &apos;laser&apos;, &apos;phacoemulsification&apos;,
+      &apos;biometry&apos;, &apos;keratometry&apos;, &apos;astigmatism&apos;, &apos;myopia&apos;, &apos;hyperopia&apos;, &apos;presbyopia&apos;
+    ];
+
+    const scientificTerms = [
+      &apos;analysis&apos;, &apos;research&apos;, &apos;study&apos;, &apos;clinical&apos;, &apos;trial&apos;, &apos;patient&apos;, &apos;outcome&apos;,
+      &apos;procedure&apos;, &apos;technique&apos;, &apos;method&apos;, &apos;result&apos;, &apos;conclusion&apos;, &apos;evidence&apos;,
+      &apos;parameter&apos;, &apos;measurement&apos;, &apos;assessment&apos;, &apos;evaluation&apos;, &apos;diagnostic&apos;
+    ];
+
+    // Create patterns for matching
+    const importantPatterns = [
+      /\b[a-zA-Z]{4,}\b/g, // Words with 4+ characters
+      new RegExp(`\\b(?:${medicalTerms.join(&apos;|&apos;)})\\b`, &apos;gi&apos;), // Medical terms
+      new RegExp(`\\b(?:${scientificTerms.join(&apos;|&apos;)})\\b`, &apos;gi&apos;), // Scientific terms
+      /\b(?:[A-Z][a-z]+(?:[A-Z][a-z]+)*)\b/g, // CamelCase technical terms
+      /\b\d+(?:\.\d+)?(?:%|mg|ml|mm|cm)\b/g, // Measurements and units
+    ];
+
+    const allMatches: string[] = [];
+    importantPatterns.forEach(pattern =&gt; {
+      const matches = text.match(pattern);
+      if (matches) {
+        allMatches.push(...matches);
+      }
+    });
+
+    // Filter out common words and normalize
+    const commonWords = new Set([
+      &apos;this&apos;, &apos;that&apos;, &apos;with&apos;, &apos;from&apos;, &apos;they&apos;, &apos;have&apos;, &apos;been&apos;, &apos;said&apos;, &apos;each&apos;,
+      &apos;which&apos;, &apos;their&apos;, &apos;time&apos;, &apos;will&apos;, &apos;about&apos;, &apos;would&apos;, &apos;there&apos;, &apos;could&apos;
+    ]);
+
+    const filteredTerms = allMatches
+      .map(term =&gt; term.toLowerCase())
+      .filter(term =&gt; !commonWords.has(term) &amp;&amp; term.length &gt; 2);
+
+    // Return unique terms
+    return Array.from(new Set(filteredTerms));
+  }
+
+  /**
+   * Extract specifically medical terms from text
+   */
+  private extractMedicalTerms(text: string): string[] {
+    const medicalTerms = [
+      &apos;cataract&apos;, &apos;glaucoma&apos;, &apos;diabetes&apos;, &apos;hypertension&apos;, &apos;ophthalmoscopy&apos;, &apos;ultrasound&apos;,
+      &apos;diagnosis&apos;, &apos;treatment&apos;, &apos;symptom&apos;, &apos;therapy&apos;, &apos;medication&apos;, &apos;surgery&apos;, &apos;examination&apos;,
+      &apos;retina&apos;, &apos;cornea&apos;, &apos;lens&apos;, &apos;optic&apos;, &apos;vision&apos;, &apos;eye&apos;, &apos;ocular&apos;, &apos;ophthalmic&apos;,
+      &apos;intraocular&apos;, &apos;pressure&apos;, &apos;fluid&apos;, &apos;injection&apos;, &apos;laser&apos;, &apos;phacoemulsification&apos;,
+      &apos;biometry&apos;, &apos;keratometry&apos;, &apos;astigmatism&apos;, &apos;myopia&apos;, &apos;hyperopia&apos;, &apos;presbyopia&apos;
+    ];
+
+    const pattern = new RegExp(`\\b(?:${medicalTerms.join(&apos;|&apos;)})\\b`, &apos;gi&apos;);
+    const matches = text.match(pattern);
+    
+    return matches ? Array.from(new Set(matches.map(term =&gt; term.toLowerCase()))) : [];
+  }
+
+  /**
+   * NEW: Process citations using simplified page-based grouping
+   * Groups all chunks from the same page into a single citation
+   * ENHANCED: Added comprehensive logging and content validation
+   */
+  processSimplifiedCitations(
+    response: string,
+    searchResults: VectorSearchResult[]
+  ): SimplifiedCitationGroup {
+    console.log(&apos;\n=== SIMPLIFIED CITATION PROCESSING START ===&apos;);
+    console.log(&apos;[SIMPLIFIED INPUT]&apos;, `Processing ${searchResults.length} search results for simplified citations`);
+    console.log(&apos;[RESPONSE ANALYSIS]&apos;, `LLM Response length: ${response.length} characters`);
+    console.log(&apos;[RESPONSE PREVIEW]&apos;, response.substring(0, 200) + (response.length &gt; 200 ? &apos;...&apos; : &apos;&apos;));
+    
+    // Extract citation references from response
+    const citationMatches = this.extractCitationReferences(response);
+    console.log(&apos;[CITATION MATCHES]&apos;, `Found ${citationMatches.length} citation references:`, citationMatches.map(m =&gt; `[${m.index}] at position ${m.position}`));
+    
+    const usedSourceIndices = new Set&lt;number&gt;();
+    
+    // Group search results by page
+    const pageGroups = this.groupByPage(searchResults);
+    console.log(&apos;[PAGE GROUPS]&apos;, `Created ${pageGroups.length} page groups`);
+    
+    // Extract citation contexts for validation
+    const citationContexts = this.extractCitationContexts(response);
+    console.log(&apos;[CITATION CONTEXTS]&apos;, `Extracted contexts for ${citationContexts.size} citations`);
+    citationContexts.forEach((context, index) =&gt; {
+      console.log(`[CONTEXT ${index}]`, context.substring(0, 100) + (context.length &gt; 100 ? &apos;...&apos; : &apos;&apos;));
+    });
+
+    // Filter valid citations and create simplified citations
+    const validCitations: SimplifiedCitation[] = [];
+    const validationWarnings: string[] = [];
+    
+    for (const match of citationMatches) {
+      const sourceIndex = match.index;
+      
+      // CRITICAL FIX: Convert 1-based citation to 0-based index
+      // LLM citations are 1-based (CONTEXT SOURCE 1, 2, 3, 4, 5) but searchResults array is 0-based
+      const correctedSourceIndex = sourceIndex - 1;
+      console.log(`[SIMPLIFIED CITATION MAPPING]`, `Citation [${sourceIndex}] -&gt; searchResults[${correctedSourceIndex}] (CONTEXT SOURCE ${sourceIndex})`);
+      
+      if (correctedSourceIndex &gt;= 0 &amp;&amp; correctedSourceIndex &lt; searchResults.length) {
+        const result = searchResults[correctedSourceIndex];
+        const pageNumber = this.getEffectivePageNumber(result);
+        
+        console.log(`[PROCESSING CITATION [${sourceIndex}]]`, {
+          documentTitle: result.document.title || result.document.fileName,
+          pageNumber,
+          chunkId: result.chunk.id,
+          similarity: result.similarity,
+          chunkPreview: result.chunk.content.substring(0, 150) + &apos;...&apos;
+        });
+        
+        if (pageNumber !== undefined) {
+          // Find the page group for this result
+          const pageGroup = pageGroups.find(pg =&gt;
+            pg.documentId === result.document.id &amp;&amp; pg.page === pageNumber
+          );
+          
+          if (pageGroup) {
+            // Combine all content from this page
+            const combinedContent = pageGroup.chunks
+              .sort((a, b) =&gt; a.content.localeCompare(b.content)) // Sort for consistency
+              .map(chunk =&gt; chunk.content)
+              .join(&apos;\n---\n&apos;);
+            
+            // NEW: Validate that citation context matches the source content
+            const citationContext = citationContexts.get(sourceIndex);
+            let isValidCitation = true;
+            let validationReason = &apos;&apos;;
+            
+            if (citationContext) {
+              const validation = this.checkContentMatchWithConfidence(citationContext, combinedContent);
+              isValidCitation = validation.confidence &gt;= 0.2; // LESS STRICT: lowered threshold from 0.3 to 0.2
+              validationReason = validation.reason;
+              
+              console.log(`[CITATION VALIDATION [${sourceIndex}]]`, {
+                isValid: isValidCitation,
+                confidence: validation.confidence,
+                reason: validation.reason,
+                contextPreview: citationContext.substring(0, 80) + &apos;...&apos;,
+                sourcePreview: combinedContent.substring(0, 80) + &apos;...&apos;
+              });
+              
+              if (!isValidCitation) {
+                validationWarnings.push(`Citation [${sourceIndex}] validation failed: ${validationReason}`);
+              }
+            } else {
+              console.warn(`[VALIDATION WARNING]`, `No context found for citation [${sourceIndex}]`);
+              validationWarnings.push(`No context found for citation [${sourceIndex}]`);
+            }
+            
+            // Only add citation if it passes validation
+            if (isValidCitation) {
+              const simplifiedCitation: SimplifiedCitation = {
+                document: result.document.title || result.document.fileName,
+                page: pageNumber,
+                combinedContent,
+                sourceIndex,
+                chunkIds: pageGroup.chunks.map(chunk =&gt; chunk.id),
+                similarity: Math.max(...pageGroup.chunks.map(chunk =&gt; chunk.similarity))
+              };
+              
+              validCitations.push(simplifiedCitation);
+              usedSourceIndices.add(sourceIndex);
+              
+              console.log(`[VALID CITATION ADDED [${sourceIndex}]]`, {
+                document: simplifiedCitation.document,
+                page: simplifiedCitation.page,
+                chunkCount: simplifiedCitation.chunkIds.length,
+                similarity: simplifiedCitation.similarity,
+                correctedIndex: correctedSourceIndex,
+                contextSource: `CONTEXT SOURCE ${sourceIndex}`,
+                mappingCorrect: true
+              });
+            } else {
+              console.log(`[INVALID CITATION REJECTED [${sourceIndex}]]`, {
+                reason: validationReason,
+                correctedIndex: correctedSourceIndex,
+                contextSource: `CONTEXT SOURCE ${sourceIndex}`,
+                mappingFailed: true
+              });
+            }
+          } else {
+            console.warn(`[PAGE GROUP NOT FOUND]`, `No page group found for document ${result.document.id}, page ${pageNumber}`);
+            validationWarnings.push(`No page group found for citation [${sourceIndex}]`);
+          }
+        } else {
+          console.warn(`[PAGE NUMBER NOT FOUND]`, `No valid page number for citation [${sourceIndex}]`);
+          validationWarnings.push(`No valid page number for citation [${sourceIndex}]`);
+        }
+      } else {
+        console.warn(`[INVALID CITATION INDEX]`, `Citation [${sourceIndex}] is out of range (corrected index: ${correctedSourceIndex}, available: 0-${searchResults.length - 1})`);
+        validationWarnings.push(`Citation [${sourceIndex}] is out of range (corrected index: ${correctedSourceIndex})`);
+      }
+    }
+    
+    // Remove duplicates and sort by source index
+    const uniqueCitations = this.removeDuplicateSimplifiedCitations(validCitations)
+      .sort((a, b) =&gt; a.sourceIndex - b.sourceIndex);
+    
+    // Renumber citations in response
+    const renumberedResponse = this.renumberSimplifiedCitations(response, uniqueCitations);
+    
+    console.log(&apos;[SIMPLIFIED RESULT]&apos;, {
+      originalCitations: citationMatches.length,
+      validCitations: validCitations.length,
+      uniqueCitations: uniqueCitations.length,
+      rejectedCitations: citationMatches.length - validCitations.length,
+      pageGroups: pageGroups.length,
+      validationWarnings: validationWarnings.length
+    });
+    
+    if (validationWarnings.length &gt; 0) {
+      console.log(&apos;[VALIDATION WARNINGS]&apos;, validationWarnings);
+    }
+    
+    console.log(&apos;=== SIMPLIFIED CITATION PROCESSING END ===\n&apos;);
+    
+    return {
+      citations: uniqueCitations,
+      renumberedResponse,
+      usedSourceIndices: Array.from(usedSourceIndices).sort((a, b) =&gt; a - b),
+      validationWarnings
+    };
+  }
+
+  /**
+   * Group search results by document and page
+   */
+  private groupByPage(searchResults: VectorSearchResult[]): PageGroup[] {
+    const pageMap = new Map&lt;string, PageGroup&gt;();
+    
+    for (const result of searchResults) {
+      const pageNumber = this.getEffectivePageNumber(result);
+      
+      if (pageNumber !== undefined) {
+        const pageKey = `${result.document.id}_${pageNumber}`;
+        
+        if (!pageMap.has(pageKey)) {
+          pageMap.set(pageKey, {
+            documentId: result.document.id,
+            documentTitle: result.document.title || result.document.fileName,
+            page: pageNumber,
+            chunks: []
+          });
+        }
+        
+        const pageGroup = pageMap.get(pageKey)!;
+        pageGroup.chunks.push({
+          id: result.chunk.id,
+          content: result.chunk.content,
+          similarity: result.similarity
+        });
+      }
+    }
+    
+    return Array.from(pageMap.values());
+  }
+
+  /**
+   * Get effective page number from search result
+   */
+  private getEffectivePageNumber(result: VectorSearchResult): number | undefined {
+    // Priority 1: metadata.pageNumbers (for combined chunks)
+    if (result.chunk.metadata?.pageNumbers &amp;&amp; result.chunk.metadata.pageNumbers.length &gt; 0) {
+      return result.chunk.metadata.pageNumbers[0];
+    }
+    
+    // Priority 2: chunk.page
+    if (result.chunk.page &amp;&amp; result.chunk.page &gt; 0) {
+      return result.chunk.page;
+    }
+    
+    // Priority 3: metadata.pageNumber
+    if (result.chunk.metadata?.pageNumber &amp;&amp; result.chunk.metadata.pageNumber &gt; 0) {
+      return result.chunk.metadata.pageNumber;
+    }
+    
+    // Priority 4: Extract from content
+    const pagePatterns = [
+      /page\s+(\d+)/i,
+      /p\.?\s*(\d+)/i,
+      /第(\d+)页/,
+      /page\s+(\d+)\s+of/i,
+    ];
+
+    for (const pattern of pagePatterns) {
+      const match = result.chunk.content.match(pattern);
+      if (match &amp;&amp; match[1]) {
+        const extractedPage = parseInt(match[1], 10);
+        if (extractedPage &gt; 0) {
+          return extractedPage;
+        }
+      }
+    }
+    
+    return undefined;
+  }
+
+  /**
+   * Remove duplicate simplified citations
+   */
+  private removeDuplicateSimplifiedCitations(citations: SimplifiedCitation[]): SimplifiedCitation[] {
+    const seen = new Set&lt;string&gt;();
+    const unique: SimplifiedCitation[] = [];
+
+    for (const citation of citations) {
+      const key = `${citation.document}_${citation.page}`;
+      
+      if (!seen.has(key)) {
+        seen.add(key);
+        unique.push(citation);
+      }
+    }
+
+    return unique;
+  }
+
+  /**
+   * Renumber citations in simplified response
+   * FIXED: Handles comma-separated citations
+   */
+  private renumberSimplifiedCitations(
+    response: string,
+    citations: SimplifiedCitation[]
+  ): string {
+    console.log(&apos;\n=== CITATION RENUMBERING DEBUG START ===&apos;);
+    console.log(&apos;[RENAMING INPUT]&apos;, {
+      responseLength: response.length,
+      hasNewlines: response.includes(&apos;\n&apos;),
+      newlineCount: (response.match(/\n/g) || []).length,
+      bulletCount: (response.match(/^\* /gm) || []).length,
+      firstFewLines: response.split(&apos;\n&apos;).slice(0, 5)
+    });
+    
+    let renumbered = response;
+    
+    // Create set of valid source indices
+    const validSourceIndices = new Set(citations.map(c =&gt; c.sourceIndex));
+    
+    // Create mapping from original indices to new indices
+    const indexMap = new Map&lt;number, number&gt;();
+    citations.forEach((citation, newIndex) =&gt; {
+      indexMap.set(citation.sourceIndex, newIndex + 1);
+    });
+
+    // Replace citation groups [1, 2, 3]
+    const citationGroupPattern = /\[([\d,\s]+)\]/g;
+    
+    renumbered = renumbered.replace(citationGroupPattern, (match, innerContent) =&gt; {
+        const indices = innerContent.split(&apos;,&apos;).map((s: string) =&gt; parseInt(s.trim(), 10));
+        
+        const newIndices = indices
+            .filter((idx: number) =&gt; validSourceIndices.has(idx))
+            .map((idx: number) =&gt; indexMap.get(idx))
+            .filter((idx: number | undefined): idx is number =&gt; idx !== undefined)
+            .sort((a: number, b: number) =&gt; a - b);
+            
+        if (newIndices.length === 0) return &apos;&apos;;
+        
+        return `[${newIndices.join(&apos;, &apos;)}]`;
+    });
+
+    // Clean up punctuation spacing
+    renumbered = renumbered.replace(/ +([.,;:!])/g, &apos;$1&apos;);
+    
+    console.log(&apos;=== CITATION RENUMBERING DEBUG END ===\n&apos;);
+
+    return renumbered.trim();
+  }
+
+  /**
+   * Format simplified citations for display
+   */
+  formatSimplifiedCitationsForDisplay(citations: SimplifiedCitation[]): string {
+    if (citations.length === 0) {
+      return &apos;&apos;;
+    }
+
+    const sources = citations.map((citation, index) =&gt; {
+      return `${index + 1}. ${citation.document}. Page ${citation.page}`;
+    });
+
+    return &apos;\n\n**Vancouver Style References:**\n&apos; + sources.join(&apos;\n&apos;);
+  }
+
+  /**
+   * Convert simplified citations to message citation format for storage
+   */
+  convertSimplifiedToMessageCitations(citations: SimplifiedCitation[]): MessageCitation[] {
+    return citations.map((citation, index) =&gt; ({
+      document: citation.document,
+      page: citation.page,
+      excerpt: citation.combinedContent,
+      // Store additional metadata for debugging
+      chunkIds: citation.chunkIds,
+      similarity: citation.similarity
+    }));
+  }
+}
+
+// Singleton instance
+export const citationService = new CitationService();</file><file path="src/services/rag/documentProcessor.ts">import { calculateVectorNorm } from &apos;@/utils/vectorUtils&apos;;
 import type { Document } from &apos;@/types/document&apos;;
 import type { EmbeddingChunk, EmbeddingGenerationProgress } from &apos;@/types/embedding&apos;;
 import type { PreprocessedPackage, PreprocessedChunk } from &apos;@/types/preprocessed&apos;;
