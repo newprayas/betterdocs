@@ -365,7 +365,7 @@ export default function SettingsPage() {
 
                   <div className="mt-4 mb-4">
                     <p className="font-semibold text-gray-900 dark:text-white">📚 What is API key?</p>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">It is a simple code needed to chat with your documents</p>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">It is a simple password needed to chat with your documents 🥳 - you can get it from the yellow link ✨</p>
                   </div>
 
                   <p className="text-sm text-gray-500 dark:text-gray-400 mt-4">
@@ -380,7 +380,7 @@ export default function SettingsPage() {
                     </a>
                   </p>
                   <p className="text-sm text-gray-500 dark:text-gray-400 mt-4 mb-2">
-                    🎉 Click the link above and follow <span className="text-yellow-600 dark:text-yellow-400">EASY 7 STEPS</span> shown below to get API KEY
+                    🎉 Just follow <span className="text-yellow-600 dark:text-yellow-400">EASY 7 STEPS</span> shown below to get API KEY
                   </p>
                   <div className="mt-2 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
                     <img
