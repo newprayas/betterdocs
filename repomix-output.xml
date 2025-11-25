@@ -19902,456 +19902,6 @@ export default function SessionPage() {
       )}
     &lt;/div&gt;
   );
-}</file><file path="src/app/settings/page.tsx">&apos;use client&apos;;
-
-import React, { useState, useEffect } from &apos;react&apos;;
-
-export const dynamic = &apos;force-dynamic&apos;;
-import { useRouter } from &apos;next/navigation&apos;;
-import { useSettingsStore } from &apos;../../store&apos;;
-import { Button } from &apos;../../components/ui/Button&apos;;
-import { Card } from &apos;../../components/ui/Card&apos;;
-import { Input } from &apos;../../components/ui/Input&apos;;
-import { Modal } from &apos;../../components/ui/Modal&apos;;
-import { ConfirmDialog } from &apos;../../components/common/ConfirmDialog&apos;;
-import { Header } from &apos;../../components/layout/Header&apos;;
-import clsx from &apos;clsx&apos;;
-import type { ApiKeyValidationResult } from &apos;../../types/settings&apos;;
-
-export default function SettingsPage() {
-  const router = useRouter();
-  const {
-    settings,
-    updateSettings,
-    loadSettings,
-    isLoading,
-    userId
-  } = useSettingsStore();
-
-  const [localSettings, setLocalSettings] = useState({
-    geminiApiKey: &apos;&apos;,
-  });
-
-  const [showApiKeyDialog, setShowApiKeyDialog] = useState(false);
-  const [showResetDialog, setShowResetDialog] = useState(false);
-  const [hasChanges, setHasChanges] = useState(false);
-  const [isTestingConnection, setIsTestingConnection] = useState(false);
-  const [connectionStatus, setConnectionStatus] = useState&lt;&apos;idle&apos; | &apos;testing&apos; | &apos;success&apos; | &apos;error&apos;&gt;(&apos;idle&apos;);
-  const [validationResult, setValidationResult] = useState&lt;ApiKeyValidationResult | null&gt;(null);
-  const [showValidationError, setShowValidationError] = useState(false);
-  const [isMounted, setIsMounted] = useState(false);
-  const [showSaveBanner, setShowSaveBanner] = useState&lt;&apos;success&apos; | &apos;error&apos; | null&gt;(null);
-  const [isApiKeySaved, setIsApiKeySaved] = useState(false);
-  const [savedApiKey, setSavedApiKey] = useState(&apos;&apos;);
-
-  useEffect(() =&gt; {
-    setIsMounted(true);
-  }, []);
-
-  useEffect(() =&gt; {
-    if (isMounted &amp;&amp; userId) {
-      loadSettings(userId);
-    }
-  }, [loadSettings, isMounted, userId]);
-
-  useEffect(() =&gt; {
-    if (settings) {
-      console.log(&apos;[SETTINGS PAGE] Settings from store loaded:&apos;, {
-        geminiApiKey: settings.geminiApiKey ? `Set (${settings.geminiApiKey.length} chars)` : &apos;Not set&apos;,
-      });
-      setLocalSettings({
-        geminiApiKey: settings.geminiApiKey || &apos;&apos;,
-      });
-      setSavedApiKey(settings.geminiApiKey || &apos;&apos;);
-      setIsApiKeySaved(!!settings.geminiApiKey);
-    }
-  }, [settings]);
-
-  const handleSettingChange = (field: string, value: any) =&gt; {
-    setLocalSettings(prev =&gt; ({ ...prev, [field]: value }));
-    setHasChanges(true);
-
-    // Re-enable save button if API key is changed from saved value
-    if (field === &apos;geminiApiKey&apos; &amp;&amp; value !== savedApiKey) {
-      setIsApiKeySaved(false);
-    }
-  };
-
-  const handleSave = async () =&gt; {
-    try {
-      console.log(&apos;[SETTINGS PAGE] Saving settings:&apos;, {
-        geminiApiKey: localSettings.geminiApiKey ? `Set (${localSettings.geminiApiKey.length} chars)` : &apos;Not set&apos;,
-      });
-      await updateSettings(localSettings);
-      setHasChanges(false);
-      console.log(&apos;[SETTINGS PAGE] Settings saved successfully&apos;);
-    } catch (error) {
-      console.error(&apos;[SETTINGS PAGE] Failed to save settings:&apos;, error);
-    }
-  };
-
-  const handleReset = async () =&gt; {
-    try {
-      const defaultSettings = {
-        geminiApiKey: &apos;&apos;,
-      };
-      await updateSettings(defaultSettings);
-      setLocalSettings(defaultSettings);
-      setHasChanges(false);
-      setShowResetDialog(false);
-    } catch (error) {
-      console.error(&apos;Failed to reset settings:&apos;, error);
-    }
-  };
-
-  const handleApiKeyUpdate = async (apiKey: string) =&gt; {
-    console.log(&apos;[SETTINGS PAGE] API Key update called with:&apos;, apiKey ? `Set (${apiKey.length} chars)` : &apos;Not set&apos;);
-    setLocalSettings(prev =&gt; ({ ...prev, geminiApiKey: apiKey }));
-    setHasChanges(true);
-    setShowApiKeyDialog(false);
-    console.log(&apos;[SETTINGS PAGE] Local settings updated, hasChanges:&apos;, true);
-
-    // Auto-save when API key is set
-    try {
-      console.log(&apos;[SETTINGS PAGE] Auto-saving API key...&apos;);
-      await updateSettings({ ...localSettings, geminiApiKey: apiKey });
-      setHasChanges(false);
-      console.log(&apos;[SETTINGS PAGE] API key auto-saved successfully&apos;);
-    } catch (error) {
-      console.error(&apos;[SETTINGS PAGE] Failed to auto-save API key:&apos;, error);
-    }
-  };
-
-
-  const handleTestConnection = async () =&gt; {
-    if (!localSettings.geminiApiKey) {
-      setValidationResult({
-        isValid: false,
-        error: {
-          type: &apos;INVALID_KEY&apos;,
-          message: &apos;Please enter an API key first&apos;
-        }
-      });
-      setShowValidationError(true);
-      setConnectionStatus(&apos;error&apos;);
-      setTimeout(() =&gt; setConnectionStatus(&apos;idle&apos;), 3000);
-      return;
-    }
-
-    setIsTestingConnection(true);
-    setConnectionStatus(&apos;testing&apos;);
-    setShowValidationError(false);
-
-    try {
-      const { geminiService } = await import(&apos;../../services/gemini&apos;);
-      const result = await geminiService.validateApiKey(localSettings.geminiApiKey);
-      setValidationResult(result);
-
-      if (result.isValid) {
-        setConnectionStatus(&apos;success&apos;);
-        setTimeout(() =&gt; setConnectionStatus(&apos;idle&apos;), 5000);
-      } else {
-        setConnectionStatus(&apos;error&apos;);
-        setShowValidationError(true);
-        setTimeout(() =&gt; setConnectionStatus(&apos;idle&apos;), 5000);
-      }
-    } catch (error) {
-      setValidationResult({
-        isValid: false,
-        error: {
-          type: &apos;UNKNOWN_ERROR&apos;,
-          message: &apos;Failed to test API key connection&apos;,
-          details: error instanceof Error ? error.message : String(error)
-        }
-      });
-      setConnectionStatus(&apos;error&apos;);
-      setShowValidationError(true);
-      setTimeout(() =&gt; setConnectionStatus(&apos;idle&apos;), 5000);
-    } finally {
-      setIsTestingConnection(false);
-    }
-  };
-
-  const getErrorMessage = (result: ApiKeyValidationResult) =&gt; {
-    if (!result.error) return &apos;Unknown error occurred&apos;;
-
-    switch (result.error.type) {
-      case &apos;INVALID_KEY&apos;:
-        return &apos;Invalid API Key: &apos; + result.error.message;
-      case &apos;NETWORK_ERROR&apos;:
-        return &apos;Network Error: &apos; + result.error.message;
-      case &apos;QUOTA_EXCEEDED&apos;:
-        return &apos;Quota Exceeded: &apos; + result.error.message;
-      case &apos;PERMISSION_DENIED&apos;:
-        return &apos;Permission Denied: &apos; + result.error.message;
-      case &apos;UNKNOWN_ERROR&apos;:
-      default:
-        return &apos;Error: &apos; + result.error.message;
-    }
-  };
-
-  const getErrorIcon = (type: string) =&gt; {
-    switch (type) {
-      case &apos;INVALID_KEY&apos;:
-        return &apos;🔑&apos;;
-      case &apos;NETWORK_ERROR&apos;:
-        return &apos;🌐&apos;;
-      case &apos;QUOTA_EXCEEDED&apos;:
-        return &apos;📊&apos;;
-      case &apos;PERMISSION_DENIED&apos;:
-        return &apos;🚫&apos;;
-      case &apos;UNKNOWN_ERROR&apos;:
-      default:
-        return &apos;⚠️&apos;;
-    }
-  };
-
-  if (isLoading) {
-    return (
-      &lt;div className=&quot;min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col&quot;&gt;
-        &lt;Header /&gt;
-        &lt;main className=&quot;flex-1 container mx-auto px-4 py-8 overflow-y-auto&quot;&gt;
-          &lt;div className=&quot;flex items-center justify-center h-64&quot;&gt;
-            &lt;div className=&quot;animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600&quot;&gt;&lt;/div&gt;
-          &lt;/div&gt;
-        &lt;/main&gt;
-      &lt;/div&gt;
-    );
-  }
-
-  return (
-    &lt;div className=&quot;min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col&quot;&gt;
-      &lt;Header /&gt;
-
-      &lt;main className=&quot;flex-1 container mx-auto px-4 py-8 max-w-4xl overflow-y-auto&quot;&gt;
-        &lt;div className=&quot;mb-8&quot;&gt;
-          &lt;h1 className=&quot;text-3xl font-bold text-gray-900 dark:text-white mb-2&quot;&gt;
-            Settings
-          &lt;/h1&gt;
-          &lt;p className=&quot;text-gray-600 dark:text-gray-300&quot;&gt;
-            Configure your RAG chat application preferences
-          &lt;/p&gt;
-        &lt;/div&gt;
-
-        &lt;div className=&quot;space-y-6&quot;&gt;
-          {/* Success/Error Banner */}
-          {showSaveBanner &amp;&amp; (
-            &lt;div className={clsx(
-              &quot;fixed top-20 right-4 z-50 px-6 py-3 rounded-lg shadow-lg transform transition-all duration-300&quot;,
-              showSaveBanner === &apos;success&apos;
-                ? &quot;bg-green-500 text-white&quot;
-                : &quot;bg-red-500 text-white&quot;
-            )}&gt;
-              &lt;div className=&quot;flex flex-col gap-1&quot;&gt;
-                &lt;div className=&quot;flex items-center gap-2&quot;&gt;
-                  &lt;span className=&quot;text-lg&quot;&gt;
-                    {showSaveBanner === &apos;success&apos; ? &apos;🎉&apos; : &apos;🔴&apos;}
-                  &lt;/span&gt;
-                  &lt;span className=&quot;font-medium&quot;&gt;
-                    {showSaveBanner === &apos;success&apos;
-                      ? &apos;🎉 API saved successfully 🎉&apos;
-                      : &apos;Enter a correct API key error&apos;}
-                  &lt;/span&gt;
-                &lt;/div&gt;
-                {showSaveBanner === &apos;success&apos; &amp;&amp; (
-                  &lt;div className=&quot;text-sm ml-8&quot;&gt;
-                    You can now go back and chat with your books! 😁
-                  &lt;/div&gt;
-                )}
-              &lt;/div&gt;
-            &lt;/div&gt;
-          )}
-          {/* API Configuration */}
-          &lt;Card&gt;
-            &lt;div className=&quot;p-6&quot;&gt;
-              &lt;h2 className=&quot;text-xl font-semibold text-gray-900 dark:text-white mb-4&quot;&gt;
-                API Configuration
-              &lt;/h2&gt;
-
-              &lt;div className=&quot;space-y-4&quot;&gt;
-                &lt;div&gt;
-                  &lt;label className=&quot;block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2&quot;&gt;
-                    Gemini API Key
-                  &lt;/label&gt;
-                  &lt;Input
-                    type=&quot;text&quot;
-                    value={localSettings.geminiApiKey}
-                    onChange={(e) =&gt; handleSettingChange(&apos;geminiApiKey&apos;, e.target.value)}
-                    placeholder=&quot;Enter your Gemini API key&quot;
-                    className=&quot;w-full mb-4&quot;
-                  /&gt;
-
-                  &lt;div className=&quot;flex justify-center mt-6&quot;&gt;
-                    &lt;Button
-                      variant=&quot;primary&quot;
-                      size=&quot;md&quot;
-                      className=&quot;w-full max-w-sm py-2 shadow-md hover:shadow-lg transition-all duration-200&quot;
-                      onClick={async () =&gt; {
-                        if (localSettings.geminiApiKey) {
-                          try {
-                            console.log(&apos;[SETTINGS PAGE] Testing and saving API key...&apos;);
-
-                            // Test connection first
-                            const { geminiService } = await import(&apos;../../services/gemini&apos;);
-                            const result = await geminiService.validateApiKey(localSettings.geminiApiKey);
-
-                            if (result.isValid) {
-                              // Save API key if test is successful
-                              await updateSettings({ geminiApiKey: localSettings.geminiApiKey });
-                              setHasChanges(false);
-                              setSavedApiKey(localSettings.geminiApiKey);
-                              setIsApiKeySaved(true);
-                              console.log(&apos;[SETTINGS PAGE] API key saved and tested successfully&apos;);
-
-                              // Show success banner
-                              setShowSaveBanner(&apos;success&apos;);
-                              setTimeout(() =&gt; setShowSaveBanner(null), 3000);
-                            } else {
-                              // Show error banner if test fails
-                              setShowSaveBanner(&apos;error&apos;);
-                              setTimeout(() =&gt; setShowSaveBanner(null), 3000);
-                            }
-                          } catch (error) {
-                            console.error(&apos;[SETTINGS PAGE] Failed to test or save API key:&apos;, error);
-                            setShowSaveBanner(&apos;error&apos;);
-                            setTimeout(() =&gt; setShowSaveBanner(null), 3000);
-                          }
-                        }
-                      }}
-                      disabled={!localSettings.geminiApiKey || isApiKeySaved}
-                    &gt;
-                      {isApiKeySaved ? &apos;✓ API Key Saved&apos; : &apos;Save API Key&apos;}
-                    &lt;/Button&gt;
-                  &lt;/div&gt;
-
-                  {/* Validation Result Display */}
-                  {showValidationError &amp;&amp; validationResult &amp;&amp; !validationResult.isValid &amp;&amp; (
-                    &lt;div className=&quot;mt-2 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md&quot;&gt;
-                      &lt;div className=&quot;flex items-start gap-2&quot;&gt;
-                        &lt;span className=&quot;text-lg&quot;&gt;{getErrorIcon(validationResult.error?.type || &apos;UNKNOWN_ERROR&apos;)}&lt;/span&gt;
-                        &lt;div className=&quot;flex-1&quot;&gt;
-                          &lt;p className=&quot;text-sm font-medium text-red-800 dark:text-red-200&quot;&gt;
-                            {getErrorMessage(validationResult)}
-                          &lt;/p&gt;
-                          {validationResult.responseTime &amp;&amp; (
-                            &lt;p className=&quot;text-xs text-red-600 dark:text-red-400 mt-1&quot;&gt;
-                              Response time: {validationResult.responseTime}ms
-                            &lt;/p&gt;
-                          )}
-                        &lt;/div&gt;
-                        &lt;button
-                          onClick={() =&gt; setShowValidationError(false)}
-                          className=&quot;text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-200&quot;
-                        &gt;
-                          ✕
-                        &lt;/button&gt;
-                      &lt;/div&gt;
-                    &lt;/div&gt;
-                  )}
-
-                  {validationResult &amp;&amp; validationResult.isValid &amp;&amp; connectionStatus === &apos;success&apos; &amp;&amp; (
-                    &lt;div className=&quot;mt-2 p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-md&quot;&gt;
-                      &lt;div className=&quot;flex items-center gap-2&quot;&gt;
-                        &lt;span className=&quot;text-lg&quot;&gt;✅&lt;/span&gt;
-                        &lt;div className=&quot;flex-1&quot;&gt;
-                          &lt;p className=&quot;text-sm font-medium text-green-800 dark:text-green-200&quot;&gt;
-                            API key is valid and working correctly!
-                          &lt;/p&gt;
-                          {validationResult.responseTime &amp;&amp; (
-                            &lt;p className=&quot;text-xs text-green-600 dark:text-green-400 mt-1&quot;&gt;
-                              Response time: {validationResult.responseTime}ms
-                            &lt;/p&gt;
-                          )}
-                        &lt;/div&gt;
-                      &lt;/div&gt;
-                    &lt;/div&gt;
-                  )}
-
-                  &lt;div className=&quot;mt-4 mb-4&quot;&gt;
-                    &lt;p className=&quot;font-semibold text-gray-900 dark:text-white&quot;&gt;📚 What is API key?&lt;/p&gt;
-                    &lt;p className=&quot;text-sm text-gray-500 dark:text-gray-400&quot;&gt;It is a simple password needed to chat with your documents 🥳 - you can get it from the yellow link ✨&lt;/p&gt;
-                  &lt;/div&gt;
-
-                  &lt;p className=&quot;text-sm text-gray-500 dark:text-gray-400 mt-4&quot;&gt;
-                    ✅ Get your API key from{&apos; &apos;}
-                    &lt;a
-                      href=&quot;https://makersuite.google.com/app/apikey&quot;
-                      target=&quot;_blank&quot;
-                      rel=&quot;noopener noreferrer&quot;
-                      className=&quot;text-yellow-600 dark:text-yellow-400 hover:underline font-bold&quot;
-                    &gt;
-                      [Google AI Studio - Click here ✨]
-                    &lt;/a&gt;
-                  &lt;/p&gt;
-                  &lt;p className=&quot;text-sm text-gray-500 dark:text-gray-400 mt-4 mb-2&quot;&gt;
-                    🎉 Just follow &lt;span className=&quot;text-yellow-600 dark:text-yellow-400&quot;&gt;EASY 7 STEPS&lt;/span&gt; shown below to get API KEY
-                  &lt;/p&gt;
-                  &lt;div className=&quot;mt-2 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700&quot;&gt;
-                    &lt;img
-                      src=&quot;/ad24hz.gif&quot;
-                      alt=&quot;How to get Gemini API Key&quot;
-                      className=&quot;w-full h-auto max-w-full object-contain&quot;
-                    /&gt;
-                  &lt;/div&gt;
-                &lt;/div&gt;
-
-              &lt;/div&gt;
-            &lt;/div&gt;
-          &lt;/Card&gt;
-
-
-        &lt;/div&gt;
-      &lt;/main&gt;
-
-      {/* API Key Dialog */}
-      &lt;Modal
-        isOpen={showApiKeyDialog}
-        onClose={() =&gt; setShowApiKeyDialog(false)}
-        title=&quot;Set Gemini API Key&quot;
-      &gt;
-        &lt;div className=&quot;space-y-4&quot;&gt;
-          &lt;p className=&quot;text-gray-600 dark:text-gray-300&quot;&gt;
-            Enter your Gemini API key to enable AI chat functionality.
-          &lt;/p&gt;
-
-          &lt;Input
-            type=&quot;password&quot;
-            placeholder=&quot;AIza...&quot;
-            onChange={(e) =&gt; setLocalSettings(prev =&gt; ({ ...prev, geminiApiKey: e.target.value }))}
-            className=&quot;w-full&quot;
-          /&gt;
-
-          &lt;div className=&quot;flex justify-end gap-2&quot;&gt;
-            &lt;Button
-              variant=&quot;outline&quot;
-              onClick={() =&gt; setShowApiKeyDialog(false)}
-            &gt;
-              Cancel
-            &lt;/Button&gt;
-            &lt;Button
-              onClick={() =&gt; handleApiKeyUpdate(localSettings.geminiApiKey)}
-              disabled={!localSettings.geminiApiKey}
-            &gt;
-              Set Key
-            &lt;/Button&gt;
-          &lt;/div&gt;
-        &lt;/div&gt;
-      &lt;/Modal&gt;
-
-
-      {/* Reset Confirmation Dialog */}
-      &lt;ConfirmDialog
-        isOpen={showResetDialog}
-        onClose={() =&gt; setShowResetDialog(false)}
-        onConfirm={handleReset}
-        title=&quot;Reset Settings&quot;
-        message=&quot;Are you sure you want to reset all settings to their default values? This action cannot be undone.&quot;
-        confirmText=&quot;Reset&quot;
-        cancelText=&quot;Cancel&quot;
-        variant=&quot;danger&quot;
-      /&gt;
-    &lt;/div&gt;
-  );
 }</file><file path="src/app/AppInitializer.tsx">&apos;use client&apos;;
 
 import { useEffect, useState } from &apos;react&apos;;
@@ -21090,7 +20640,457 @@ export const DocumentLibrary: React.FC&lt;DocumentLibraryProps&gt; = ({ sessionI
       &lt;/Card&gt;
     &lt;/div&gt;
   );
-};</file><file path="next.config.js">/** @type {import(&apos;next&apos;).NextConfig} */
+};</file><file path="src/app/settings/page.tsx">&apos;use client&apos;;
+
+import React, { useState, useEffect } from &apos;react&apos;;
+
+export const dynamic = &apos;force-dynamic&apos;;
+import { useRouter } from &apos;next/navigation&apos;;
+import { useSettingsStore } from &apos;../../store&apos;;
+import { Button } from &apos;../../components/ui/Button&apos;;
+import { Card } from &apos;../../components/ui/Card&apos;;
+import { Input } from &apos;../../components/ui/Input&apos;;
+import { Modal } from &apos;../../components/ui/Modal&apos;;
+import { ConfirmDialog } from &apos;../../components/common/ConfirmDialog&apos;;
+import { Header } from &apos;../../components/layout/Header&apos;;
+import clsx from &apos;clsx&apos;;
+import type { ApiKeyValidationResult } from &apos;../../types/settings&apos;;
+
+export default function SettingsPage() {
+  const router = useRouter();
+  const {
+    settings,
+    updateSettings,
+    loadSettings,
+    isLoading,
+    userId
+  } = useSettingsStore();
+
+  const [localSettings, setLocalSettings] = useState({
+    geminiApiKey: &apos;&apos;,
+  });
+
+  const [showApiKeyDialog, setShowApiKeyDialog] = useState(false);
+  const [showResetDialog, setShowResetDialog] = useState(false);
+  const [hasChanges, setHasChanges] = useState(false);
+  const [isTestingConnection, setIsTestingConnection] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState&lt;&apos;idle&apos; | &apos;testing&apos; | &apos;success&apos; | &apos;error&apos;&gt;(&apos;idle&apos;);
+  const [validationResult, setValidationResult] = useState&lt;ApiKeyValidationResult | null&gt;(null);
+  const [showValidationError, setShowValidationError] = useState(false);
+  const [isMounted, setIsMounted] = useState(false);
+  const [showSaveBanner, setShowSaveBanner] = useState&lt;&apos;success&apos; | &apos;error&apos; | null&gt;(null);
+  const [isApiKeySaved, setIsApiKeySaved] = useState(false);
+  const [savedApiKey, setSavedApiKey] = useState(&apos;&apos;);
+
+  useEffect(() =&gt; {
+    setIsMounted(true);
+  }, []);
+
+  useEffect(() =&gt; {
+    if (isMounted &amp;&amp; userId) {
+      loadSettings(userId);
+    }
+  }, [loadSettings, isMounted, userId]);
+
+  useEffect(() =&gt; {
+    if (settings) {
+      console.log(&apos;[SETTINGS PAGE] Settings from store loaded:&apos;, {
+        geminiApiKey: settings.geminiApiKey ? `Set (${settings.geminiApiKey.length} chars)` : &apos;Not set&apos;,
+      });
+      setLocalSettings({
+        geminiApiKey: settings.geminiApiKey || &apos;&apos;,
+      });
+      setSavedApiKey(settings.geminiApiKey || &apos;&apos;);
+      setIsApiKeySaved(!!settings.geminiApiKey);
+    }
+  }, [settings]);
+
+  const handleSettingChange = (field: string, value: any) =&gt; {
+    setLocalSettings(prev =&gt; ({ ...prev, [field]: value }));
+    setHasChanges(true);
+
+    // Re-enable save button if API key is changed from saved value
+    if (field === &apos;geminiApiKey&apos; &amp;&amp; value !== savedApiKey) {
+      setIsApiKeySaved(false);
+    }
+  };
+
+  const handleSave = async () =&gt; {
+    try {
+      console.log(&apos;[SETTINGS PAGE] Saving settings:&apos;, {
+        geminiApiKey: localSettings.geminiApiKey ? `Set (${localSettings.geminiApiKey.length} chars)` : &apos;Not set&apos;,
+      });
+      await updateSettings(localSettings);
+      setHasChanges(false);
+      console.log(&apos;[SETTINGS PAGE] Settings saved successfully&apos;);
+    } catch (error) {
+      console.error(&apos;[SETTINGS PAGE] Failed to save settings:&apos;, error);
+    }
+  };
+
+  const handleReset = async () =&gt; {
+    try {
+      const defaultSettings = {
+        geminiApiKey: &apos;&apos;,
+      };
+      await updateSettings(defaultSettings);
+      setLocalSettings(defaultSettings);
+      setHasChanges(false);
+      setShowResetDialog(false);
+    } catch (error) {
+      console.error(&apos;Failed to reset settings:&apos;, error);
+    }
+  };
+
+  const handleApiKeyUpdate = async (apiKey: string) =&gt; {
+    console.log(&apos;[SETTINGS PAGE] API Key update called with:&apos;, apiKey ? `Set (${apiKey.length} chars)` : &apos;Not set&apos;);
+    setLocalSettings(prev =&gt; ({ ...prev, geminiApiKey: apiKey }));
+    setHasChanges(true);
+    setShowApiKeyDialog(false);
+    console.log(&apos;[SETTINGS PAGE] Local settings updated, hasChanges:&apos;, true);
+
+    // Auto-save when API key is set
+    try {
+      console.log(&apos;[SETTINGS PAGE] Auto-saving API key...&apos;);
+      await updateSettings({ ...localSettings, geminiApiKey: apiKey });
+      setHasChanges(false);
+      console.log(&apos;[SETTINGS PAGE] API key auto-saved successfully&apos;);
+    } catch (error) {
+      console.error(&apos;[SETTINGS PAGE] Failed to auto-save API key:&apos;, error);
+    }
+  };
+
+
+  const handleTestConnection = async () =&gt; {
+    if (!localSettings.geminiApiKey) {
+      setValidationResult({
+        isValid: false,
+        error: {
+          type: &apos;INVALID_KEY&apos;,
+          message: &apos;Please enter an API key first&apos;
+        }
+      });
+      setShowValidationError(true);
+      setConnectionStatus(&apos;error&apos;);
+      setTimeout(() =&gt; setConnectionStatus(&apos;idle&apos;), 3000);
+      return;
+    }
+
+    setIsTestingConnection(true);
+    setConnectionStatus(&apos;testing&apos;);
+    setShowValidationError(false);
+
+    try {
+      const { geminiService } = await import(&apos;../../services/gemini&apos;);
+      const result = await geminiService.validateApiKey(localSettings.geminiApiKey);
+      setValidationResult(result);
+
+      if (result.isValid) {
+        setConnectionStatus(&apos;success&apos;);
+        setTimeout(() =&gt; setConnectionStatus(&apos;idle&apos;), 5000);
+      } else {
+        setConnectionStatus(&apos;error&apos;);
+        setShowValidationError(true);
+        setTimeout(() =&gt; setConnectionStatus(&apos;idle&apos;), 5000);
+      }
+    } catch (error) {
+      setValidationResult({
+        isValid: false,
+        error: {
+          type: &apos;UNKNOWN_ERROR&apos;,
+          message: &apos;Failed to test API key connection&apos;,
+          details: error instanceof Error ? error.message : String(error)
+        }
+      });
+      setConnectionStatus(&apos;error&apos;);
+      setShowValidationError(true);
+      setTimeout(() =&gt; setConnectionStatus(&apos;idle&apos;), 5000);
+    } finally {
+      setIsTestingConnection(false);
+    }
+  };
+
+  const getErrorMessage = (result: ApiKeyValidationResult) =&gt; {
+    if (!result.error) return &apos;Unknown error occurred&apos;;
+
+    switch (result.error.type) {
+      case &apos;INVALID_KEY&apos;:
+        return &apos;Invalid API Key: &apos; + result.error.message;
+      case &apos;NETWORK_ERROR&apos;:
+        return &apos;Network Error: &apos; + result.error.message;
+      case &apos;QUOTA_EXCEEDED&apos;:
+        return &apos;Quota Exceeded: &apos; + result.error.message;
+      case &apos;PERMISSION_DENIED&apos;:
+        return &apos;Permission Denied: &apos; + result.error.message;
+      case &apos;UNKNOWN_ERROR&apos;:
+      default:
+        return &apos;Error: &apos; + result.error.message;
+    }
+  };
+
+  const getErrorIcon = (type: string) =&gt; {
+    switch (type) {
+      case &apos;INVALID_KEY&apos;:
+        return &apos;🔑&apos;;
+      case &apos;NETWORK_ERROR&apos;:
+        return &apos;🌐&apos;;
+      case &apos;QUOTA_EXCEEDED&apos;:
+        return &apos;📊&apos;;
+      case &apos;PERMISSION_DENIED&apos;:
+        return &apos;🚫&apos;;
+      case &apos;UNKNOWN_ERROR&apos;:
+      default:
+        return &apos;⚠️&apos;;
+    }
+  };
+
+  if (isLoading) {
+    return (
+      &lt;div className=&quot;min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col&quot;&gt;
+        &lt;Header /&gt;
+        &lt;main className=&quot;flex-1 container mx-auto px-4 py-8 overflow-y-auto&quot;&gt;
+          &lt;div className=&quot;flex items-center justify-center h-64&quot;&gt;
+            &lt;div className=&quot;animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600&quot;&gt;&lt;/div&gt;
+          &lt;/div&gt;
+        &lt;/main&gt;
+      &lt;/div&gt;
+    );
+  }
+
+  return (
+    &lt;div className=&quot;min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col&quot;&gt;
+      &lt;Header /&gt;
+
+      &lt;main className=&quot;flex-1 container mx-auto px-4 py-8 max-w-4xl overflow-y-auto&quot;&gt;
+        &lt;div className=&quot;mb-8&quot;&gt;
+          &lt;h1 className=&quot;text-3xl font-bold text-gray-900 dark:text-white mb-2&quot;&gt;
+            Settings
+          &lt;/h1&gt;
+          &lt;p className=&quot;text-gray-600 dark:text-gray-300&quot;&gt;
+            Configure your RAG chat application preferences
+          &lt;/p&gt;
+        &lt;/div&gt;
+
+        &lt;div className=&quot;space-y-6&quot;&gt;
+          {/* Success/Error Banner */}
+          {showSaveBanner &amp;&amp; (
+            &lt;div className={clsx(
+              &quot;fixed top-20 right-4 z-50 px-6 py-3 rounded-lg shadow-lg transform transition-all duration-300&quot;,
+              showSaveBanner === &apos;success&apos;
+                ? &quot;bg-green-500 text-white&quot;
+                : &quot;bg-red-500 text-white&quot;
+            )}&gt;
+              &lt;div className=&quot;flex flex-col gap-1&quot;&gt;
+                &lt;div className=&quot;flex items-center gap-2&quot;&gt;
+                  &lt;span className=&quot;text-lg&quot;&gt;
+                    {showSaveBanner === &apos;success&apos; ? &apos;🎉&apos; : &apos;🔴&apos;}
+                  &lt;/span&gt;
+                  &lt;span className=&quot;font-medium&quot;&gt;
+                    {showSaveBanner === &apos;success&apos;
+                      ? &apos;🎉 API saved successfully 🎉&apos;
+                      : &apos;Enter a correct API key error&apos;}
+                  &lt;/span&gt;
+                &lt;/div&gt;
+                {showSaveBanner === &apos;success&apos; &amp;&amp; (
+                  &lt;div className=&quot;text-sm ml-8&quot;&gt;
+                    You can now go back and chat with your books! 😁
+                  &lt;/div&gt;
+                )}
+              &lt;/div&gt;
+            &lt;/div&gt;
+          )}
+          {/* API Configuration */}
+          &lt;Card&gt;
+            &lt;div className=&quot;p-6&quot;&gt;
+              &lt;h2 className=&quot;text-xl font-semibold text-gray-900 dark:text-white mb-4&quot;&gt;
+                API Configuration
+              &lt;/h2&gt;
+
+              &lt;div className=&quot;space-y-4&quot;&gt;
+                &lt;div&gt;
+                  &lt;label className=&quot;block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2&quot;&gt;
+                    Gemini API Key
+                  &lt;/label&gt;
+                  &lt;Input
+                    type=&quot;text&quot;
+                    value={localSettings.geminiApiKey}
+                    onChange={(e) =&gt; handleSettingChange(&apos;geminiApiKey&apos;, e.target.value)}
+                    placeholder=&quot;Enter your Gemini API key&quot;
+                    className=&quot;w-full mb-4&quot;
+                  /&gt;
+
+                  &lt;div className=&quot;flex justify-center mt-6&quot;&gt;
+                    &lt;Button
+                      variant=&quot;primary&quot;
+                      size=&quot;md&quot;
+                      className=&quot;w-full max-w-sm py-2 shadow-md hover:shadow-lg transition-all duration-200&quot;
+                      onClick={async () =&gt; {
+                        if (localSettings.geminiApiKey) {
+                          try {
+                            console.log(&apos;[SETTINGS PAGE] Testing and saving API key...&apos;);
+
+                            // Test connection first
+                            const { geminiService } = await import(&apos;../../services/gemini&apos;);
+                            const result = await geminiService.validateApiKey(localSettings.geminiApiKey);
+
+                            if (result.isValid) {
+                              // Save API key if test is successful
+                              await updateSettings({ geminiApiKey: localSettings.geminiApiKey });
+                              setHasChanges(false);
+                              setSavedApiKey(localSettings.geminiApiKey);
+                              setIsApiKeySaved(true);
+                              console.log(&apos;[SETTINGS PAGE] API key saved and tested successfully&apos;);
+
+                              // Show success banner
+                              setShowSaveBanner(&apos;success&apos;);
+                              setTimeout(() =&gt; setShowSaveBanner(null), 3000);
+                            } else {
+                              // Show error banner if test fails
+                              setShowSaveBanner(&apos;error&apos;);
+                              setTimeout(() =&gt; setShowSaveBanner(null), 3000);
+                            }
+                          } catch (error) {
+                            console.error(&apos;[SETTINGS PAGE] Failed to test or save API key:&apos;, error);
+                            setShowSaveBanner(&apos;error&apos;);
+                            setTimeout(() =&gt; setShowSaveBanner(null), 3000);
+                          }
+                        }
+                      }}
+                      disabled={!localSettings.geminiApiKey || isApiKeySaved}
+                    &gt;
+                      {isApiKeySaved ? &apos;✓ API Key Saved&apos; : &apos;Save API Key&apos;}
+                    &lt;/Button&gt;
+                  &lt;/div&gt;
+
+                  {/* Validation Result Display */}
+                  {showValidationError &amp;&amp; validationResult &amp;&amp; !validationResult.isValid &amp;&amp; (
+                    &lt;div className=&quot;mt-2 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md&quot;&gt;
+                      &lt;div className=&quot;flex items-start gap-2&quot;&gt;
+                        &lt;span className=&quot;text-lg&quot;&gt;{getErrorIcon(validationResult.error?.type || &apos;UNKNOWN_ERROR&apos;)}&lt;/span&gt;
+                        &lt;div className=&quot;flex-1&quot;&gt;
+                          &lt;p className=&quot;text-sm font-medium text-red-800 dark:text-red-200&quot;&gt;
+                            {getErrorMessage(validationResult)}
+                          &lt;/p&gt;
+                          {validationResult.responseTime &amp;&amp; (
+                            &lt;p className=&quot;text-xs text-red-600 dark:text-red-400 mt-1&quot;&gt;
+                              Response time: {validationResult.responseTime}ms
+                            &lt;/p&gt;
+                          )}
+                        &lt;/div&gt;
+                        &lt;button
+                          onClick={() =&gt; setShowValidationError(false)}
+                          className=&quot;text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-200&quot;
+                        &gt;
+                          ✕
+                        &lt;/button&gt;
+                      &lt;/div&gt;
+                    &lt;/div&gt;
+                  )}
+
+                  {validationResult &amp;&amp; validationResult.isValid &amp;&amp; connectionStatus === &apos;success&apos; &amp;&amp; (
+                    &lt;div className=&quot;mt-2 p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-md&quot;&gt;
+                      &lt;div className=&quot;flex items-center gap-2&quot;&gt;
+                        &lt;span className=&quot;text-lg&quot;&gt;✅&lt;/span&gt;
+                        &lt;div className=&quot;flex-1&quot;&gt;
+                          &lt;p className=&quot;text-sm font-medium text-green-800 dark:text-green-200&quot;&gt;
+                            API key is valid and working correctly!
+                          &lt;/p&gt;
+                          {validationResult.responseTime &amp;&amp; (
+                            &lt;p className=&quot;text-xs text-green-600 dark:text-green-400 mt-1&quot;&gt;
+                              Response time: {validationResult.responseTime}ms
+                            &lt;/p&gt;
+                          )}
+                        &lt;/div&gt;
+                      &lt;/div&gt;
+                    &lt;/div&gt;
+                  )}
+
+                  &lt;div className=&quot;mt-4 mb-4&quot;&gt;
+                    &lt;p className=&quot;font-semibold text-gray-900 dark:text-white&quot;&gt;📚 What is API key?&lt;/p&gt;
+                    &lt;p className=&quot;text-sm text-gray-500 dark:text-gray-400&quot;&gt;It is a simple password needed to chat with your documents 🥳 - you can get it from the yellow link ✨&lt;/p&gt;
+                  &lt;/div&gt;
+
+                  &lt;p className=&quot;text-sm text-gray-500 dark:text-gray-400 mt-4&quot;&gt;
+                    ✅ Get your API key from{&apos; &apos;}
+                    &lt;a
+                      href=&quot;https://makersuite.google.com/app/apikey&quot;
+                      target=&quot;_blank&quot;
+                      rel=&quot;noopener noreferrer&quot;
+                      className=&quot;text-yellow-600 dark:text-yellow-400 hover:underline font-bold&quot;
+                    &gt;
+                      [Google AI Studio - Click here ✨]
+                    &lt;/a&gt;
+                  &lt;/p&gt;
+                  &lt;p className=&quot;text-sm text-gray-500 dark:text-gray-400 mt-4 mb-2&quot;&gt;
+                    🎉 Just follow &lt;span className=&quot;text-yellow-600 dark:text-yellow-400&quot;&gt;EASY 7 STEPS&lt;/span&gt; shown below to get API KEY
+                  &lt;/p&gt;
+                  &lt;div className=&quot;mt-2 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700&quot;&gt;
+                    &lt;img
+                      src=&quot;/ad24hz.gif&quot;
+                      alt=&quot;How to get Gemini API Key&quot;
+                      className=&quot;w-full h-auto max-w-full object-contain&quot;
+                    /&gt;
+                  &lt;/div&gt;
+                &lt;/div&gt;
+
+              &lt;/div&gt;
+            &lt;/div&gt;
+          &lt;/Card&gt;
+
+
+        &lt;/div&gt;
+      &lt;/main&gt;
+
+      {/* API Key Dialog */}
+      &lt;Modal
+        isOpen={showApiKeyDialog}
+        onClose={() =&gt; setShowApiKeyDialog(false)}
+        title=&quot;Set Gemini API Key&quot;
+      &gt;
+        &lt;div className=&quot;space-y-4&quot;&gt;
+          &lt;p className=&quot;text-gray-600 dark:text-gray-300&quot;&gt;
+            Enter your Gemini API key to enable AI chat functionality.
+          &lt;/p&gt;
+
+          &lt;Input
+            type=&quot;password&quot;
+            placeholder=&quot;AIza...&quot;
+            onChange={(e) =&gt; setLocalSettings(prev =&gt; ({ ...prev, geminiApiKey: e.target.value }))}
+            className=&quot;w-full&quot;
+          /&gt;
+
+          &lt;div className=&quot;flex justify-end gap-2&quot;&gt;
+            &lt;Button
+              variant=&quot;outline&quot;
+              onClick={() =&gt; setShowApiKeyDialog(false)}
+            &gt;
+              Cancel
+            &lt;/Button&gt;
+            &lt;Button
+              onClick={() =&gt; handleApiKeyUpdate(localSettings.geminiApiKey)}
+              disabled={!localSettings.geminiApiKey}
+            &gt;
+              Set Key
+            &lt;/Button&gt;
+          &lt;/div&gt;
+        &lt;/div&gt;
+      &lt;/Modal&gt;
+
+
+      {/* Reset Confirmation Dialog */}
+      &lt;ConfirmDialog
+        isOpen={showResetDialog}
+        onClose={() =&gt; setShowResetDialog(false)}
+        onConfirm={handleReset}
+        title=&quot;Reset Settings&quot;
+        message=&quot;Are you sure you want to reset all settings to their default values? This action cannot be undone.&quot;
+        confirmText=&quot;Reset&quot;
+        cancelText=&quot;Cancel&quot;
+        variant=&quot;danger&quot;
+      /&gt;
+    &lt;/div&gt;
+  );
+}</file><file path="next.config.js">/** @type {import(&apos;next&apos;).NextConfig} */
 const webpack = require(&apos;webpack&apos;);
 
 const nextConfig = {

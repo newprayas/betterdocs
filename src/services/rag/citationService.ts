@@ -194,19 +194,26 @@ export class CitationService {
 
   /**
    * Extract citation references from text using regex
-   * Looks for patterns like [1], [2], etc.
+   * FIXED: Handles comma-separated citations like [2, 13]
    */
   private extractCitationReferences(text: string): Array<{ index: number; position: number }> {
-    const citationPattern = /\[(\d+)\]/g;
+    // Pattern matches [1], [1,2], [1, 2, 3] etc.
+    const citationPattern = /\[([\d,\s]+)\]/g;
     const matches: Array<{ index: number; position: number }> = [];
     let match;
 
     while ((match = citationPattern.exec(text)) !== null) {
-      const index = parseInt(match[1], 10);
-      matches.push({
-        index,
-        position: match.index,
-      });
+      // Split by comma and process each number found in the brackets
+      const indices = match[1].split(',').map(s => parseInt(s.trim(), 10));
+      
+      for (const index of indices) {
+        if (!isNaN(index)) {
+          matches.push({
+            index,
+            position: match.index,
+          });
+        }
+      }
     }
 
     return matches;
@@ -333,7 +340,7 @@ export class CitationService {
 
   /**
    * Renumber citations in response text sequentially and remove invalid ones
-   * Changes [5], [2], [8] to [1], [2], [3] and removes citations that don't exist
+   * FIXED: Handles comma-separated lists like [2, 13] correctly
    */
   private renumberCitationsAndRemoveInvalid(
     response: string,
@@ -351,27 +358,39 @@ export class CitationService {
       indexMap.set(citation.sourceIndex, newIndex + 1);
     });
 
-    // Remove invalid citations first
-    const invalidCitationPattern = /\[(\d+)\]/g;
-    renumbered = renumbered.replace(invalidCitationPattern, (match, indexStr) => {
-      const index = parseInt(indexStr, 10);
-      if (!validSourceIndices.has(index)) {
-        // Remove this invalid citation
-        validationWarnings.push(`Removed invalid citation [${index}] from response`);
-        return '';
-      }
-      return match; // Keep valid citations for now
+    // Replace both single [1] and multi [1, 2] citations
+    const citationGroupPattern = /\[([\d,\s]+)\]/g;
+    
+    renumbered = renumbered.replace(citationGroupPattern, (match, innerContent) => {
+        // Parse all numbers in the bracket
+        const indices = innerContent.split(',').map((s: string) => parseInt(s.trim(), 10));
+        
+        // Map to new valid indices
+        const newIndices = indices
+            .filter((idx: number) => {
+                if (!validSourceIndices.has(idx)) {
+                    // Only log warning once per invalid index
+                    if (!renumbered.includes(`invalid_logged_${idx}`)) {
+                        validationWarnings.push(`Removed invalid citation [${idx}] from response`);
+                    }
+                    return false;
+                }
+                return true;
+            })
+            .map((idx: number) => indexMap.get(idx))
+            .filter((idx: number | undefined): idx is number => idx !== undefined)
+            .sort((a: number, b: number) => a - b); // Sort for cleaner display
+            
+        // If no valid citations remain in this group, return empty string
+        if (newIndices.length === 0) {
+            return '';
+        }
+        
+        // Return renumbered group
+        return `[${newIndices.join(', ')}]`;
     });
 
-    // Now renumber the remaining valid citations
-    for (const [originalIndex, newIndex] of indexMap) {
-      const regex = new RegExp(`\\[${originalIndex}\\]`, 'g');
-      renumbered = renumbered.replace(regex, `[${newIndex}]`);
-    }
-
-    // Clean up any double spaces but preserve newlines for list formatting
-    // Fix: Don't convert newlines to spaces as this breaks bullet point lists
-    // 🟢 FIXED: Only clean up punctuation spacing, leave indentation alone
+    // Clean up punctuation spacing
     renumbered = renumbered.replace(/ +([.,;:!])/g, '$1');
 
     return renumbered.trim();
@@ -584,13 +603,15 @@ export class CitationService {
 
   /**
    * Adjust citation indices by offset
+   * FIXED: Handles comma-separated citations
    */
   private adjustCitationIndices(text: string, offset: number): string {
-    const citationPattern = /\[(\d+)\]/g;
+    const citationPattern = /\[([\d,\s]+)\]/g;
     
-    return text.replace(citationPattern, (match, index) => {
-      const newIndex = parseInt(index, 10) + offset;
-      return `[${newIndex}]`;
+    return text.replace(citationPattern, (match, innerContent) => {
+        const indices = innerContent.split(',').map((s: string) => parseInt(s.trim(), 10));
+        const newIndices = indices.map((idx: number) => idx + offset);
+        return `[${newIndices.join(', ')}]`;
     });
   }
 
@@ -694,46 +715,50 @@ export class CitationService {
 
   /**
    * Extract the text context that each citation should support
+   * FIXED: Handles comma-separated citations by associating text with ALL citations in the group
    */
   private extractCitationContexts(response: string): Map<number, string> {
     console.log('\n=== CITATION CONTEXT EXTRACTION START ===');
     console.log('[CONTEXT EXTRACTION]', `Extracting contexts from response of ${response.length} characters`);
     
     const citationContexts = new Map<number, string>();
-    const citationPattern = /\[(\d+)\]/g;
+    const citationPattern = /\[([\d,\s]+)\]/g;
     let match;
     let lastIndex = 0;
 
     while ((match = citationPattern.exec(response)) !== null) {
-      const citationIndex = parseInt(match[1], 10);
       const citationPosition = match.index;
       
-      console.log(`[CONTEXT EXTRACTION MATCH]`, {
-        citationNumber: citationIndex,
-        citationPosition: citationPosition,
-        citationText: match[0],
-        lastPosition: lastIndex
-      });
+      // Parse all indices in this group
+      const indices = match[1].split(',').map(s => parseInt(s.trim(), 10));
       
-      // Extract text from last position to this citation, preserving newlines
+      // Extract text from last position to this citation group
       const textSegment = response.substring(lastIndex, citationPosition).replace(/[ \t]+/g, ' ').trim();
       
-      console.log(`[CONTEXT EXTRACTION SEGMENT]`, {
-        citationNumber: citationIndex,
-        segmentLength: textSegment.length,
-        segmentPreview: textSegment.substring(0, 80) + (textSegment.length > 80 ? '...' : ''),
-        willStore: textSegment.length > 10 || citationContexts.size === 0
+      console.log(`[CONTEXT EXTRACTION MATCH]`, {
+        citationNumbers: indices,
+        citationPosition: citationPosition,
+        citationText: match[0],
+        lastPosition: lastIndex,
+        segmentLength: textSegment.length
       });
       
-      // If this is the first citation or we have meaningful text, store it
+      // If this segment has text, associate it with all citations in this group
       if (textSegment.length > 10 || citationContexts.size === 0) {
-        citationContexts.set(citationIndex, textSegment);
+        indices.forEach(idx => {
+            citationContexts.set(idx, textSegment);
+        });
       } else if (citationContexts.size > 0) {
         // If text segment is too short, append to previous citation's context
+        // (This is heuristic and might need refinement for multi-citation logic)
+        // For grouped citations like [1,2], they share context, so finding the last key works reasonably well
         const lastKey = Array.from(citationContexts.keys()).pop();
         if (lastKey !== undefined) {
           const existingContext = citationContexts.get(lastKey) || '';
-          citationContexts.set(lastKey, existingContext + ' ' + textSegment);
+          const combinedContext = existingContext + ' ' + textSegment;
+          indices.forEach(idx => {
+              citationContexts.set(idx, combinedContext);
+          });
         }
       }
       
@@ -1278,6 +1303,7 @@ export class CitationService {
 
   /**
    * Renumber citations in simplified response
+   * FIXED: Handles comma-separated citations
    */
   private renumberSimplifiedCitations(
     response: string,
@@ -1294,46 +1320,34 @@ export class CitationService {
     
     let renumbered = response;
     
+    // Create set of valid source indices
+    const validSourceIndices = new Set(citations.map(c => c.sourceIndex));
+    
     // Create mapping from original indices to new indices
     const indexMap = new Map<number, number>();
     citations.forEach((citation, newIndex) => {
       indexMap.set(citation.sourceIndex, newIndex + 1);
     });
 
-    // Renumber citations
-    for (const [originalIndex, newIndex] of indexMap) {
-      const regex = new RegExp(`\\[${originalIndex}\\]`, 'g');
-      renumbered = renumbered.replace(regex, `[${newIndex}]`);
-    }
-
-    // DEBUG: Check before cleanup
-    console.log('[BEFORE CLEANUP]', {
-      hasNewlines: renumbered.includes('\n'),
-      newlineCount: (renumbered.match(/\n/g) || []).length,
-      bulletCount: (renumbered.match(/^\* /gm) || []).length
-    });
-
-    // CRITICAL FIX: The replace(/[ \t]+/g, ' ') is NOT the issue - it only replaces spaces and tabs
-    // The issue is likely elsewhere. Let's preserve newlines and only clean up spaces/tabs
-    console.log('[BEFORE CLEANUP]', {
-      hasNewlines: renumbered.includes('\n'),
-      newlineCount: (renumbered.match(/\n/g) || []).length,
-      bulletCount: (renumbered.match(/^\* /gm) || []).length,
-      firstFewLines: renumbered.split('\n').slice(0, 5)
-    });
+    // Replace citation groups [1, 2, 3]
+    const citationGroupPattern = /\[([\d,\s]+)\]/g;
     
-    // Only replace spaces and tabs, NOT newlines
-    // 🟢 FIXED: Only clean up punctuation spacing, leave indentation alone
+    renumbered = renumbered.replace(citationGroupPattern, (match, innerContent) => {
+        const indices = innerContent.split(',').map((s: string) => parseInt(s.trim(), 10));
+        
+        const newIndices = indices
+            .filter((idx: number) => validSourceIndices.has(idx))
+            .map((idx: number) => indexMap.get(idx))
+            .filter((idx: number | undefined): idx is number => idx !== undefined)
+            .sort((a: number, b: number) => a - b);
+            
+        if (newIndices.length === 0) return '';
+        
+        return `[${newIndices.join(', ')}]`;
+    });
+
+    // Clean up punctuation spacing
     renumbered = renumbered.replace(/ +([.,;:!])/g, '$1');
-    
-    // DEBUG: Check after cleanup
-    console.log('[AFTER CLEANUP]', {
-      hasNewlines: renumbered.includes('\n'),
-      newlineCount: (renumbered.match(/\n/g) || []).length,
-      bulletCount: (renumbered.match(/^\* /gm) || []).length,
-      firstFewLines: renumbered.split('\n').slice(0, 5),
-      fixApplied: 'Only spaces and tabs replaced, newlines preserved'
-    });
     
     console.log('=== CITATION RENUMBERING DEBUG END ===\n');
 
