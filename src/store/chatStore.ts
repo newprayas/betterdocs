@@ -92,6 +92,7 @@ export const useChatStore = create<ChatStore>()(
             await messageService.createMessage(userMessage);
             
             // Use the actual chat pipeline to generate response
+            // Pass the already created userMessage to avoid duplication
             await chatPipeline.sendMessage(
               sessionId,
               content,
@@ -132,7 +133,8 @@ export const useChatStore = create<ChatStore>()(
                     isReadingSources: false
                   });
                 }
-              }
+              },
+              userMessage // Pass the already created userMessage
             );
           } catch (error) {
             userIdLogger.logError('ChatStore.sendMessage', error instanceof Error ? error : String(error), currentUserId);

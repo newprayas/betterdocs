@@ -68,21 +68,15 @@ export class ChatPipeline {
   async sendMessage(
     sessionId: string,
     content: string,
-    onStreamEvent?: (event: ChatStreamEvent) => void
+    onStreamEvent?: (event: ChatStreamEvent) => void,
+    userMessage?: MessageCreate
   ): Promise<void> {
     try {
       console.log('\n=== CHAT PIPELINE PROCESS START ===');
       console.log('[USER INPUT]', `Session: ${sessionId}, Query: "${content}"`);
 
-      // Save user message
-      const userMessage: MessageCreate = {
-        sessionId,
-        content,
-        role: MessageSender.USER,
-      };
-
-      await this.indexedDBServices.messageService.createMessage(userMessage);
-      console.log('[MESSAGE SAVED]', 'User message stored in database');
+      // User message is now passed in as a parameter (already saved in chatStore)
+      console.log('[MESSAGE STATUS]', 'User message already stored in database by chatStore');
 
       // Get enabled documents for the session
       const sessionForDocuments = await this.indexedDBServices.sessionService.getSession(sessionId);
