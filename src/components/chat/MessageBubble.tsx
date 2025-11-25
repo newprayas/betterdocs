@@ -6,6 +6,7 @@ import { Message, Citation } from '../../types';
 import { CitationPanel } from './CitationPanel';
 import { MessageSender } from '../../types';
 import { formatTime } from '../../utils/date';
+import { IndentationAnalyzer } from '../../utils/indentationAnalyzer';
 import clsx from 'clsx';
 
 interface MessageBubbleProps {
@@ -23,7 +24,10 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
   
   // Process message content to add Vancouver style citation references
   const processMessageContent = (content: string, citations?: Citation[]) => {
+    const timestamp = new Date().toISOString();
+    
     if (!citations || citations.length === 0 || isUser) {
+      console.log(`[${timestamp}] [INDENTATION DEBUG] MESSAGEBUBBLE:`, 'Skipping content processing - no citations or user message');
       return content;
     }
     
@@ -54,16 +58,66 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
 
   const processedContent = processMessageContent(message.content, message.citations);
   
-  // DEBUG: Log the content being passed to ReactMarkdown
-  console.log('[MESSAGEBUBBLE DEBUG]', {
+  // Comprehensive logging of markdown content processing
+  const timestamp = new Date().toISOString();
+  console.log(`\n=== [${timestamp}] [INDENTATION DEBUG] MESSAGEBUBBLE START ===`);
+  console.log(`[${timestamp}] [INDENTATION DEBUG] MESSAGEBUBBLE:`, {
     isUser,
+    messageId: message.id,
     originalContentLength: message.content.length,
     processedContentLength: processedContent.length,
-    hasNewlines: processedContent.includes('\n'),
-    newlineCount: (processedContent.match(/\n/g) || []).length,
-    bulletCount: (processedContent.match(/^\* /gm) || []).length,
-    firstFewLines: processedContent.split('\n').slice(0, 5),
-    rawCharCodes: Array.from(processedContent.substring(0, 100)).map(c => `${c}(${c.charCodeAt(0)})`).join(' ')
+    hasCitations: message.citations && message.citations.length > 0,
+    citationCount: message.citations?.length || 0
+  });
+  
+  // Analyze original content structure
+  console.log(`[${timestamp}] [INDENTATION DEBUG] MESSAGEBUBBLE: ANALYZING ORIGINAL CONTENT:`);
+  IndentationAnalyzer.logMarkdownStructure(message.content);
+  const originalAnalysis = IndentationAnalyzer.analyzeIndentation(message.content);
+  
+  // Analyze processed content structure
+  console.log(`[${timestamp}] [INDENTATION DEBUG] MESSAGEBUBBLE: ANALYZING PROCESSED CONTENT:`);
+  IndentationAnalyzer.logMarkdownStructure(processedContent);
+  const processedAnalysis = IndentationAnalyzer.analyzeIndentation(processedContent);
+  
+  // Check for nested structures
+  const originalHasNested = IndentationAnalyzer.detectNestedLists(message.content);
+  const processedHasNested = IndentationAnalyzer.detectNestedLists(processedContent);
+  
+  console.log(`[${timestamp}] [INDENTATION DEBUG] MESSAGEBUBBLE: NESTED STRUCTURE ANALYSIS:`, {
+    originalHasNested,
+    processedHasNested,
+    nestedStructuresPreserved: originalHasNested === processedHasNested,
+    originalIndentedLines: originalAnalysis.indentedLines,
+    processedIndentedLines: processedAnalysis.indentedLines,
+    originalMaxIndent: originalAnalysis.maxIndentLevel,
+    processedMaxIndent: processedAnalysis.maxIndentLevel
+  });
+  
+  // Create visualization of content structure
+  console.log(`[${timestamp}] [INDENTATION DEBUG] MESSAGEBUBBLE: ORIGINAL CONTENT VISUALIZATION:`);
+  IndentationAnalyzer.visualizeIndentation(message.content);
+  
+  console.log(`[${timestamp}] [INDENTATION DEBUG] MESSAGEBUBBLE: PROCESSED CONTENT VISUALIZATION:`);
+  IndentationAnalyzer.visualizeIndentation(processedContent);
+  
+  // Additional detailed analysis
+  const hasNewlines = processedContent.includes('\n');
+  const newlineCount = (processedContent.match(/\n/g) || []).length;
+  const bulletCount = (processedContent.match(/^\* /gm) || []).length;
+  const nestedBulletCount = (processedContent.match(/^[ \t]+\* /gm) || []).length;
+  const firstFewLines = processedContent.split('\n').slice(0, 5);
+  
+  console.log(`[${timestamp}] [INDENTATION DEBUG] MESSAGEBUBBLE: DETAILED ANALYSIS:`, {
+    hasNewlines,
+    newlineCount,
+    bulletCount,
+    nestedBulletCount,
+    hasNestedBullets: nestedBulletCount > 0,
+    firstFewLines,
+    rawCharCodes: Array.from(processedContent.substring(0, 100)).map(c => `${c}(${c.charCodeAt(0)})`).join(' '),
+    containsListMarkers: processedContent.includes('* ') || processedContent.includes('- ') || processedContent.match(/^\d+\. /gm),
+    startsWithBullet: processedContent.trim().startsWith('* ') || processedContent.trim().startsWith('- ') || processedContent.trim().match(/^\d+\. /)
   });
 
   return (
@@ -135,6 +189,45 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                     {children}
                   </a>
                 ),
+                // NEW: Custom handling for Unordered Lists to ensure indentation
+                ul: ({ node, className, children, ...props }) => {
+                  const timestamp = new Date().toISOString();
+                  console.log(`[${timestamp}] [INDENTATION DEBUG] MESSAGEBUBBLE: RENDERING UL COMPONENT:`, {
+                    hasChildren: !!children,
+                    childCount: React.Children.count(children),
+                    className,
+                    appliedClassName: "pl-6 my-2 space-y-1 list-outside" // REMOVED "list-disc" to allow CSS to handle nested bullet styles
+                  });
+                  return (
+                    <ul
+                      className={clsx("pl-6 my-2 space-y-1 list-outside", className)} // REMOVED "list-disc" and INCREASED "pl-5" to "pl-6"
+                      {...props}
+                    >
+                      {children}
+                    </ul>
+                  );
+                },
+                // NEW: Custom handling for List Items
+                li: ({ node, className, children, ...props }) => {
+                  const timestamp = new Date().toISOString();
+                  const childText = React.Children.toArray(children).join('').substring(0, 50);
+                  console.log(`[${timestamp}] [INDENTATION DEBUG] MESSAGEBUBBLE: RENDERING LI COMPONENT:`, {
+                    childText: childText + (childText.length >= 50 ? '...' : ''),
+                    hasChildren: !!children,
+                    childCount: React.Children.count(children),
+                    className,
+                    appliedClassName: "pl-1 marker:text-gray-500 dark:marker:text-gray-400",
+                    nodeProperties: node ? Object.keys(node) : 'no node'
+                  });
+                  return (
+                    <li
+                      className={clsx("pl-1 marker:text-gray-500 dark:marker:text-gray-400", className)}
+                      {...props}
+                    >
+                      {children}
+                    </li>
+                  );
+                },
                 // Custom component to handle citation references
                 span: ({ node, className, children, ...props }: any) => {
                   // Check if this is a citation reference
@@ -164,6 +257,22 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
             >
               {processedContent}
             </ReactMarkdown>
+            
+            {/* Log after ReactMarkdown rendering */}
+            {(() => {
+              const timestamp = new Date().toISOString();
+              console.log(`[${timestamp}] [INDENTATION DEBUG] MESSAGEBUBBLE: REACTMARKDOWN RENDERING COMPLETE`);
+              console.log(`[${timestamp}] [INDENTATION DEBUG] MESSAGEBUBBLE: CUSTOM COMPONENTS APPLIED:`, {
+                ulComponentApplied: true,
+                liComponentApplied: true,
+                citationComponentApplied: true,
+                codeComponentApplied: true,
+                linkComponentApplied: true
+              });
+              console.log(`=== [${timestamp}] [INDENTATION DEBUG] MESSAGEBUBBLE END ===\n`);
+              return null;
+            })()}
+            
             {isStreaming && (
               <span className="inline-block w-2 h-4 bg-gray-400 dark:bg-gray-600 animate-pulse ml-1" />
             )}

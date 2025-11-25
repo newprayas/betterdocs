@@ -371,7 +371,8 @@ export class CitationService {
 
     // Clean up any double spaces but preserve newlines for list formatting
     // Fix: Don't convert newlines to spaces as this breaks bullet point lists
-    renumbered = renumbered.replace(/[ \t]+/g, ' ').replace(/ +([.,;:!])/g, '$1');
+    // 🟢 FIXED: Only clean up punctuation spacing, leave indentation alone
+    renumbered = renumbered.replace(/ +([.,;:!])/g, '$1');
 
     return renumbered.trim();
   }
@@ -1322,7 +1323,8 @@ export class CitationService {
     });
     
     // Only replace spaces and tabs, NOT newlines
-    renumbered = renumbered.replace(/[ \t]+/g, ' ').replace(/ +([.,;:!])/g, '$1');
+    // 🟢 FIXED: Only clean up punctuation spacing, leave indentation alone
+    renumbered = renumbered.replace(/ +([.,;:!])/g, '$1');
     
     // DEBUG: Check after cleanup
     console.log('[AFTER CLEANUP]', {

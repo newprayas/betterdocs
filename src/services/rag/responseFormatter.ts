@@ -5,6 +5,7 @@
 
 import { GeminiService } from '../gemini/geminiService';
 import type { AppSettings } from '@/types/settings';
+import { IndentationAnalyzer } from '@/utils/indentationAnalyzer';
 
 export interface FormattedSection {
   title: string;
@@ -18,36 +19,50 @@ export class ResponseFormatter {
    * Preserves citations and moves them to end of bullet points
    */
   static async formatToBulletPoints(
-    response: string, 
+    response: string,
     settings: AppSettings
   ): Promise<string> {
-    console.log('\n=== LLM RESPONSE FORMATTER START ===');
-    console.log('[ORIGINAL RESPONSE]', response.substring(0, 200) + (response.length > 200 ? '...' : ''));
-    console.log('[ORIGINAL LENGTH]', `${response.length} characters`);
+    const timestamp = new Date().toISOString();
+    console.log(`\n=== [${timestamp}] [INDENTATION DEBUG] LLM RESPONSE FORMATTER START ===`);
+    console.log(`[${timestamp}] [INDENTATION DEBUG] ORIGINAL RESPONSE:`, response.substring(0, 200) + (response.length > 200 ? '...' : ''));
+    console.log(`[${timestamp}] [INDENTATION DEBUG] ORIGINAL LENGTH:`, `${response.length} characters`);
+    
+    // Analyze original response for indentation patterns
+    console.log(`[${timestamp}] [INDENTATION DEBUG] ANALYZING ORIGINAL RESPONSE STRUCTURE:`);
+    IndentationAnalyzer.logMarkdownStructure(response);
+    const originalAnalysis = IndentationAnalyzer.analyzeIndentation(response);
+    console.log(`[${timestamp}] [INDENTATION DEBUG] ORIGINAL RESPONSE HAS NESTED STRUCTURES:`, originalAnalysis.hasNestedStructures);
     
     if (!response || response.trim().length === 0) {
-      console.log('[FORMATTING SKIPPED]', 'Empty response, returning as-is');
-      console.log('=== LLM RESPONSE FORMATTER END ===\n');
+      console.log(`[${timestamp}] [INDENTATION DEBUG] FORMATTING SKIPPED:`, 'Empty response, returning as-is');
+      console.log(`=== [${timestamp}] [INDENTATION DEBUG] LLM RESPONSE FORMATTER END ===\n`);
       return response;
     }
 
     // Use main API key for formatting
     const formattingApiKey = settings.geminiApiKey;
     
-    console.log('[LLM FORMATTER] Using main API key for formatting:', settings.geminiApiKey ? `YES (${settings.geminiApiKey.substring(0, 10)}...)` : 'NO');
+    console.log(`[${timestamp}] [INDENTATION DEBUG] LLM FORMATTER:`, 'Using main API key for formatting:', settings.geminiApiKey ? `YES (${settings.geminiApiKey.substring(0, 10)}...)` : 'NO');
     
     if (!formattingApiKey) {
-      console.log('[FORMATTING SKIPPED]', 'No API key available, returning original response');
-      console.log('=== LLM RESPONSE FORMATTER END ===\n');
+      console.log(`[${timestamp}] [INDENTATION DEBUG] FORMATTING SKIPPED:`, 'No API key available, returning original response');
+      console.log(`=== [${timestamp}] [INDENTATION DEBUG] LLM RESPONSE FORMATTER END ===\n`);
       return response;
     }
 
     try {
-      console.log('[LLM FORMATTING]', 'Using LLM to convert to bullet points...');
-      console.log('[LLM FORMATTING]', `Calling Gemini service with main API key`);
+      console.log(`[${timestamp}] [INDENTATION DEBUG] LLM FORMATTING:`, 'Using LLM to convert to bullet points...');
+      console.log(`[${timestamp}] [INDENTATION DEBUG] LLM FORMATTING:`, `Calling Gemini service with main API key`);
       
       const formattingPrompt = this.buildFormattingPrompt(response);
-      console.log('[FORMATTING PROMPT]', formattingPrompt.substring(0, 300) + '...');
+      console.log(`[${timestamp}] [INDENTATION DEBUG] FORMATTING PROMPT:`, formattingPrompt.substring(0, 300) + '...');
+      console.log(`[${timestamp}] [INDENTATION DEBUG] PROMPT ANALYSIS:`, {
+        promptLength: formattingPrompt.length,
+        containsNestedInstructions: formattingPrompt.includes('NESTED'),
+        containsIndentInstructions: formattingPrompt.includes('indent'),
+        containsBulletInstructions: formattingPrompt.includes('*'),
+        containsExampleFormatting: formattingPrompt.includes('EXAMPLE TRANSFORMATION')
+      });
       
       // Create a separate instance for formatting to avoid conflicts
       const formattingGeminiService = new GeminiService();
@@ -63,34 +78,62 @@ export class ResponseFormatter {
         }
       );
       
-      console.log('[LLM FORMATTING]', 'Gemini service response received, length:', formattedResponse.length);
+      console.log(`[${timestamp}] [INDENTATION DEBUG] LLM FORMATTING:`, 'Gemini service response received, length:', formattedResponse.length);
       
-      // DEBUG: Check for newlines and bullet points in the formatted response
+      // Comprehensive analysis of formatted response
+      console.log(`[${timestamp}] [INDENTATION DEBUG] ANALYZING FORMATTED RESPONSE STRUCTURE:`);
+      IndentationAnalyzer.logMarkdownStructure(formattedResponse);
+      const formattedAnalysis = IndentationAnalyzer.analyzeIndentation(formattedResponse);
+      
+      // Check for nested structures detection
+      const hasNestedStructures = IndentationAnalyzer.detectNestedLists(formattedResponse);
+      console.log(`[${timestamp}] [INDENTATION DEBUG] NESTED STRUCTURES DETECTED IN FORMATTED RESPONSE:`, hasNestedStructures);
+      
+      // Create visualization of indentation
+      console.log(`[${timestamp}] [INDENTATION DEBUG] FORMATTED RESPONSE INDENTATION VISUALIZATION:`);
+      IndentationAnalyzer.visualizeIndentation(formattedResponse);
+      
+      // Additional detailed analysis
       const hasNewlines = formattedResponse.includes('\n');
       const bulletCount = (formattedResponse.match(/^\* /gm) || []).length;
       const newlineCount = (formattedResponse.match(/\n/g) || []).length;
+      const nestedBulletCount = (formattedResponse.match(/^[ \t]+\* /gm) || []).length;
       
-      console.log('[FORMATTING ANALYSIS]', {
+      console.log(`[${timestamp}] [INDENTATION DEBUG] FORMATTING ANALYSIS:`, {
         hasNewlines,
         bulletCount,
         newlineCount,
+        nestedBulletCount,
         firstBulletIndex: formattedResponse.indexOf('* '),
         containsListMarkers: formattedResponse.includes('* '),
         startsWithBullet: formattedResponse.trim().startsWith('* '),
+        hasIndentation: formattedAnalysis.indentedLines > 0,
+        maxIndentLevel: formattedAnalysis.maxIndentLevel,
         responsePreview: formattedResponse.substring(0, 300) + (formattedResponse.length > 300 ? '...' : ''),
         rawCharCodes: Array.from(formattedResponse.substring(0, 100)).map(c => `${c}(${c.charCodeAt(0)})`).join(' ')
       });
       
-      console.log('[LLM FORMATTING COMPLETE]', `Formatted response: ${formattedResponse.length} characters`);
-      console.log('[FORMATTED PREVIEW]', formattedResponse.substring(0, 200) + (formattedResponse.length > 200 ? '...' : ''));
-      console.log('=== LLM RESPONSE FORMATTER END ===\n');
+      // Compare original vs formatted
+      console.log(`[${timestamp}] [INDENTATION DEBUG] ORIGINAL vs FORMATTED COMPARISON:`, {
+        originalHadNested: originalAnalysis.hasNestedStructures,
+        formattedHasNested: formattedAnalysis.hasNestedStructures,
+        originalIndentedLines: originalAnalysis.indentedLines,
+        formattedIndentedLines: formattedAnalysis.indentedLines,
+        originalMaxIndent: originalAnalysis.maxIndentLevel,
+        formattedMaxIndent: formattedAnalysis.maxIndentLevel,
+        improvement: formattedAnalysis.maxIndentLevel > originalAnalysis.maxIndentLevel ? 'YES - Added nesting' : 'NO - No improvement'
+      });
+      
+      console.log(`[${timestamp}] [INDENTATION DEBUG] LLM FORMATTING COMPLETE:`, `Formatted response: ${formattedResponse.length} characters`);
+      console.log(`[${timestamp}] [INDENTATION DEBUG] FORMATTED PREVIEW:`, formattedResponse.substring(0, 200) + (formattedResponse.length > 200 ? '...' : ''));
+      console.log(`=== [${timestamp}] [INDENTATION DEBUG] LLM RESPONSE FORMATTER END ===\n`);
       
       return formattedResponse;
       
     } catch (error) {
-      console.error('[LLM FORMATTING ERROR]', 'Failed to format with LLM:', error);
-      console.log('[FALLBACK]', 'Returning original response due to formatting error');
-      console.log('=== LLM RESPONSE FORMATTER END ===\n');
+      console.error(`[${timestamp}] [INDENTATION DEBUG] LLM FORMATTING ERROR:`, 'Failed to format with LLM:', error);
+      console.log(`[${timestamp}] [INDENTATION DEBUG] FALLBACK:`, 'Returning original response due to formatting error');
+      console.log(`=== [${timestamp}] [INDENTATION DEBUG] LLM RESPONSE FORMATTER END ===\n`);
       return response;
     }
   }
@@ -99,45 +142,38 @@ export class ResponseFormatter {
    * Build the formatting prompt for the LLM
    */
   private static buildFormattingPrompt(response: string): string {
-    return `You are a response formatting specialist. Your task is to convert paragraph-style responses to clear, structured bullet point format while preserving all citations.
+    return `You are a response formatting specialist. Your task is to convert paragraph-style responses to clear, structured, NESTED bullet point lists while preserving all citations.
 
 CRITICAL FORMATTING RULES:
-1. Convert paragraphs to bullet points using this format: * [bullet point text]
-2. Preserve ALL citations in their original positions relative to the information they support
-3. Move citations to the END of bullet points when they appear within the bullet text
-4. Maintain Vancouver citation style: [1], [2], [3] etc.
-5. Create logical section headers using bold format with checkmark emoji: ✅ **[Section Title]:**
-6. Keep the same information and meaning - just change the format
-7. Do not add, remove, or change any factual information
-8. Do not invent new citations or modify existing citation numbers
+1. Use standard Markdown bullet points: * for top level, and indent 2-4 spaces with * for sub-levels.
+2. DETECT HIERARCHY: If a sentence acts as a header (e.g., "Early Surgery:", "Treatments include:"), the items following it MUST be indented.
+3. Format:
+   * Main Category or Timeframe
+     * Sub-point with citation [1]
+     * Another sub-point [2]
+4. Preserve ALL citations in their original positions.
+5. Move citations to the END of the specific bullet point they support.
+6. Create logical section headers using bold format with checkmark emoji: ✅ **[Section Title]:**
+7. Do not add, remove, or change any factual information.
 
 EXAMPLE TRANSFORMATION:
 
 INPUT:
-"The CURB-65 criteria is used to assess the severity of CAP [1]. One point is scored for each of the following features: confusion (mini mental score of 8 or less or new disorientation in person, place, or time), urea of >7 mmol/L or >20 mg/dl, respiratory rate of ≥30/min, blood pressure (systolic BP <90 mmHg and diastolic BP ≤60 mmHg), and age ≥65 years [1]. The CURB-65 score is used for the management of CAP [1]. A score of 0 or 1 indicates home treatment, a score of 2 suggests hospitalization, and a score of 3 or more requires management in a hospital, potentially including the ICU, especially if the score is 4 or 5 [1]."
+"Surgical management includes early surgery within 2 weeks involving limbal stem cell transplantation [1] and amniotic membrane grafts [2]. Late surgery after 6 months involves symblepharon release [3] and keratoplasty [1]."
 
 OUTPUT:
-✅ **CURB-65 Criteria for Assessing CAP Severity:**
-* The CURB-65 criteria is used to assess the severity of CAP [1]
-* One point is scored for each of the following features:
-    * Confusion (mini mental score of 8 or less or new disorientation in person, place, or time)
-    * Urea of >7 mmol/L or >20 mg/dl
-    * Respiratory rate of ≥30/min
-    * Blood pressure (systolic BP <90 mmHg and diastolic BP ≤60 mmHg)
-    * Age ≥65 years [1]
-
-✅ **Management Based on CURB-65 Score:**
-* The CURB-65 score is used for the management of CAP [1]
-* A score of 0 or 1 indicates home treatment
-* A score of 2 suggests hospitalization
-* A score of 3 or more requires management in a hospital, potentially including the ICU, especially if the score is 4 or 5 [1]
+✅ **Surgical Management:**
+* Early Surgery (within 2 weeks):
+    * Limbal stem cell transplantation [1]
+    * Amniotic membrane grafts [2]
+* Late Surgery (after 6 months):
+    * Release of conjunctival bands (symblepharon release) [3]
+    * Keratoplasty [1]
 
 YOUR TASK:
-Convert the following response to bullet point format following the rules above:
+Convert the following response to a nested bullet point format following the rules above:
 
-${response}
-
-Remember: Preserve all citations exactly as they appear, just reposition them to the end of bullet points when appropriate.`;
+${response}`;
   }
 
   /**

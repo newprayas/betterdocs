@@ -291,3 +291,36 @@
     @apply border-2 border-slate-600;
   }
 }
+/* Ensure nested lists have deep indentation */
+.prose ul > li > ul {
+  padding-left: 1.5em;
+  margin-top: 0.25em;
+  margin-bottom: 0.25em;
+  list-style-type: circle; /* Changes bullet style for sub-items */
+}
+
+/* FIX: Force visual indentation for nested lists in prose */
+.prose ul ul,
+.prose ol ul,
+.prose ul ol,
+.prose ol ol {
+  padding-left: 1.5rem !important; /* 24px indent */
+  margin-top: 0.25rem;
+  margin-bottom: 0.25rem;
+}
+
+/* FIX: Distinct bullet styles for nesting levels */
+/* Level 1: Disc (Default) */
+.prose ul > li {
+  list-style-type: disc;
+}
+
+/* Level 2: Hollow Circle */
+.prose ul > li > ul > li {
+  list-style-type: circle !important;
+}
+
+/* Level 3: Square */
+.prose ul > li > ul > li > ul > li {
+  list-style-type: square !important;
+}
