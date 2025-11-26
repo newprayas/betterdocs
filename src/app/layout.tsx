@@ -14,6 +14,16 @@ export const metadata: Metadata = {
   title: 'Meddy - Chat with Documents Privately',
   description: 'Private RAG chat application for documents',
   manifest: '/manifest.json',
+  icons: {
+    icon: [
+      { url: '/favicon-32.png', sizes: '32x32', type: 'image/png' },
+      { url: '/icon-192x192.png', sizes: '192x192', type: 'image/png' },
+      { url: '/icon-512x512.png', sizes: '512x512', type: 'image/png' },
+    ],
+    apple: [
+      { url: '/icon-192x192.png', sizes: '192x192', type: 'image/png' },
+    ],
+  },
 };
 
 export const viewport: Viewport = {
