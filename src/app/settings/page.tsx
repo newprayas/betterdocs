@@ -383,11 +383,17 @@ export default function SettingsPage() {
                     🎉 Just follow <span className="text-yellow-600 dark:text-yellow-400">EASY 7 STEPS</span> shown below to get API KEY
                   </p>
                   <div className="mt-2 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
-                    <img
-                      src="/ad24hz.gif"
-                      alt="How to get Gemini API Key"
-                      className="w-full h-auto max-w-full object-contain"
-                    />
+                    <div className="relative w-full" style={{ paddingBottom: '177.78%' }}>
+                      <iframe
+                        src="https://www.youtube.com/embed/enYGfYGLu6k?rel=0&modestbranding=1&playsinline=1&controls=1"
+                        title="How to get Gemini API Key"
+                        className="absolute top-0 left-0 w-full h-full rounded-lg"
+                        frameBorder="0"
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                        allowFullScreen
+                        loading="lazy"
+                      />
+                    </div>
                   </div>
                 </div>
 
