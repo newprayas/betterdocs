@@ -1,10 +1,10 @@
 'use client';
 
 import { createClient } from '@/utils/supabase/client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 
-export default function LoginPage() {
+function LoginContent() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const searchParams = useSearchParams();
@@ -132,5 +132,34 @@ export default function LoginPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+// Simple loading fallback component
+function LoginLoadingFallback() {
+  return (
+    <div className="flex min-h-screen flex-col items-center justify-center bg-slate-950 px-6 py-12 lg:px-8">
+      <div className="sm:mx-auto sm:w-full sm:max-w-md">
+        <div className="flex flex-col items-center justify-center text-center">
+          <div className="h-16 w-16 bg-blue-600 rounded-2xl flex items-center justify-center mb-6 shadow-lg shadow-blue-900/20">
+            <div className="h-10 w-10 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+          </div>
+          <h2 className="text-3xl font-bold tracking-tight text-white">
+            Welcome to Meddy
+          </h2>
+          <p className="mt-2 text-sm text-slate-400">
+            Your private RAG medical assistant
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<LoginLoadingFallback />}>
+      <LoginContent />
+    </Suspense>
   );
 }
