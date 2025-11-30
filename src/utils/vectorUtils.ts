@@ -279,7 +279,7 @@ export function addToVectorIndex(
 export function searchVectorIndex(
   index: VectorIndex,
   query: Float32Array,
-  maxResults: number = 10,
+  maxResults: number = 8,
   similarityThreshold: number = 0.7
 ): Array<{ vector: Float32Array; similarity: number; metadata: any }> {
   const queryNorm = calculateVectorNorm(query);

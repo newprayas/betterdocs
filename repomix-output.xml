@@ -15713,58 +15713,6 @@ export default function LoginPage() {
             &lt;/div&gt;
         &lt;/div&gt;
     )
-}</file><file path="src/app/layout.tsx">import type { Metadata, Viewport } from &apos;next&apos;;
-import { Inter } from &apos;next/font/google&apos;;
-import Script from &apos;next/script&apos;;
-import &apos;../styles/globals.css&apos;;
-import &apos;../styles/mobile-touch.css&apos;;
-import { AppInitializer } from &apos;./AppInitializer&apos;;
-import SubscriptionModal from &apos;@/components/SubscriptionModal&apos;;
-import { RouteErrorBoundary } from &apos;@/components/common/RouteErrorBoundary&apos;;
-import { InstallPrompt } from &apos;@/components/common/InstallPrompt&apos;;
-
-const inter = Inter({ subsets: [&apos;latin&apos;] });
-
-export const metadata: Metadata = {
-  title: &apos;Meddy - Chat with Documents Privately&apos;,
-  description: &apos;Private RAG chat application for documents&apos;,
-  manifest: &apos;/manifest.json&apos;,
-};
-
-export const viewport: Viewport = {
-  width: &apos;device-width&apos;,
-  initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
-  themeColor: &apos;#020617&apos;,
-  viewportFit: &apos;cover&apos;,
-  interactiveWidget: &apos;resizes-content&apos;,
-};
-
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  return (
-    &lt;html lang=&quot;en&quot; className=&quot;dark&quot;&gt;
-      &lt;body className={`${inter.className} bg-slate-950 text-slate-200 antialiased`}&gt;
-        &lt;Script
-          id=&quot;error-suppression&quot;
-          strategy=&quot;beforeInteractive&quot;
-          src=&quot;/error-suppression.js&quot;
-        /&gt;
-        &lt;RouteErrorBoundary&gt;
-          &lt;div id=&quot;root&quot; className=&quot;min-h-screen flex flex-col&quot;&gt;
-            &lt;AppInitializer /&gt;
-            &lt;SubscriptionModal /&gt;
-            &lt;InstallPrompt /&gt;
-            {children}
-          &lt;/div&gt;
-        &lt;/RouteErrorBoundary&gt;
-      &lt;/body&gt;
-    &lt;/html&gt;
-  );
 }</file><file path="src/app/page.tsx">&apos;use client&apos;;
 
 import React, { useEffect, useState } from &apos;react&apos;;
@@ -16246,982 +16194,7 @@ export class EmbeddingService {
   }
 }
 
-export const embeddingService = new EmbeddingService();</file><file path="src/services/rag/chatPipeline.ts">import { getIndexedDBServices } from &apos;../indexedDB&apos;;
-import { chatService, embeddingService } from &apos;../gemini&apos;;
-import { vectorSearchService } from &apos;./vectorSearch&apos;;
-import { documentProcessor } from &apos;./documentProcessor&apos;;
-import { citationService } from &apos;./citationService&apos;;
-import { ResponseFormatter } from &apos;./responseFormatter&apos;;
-import { MessageSender, type MessageCreate, type Message } from &apos;@/types&apos;;
-import type { ChatStreamEvent } from &apos;../gemini/chatService&apos;;
-import type { SimplifiedCitationGroup } from &apos;@/types/citation&apos;;
-
-export class ChatPipeline {
-  private indexedDBServices = getIndexedDBServices();
-
-  /**
-   * Enhance user query with context information
-   */
-  private async enhanceQueryWithContext(sessionId: string, content: string): Promise&lt;string&gt; {
-    try {
-      console.log(&apos;\n=== QUERY ENHANCEMENT PROCESS START ===&apos;);
-      console.log(&apos;[ORIGINAL QUERY]&apos;, content);
-
-      // Get session information
-      const session = await this.indexedDBServices.sessionService.getSession(sessionId);
-      const sessionName = session?.name || &apos;Unknown Session&apos;;
-      console.log(&apos;[SESSION INFO]&apos;, `Name: ${sessionName}, ID: ${sessionId}`);
-
-      // Get enabled documents for the session
-      if (!session) {
-        console.log(&apos;[CONTEXT ENHANCEMENT]&apos;, &apos;Session not found - returning original query&apos;);
-        console.log(&apos;=== QUERY ENHANCEMENT PROCESS END ===\n&apos;);
-        return content;
-      }
-      const enabledDocuments = await this.indexedDBServices.documentService.getEnabledDocumentsBySession(sessionId, session.userId);
-      console.log(&apos;[DOCUMENTS FOUND]&apos;, `${enabledDocuments.length} enabled documents`);
-
-      // Extract document names (use title if available, otherwise filename)
-      const documentNames = enabledDocuments.map(doc =&gt; doc.title || doc.filename).filter(Boolean);
-
-      // If no documents are enabled, return the original query
-      if (documentNames.length === 0) {
-        console.log(&apos;[CONTEXT ENHANCEMENT]&apos;, &apos;No enabled documents found - returning original query&apos;);
-        console.log(&apos;=== QUERY ENHANCEMENT PROCESS END ===\n&apos;);
-        return content;
-      }
-
-      // Format the related documents string
-      const relatedDocuments = documentNames.join(&apos;, &apos;);
-      console.log(&apos;[CONTEXT DOCUMENTS]&apos;, relatedDocuments);
-
-      // Create the enhanced query with context
-      const enhancedQuery = `${content} [Context - ${sessionName} and related to ${relatedDocuments}]`;
-
-      console.log(&apos;[ENHANCED QUERY]&apos;, enhancedQuery);
-      console.log(&apos;=== QUERY ENHANCEMENT PROCESS END ===\n&apos;);
-
-      return enhancedQuery;
-    } catch (error) {
-      console.error(&apos;[CONTEXT ENHANCEMENT ERROR]&apos;, error);
-      console.log(&apos;=== QUERY ENHANCEMENT PROCESS END (WITH ERROR) ===\n&apos;);
-      // If there&apos;s an error, return the original query
-      return content;
-    }
-  }
-
-  /**
-   * Rewrites the user query based on chat history to make it standalone.
-   * Solves the &quot;What are its causes?&quot; problem.
-   */
-  private async generateStandaloneQuery(
-    content: string,
-    history: any[],
-    apiKey: string,
-    model: string
-  ): Promise&lt;string&gt; {
-    // 1. Cost Optimization: If no history, no need to rewrite.
-    if (!history || history.length === 0) {
-      console.log(&apos;[QUERY REWRITER]&apos;, &apos;Skipping rewrite - No history.&apos;);
-      return content;
-    }
-
-    // 2. Cost Optimization: Limit history to last 4 messages (2 turns)
-    // This keeps input tokens low for the free tier.
-    const recentHistory = history.slice(-4).map(msg =&gt;
-      `${msg.role === &apos;user&apos; ? &apos;User&apos; : &apos;Assistant&apos;}: ${msg.content}`
-    ).join(&apos;\n&apos;);
-
-    const prompt = `
-      Task: Rewrite the last user question to be a standalone query based on the conversation history.
-      Rules:
-      1. Replace pronouns (it, they, this) with specific nouns from history.
-      2. Keep the query concise.
-      3. If the question is already standalone, return it exactly as is.
-      4. Do NOT answer the question.
-
-      Conversation History:
-      ${recentHistory}
-
-      Last User Question:
-      ${content}
-
-      Standalone Query:
-    `;
-
-    try {
-      // Use a specialized instance for rewriting to avoid interfering with main chat state
-      // We reuse the existing Gemini service structure but make a quick generation call
-      const { geminiService } = await import(&apos;../gemini/geminiService&apos;);
-      
-      // Note: We rely on the service already being initialized in AppInitializer,
-      // but we pass options to ensure we use a fast/cheap configuration.
-      const rewrittenQuery = await geminiService.generateResponse(
-        prompt,
-        undefined,
-        undefined,
-        {
-          temperature: 0.1, // Low temperature for deterministic rewriting
-          maxTokens: 100,   // Very low output tokens (saves limits)
-        }
-      );
-
-      const cleanedQuery = rewrittenQuery.trim();
-      console.log(&apos;[QUERY REWRITER]&apos;, `Original: &quot;${content}&quot; -&gt; Rewritten: &quot;${cleanedQuery}&quot;`);
-      return cleanedQuery;
-
-    } catch (error) {
-      console.error(&apos;[QUERY REWRITER ERROR]&apos;, error);
-      // Fallback: If API fails (rate limit), use original query so the app doesn&apos;t crash
-      return content;
-    }
-  }
-
-  /**
-   * Send a message and get AI response with RAG context
-   */
-  async sendMessage(
-    sessionId: string,
-    content: string,
-    onStreamEvent?: (event: ChatStreamEvent) =&gt; void,
-    userMessage?: MessageCreate
-  ): Promise&lt;void&gt; {
-    try {
-      console.log(&apos;\n=== CHAT PIPELINE PROCESS START ===&apos;);
-      console.log(&apos;[USER INPUT]&apos;, `Session: ${sessionId}, Query: &quot;${content}&quot;`);
-
-      // User message is now passed in as a parameter (already saved in chatStore)
-      console.log(&apos;[MESSAGE STATUS]&apos;, &apos;User message already stored in database by chatStore&apos;);
-
-      // Get enabled documents for the session
-      const sessionForDocuments = await this.indexedDBServices.sessionService.getSession(sessionId);
-      if (!sessionForDocuments) {
-        throw new Error(&apos;Session not found&apos;);
-      }
-
-      // 1. FETCH HISTORY (NEW STEP)
-      // We need the history BEFORE we do the search
-      console.log(&apos;[HISTORY]&apos;, &apos;Fetching chat history for context awareness...&apos;);
-      const history = await this.indexedDBServices.messageService.getMessagesBySession(
-        sessionId,
-        sessionForDocuments.userId
-      );
-
-      // Get Settings for model info
-      const settings = await this.indexedDBServices.settingsService.getSettings(sessionForDocuments.userId);
-      const apiKey = settings?.geminiApiKey || &apos;&apos;;
-      const model = settings?.model || &apos;gemini-2.5-flash-lite&apos;;
-
-      // 2. GENERATE STANDALONE QUERY (NEW STEP)
-      // This converts &quot;What are its causes?&quot; -&gt; &quot;What are the causes of cataract?&quot;
-      console.log(&apos;[REWRITING]&apos;, &apos;Generating standalone query...&apos;);
-      const standaloneQuery = await this.generateStandaloneQuery(content, history, apiKey, model);
-      
-      // 3. ENHANCE THE REWRITTEN QUERY, NOT THE ORIGINAL
-      // Modify this line to pass &apos;standaloneQuery&apos; instead of &apos;content&apos;
-      const enhancedQuery = await this.enhanceQueryWithContext(sessionId, standaloneQuery);
-      console.log(&apos;[FINAL SEARCH QUERY]&apos;, enhancedQuery);
-
-      const documents = await this.indexedDBServices.documentService.getDocumentsBySession(sessionId, sessionForDocuments.userId);
-      console.log(&apos;[DOCUMENT STATUS]&apos;, `Found ${documents.length} total documents in session ${sessionId}`);
-      console.log(&apos;[DOCUMENT STATUS]&apos;, &apos;Document details:&apos;, documents.map(doc =&gt; ({
-        id: doc.id,
-        filename: doc.filename,
-        enabled: doc.enabled,
-        status: doc.status
-      })));
-
-      const enabledDocuments = documents.filter(doc =&gt; doc.enabled);
-      console.log(&apos;[DOCUMENT STATUS]&apos;, `${enabledDocuments.length}/${documents.length} documents enabled`);
-
-      // Also check if there are any embeddings available for enabled documents
-      const indexedDBEmbeddingService = this.indexedDBServices.embeddingService;
-      let embeddings: any[] = [];
-
-      if (enabledDocuments.length &gt; 0) {
-        embeddings = await indexedDBEmbeddingService.getEnabledEmbeddingsBySession(sessionId, sessionForDocuments.userId);
-      }
-
-      console.log(&apos;[EMBEDDING STATUS]&apos;, `${embeddings.length} embeddings found for enabled documents`);
-
-      if (enabledDocuments.length === 0 || embeddings.length === 0) {
-        // No enabled documents or no embeddings available, just chat without context
-        console.log(&apos;[PROCESSING MODE]&apos;, &apos;Direct response (no RAG context available)&apos;);
-        await this.generateDirectResponse(sessionId, content, onStreamEvent);
-        console.log(&apos;=== CHAT PIPELINE PROCESS END ===\n&apos;);
-        return;
-      }
-
-      // 4. GENERATE EMBEDDING USING THE REWRITTEN QUERY
-      console.log(&apos;[EMBEDDING GENERATION]&apos;, &apos;Creating vector embedding for enhanced query...&apos;);
-      const queryEmbedding = await embeddingService.generateEmbedding(enhancedQuery);
-      console.log(&apos;[EMBEDDING GENERATED]&apos;, `Vector created with ${queryEmbedding.length} dimensions`);
-
-      // 5. PERFORM SEARCH USING THE REWRITTEN QUERY
-      console.log(&apos;[VECTOR SEARCH]&apos;, &apos;Performing hybrid search...&apos;);
-      const searchResults = await vectorSearchService.searchHybridEnhanced(
-        queryEmbedding,
-        sessionId,
-        enhancedQuery, // Use the enhanced, rewritten query here
-        {
-          maxResults: 15,
-          useDynamicWeighting: true,
-          textWeight: 0.3,
-          vectorWeight: 0.7,
-          userId: sessionForDocuments.userId // Ensure userId is passed
-        }
-      );
-      console.log(&apos;[SEARCH RESULTS]&apos;, `${searchResults.length} relevant chunks found`);
-      console.log(&apos;✅ CHUNKS USED =&apos;, searchResults.length);
-
-      // Log detailed search results for debugging
-      console.log(&apos;[SEARCH RESULTS DETAIL]&apos;, &apos;Detailed search results:&apos;);
-      searchResults.forEach((result, index) =&gt; {
-        console.log(`[SEARCH RESULT ${index}]`, {
-          chunkId: result.chunk.id,
-          documentTitle: result.document.title,
-          similarity: result.similarity,
-          chunkPage: result.chunk.page,
-          metadataPageNumber: result.chunk.metadata?.pageNumber,
-          isCombined: result.chunk.metadata?.isCombined,
-          originalChunkCount: result.chunk.metadata?.originalChunkCount,
-          combinedChunkIds: result.chunk.metadata?.combinedChunkIds,
-          contentPreview: result.chunk.content.substring(0, 150) + &apos;...&apos;
-        });
-      });
-
-      // Build context from search results
-      console.log(&apos;[CONTEXT BUILDING]&apos;, &apos;Constructing context from search results...&apos;);
-      const context = this.buildContext(searchResults);
-      console.log(&apos;[CONTEXT CREATED]&apos;, `Context string length: ${context.length} characters`);
-
-      // ... The rest of the function (Context Building, LLM Generation) remains the same ...
-      // IMPORTANT: The final LLM call (generateSimplifiedContextualResponse)
-      // will still see the original chat history fetched from DB,
-      // so it knows the visual context of the chat.
-      
-      await this.generateSimplifiedContextualResponse(
-        sessionId,
-        content, // We can pass original content here for the user prompt part
-        this.buildContext(searchResults),
-        searchResults,
-        onStreamEvent
-      );
-
-      console.log(&apos;=== CHAT PIPELINE PROCESS END ===\n&apos;);
-
-    } catch (error) {
-      console.error(&apos;[PIPELINE ERROR]&apos;, &apos;Error in chat pipeline:&apos;, error);
-
-      // Save error message
-      const errorMessage: MessageCreate = {
-        sessionId,
-        content: &apos;Sorry, I encountered an error while processing your message. Please try again.&apos;,
-        role: MessageSender.ASSISTANT,
-      };
-
-      await this.indexedDBServices.messageService.createMessage(errorMessage);
-      console.log(&apos;[ERROR HANDLED]&apos;, &apos;Error message saved to database&apos;);
-      console.log(&apos;=== CHAT PIPELINE PROCESS END (WITH ERROR) ===\n&apos;);
-    }
-  }
-
-  /**
-   * Generate response without document context
-   */
-  private async generateDirectResponse(
-    sessionId: string,
-    content: string,
-    onStreamEvent?: (event: ChatStreamEvent) =&gt; void
-  ): Promise&lt;void&gt; {
-    console.log(&apos;\n=== DIRECT RESPONSE MODE (NO RAG) ===&apos;);
-    console.log(&apos;[DIRECT MODE]&apos;, &apos;Generating response without document context&apos;);
-
-    // Generate direct response without context
-    // Generate direct response without context
-    const session = await this.indexedDBServices.sessionService.getSession(sessionId);
-    if (!session) {
-      throw new Error(&apos;Session not found&apos;);
-    }
-
-    const settings = await this.indexedDBServices.settingsService.getSettings(session.userId);
-    const messages = await this.indexedDBServices.messageService.getMessagesBySession(sessionId, session.userId);
-    console.log(&apos;[CHAT HISTORY]&apos;, `Found ${messages.length} previous messages`);
-
-    let fullResponse = &apos;&apos;;
-    let citations: any[] = [];
-
-    await chatService.generateStreamingResponse(
-      [...messages, { id: &apos;temp&apos;, sessionId, content, role: MessageSender.USER, timestamp: new Date() }],
-      [],
-      settings || {
-        userId: session.userId,
-        geminiApiKey: &apos;&apos;,
-        model: &apos;gemini-2.5-flash-lite&apos;,
-        temperature: 0.7,
-        maxTokens: 2048,
-        similarityThreshold: 0.7,
-        chunkSize: 1000,
-        chunkOverlap: 200,
-        theme: &apos;dark&apos;,
-        fontSize: &apos;medium&apos;,
-        showSources: true,
-        autoSave: true,
-        dataRetention: &apos;never&apos;,
-        enableAnalytics: false,
-        crashReporting: false,
-        debugMode: false,
-        logLevel: &apos;error&apos;
-      },
-      (event) =&gt; {
-        if (event.type === &apos;chunk&apos;) {
-          fullResponse += event.content || &apos;&apos;;
-          // Don&apos;t send chunks to UI for direct response either
-        } else if (event.type === &apos;citation&apos;) {
-          citations.push(event.citation);
-          // Don&apos;t send citations to UI during streaming
-        } else if (event.type === &apos;end&apos;) {
-          console.log(&apos;[DIRECT RESPONSE]&apos;, `Generated ${fullResponse.length} characters`);
-
-          // Save assistant message
-          const assistantMessage: MessageCreate = {
-            sessionId,
-            content: fullResponse,
-            role: MessageSender.ASSISTANT,
-            citations: citations.length &gt; 0 ? citations : undefined,
-          };
-
-          this.indexedDBServices.messageService.createMessage(assistantMessage);
-          console.log(&apos;[RESPONSE SAVED]&apos;, &apos;Direct response stored in database&apos;);
-          if (onStreamEvent) onStreamEvent(event);
-        } else if (event.type === &apos;error&apos;) {
-          console.error(&apos;[DIRECT MODE ERROR]&apos;, &apos;Streaming error:&apos;, event.error);
-          if (onStreamEvent) onStreamEvent(event);
-        }
-      }
-    );
-
-    console.log(&apos;=== DIRECT RESPONSE MODE END ===\n&apos;);
-  }
-
-  /**
-   * Generate response with document context
-   */
-  private async generateContextualResponse(
-    sessionId: string,
-    content: string,
-    context: string,
-    searchResults: any[],
-    onStreamEvent?: (event: ChatStreamEvent) =&gt; void
-  ): Promise&lt;void&gt; {
-    console.log(&apos;\n=== CONTEXTUAL RESPONSE MODE (WITH RAG) ===&apos;);
-    console.log(&apos;[RAG MODE]&apos;, &apos;Generating response with document context&apos;);
-    console.log(&apos;[CONTEXT SUMMARY]&apos;, `Providing ${searchResults.length} context sources to LLM`);
-
-    // Get session for system prompt
-    // Get session for system prompt and userId
-    const session = await this.indexedDBServices.sessionService.getSession(sessionId);
-    if (!session) {
-      throw new Error(&apos;Session not found&apos;);
-    }
-    const systemPrompt = this.getDefaultSystemPrompt(searchResults);
-    console.log(&apos;[SYSTEM PROMPT]&apos;, &apos;Using default system prompt&apos;);
-
-    const settings = await this.indexedDBServices.settingsService.getSettings(session.userId);
-    console.log(&apos;[RAG SETTINGS]&apos;, &apos;Settings loaded for contextual response&apos;);
-    console.log(&apos;[RAG SETTINGS]&apos;, `API Key present: ${settings?.geminiApiKey ? &apos;YES&apos; : &apos;NO&apos;}`);
-    console.log(&apos;[RAG SETTINGS]&apos;, `Temperature: ${settings?.temperature}`);
-    console.log(&apos;[RAG SETTINGS]&apos;, `Max tokens: ${settings?.maxTokens}`);
-
-    const messages = await this.indexedDBServices.messageService.getMessagesBySession(sessionId, session.userId);
-    console.log(&apos;[CHAT HISTORY]&apos;, `Found ${messages.length} previous messages`);
-
-    let fullResponse = &apos;&apos;;
-    let citations: any[] = [];
-
-    await chatService.generateStreamingResponse(
-      [...messages, { id: &apos;temp&apos;, sessionId, content, role: MessageSender.USER, timestamp: new Date() }],
-      searchResults.map(result =&gt; ({
-        chunk: result.chunk,
-        similarity: result.similarity,
-        document: result.document
-      })),
-      settings || {
-        userId: session.userId,
-        geminiApiKey: &apos;&apos;,
-        model: &apos;gemini-2.5-flash-lite&apos;,
-        temperature: 0.7,
-        maxTokens: 2048,
-        similarityThreshold: 0.7,
-        chunkSize: 1000,
-        chunkOverlap: 200,
-        theme: &apos;dark&apos;,
-        fontSize: &apos;medium&apos;,
-        showSources: true,
-        autoSave: true,
-        dataRetention: &apos;never&apos;,
-        enableAnalytics: false,
-        crashReporting: false,
-        debugMode: false,
-        logLevel: &apos;error&apos;
-      },
-      (event) =&gt; {
-        if (event.type === &apos;start&apos;) {
-          console.log(&apos;[RESPONSE START]&apos;, &apos;Beginning streaming response generation&apos;);
-          if (onStreamEvent) onStreamEvent({ type: &apos;status&apos;, message: &apos;Starting response generation...&apos; });
-        } else if (event.type === &apos;thinking&apos;) {
-          if (onStreamEvent) onStreamEvent({ type: &apos;status&apos;, message: event.content || &apos;Thinking...&apos; });
-        } else if (event.type === &apos;progress&apos;) {
-          if (onStreamEvent) onStreamEvent({
-            type: &apos;status&apos;,
-            message: `${event.progress?.message || &apos;Processing...&apos;} ${event.progress?.percentage || 0}%`
-          });
-        } else if (event.type === &apos;chunk&apos;) {
-          if (event.content) {
-            fullResponse += event.content;
-
-            // Validate chunk in real-time
-            const validation = this.validateStreamingChunk(event.content, fullResponse);
-            if (!validation.isValid) {
-              console.warn(&apos;[VALIDATION WARNING]&apos;, &apos;Streaming validation warning:&apos;, validation.warnings);
-            }
-            // Don&apos;t send text chunks to UI - we want to hide the unformatted response
-          }
-        } else if (event.type === &apos;citation&apos;) {
-          citations.push(event.citation);
-          // Don&apos;t send citations to UI during streaming
-        } else if (event.type === &apos;end&apos;) {
-          console.log(&apos;[RESPONSE COMPLETE]&apos;, `Generated ${fullResponse.length} characters with ${citations.length} citations`);
-
-          // Process citations with enhanced validation and renumbering
-          const citationResult = citationService.processCitations(fullResponse, searchResults);
-
-          // Log validation warnings if any
-          if (citationResult.validationWarnings &amp;&amp; citationResult.validationWarnings.length &gt; 0) {
-            console.warn(&apos;[CITATION WARNINGS]&apos;, &apos;Citation validation warnings:&apos;, citationResult.validationWarnings);
-            // Optionally send warnings to UI for debugging
-            if (onStreamEvent) {
-              onStreamEvent({
-                type: &apos;status&apos;,
-                message: `Citation warnings: ${citationResult.validationWarnings.length} issues found`
-              });
-            }
-          }
-
-          // Create metadata for storage with full content
-          const citationMetadata = citationService.extractCitationMetadata(
-            citationResult.citations,
-            searchResults
-          );
-
-          // Save assistant message
-          const assistantMessage: MessageCreate = {
-            sessionId,
-            content: citationResult.renumberedResponse,
-            role: MessageSender.ASSISTANT,
-            citations: citationMetadata,
-          };
-
-          this.indexedDBServices.messageService.createMessage(assistantMessage);
-          console.log(&apos;[RESPONSE SAVED]&apos;, &apos;Contextual response with citations stored in database&apos;);
-          if (onStreamEvent) onStreamEvent({ type: &apos;done&apos; });
-        } else if (event.type === &apos;error&apos;) {
-          console.error(&apos;[RAG MODE ERROR]&apos;, &apos;Streaming error:&apos;, event.error);
-          if (onStreamEvent) onStreamEvent({
-            type: &apos;error&apos;,
-            message: event.error || &apos;Failed to generate response&apos;
-          });
-        }
-      }
-    );
-
-    console.log(&apos;=== CONTEXTUAL RESPONSE MODE END ===\n&apos;);
-  }
-
-  /**
-   * NEW: Generate response with simplified page-based citation system
-   */
-  private async generateSimplifiedContextualResponse(
-    sessionId: string,
-    content: string,
-    context: string,
-    searchResults: any[],
-    onStreamEvent?: (event: ChatStreamEvent) =&gt; void
-  ): Promise&lt;void&gt; {
-    console.log(&apos;\n=== SIMPLIFIED CONTEXTUAL RESPONSE MODE (WITH RAG) ===&apos;);
-    console.log(&apos;[SIMPLIFIED RAG MODE]&apos;, &apos;Generating response with simplified page-based citations&apos;);
-    console.log(&apos;[SIMPLIFIED CONTEXT]&apos;, `Providing ${searchResults.length} context sources to LLM`);
-
-    // Get session for system prompt
-    // Get session for system prompt and userId
-    const session = await this.indexedDBServices.sessionService.getSession(sessionId);
-    if (!session) {
-      throw new Error(&apos;Session not found&apos;);
-    }
-    const systemPrompt = this.getSimplifiedSystemPrompt(searchResults);
-    console.log(&apos;[SIMPLIFIED SYSTEM PROMPT]&apos;, &apos;Using default simplified system prompt&apos;);
-
-    const settings = await this.indexedDBServices.settingsService.getSettings(session.userId);
-    console.log(&apos;[SIMPLIFIED RAG SETTINGS]&apos;, &apos;Settings loaded for simplified contextual response&apos;);
-
-    const messages = await this.indexedDBServices.messageService.getMessagesBySession(sessionId, session.userId);
-    console.log(&apos;[SIMPLIFIED CHAT HISTORY]&apos;, `Found ${messages.length} previous messages`);
-
-    let fullResponse = &apos;&apos;;
-    let citations: any[] = [];
-
-    await chatService.generateStreamingResponse(
-      [...messages, { id: &apos;temp&apos;, sessionId, content, role: MessageSender.USER, timestamp: new Date() }],
-      searchResults.map(result =&gt; ({
-        chunk: result.chunk,
-        similarity: result.similarity,
-        document: result.document
-      })),
-      settings || {
-        userId: session.userId,
-        geminiApiKey: &apos;&apos;,
-        model: &apos;gemini-2.5-flash-lite&apos;,
-        temperature: 0.7,
-        maxTokens: 2048,
-        similarityThreshold: 0.7,
-        chunkSize: 1000,
-        chunkOverlap: 200,
-        theme: &apos;dark&apos;,
-        fontSize: &apos;medium&apos;,
-        showSources: true,
-        autoSave: true,
-        dataRetention: &apos;never&apos;,
-        enableAnalytics: false,
-        crashReporting: false,
-        debugMode: false,
-        logLevel: &apos;error&apos;
-      },
-      async (event) =&gt; {
-        if (event.type === &apos;start&apos;) {
-          console.log(&apos;[SIMPLIFIED RESPONSE START]&apos;, &apos;Beginning streaming response generation&apos;);
-          if (onStreamEvent) onStreamEvent({ type: &apos;status&apos;, message: &apos;Starting response generation...&apos; });
-        } else if (event.type === &apos;thinking&apos;) {
-          if (onStreamEvent) onStreamEvent({ type: &apos;status&apos;, message: event.content || &apos;Thinking...&apos; });
-        } else if (event.type === &apos;progress&apos;) {
-          if (onStreamEvent) onStreamEvent({
-            type: &apos;status&apos;,
-            message: `${event.progress?.message || &apos;Processing...&apos;} ${event.progress?.percentage || 0}%`
-          });
-        } else if (event.type === &apos;chunk&apos;) {
-          if (event.content) {
-            fullResponse += event.content;
-            // Don&apos;t send text chunks to UI - we want to hide the unformatted response
-          }
-        } else if (event.type === &apos;citation&apos;) {
-          citations.push(event.citation);
-          // Don&apos;t send citations to UI during streaming
-        } else if (event.type === &apos;end&apos;) {
-          console.log(&apos;[SIMPLIFIED RESPONSE COMPLETE]&apos;, `Generated ${fullResponse.length} characters with ${citations.length} citations`);
-
-          // Format response to bullet points before processing citations
-          // Use default settings if settings is undefined
-          const settingsForFormatting = settings || {
-            userId: session.userId,
-            geminiApiKey: &apos;&apos;,
-            model: &apos;gemini-2.5-flash-lite&apos;,
-            temperature: 0.7,
-            maxTokens: 2048,
-            similarityThreshold: 0.7,
-            chunkSize: 1000,
-            chunkOverlap: 200,
-            theme: &apos;dark&apos;,
-            fontSize: &apos;medium&apos;,
-            showSources: true,
-            autoSave: true,
-            dataRetention: &apos;never&apos;,
-            enableAnalytics: false,
-            crashReporting: false,
-            debugMode: false,
-            logLevel: &apos;error&apos;
-          };
-
-          console.log(&apos;[DEBUG FORMATTING]&apos;, &apos;About to call ResponseFormatter.formatToBulletPoints&apos;);
-          console.log(&apos;[DEBUG FORMATTING]&apos;, `Settings available: ${!!settingsForFormatting}`);
-          console.log(&apos;[DEBUG FORMATTING]&apos;, `Formatting API key: ${settingsForFormatting.geminiApiKey ? &apos;YES&apos; : &apos;NO&apos;}`);
-          console.log(&apos;[DEBUG FORMATTING]&apos;, `Main API key: ${settingsForFormatting.geminiApiKey ? &apos;YES&apos; : &apos;NO&apos;}`);
-          console.log(&apos;[DEBUG FORMATTING]&apos;, `Response length: ${fullResponse.length}`);
-          
-          const formattedResponse = await ResponseFormatter.formatToBulletPoints(fullResponse, settingsForFormatting);
-          console.log(&apos;[BULLET FORMATTING]&apos;, `Converted to bullet points: ${formattedResponse.length} characters`);
-          
-          // DEBUG: Log formatted response before citation processing
-          console.log(&apos;[PRE-CITATION DEBUG]&apos;, {
-            formattedResponseLength: formattedResponse.length,
-            hasNewlines: formattedResponse.includes(&apos;\n&apos;),
-            newlineCount: (formattedResponse.match(/\n/g) || []).length,
-            bulletCount: (formattedResponse.match(/^\* /gm) || []).length,
-            firstFewLines: formattedResponse.split(&apos;\n&apos;).slice(0, 5),
-            rawCharCodes: Array.from(formattedResponse.substring(0, 100)).map(c =&gt; `${c}(${c.charCodeAt(0)})`).join(&apos; &apos;)
-          });
-
-          // Process citations using simplified system
-          const citationResult: SimplifiedCitationGroup = citationService.processSimplifiedCitations(formattedResponse, searchResults);
-          
-          // DEBUG: Log response after citation processing
-          console.log(&apos;[POST-CITATION DEBUG]&apos;, {
-            renumberedResponseLength: citationResult.renumberedResponse.length,
-            hasNewlines: citationResult.renumberedResponse.includes(&apos;\n&apos;),
-            newlineCount: (citationResult.renumberedResponse.match(/\n/g) || []).length,
-            bulletCount: (citationResult.renumberedResponse.match(/^\* /gm) || []).length,
-            firstFewLines: citationResult.renumberedResponse.split(&apos;\n&apos;).slice(0, 5),
-            rawCharCodes: Array.from(citationResult.renumberedResponse.substring(0, 100)).map(c =&gt; `${c}(${c.charCodeAt(0)})`).join(&apos; &apos;)
-          });
-
-          // DEBUG: Log before storing in database
-          console.log(&apos;[PRE-STORAGE DEBUG]&apos;, {
-            contentToStore: citationResult.renumberedResponse,
-            hasNewlines: citationResult.renumberedResponse.includes(&apos;\n&apos;),
-            newlineCount: (citationResult.renumberedResponse.match(/\n/g) || []).length,
-            bulletCount: (citationResult.renumberedResponse.match(/^\* /gm) || []).length,
-            firstFewLines: citationResult.renumberedResponse.split(&apos;\n&apos;).slice(0, 5)
-          });
-
-          console.log(&apos;[SIMPLIFIED CITATION RESULT]&apos;, {
-            originalCitations: citations.length,
-            processedCitations: citationResult.citations.length,
-            pageGroups: citationResult.citations.map(c =&gt; ({ document: c.document, page: c.page }))
-          });
-
-          // Convert simplified citations to message citation format for storage
-          const citationMetadata = citationService.convertSimplifiedToMessageCitations(citationResult.citations);
-
-          // Save assistant message with formatted response
-          const assistantMessage: MessageCreate = {
-            sessionId,
-            content: citationResult.renumberedResponse,
-            role: MessageSender.ASSISTANT,
-            citations: citationMetadata,
-          };
-
-          console.log(&apos;[MESSAGE STORAGE DEBUG]&apos;, &apos;About to store message with content:&apos;, {
-            content: citationResult.renumberedResponse,
-            hasNewlines: citationResult.renumberedResponse.includes(&apos;\n&apos;),
-            newlineCount: (citationResult.renumberedResponse.match(/\n/g) || []).length,
-            bulletCount: (citationResult.renumberedResponse.match(/^\* /gm) || []).length,
-            firstFewLines: citationResult.renumberedResponse.split(&apos;\n&apos;).slice(0, 5)
-          });
-
-          this.indexedDBServices.messageService.createMessage(assistantMessage);
-          console.log(&apos;[SIMPLIFIED RESPONSE SAVED]&apos;, &apos;Simplified contextual response with citations stored in database&apos;);
-          if (onStreamEvent) onStreamEvent({ type: &apos;done&apos; });
-        } else if (event.type === &apos;error&apos;) {
-          console.error(&apos;[SIMPLIFIED RAG MODE ERROR]&apos;, &apos;Streaming error:&apos;, event.error);
-          if (onStreamEvent) onStreamEvent({
-            type: &apos;error&apos;,
-            message: event.error || &apos;Failed to generate response&apos;
-          });
-        }
-      }
-    );
-
-    console.log(&apos;=== SIMPLIFIED CONTEXTUAL RESPONSE MODE END ===\n&apos;);
-  }
-
-  /**
-   * Get simplified system prompt for page-based citation system
-   */
-  private getSimplifiedSystemPrompt(searchResults?: any[]): string {
-    const availableSources = searchResults?.length || 0;
-
-    return `You are a helpful AI assistant that answers questions based on the provided document context.
-
-CRITICAL CONSTRAINT - READ CAREFULLY:
-- You MUST ONLY use information from the provided context documents
-- You are FORBIDDEN from using any general knowledge, external information, or knowledge from your training data
-- If the context does not contain the answer, you MUST respond with &quot;I cannot answer this question based on the provided documents.&quot;
-- Do NOT attempt to answer questions about topics not covered in the context (e.g., &quot;who is the president&quot;, current events, general knowledge)
-- Every single statement you make must be supported by the provided context
-- NEVER answer questions about politics, current events, celebrities, sports, or any topic not in the documents
-- If someone asks &quot;who is the president&quot; or similar general knowledge questions, you must respond that you cannot answer based on the provided documents
-
-CONTEXT USAGE:
-- Use ONLY the provided context to inform your answers
-- Base your responses ENTIRELY on the given documents
-- Don&apos;t mention &quot;according to the context&quot; or similar phrases
-- If context doesn&apos;t contain relevant information, say so clearly
-
-MEDICAL ABBREVIATIONS:
-When processing medical queries, understand and use these common medical abbreviations:
-- &quot;rx&quot; or &quot;Rx&quot; means treatment of a certain condition
-- &quot;Tx&quot; or &quot;tx&quot; also menas means treatment
-- &quot;Dx&quot; or &quot;dx&quot; means diagnosis (you should search for history, clinical features, AND investigations of the condition)
-- &quot;inv&quot; or &quot;Inv&quot; means investigations or diagnostic tests
-- &quot;Give details about: mans Give all the information you can find about hte given query form the sources in a summarized way 
-- &quot;Features&quot; means - give information on HISTORY and CLINICAL features (examination findings) of the particualr condition
-
-
-SIMPLIFIED VANCOUVER CITATION REQUIREMENTS:
-- ALWAYS cite your sources using Vancouver style: [1], [2], [3] format
-- Each citation represents a PAGE from a document that contains the information you&apos;re citing
-- All chunks from the same page are already combined into a single citation
-- Use citations for ALL factual claims, statistics, quotes, and specific information
-- Citations are MANDATORY - every factual statement must have a citation
-- Don&apos;t cite general knowledge or common sense statements (but you shouldn&apos;t be using these anyway)
-- Place citations immediately after the information they support
-- Citations must be numbered sequentially in the order they appear in your response
-- CRITICAL: Only use citation numbers that correspond to the provided context sources (1 through ${availableSources})
-- NEVER invent citation numbers or use numbers outside of available range
-- Each citation number represents a specific page with combined content from that page
-- WARNING: Citing incorrect sources will mislead users and is unacceptable
-
-RESPONSE GUIDELINES:
-- Be accurate and helpful
-- Provide comprehensive but concise answers
-- Handle unit conversions for medical/technical data (e.g., temperatures, weights)
-- Maintain a professional but conversational tone
-- If multiple documents provide conflicting information, acknowledge the discrepancy
-
-ANSWER STRUCTURE:
-1. Direct answer to the question
-2. Supporting details with VERIFIED page-based citations
-3. Additional relevant context if available
-
-Remember: Your goal is to provide accurate, well-cited responses based SOLELY on the provided document context. NEVER use external knowledge. If the context doesn&apos;t contain the answer, explicitly state that you cannot answer based on the provided documents. CITATION ACCURACY IS YOUR HIGHEST PRIORITY.`;
-  }
-
-  /**
-   * Build context string from search results following Flutter app&apos;s approach
-   * Enhanced with clearer source labeling and content previews
-   * IMPROVED: Better page number detection and clearer source identification
-   */
-  private buildContext(searchResults: any[]): string {
-    if (searchResults.length === 0) {
-      return &apos;&apos;;
-    }
-
-    console.log(&apos;\n=== CONTEXT BUILDING DEBUG ===&apos;);
-    console.log(&apos;[BUILDING CONTEXT]&apos;, `Processing ${searchResults.length} search results for context`);
-
-    const contextParts: string[] = [];
-    contextParts.push(&apos;Retrieved Context Sources:\n&apos;);
-
-    for (let i = 0; i &lt; searchResults.length; i++) {
-      const result = searchResults[i];
-      const chunk = result.chunk;
-      const document = result.document;
-
-      // Enhanced page number detection - same logic as citation service
-      let pageInfo = &apos;&apos;;
-      if (chunk.metadata?.pageNumbers &amp;&amp; chunk.metadata.pageNumbers.length &gt; 0) {
-        pageInfo = ` (Page ${chunk.metadata.pageNumbers[0]})`;
-      } else if (chunk.page &amp;&amp; chunk.page &gt; 0) {
-        pageInfo = ` (Page ${chunk.page})`;
-      } else if (chunk.metadata?.pageNumber &amp;&amp; chunk.metadata.pageNumber &gt; 0) {
-        pageInfo = ` (Page ${chunk.metadata.pageNumber})`;
-      } else {
-        // Try to extract from content
-        const pagePatterns = [
-          /page\s+(\d+)/i,
-          /p\.?\s*(\d+)/i,
-          /第(\d+)页/,
-          /page\s+(\d+)\s+of/i,
-        ];
-
-        for (const pattern of pagePatterns) {
-          const match = chunk.content.match(pattern);
-          if (match &amp;&amp; match[1]) {
-            const extractedPage = parseInt(match[1], 10);
-            if (extractedPage &gt; 0) {
-              pageInfo = ` (Page ${extractedPage})`;
-              break;
-            }
-          }
-        }
-      }
-
-      // Create content preview for better source identification
-      const contentPreview = this.createContentPreview(chunk.content);
-      const similarityScore = result.similarity ? ` (Similarity: ${(result.similarity * 100).toFixed(1)}%)` : &apos;&apos;;
-
-      console.log(`[CONTEXT SOURCE ${i + 1}]`, {
-        documentTitle: document.title,
-        pageInfo: pageInfo.trim(),
-        similarity: result.similarity,
-        chunkId: chunk.id,
-        contentPreview: contentPreview,
-        isCombined: chunk.metadata?.isCombined,
-        originalChunkCount: chunk.metadata?.originalChunkCount
-      });
-
-      contextParts.push(`[${i + 1}] ${document.title}${pageInfo}${similarityScore}`);
-      contextParts.push(`Preview: ${contentPreview}`);
-      contextParts.push(&apos;&apos;);
-      contextParts.push(`Full Content:`);
-      contextParts.push(chunk.content.trim());
-      contextParts.push(&apos;&apos;);
-      contextParts.push(&apos;---&apos;);
-      contextParts.push(&apos;&apos;);
-    }
-
-    const finalContext = contextParts.join(&apos;\n&apos;).trim();
-    console.log(&apos;[CONTEXT BUILT]&apos;, `Final context length: ${finalContext.length} characters`);
-    console.log(&apos;=== CONTEXT BUILDING DEBUG END ===\n&apos;);
-
-    return finalContext;
-  }
-
-  /**
-   * Create a brief content preview to help identify relevant sources
-   */
-  private createContentPreview(content: string, maxLength: number = 150): string {
-    // Remove extra whitespace but preserve newlines for list formatting
-    const cleanedContent = content.trim().replace(/[ \t]+/g, &apos; &apos;);
-
-    if (cleanedContent.length &lt;= maxLength) {
-      return cleanedContent;
-    }
-
-    // Try to end at a sentence boundary
-    const truncated = cleanedContent.substring(0, maxLength);
-    const lastSentenceEnd = Math.max(
-      truncated.lastIndexOf(&apos;.&apos;),
-      truncated.lastIndexOf(&apos;!&apos;),
-      truncated.lastIndexOf(&apos;?&apos;)
-    );
-
-    if (lastSentenceEnd &gt; maxLength * 0.7) {
-      return truncated.substring(0, lastSentenceEnd + 1);
-    }
-
-    return truncated + &apos;...&apos;;
-  }
-
-
-  /**
-   * Get enhanced system prompt based on Flutter app&apos;s approach
-   */
-  private getDefaultSystemPrompt(searchResults?: any[]): string {
-    const availableSources = searchResults?.length || 0;
-
-    return `You are a helpful AI assistant that answers questions based on the provided document context.
-
-CRITICAL CONSTRAINT - READ CAREFULLY:
-- You MUST ONLY use information from the provided context documents
-- You are FORBIDDEN from using any general knowledge, external information, or knowledge from your training data
-- If the context does not contain the answer, you MUST respond with &quot;I cannot answer this question based on the provided documents.&quot;
-- Do NOT attempt to answer questions about topics not covered in the context (e.g., &quot;who is the president&quot;, current events, general knowledge)
-- Every single statement you make must be supported by the provided context
-- NEVER answer questions about politics, current events, celebrities, sports, or any topic not in the documents
-- If someone asks &quot;who is the president&quot; or similar general knowledge questions, you must respond that you cannot answer based on the provided documents
-
-CONTEXT USAGE:
-- Use ONLY the provided context to inform your answers
-- Base your responses ENTIRELY on the given documents
-- Don&apos;t mention &quot;according to the context&quot; or similar phrases
-- If context doesn&apos;t contain relevant information, say so clearly
-
-MEDICAL ABBREVIATIONS:
-When processing medical queries, understand and use these common medical abbreviations:
-- &quot;rx&quot; or &quot;Rx&quot; means treatment or prescription
-- &quot;Tx&quot; or &quot;tx&quot; means treatment
-- &quot;Dx&quot; or &quot;dx&quot; means diagnosis (you should search for history, clinical features, and investigations of the condition)
-- &quot;inv&quot; or &quot;Inv&quot; means investigations or diagnostic tests
-
-CRITICAL CITATION ACCURACY REQUIREMENTS:
-- BEFORE citing any source, VERIFY that the information you&apos;re presenting actually appears in that source
-- Each citation [number] MUST reference a source that CONTAINS the specific information you&apos;re citing
-- NEVER cite a source that discusses a different topic, even if it&apos;s related
-- Example: If you&apos;re defining &quot;cataract&quot;, ONLY cite sources that actually contain the cataract definition
-- DO NOT cite sources about ophthalmoscopy or ultrasound when defining cataract
-- Read each source carefully and ensure the content matches what you&apos;re claiming
-- If you&apos;re unsure whether a source contains the information, DO NOT cite it
-- It is BETTER to have fewer citations than to cite irrelevant sources
-
-VANCOUVER CITATION REQUIREMENTS:
-- ALWAYS cite your sources using Vancouver style: [1], [2], [3] format
-- Each citation must reference the specific document chunk that DIRECTLY supports your statement
-- Use citations for ALL factual claims, statistics, quotes, and specific information
-- Citations are MANDATORY - every factual statement must have a citation
-- Don&apos;t cite general knowledge or common sense statements (but you shouldn&apos;t be using these anyway)
-- Place citations immediately after the information they support
-- Citations must be numbered sequentially in the order they appear in your response
-- CRITICAL: Only use citation numbers that correspond to the provided context sources (1 through ${availableSources})
-- NEVER invent citation numbers or use numbers outside the available range
-- Each citation number must match exactly one source from the provided context
-- WARNING: Citing incorrect sources will mislead users and is unacceptable
-
-RESPONSE GUIDELINES:
-- Be accurate and helpful
-- Provide comprehensive but concise answers
-- Handle unit conversions for medical/technical data (e.g., temperatures, weights)
-- Maintain a professional but conversational tone
-- If multiple documents provide conflicting information, acknowledge the discrepancy
-
-CITATION VERIFICATION PROCESS:
-1. Make a factual claim
-2. IMMEDIATELY check if the source [number] actually contains this information
-3. If YES, add the citation
-4. If NO, either find the correct source or remove the claim
-5. Double-check: Does source [number] really say what I&apos;m claiming?
-
-ANSWER STRUCTURE:
-1. Direct answer to the question
-2. Supporting details with VERIFIED citations
-3. Additional relevant context if available
-
-Remember: Your goal is to provide accurate, well-cited responses based SOLELY on the provided document context. NEVER use external knowledge. If the context doesn&apos;t contain the answer, explicitly state that you cannot answer based on the provided documents. CITATION ACCURACY IS YOUR HIGHEST PRIORITY.`;
-  }
-
-  /**
-   * Clear chat history for a session
-   */
-  async clearHistory(sessionId: string): Promise&lt;void&gt; {
-    await this.indexedDBServices.messageService.deleteMessagesBySession(sessionId);
-  }
-
-  /**
-   * Get message history for a session
-   */
-  async getHistory(sessionId: string): Promise&lt;Message[]&gt; {
-    // Get session to verify ownership and get userId
-    const session = await this.indexedDBServices.sessionService.getSession(sessionId);
-    if (!session) {
-      throw new Error(&apos;Session not found&apos;);
-    }
-    return await this.indexedDBServices.messageService.getMessagesBySession(sessionId, session.userId);
-  }
-
-  /**
-   * Validate streaming chunk for quality control
-   */
-  private validateStreamingChunk(chunk: string, fullResponse: string): {
-    isValid: boolean;
-    warnings: string[];
-  } {
-    const warnings: string[] = [];
-    let isValid = true;
-
-    // Check for repeated content (possible loops)
-    if (fullResponse.length &gt; 100 &amp;&amp; chunk.length &gt; 0) {
-      const recentText = fullResponse.slice(-100);
-      if (recentText.includes(chunk) &amp;&amp; chunk.length &gt; 10) {
-        warnings.push(&apos;Possible content repetition detected&apos;);
-        isValid = false;
-      }
-    }
-
-    // Check for excessive citation density
-    const citationMatches = (fullResponse + chunk).match(/\[\d+\]/g);
-    if (citationMatches &amp;&amp; citationMatches.length &gt; 10) {
-      warnings.push(&apos;High citation density detected&apos;);
-    }
-
-    // Check for response getting too long
-    if (fullResponse.length &gt; 8000) {
-      warnings.push(&apos;Response approaching maximum length&apos;);
-    }
-
-    return { isValid, warnings };
-  }
-}
-
-// Singleton instance
-export const chatPipeline = new ChatPipeline();</file><file path="src/services/rag/citationService.ts">import type { VectorSearchResult } from &apos;@/types/embedding&apos;;
+export const embeddingService = new EmbeddingService();</file><file path="src/services/rag/citationService.ts">import type { VectorSearchResult } from &apos;@/types/embedding&apos;;
 import type { Citation as MessageCitation } from &apos;@/types/message&apos;;
 import type { SimplifiedCitation, SimplifiedCitationGroup, PageGroup } from &apos;@/types/citation&apos;;
 
@@ -19536,7 +18509,1046 @@ export class DocumentProcessor {
 }
 
 // Singleton instance
-export const documentProcessor = new DocumentProcessor();</file><file path="src/app/session/[id]/page.tsx">&apos;use client&apos;;
+export const documentProcessor = new DocumentProcessor();</file><file path="src/app/layout.tsx">import type { Metadata, Viewport } from &apos;next&apos;;
+import { Inter } from &apos;next/font/google&apos;;
+import Script from &apos;next/script&apos;;
+import &apos;../styles/globals.css&apos;;
+import &apos;../styles/mobile-touch.css&apos;;
+import { AppInitializer } from &apos;./AppInitializer&apos;;
+import SubscriptionModal from &apos;@/components/SubscriptionModal&apos;;
+import { RouteErrorBoundary } from &apos;@/components/common/RouteErrorBoundary&apos;;
+import { InstallPrompt } from &apos;@/components/common/InstallPrompt&apos;;
+
+const inter = Inter({ subsets: [&apos;latin&apos;] });
+
+export const metadata: Metadata = {
+  title: &apos;Meddy - Chat with Documents Privately&apos;,
+  description: &apos;Private RAG chat application for documents&apos;,
+  manifest: &apos;/manifest.json&apos;,
+  icons: {
+    icon: [
+      { url: &apos;/favicon-32.png&apos;, sizes: &apos;32x32&apos;, type: &apos;image/png&apos; },
+      { url: &apos;/icon-192x192.png&apos;, sizes: &apos;192x192&apos;, type: &apos;image/png&apos; },
+      { url: &apos;/icon-512x512.png&apos;, sizes: &apos;512x512&apos;, type: &apos;image/png&apos; },
+    ],
+    apple: [
+      { url: &apos;/icon-192x192.png&apos;, sizes: &apos;192x192&apos;, type: &apos;image/png&apos; },
+    ],
+  },
+};
+
+export const viewport: Viewport = {
+  width: &apos;device-width&apos;,
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  themeColor: &apos;#020617&apos;,
+  viewportFit: &apos;cover&apos;,
+  interactiveWidget: &apos;resizes-content&apos;,
+};
+
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    &lt;html lang=&quot;en&quot; className=&quot;dark&quot;&gt;
+      &lt;body className={`${inter.className} bg-slate-950 text-slate-200 antialiased`}&gt;
+        &lt;Script
+          id=&quot;error-suppression&quot;
+          strategy=&quot;beforeInteractive&quot;
+          src=&quot;/error-suppression.js&quot;
+        /&gt;
+        &lt;RouteErrorBoundary&gt;
+          &lt;div id=&quot;root&quot; className=&quot;min-h-screen flex flex-col&quot;&gt;
+            &lt;AppInitializer /&gt;
+            &lt;SubscriptionModal /&gt;
+            &lt;InstallPrompt /&gt;
+            {children}
+          &lt;/div&gt;
+        &lt;/RouteErrorBoundary&gt;
+      &lt;/body&gt;
+    &lt;/html&gt;
+  );
+}</file><file path="src/services/rag/chatPipeline.ts">import { getIndexedDBServices } from &apos;../indexedDB&apos;;
+import { chatService, embeddingService } from &apos;../gemini&apos;;
+import { vectorSearchService } from &apos;./vectorSearch&apos;;
+import { documentProcessor } from &apos;./documentProcessor&apos;;
+import { citationService } from &apos;./citationService&apos;;
+import { ResponseFormatter } from &apos;./responseFormatter&apos;;
+import { MessageSender, type MessageCreate, type Message } from &apos;@/types&apos;;
+import type { ChatStreamEvent } from &apos;../gemini/chatService&apos;;
+import type { SimplifiedCitationGroup } from &apos;@/types/citation&apos;;
+
+export class ChatPipeline {
+  private indexedDBServices = getIndexedDBServices();
+
+  /**
+   * Enhance user query with context information
+   */
+  private async enhanceQueryWithContext(sessionId: string, content: string): Promise&lt;string&gt; {
+    try {
+      console.log(&apos;\n=== QUERY ENHANCEMENT PROCESS START ===&apos;);
+      console.log(&apos;[ORIGINAL QUERY]&apos;, content);
+
+      // Get session information
+      const session = await this.indexedDBServices.sessionService.getSession(sessionId);
+      const sessionName = session?.name || &apos;Unknown Session&apos;;
+      console.log(&apos;[SESSION INFO]&apos;, `Name: ${sessionName}, ID: ${sessionId}`);
+
+      // Get enabled documents for the session
+      if (!session) {
+        console.log(&apos;[CONTEXT ENHANCEMENT]&apos;, &apos;Session not found - returning original query&apos;);
+        console.log(&apos;=== QUERY ENHANCEMENT PROCESS END ===\n&apos;);
+        return content;
+      }
+      const enabledDocuments = await this.indexedDBServices.documentService.getEnabledDocumentsBySession(sessionId, session.userId);
+      console.log(&apos;[DOCUMENTS FOUND]&apos;, `${enabledDocuments.length} enabled documents`);
+
+      // Extract document names (use title if available, otherwise filename)
+      const documentNames = enabledDocuments.map(doc =&gt; doc.title || doc.filename).filter(Boolean);
+
+      // If no documents are enabled, return the original query
+      if (documentNames.length === 0) {
+        console.log(&apos;[CONTEXT ENHANCEMENT]&apos;, &apos;No enabled documents found - returning original query&apos;);
+        console.log(&apos;=== QUERY ENHANCEMENT PROCESS END ===\n&apos;);
+        return content;
+      }
+
+      // Format the related documents string
+      const relatedDocuments = documentNames.join(&apos;, &apos;);
+      console.log(&apos;[CONTEXT DOCUMENTS]&apos;, relatedDocuments);
+
+      // Create the enhanced query with context
+      const enhancedQuery = `${content} [Context - ${sessionName} and related to ${relatedDocuments}]`;
+
+      console.log(&apos;[ENHANCED QUERY]&apos;, enhancedQuery);
+      console.log(&apos;=== QUERY ENHANCEMENT PROCESS END ===\n&apos;);
+
+      return enhancedQuery;
+    } catch (error) {
+      console.error(&apos;[CONTEXT ENHANCEMENT ERROR]&apos;, error);
+      console.log(&apos;=== QUERY ENHANCEMENT PROCESS END (WITH ERROR) ===\n&apos;);
+      // If there&apos;s an error, return the original query
+      return content;
+    }
+  }
+
+  /**
+   * Rewrites the user query based on chat history to make it standalone.
+   * Solves the &quot;What are its causes?&quot; problem.
+   */
+  private async generateStandaloneQuery(
+    content: string,
+    history: any[],
+    apiKey: string,
+    model: string
+  ): Promise&lt;string&gt; {
+    // 1. Cost Optimization: If no history, no need to rewrite.
+    if (!history || history.length === 0) {
+      console.log(&apos;[QUERY REWRITER]&apos;, &apos;Skipping rewrite - No history.&apos;);
+      return content;
+    }
+
+    // 2. Cost Optimization: Limit history to last 4 messages (2 turns)
+    // This keeps input tokens low for the free tier.
+    const recentHistory = history.slice(-4).map(msg =&gt;
+      `${msg.role === &apos;user&apos; ? &apos;User&apos; : &apos;Assistant&apos;}: ${msg.content}`
+    ).join(&apos;\n&apos;);
+
+    const prompt = `
+      Task: Rewrite the last user question to be a standalone query based on the conversation history.
+      Rules:
+      1. Replace pronouns (it, they, this) with specific nouns from history.
+      2. Keep the query concise.
+      3. If the question is already standalone, return it exactly as is.
+      4. Do NOT answer the question.
+
+      Conversation History:
+      ${recentHistory}
+
+      Last User Question:
+      ${content}
+
+      Standalone Query:
+    `;
+
+    try {
+      // Use a specialized instance for rewriting to avoid interfering with main chat state
+      // We reuse the existing Gemini service structure but make a quick generation call
+      const { geminiService } = await import(&apos;../gemini/geminiService&apos;);
+      
+      // Note: We rely on the service already being initialized in AppInitializer,
+      // but we pass options to ensure we use a fast/cheap configuration.
+      const rewrittenQuery = await geminiService.generateResponse(
+        prompt,
+        undefined,
+        undefined,
+        {
+          temperature: 0.1, // Low temperature for deterministic rewriting
+          maxTokens: 100,   // Very low output tokens (saves limits)
+        }
+      );
+
+      const cleanedQuery = rewrittenQuery.trim();
+      console.log(&apos;[QUERY REWRITER]&apos;, `Original: &quot;${content}&quot; -&gt; Rewritten: &quot;${cleanedQuery}&quot;`);
+      return cleanedQuery;
+
+    } catch (error) {
+      console.error(&apos;[QUERY REWRITER ERROR]&apos;, error);
+      // Fallback: If API fails (rate limit), use original query so the app doesn&apos;t crash
+      return content;
+    }
+  }
+
+  /**
+   * Send a message and get AI response with RAG context
+   */
+  async sendMessage(
+    sessionId: string,
+    content: string,
+    onStreamEvent?: (event: ChatStreamEvent) =&gt; void,
+    userMessage?: MessageCreate
+  ): Promise&lt;void&gt; {
+    try {
+      console.log(&apos;\n=== CHAT PIPELINE PROCESS START ===&apos;);
+      console.log(&apos;[USER INPUT]&apos;, `Session: ${sessionId}, Query: &quot;${content}&quot;`);
+
+      // User message is now passed in as a parameter (already saved in chatStore)
+      console.log(&apos;[MESSAGE STATUS]&apos;, &apos;User message already stored in database by chatStore&apos;);
+
+      // Get enabled documents for the session
+      const sessionForDocuments = await this.indexedDBServices.sessionService.getSession(sessionId);
+      if (!sessionForDocuments) {
+        throw new Error(&apos;Session not found&apos;);
+      }
+
+      // 1. FETCH HISTORY (NEW STEP)
+      // We need the history BEFORE we do the search
+      console.log(&apos;[HISTORY]&apos;, &apos;Fetching chat history for context awareness...&apos;);
+      const history = await this.indexedDBServices.messageService.getMessagesBySession(
+        sessionId,
+        sessionForDocuments.userId
+      );
+
+      // Get Settings for model info
+      const settings = await this.indexedDBServices.settingsService.getSettings(sessionForDocuments.userId);
+      const apiKey = settings?.geminiApiKey || &apos;&apos;;
+      const model = settings?.model || &apos;gemini-2.5-flash-lite&apos;;
+
+      // 2. GENERATE STANDALONE QUERY (NEW STEP)
+      // This converts &quot;What are its causes?&quot; -&gt; &quot;What are the causes of cataract?&quot;
+      console.log(&apos;[REWRITING]&apos;, &apos;Generating standalone query...&apos;);
+      const standaloneQuery = await this.generateStandaloneQuery(content, history, apiKey, model);
+      
+      // 🔴 PROMINENT LOG: Show the converted query for tracking
+      console.log(&apos;🔴 Converted query -:&apos;, `&quot;${standaloneQuery}&quot;`);
+      
+      // 3. ENHANCE THE REWRITTEN QUERY, NOT THE ORIGINAL
+      // Modify this line to pass &apos;standaloneQuery&apos; instead of &apos;content&apos;
+      const enhancedQuery = await this.enhanceQueryWithContext(sessionId, standaloneQuery);
+      console.log(&apos;[FINAL SEARCH QUERY]&apos;, enhancedQuery);
+
+      const documents = await this.indexedDBServices.documentService.getDocumentsBySession(sessionId, sessionForDocuments.userId);
+      console.log(&apos;[DOCUMENT STATUS]&apos;, `Found ${documents.length} total documents in session ${sessionId}`);
+      console.log(&apos;[DOCUMENT STATUS]&apos;, &apos;Document details:&apos;, documents.map(doc =&gt; ({
+        id: doc.id,
+        filename: doc.filename,
+        enabled: doc.enabled,
+        status: doc.status
+      })));
+
+      const enabledDocuments = documents.filter(doc =&gt; doc.enabled);
+      console.log(&apos;[DOCUMENT STATUS]&apos;, `${enabledDocuments.length}/${documents.length} documents enabled`);
+
+      // Also check if there are any embeddings available for enabled documents
+      const indexedDBEmbeddingService = this.indexedDBServices.embeddingService;
+      let embeddings: any[] = [];
+
+      if (enabledDocuments.length &gt; 0) {
+        embeddings = await indexedDBEmbeddingService.getEnabledEmbeddingsBySession(sessionId, sessionForDocuments.userId);
+      }
+
+      console.log(&apos;[EMBEDDING STATUS]&apos;, `${embeddings.length} embeddings found for enabled documents`);
+
+      if (enabledDocuments.length === 0 || embeddings.length === 0) {
+        // No enabled documents or no embeddings available, just chat without context
+        console.log(&apos;[PROCESSING MODE]&apos;, &apos;Direct response (no RAG context available)&apos;);
+        await this.generateDirectResponse(sessionId, content, onStreamEvent);
+        console.log(&apos;=== CHAT PIPELINE PROCESS END ===\n&apos;);
+        return;
+      }
+
+      // 4. GENERATE EMBEDDING USING THE REWRITTEN QUERY
+      console.log(&apos;[EMBEDDING GENERATION]&apos;, &apos;Creating vector embedding for enhanced query...&apos;);
+      const queryEmbedding = await embeddingService.generateEmbedding(enhancedQuery);
+      console.log(&apos;[EMBEDDING GENERATED]&apos;, `Vector created with ${queryEmbedding.length} dimensions`);
+
+      // 5. PERFORM SEARCH USING THE REWRITTEN QUERY
+      console.log(&apos;[VECTOR SEARCH]&apos;, &apos;Performing hybrid search...&apos;);
+      const searchResults = await vectorSearchService.searchHybridEnhanced(
+        queryEmbedding,
+        sessionId,
+        enhancedQuery, // Use the enhanced, rewritten query here
+        {
+          maxResults: 15,
+          useDynamicWeighting: true,
+          textWeight: 0.3,
+          vectorWeight: 0.7,
+          userId: sessionForDocuments.userId // Ensure userId is passed
+        }
+      );
+      console.log(&apos;[SEARCH RESULTS]&apos;, `${searchResults.length} relevant chunks found`);
+      console.log(&apos;✅ CHUNKS USED =&apos;, searchResults.length);
+
+      // Log detailed search results for debugging
+      console.log(&apos;[SEARCH RESULTS DETAIL]&apos;, &apos;Detailed search results:&apos;);
+      searchResults.forEach((result, index) =&gt; {
+        console.log(`[SEARCH RESULT ${index}]`, {
+          chunkId: result.chunk.id,
+          documentTitle: result.document.title,
+          similarity: result.similarity,
+          chunkPage: result.chunk.page,
+          metadataPageNumber: result.chunk.metadata?.pageNumber,
+          isCombined: result.chunk.metadata?.isCombined,
+          originalChunkCount: result.chunk.metadata?.originalChunkCount,
+          combinedChunkIds: result.chunk.metadata?.combinedChunkIds,
+          contentPreview: result.chunk.content.substring(0, 150) + &apos;...&apos;
+        });
+      });
+
+      // Build context from search results
+      console.log(&apos;[CONTEXT BUILDING]&apos;, &apos;Constructing context from search results...&apos;);
+      const context = this.buildContext(searchResults);
+      console.log(&apos;[CONTEXT CREATED]&apos;, `Context string length: ${context.length} characters`);
+
+      // ... The rest of the function (Context Building, LLM Generation) remains the same ...
+      // IMPORTANT: The final LLM call (generateSimplifiedContextualResponse)
+      // should use the standalone query for better context understanding
+      
+      await this.generateSimplifiedContextualResponse(
+        sessionId,
+        standaloneQuery, // Use the rewritten query instead of original content
+        this.buildContext(searchResults),
+        searchResults,
+        onStreamEvent
+      );
+
+      console.log(&apos;=== CHAT PIPELINE PROCESS END ===\n&apos;);
+
+    } catch (error) {
+      console.error(&apos;[PIPELINE ERROR]&apos;, &apos;Error in chat pipeline:&apos;, error);
+
+      // Save error message
+      const errorMessage: MessageCreate = {
+        sessionId,
+        content: &apos;Sorry, I encountered an error while processing your message. Please try again.&apos;,
+        role: MessageSender.ASSISTANT,
+      };
+
+      await this.indexedDBServices.messageService.createMessage(errorMessage);
+      console.log(&apos;[ERROR HANDLED]&apos;, &apos;Error message saved to database&apos;);
+      console.log(&apos;=== CHAT PIPELINE PROCESS END (WITH ERROR) ===\n&apos;);
+    }
+  }
+
+  /**
+   * Generate response without document context
+   */
+  private async generateDirectResponse(
+    sessionId: string,
+    content: string,
+    onStreamEvent?: (event: ChatStreamEvent) =&gt; void
+  ): Promise&lt;void&gt; {
+    console.log(&apos;\n=== DIRECT RESPONSE MODE (NO RAG) ===&apos;);
+    console.log(&apos;[DIRECT MODE]&apos;, &apos;Generating response without document context&apos;);
+
+    // Generate direct response without context
+    // Generate direct response without context
+    const session = await this.indexedDBServices.sessionService.getSession(sessionId);
+    if (!session) {
+      throw new Error(&apos;Session not found&apos;);
+    }
+
+    const settings = await this.indexedDBServices.settingsService.getSettings(session.userId);
+    const messages = await this.indexedDBServices.messageService.getMessagesBySession(sessionId, session.userId);
+    console.log(&apos;[CHAT HISTORY]&apos;, `Found ${messages.length} previous messages`);
+
+    let fullResponse = &apos;&apos;;
+    let citations: any[] = [];
+
+    await chatService.generateStreamingResponse(
+      [...messages, { id: &apos;temp&apos;, sessionId, content, role: MessageSender.USER, timestamp: new Date() }],
+      [],
+      settings || {
+        userId: session.userId,
+        geminiApiKey: &apos;&apos;,
+        model: &apos;gemini-2.5-flash-lite&apos;,
+        temperature: 0.7,
+        maxTokens: 2048,
+        similarityThreshold: 0.7,
+        chunkSize: 1000,
+        chunkOverlap: 200,
+        theme: &apos;dark&apos;,
+        fontSize: &apos;medium&apos;,
+        showSources: true,
+        autoSave: true,
+        dataRetention: &apos;never&apos;,
+        enableAnalytics: false,
+        crashReporting: false,
+        debugMode: false,
+        logLevel: &apos;error&apos;
+      },
+      (event) =&gt; {
+        if (event.type === &apos;chunk&apos;) {
+          fullResponse += event.content || &apos;&apos;;
+          // Don&apos;t send chunks to UI for direct response either
+        } else if (event.type === &apos;citation&apos;) {
+          citations.push(event.citation);
+          // Don&apos;t send citations to UI during streaming
+        } else if (event.type === &apos;end&apos;) {
+          console.log(&apos;[DIRECT RESPONSE]&apos;, `Generated ${fullResponse.length} characters`);
+
+          // Save assistant message
+          const assistantMessage: MessageCreate = {
+            sessionId,
+            content: fullResponse,
+            role: MessageSender.ASSISTANT,
+            citations: citations.length &gt; 0 ? citations : undefined,
+          };
+
+          this.indexedDBServices.messageService.createMessage(assistantMessage);
+          console.log(&apos;[RESPONSE SAVED]&apos;, &apos;Direct response stored in database&apos;);
+          if (onStreamEvent) onStreamEvent(event);
+        } else if (event.type === &apos;error&apos;) {
+          console.error(&apos;[DIRECT MODE ERROR]&apos;, &apos;Streaming error:&apos;, event.error);
+          if (onStreamEvent) onStreamEvent(event);
+        }
+      }
+    );
+
+    console.log(&apos;=== DIRECT RESPONSE MODE END ===\n&apos;);
+  }
+
+  /**
+   * Generate response with document context
+   */
+  private async generateContextualResponse(
+    sessionId: string,
+    content: string,
+    context: string,
+    searchResults: any[],
+    onStreamEvent?: (event: ChatStreamEvent) =&gt; void
+  ): Promise&lt;void&gt; {
+    console.log(&apos;\n=== CONTEXTUAL RESPONSE MODE (WITH RAG) ===&apos;);
+    console.log(&apos;[RAG MODE]&apos;, &apos;Generating response with document context&apos;);
+    console.log(&apos;[CONTEXT SUMMARY]&apos;, `Providing ${searchResults.length} context sources to LLM`);
+
+    // Get session for system prompt
+    // Get session for system prompt and userId
+    const session = await this.indexedDBServices.sessionService.getSession(sessionId);
+    if (!session) {
+      throw new Error(&apos;Session not found&apos;);
+    }
+    const systemPrompt = this.getDefaultSystemPrompt(searchResults);
+    console.log(&apos;[SYSTEM PROMPT]&apos;, &apos;Using default system prompt&apos;);
+
+    const settings = await this.indexedDBServices.settingsService.getSettings(session.userId);
+    console.log(&apos;[RAG SETTINGS]&apos;, &apos;Settings loaded for contextual response&apos;);
+    console.log(&apos;[RAG SETTINGS]&apos;, `API Key present: ${settings?.geminiApiKey ? &apos;YES&apos; : &apos;NO&apos;}`);
+    console.log(&apos;[RAG SETTINGS]&apos;, `Temperature: ${settings?.temperature}`);
+    console.log(&apos;[RAG SETTINGS]&apos;, `Max tokens: ${settings?.maxTokens}`);
+
+    const messages = await this.indexedDBServices.messageService.getMessagesBySession(sessionId, session.userId);
+    console.log(&apos;[CHAT HISTORY]&apos;, `Found ${messages.length} previous messages`);
+
+    let fullResponse = &apos;&apos;;
+    let citations: any[] = [];
+
+    await chatService.generateStreamingResponse(
+      [...messages, { id: &apos;temp&apos;, sessionId, content, role: MessageSender.USER, timestamp: new Date() }],
+      searchResults.map(result =&gt; ({
+        chunk: result.chunk,
+        similarity: result.similarity,
+        document: result.document
+      })),
+      settings || {
+        userId: session.userId,
+        geminiApiKey: &apos;&apos;,
+        model: &apos;gemini-2.5-flash-lite&apos;,
+        temperature: 0.7,
+        maxTokens: 2048,
+        similarityThreshold: 0.7,
+        chunkSize: 1000,
+        chunkOverlap: 200,
+        theme: &apos;dark&apos;,
+        fontSize: &apos;medium&apos;,
+        showSources: true,
+        autoSave: true,
+        dataRetention: &apos;never&apos;,
+        enableAnalytics: false,
+        crashReporting: false,
+        debugMode: false,
+        logLevel: &apos;error&apos;
+      },
+      (event) =&gt; {
+        if (event.type === &apos;start&apos;) {
+          console.log(&apos;[RESPONSE START]&apos;, &apos;Beginning streaming response generation&apos;);
+          if (onStreamEvent) onStreamEvent({ type: &apos;status&apos;, message: &apos;Starting response generation...&apos; });
+        } else if (event.type === &apos;thinking&apos;) {
+          if (onStreamEvent) onStreamEvent({ type: &apos;status&apos;, message: event.content || &apos;Thinking...&apos; });
+        } else if (event.type === &apos;progress&apos;) {
+          if (onStreamEvent) onStreamEvent({
+            type: &apos;status&apos;,
+            message: `${event.progress?.message || &apos;Processing...&apos;} ${event.progress?.percentage || 0}%`
+          });
+        } else if (event.type === &apos;chunk&apos;) {
+          if (event.content) {
+            fullResponse += event.content;
+
+            // Validate chunk in real-time
+            const validation = this.validateStreamingChunk(event.content, fullResponse);
+            if (!validation.isValid) {
+              console.warn(&apos;[VALIDATION WARNING]&apos;, &apos;Streaming validation warning:&apos;, validation.warnings);
+            }
+            // Don&apos;t send text chunks to UI - we want to hide the unformatted response
+          }
+        } else if (event.type === &apos;citation&apos;) {
+          citations.push(event.citation);
+          // Don&apos;t send citations to UI during streaming
+        } else if (event.type === &apos;end&apos;) {
+          console.log(&apos;[RESPONSE COMPLETE]&apos;, `Generated ${fullResponse.length} characters with ${citations.length} citations`);
+
+          // Process citations with enhanced validation and renumbering
+          const citationResult = citationService.processCitations(fullResponse, searchResults);
+
+          // Log validation warnings if any
+          if (citationResult.validationWarnings &amp;&amp; citationResult.validationWarnings.length &gt; 0) {
+            console.warn(&apos;[CITATION WARNINGS]&apos;, &apos;Citation validation warnings:&apos;, citationResult.validationWarnings);
+            // Optionally send warnings to UI for debugging
+            if (onStreamEvent) {
+              onStreamEvent({
+                type: &apos;status&apos;,
+                message: `Citation warnings: ${citationResult.validationWarnings.length} issues found`
+              });
+            }
+          }
+
+          // Create metadata for storage with full content
+          const citationMetadata = citationService.extractCitationMetadata(
+            citationResult.citations,
+            searchResults
+          );
+
+          // Save assistant message
+          const assistantMessage: MessageCreate = {
+            sessionId,
+            content: citationResult.renumberedResponse,
+            role: MessageSender.ASSISTANT,
+            citations: citationMetadata,
+          };
+
+          this.indexedDBServices.messageService.createMessage(assistantMessage);
+          console.log(&apos;[RESPONSE SAVED]&apos;, &apos;Contextual response with citations stored in database&apos;);
+          if (onStreamEvent) onStreamEvent({ type: &apos;done&apos; });
+        } else if (event.type === &apos;error&apos;) {
+          console.error(&apos;[RAG MODE ERROR]&apos;, &apos;Streaming error:&apos;, event.error);
+          if (onStreamEvent) onStreamEvent({
+            type: &apos;error&apos;,
+            message: event.error || &apos;Failed to generate response&apos;
+          });
+        }
+      }
+    );
+
+    console.log(&apos;=== CONTEXTUAL RESPONSE MODE END ===\n&apos;);
+  }
+
+  /**
+   * NEW: Generate response with simplified page-based citation system
+   */
+  private async generateSimplifiedContextualResponse(
+    sessionId: string,
+    content: string,
+    context: string,
+    searchResults: any[],
+    onStreamEvent?: (event: ChatStreamEvent) =&gt; void
+  ): Promise&lt;void&gt; {
+    console.log(&apos;\n=== SIMPLIFIED CONTEXTUAL RESPONSE MODE (WITH RAG) ===&apos;);
+    console.log(&apos;[SIMPLIFIED RAG MODE]&apos;, &apos;Generating response with simplified page-based citations&apos;);
+    console.log(&apos;[SIMPLIFIED CONTEXT]&apos;, `Providing ${searchResults.length} context sources to LLM`);
+
+    // Get session for system prompt
+    // Get session for system prompt and userId
+    const session = await this.indexedDBServices.sessionService.getSession(sessionId);
+    if (!session) {
+      throw new Error(&apos;Session not found&apos;);
+    }
+    const systemPrompt = this.getSimplifiedSystemPrompt(searchResults);
+    console.log(&apos;[SIMPLIFIED SYSTEM PROMPT]&apos;, &apos;Using default simplified system prompt&apos;);
+
+    const settings = await this.indexedDBServices.settingsService.getSettings(session.userId);
+    console.log(&apos;[SIMPLIFIED RAG SETTINGS]&apos;, &apos;Settings loaded for simplified contextual response&apos;);
+
+    const messages = await this.indexedDBServices.messageService.getMessagesBySession(sessionId, session.userId);
+    console.log(&apos;[SIMPLIFIED CHAT HISTORY]&apos;, `Found ${messages.length} previous messages`);
+
+    let fullResponse = &apos;&apos;;
+    let citations: any[] = [];
+
+    await chatService.generateStreamingResponse(
+      [...messages, { id: &apos;temp&apos;, sessionId, content, role: MessageSender.USER, timestamp: new Date() }],
+      searchResults.map(result =&gt; ({
+        chunk: result.chunk,
+        similarity: result.similarity,
+        document: result.document
+      })),
+      settings || {
+        userId: session.userId,
+        geminiApiKey: &apos;&apos;,
+        model: &apos;gemini-2.5-flash-lite&apos;,
+        temperature: 0.7,
+        maxTokens: 2048,
+        similarityThreshold: 0.7,
+        chunkSize: 1000,
+        chunkOverlap: 200,
+        theme: &apos;dark&apos;,
+        fontSize: &apos;medium&apos;,
+        showSources: true,
+        autoSave: true,
+        dataRetention: &apos;never&apos;,
+        enableAnalytics: false,
+        crashReporting: false,
+        debugMode: false,
+        logLevel: &apos;error&apos;
+      },
+      async (event) =&gt; {
+        if (event.type === &apos;start&apos;) {
+          console.log(&apos;[SIMPLIFIED RESPONSE START]&apos;, &apos;Beginning streaming response generation&apos;);
+          if (onStreamEvent) onStreamEvent({ type: &apos;status&apos;, message: &apos;Starting response generation...&apos; });
+        } else if (event.type === &apos;thinking&apos;) {
+          if (onStreamEvent) onStreamEvent({ type: &apos;status&apos;, message: event.content || &apos;Thinking...&apos; });
+        } else if (event.type === &apos;progress&apos;) {
+          if (onStreamEvent) onStreamEvent({
+            type: &apos;status&apos;,
+            message: `${event.progress?.message || &apos;Processing...&apos;} ${event.progress?.percentage || 0}%`
+          });
+        } else if (event.type === &apos;chunk&apos;) {
+          if (event.content) {
+            fullResponse += event.content;
+            // Don&apos;t send text chunks to UI - we want to hide the unformatted response
+          }
+        } else if (event.type === &apos;citation&apos;) {
+          citations.push(event.citation);
+          // Don&apos;t send citations to UI during streaming
+        } else if (event.type === &apos;end&apos;) {
+          console.log(&apos;[SIMPLIFIED RESPONSE COMPLETE]&apos;, `Generated ${fullResponse.length} characters with ${citations.length} citations`);
+
+          // Format response to bullet points before processing citations
+          // Use default settings if settings is undefined
+          const settingsForFormatting = settings || {
+            userId: session.userId,
+            geminiApiKey: &apos;&apos;,
+            model: &apos;gemini-2.5-flash-lite&apos;,
+            temperature: 0.7,
+            maxTokens: 2048,
+            similarityThreshold: 0.7,
+            chunkSize: 1000,
+            chunkOverlap: 200,
+            theme: &apos;dark&apos;,
+            fontSize: &apos;medium&apos;,
+            showSources: true,
+            autoSave: true,
+            dataRetention: &apos;never&apos;,
+            enableAnalytics: false,
+            crashReporting: false,
+            debugMode: false,
+            logLevel: &apos;error&apos;
+          };
+
+          console.log(&apos;[DEBUG FORMATTING]&apos;, &apos;About to call ResponseFormatter.formatToBulletPoints&apos;);
+          console.log(&apos;[DEBUG FORMATTING]&apos;, `Settings available: ${!!settingsForFormatting}`);
+          console.log(&apos;[DEBUG FORMATTING]&apos;, `Formatting API key: ${settingsForFormatting.geminiApiKey ? &apos;YES&apos; : &apos;NO&apos;}`);
+          console.log(&apos;[DEBUG FORMATTING]&apos;, `Main API key: ${settingsForFormatting.geminiApiKey ? &apos;YES&apos; : &apos;NO&apos;}`);
+          console.log(&apos;[DEBUG FORMATTING]&apos;, `Response length: ${fullResponse.length}`);
+          
+          const formattedResponse = await ResponseFormatter.formatToBulletPoints(fullResponse, settingsForFormatting);
+          console.log(&apos;[BULLET FORMATTING]&apos;, `Converted to bullet points: ${formattedResponse.length} characters`);
+          
+          // DEBUG: Log formatted response before citation processing
+          console.log(&apos;[PRE-CITATION DEBUG]&apos;, {
+            formattedResponseLength: formattedResponse.length,
+            hasNewlines: formattedResponse.includes(&apos;\n&apos;),
+            newlineCount: (formattedResponse.match(/\n/g) || []).length,
+            bulletCount: (formattedResponse.match(/^\* /gm) || []).length,
+            firstFewLines: formattedResponse.split(&apos;\n&apos;).slice(0, 5),
+            rawCharCodes: Array.from(formattedResponse.substring(0, 100)).map(c =&gt; `${c}(${c.charCodeAt(0)})`).join(&apos; &apos;)
+          });
+
+          // Process citations using simplified system
+          const citationResult: SimplifiedCitationGroup = citationService.processSimplifiedCitations(formattedResponse, searchResults);
+          
+          // DEBUG: Log response after citation processing
+          console.log(&apos;[POST-CITATION DEBUG]&apos;, {
+            renumberedResponseLength: citationResult.renumberedResponse.length,
+            hasNewlines: citationResult.renumberedResponse.includes(&apos;\n&apos;),
+            newlineCount: (citationResult.renumberedResponse.match(/\n/g) || []).length,
+            bulletCount: (citationResult.renumberedResponse.match(/^\* /gm) || []).length,
+            firstFewLines: citationResult.renumberedResponse.split(&apos;\n&apos;).slice(0, 5),
+            rawCharCodes: Array.from(citationResult.renumberedResponse.substring(0, 100)).map(c =&gt; `${c}(${c.charCodeAt(0)})`).join(&apos; &apos;)
+          });
+
+          // DEBUG: Log before storing in database
+          console.log(&apos;[PRE-STORAGE DEBUG]&apos;, {
+            contentToStore: citationResult.renumberedResponse,
+            hasNewlines: citationResult.renumberedResponse.includes(&apos;\n&apos;),
+            newlineCount: (citationResult.renumberedResponse.match(/\n/g) || []).length,
+            bulletCount: (citationResult.renumberedResponse.match(/^\* /gm) || []).length,
+            firstFewLines: citationResult.renumberedResponse.split(&apos;\n&apos;).slice(0, 5)
+          });
+
+          console.log(&apos;[SIMPLIFIED CITATION RESULT]&apos;, {
+            originalCitations: citations.length,
+            processedCitations: citationResult.citations.length,
+            pageGroups: citationResult.citations.map(c =&gt; ({ document: c.document, page: c.page }))
+          });
+
+          // Convert simplified citations to message citation format for storage
+          const citationMetadata = citationService.convertSimplifiedToMessageCitations(citationResult.citations);
+
+          // Save assistant message with formatted response
+          const assistantMessage: MessageCreate = {
+            sessionId,
+            content: citationResult.renumberedResponse,
+            role: MessageSender.ASSISTANT,
+            citations: citationMetadata,
+          };
+
+          console.log(&apos;[MESSAGE STORAGE DEBUG]&apos;, &apos;About to store message with content:&apos;, {
+            content: citationResult.renumberedResponse,
+            hasNewlines: citationResult.renumberedResponse.includes(&apos;\n&apos;),
+            newlineCount: (citationResult.renumberedResponse.match(/\n/g) || []).length,
+            bulletCount: (citationResult.renumberedResponse.match(/^\* /gm) || []).length,
+            firstFewLines: citationResult.renumberedResponse.split(&apos;\n&apos;).slice(0, 5)
+          });
+
+          this.indexedDBServices.messageService.createMessage(assistantMessage);
+          console.log(&apos;[SIMPLIFIED RESPONSE SAVED]&apos;, &apos;Simplified contextual response with citations stored in database&apos;);
+          if (onStreamEvent) onStreamEvent({ type: &apos;done&apos; });
+        } else if (event.type === &apos;error&apos;) {
+          console.error(&apos;[SIMPLIFIED RAG MODE ERROR]&apos;, &apos;Streaming error:&apos;, event.error);
+          if (onStreamEvent) onStreamEvent({
+            type: &apos;error&apos;,
+            message: event.error || &apos;Failed to generate response&apos;
+          });
+        }
+      }
+    );
+
+    console.log(&apos;=== SIMPLIFIED CONTEXTUAL RESPONSE MODE END ===\n&apos;);
+  }
+
+  /**
+   * Get simplified system prompt for page-based citation system
+   */
+  private getSimplifiedSystemPrompt(searchResults?: any[]): string {
+    const availableSources = searchResults?.length || 0;
+
+    return `You are a helpful AI assistant that answers questions based on the provided document context.
+
+CRITICAL CONSTRAINT - READ CAREFULLY:
+- You MUST ONLY use information from the provided context documents
+- You are FORBIDDEN from using any general knowledge, external information, or knowledge from your training data
+- If the context does not contain the answer, you MUST respond with &quot;I cannot answer this question based on the provided documents.&quot;
+- Do NOT attempt to answer questions about topics not covered in the context (e.g., &quot;who is the president&quot;, current events, general knowledge)
+- Every single statement you make must be supported by the provided context
+- NEVER answer questions about politics, current events, celebrities, sports, or any topic not in the documents
+- If someone asks &quot;who is the president&quot; or similar general knowledge questions, you must respond that you cannot answer based on the provided documents
+
+CONTEXT USAGE:
+- Use ONLY the provided context to inform your answers
+- Base your responses ENTIRELY on the given documents
+- Don&apos;t mention &quot;according to the context&quot; or similar phrases
+- If context doesn&apos;t contain relevant information, say so clearly
+
+MEDICAL ABBREVIATIONS:
+When processing medical queries, understand and use these common medical abbreviations:
+- &quot;rx&quot; or &quot;Rx&quot; means treatment of a certain condition
+- &quot;Tx&quot; or &quot;tx&quot; also menas means treatment
+- &quot;Dx&quot; or &quot;dx&quot; means diagnosis (you should search for history, clinical features, AND investigations of the condition)
+- &quot;inv&quot; or &quot;Inv&quot; means investigations or diagnostic tests
+- &quot;Give details about: mans Give all the information you can find about hte given query form the sources in a summarized way 
+- &quot;Features&quot; means - give information on HISTORY and CLINICAL features (examination findings) of the particualr condition
+
+
+SIMPLIFIED VANCOUVER CITATION REQUIREMENTS:
+- ALWAYS cite your sources using Vancouver style: [1], [2], [3] format
+- Each citation represents a PAGE from a document that contains the information you&apos;re citing
+- All chunks from the same page are already combined into a single citation
+- Use citations for ALL factual claims, statistics, quotes, and specific information
+- Citations are MANDATORY - every factual statement must have a citation
+- Don&apos;t cite general knowledge or common sense statements (but you shouldn&apos;t be using these anyway)
+- Place citations immediately after the information they support
+- Citations must be numbered sequentially in the order they appear in your response
+- CRITICAL: Only use citation numbers that correspond to the provided context sources (1 through ${availableSources})
+- NEVER invent citation numbers or use numbers outside of available range
+- Each citation number represents a specific page with combined content from that page
+- WARNING: Citing incorrect sources will mislead users and is unacceptable
+
+RESPONSE GUIDELINES:
+- Be accurate and helpful
+- Provide comprehensive but concise answers
+- Handle unit conversions for medical/technical data (e.g., temperatures, weights)
+- Maintain a professional but conversational tone
+- If multiple documents provide conflicting information, acknowledge the discrepancy
+
+ANSWER STRUCTURE:
+1. Direct answer to the question
+2. Supporting details with VERIFIED page-based citations
+3. Additional relevant context if available
+
+Remember: Your goal is to provide accurate, well-cited responses based SOLELY on the provided document context. NEVER use external knowledge. If the context doesn&apos;t contain the answer, explicitly state that you cannot answer based on the provided documents. CITATION ACCURACY IS YOUR HIGHEST PRIORITY.`;
+  }
+
+  /**
+   * Build context string from search results following Flutter app&apos;s approach
+   * Enhanced with clearer source labeling and content previews
+   * IMPROVED: Better page number detection and clearer source identification
+   */
+  private buildContext(searchResults: any[]): string {
+    if (searchResults.length === 0) {
+      return &apos;&apos;;
+    }
+
+    console.log(&apos;\n=== CONTEXT BUILDING DEBUG ===&apos;);
+    console.log(&apos;[BUILDING CONTEXT]&apos;, `Processing ${searchResults.length} search results for context`);
+
+    const contextParts: string[] = [];
+    contextParts.push(&apos;Retrieved Context Sources:\n&apos;);
+
+    for (let i = 0; i &lt; searchResults.length; i++) {
+      const result = searchResults[i];
+      const chunk = result.chunk;
+      const document = result.document;
+
+      // Enhanced page number detection - same logic as citation service
+      let pageInfo = &apos;&apos;;
+      if (chunk.metadata?.pageNumbers &amp;&amp; chunk.metadata.pageNumbers.length &gt; 0) {
+        pageInfo = ` (Page ${chunk.metadata.pageNumbers[0]})`;
+      } else if (chunk.page &amp;&amp; chunk.page &gt; 0) {
+        pageInfo = ` (Page ${chunk.page})`;
+      } else if (chunk.metadata?.pageNumber &amp;&amp; chunk.metadata.pageNumber &gt; 0) {
+        pageInfo = ` (Page ${chunk.metadata.pageNumber})`;
+      } else {
+        // Try to extract from content
+        const pagePatterns = [
+          /page\s+(\d+)/i,
+          /p\.?\s*(\d+)/i,
+          /第(\d+)页/,
+          /page\s+(\d+)\s+of/i,
+        ];
+
+        for (const pattern of pagePatterns) {
+          const match = chunk.content.match(pattern);
+          if (match &amp;&amp; match[1]) {
+            const extractedPage = parseInt(match[1], 10);
+            if (extractedPage &gt; 0) {
+              pageInfo = ` (Page ${extractedPage})`;
+              break;
+            }
+          }
+        }
+      }
+
+      // Create content preview for better source identification
+      const contentPreview = this.createContentPreview(chunk.content);
+      const similarityScore = result.similarity ? ` (Similarity: ${(result.similarity * 100).toFixed(1)}%)` : &apos;&apos;;
+
+      console.log(`[CONTEXT SOURCE ${i + 1}]`, {
+        documentTitle: document.title,
+        pageInfo: pageInfo.trim(),
+        similarity: result.similarity,
+        chunkId: chunk.id,
+        contentPreview: contentPreview,
+        isCombined: chunk.metadata?.isCombined,
+        originalChunkCount: chunk.metadata?.originalChunkCount
+      });
+
+      contextParts.push(`[${i + 1}] ${document.title}${pageInfo}${similarityScore}`);
+      contextParts.push(`Preview: ${contentPreview}`);
+      contextParts.push(&apos;&apos;);
+      contextParts.push(`Full Content:`);
+      contextParts.push(chunk.content.trim());
+      contextParts.push(&apos;&apos;);
+      contextParts.push(&apos;---&apos;);
+      contextParts.push(&apos;&apos;);
+    }
+
+    const finalContext = contextParts.join(&apos;\n&apos;).trim();
+    console.log(&apos;[CONTEXT BUILT]&apos;, `Final context length: ${finalContext.length} characters`);
+    console.log(&apos;=== CONTEXT BUILDING DEBUG END ===\n&apos;);
+
+    return finalContext;
+  }
+
+  /**
+   * Create a brief content preview to help identify relevant sources
+   */
+  private createContentPreview(content: string, maxLength: number = 150): string {
+    // Remove extra whitespace but preserve newlines for list formatting
+    const cleanedContent = content.trim().replace(/[ \t]+/g, &apos; &apos;);
+
+    if (cleanedContent.length &lt;= maxLength) {
+      return cleanedContent;
+    }
+
+    // Try to end at a sentence boundary
+    const truncated = cleanedContent.substring(0, maxLength);
+    const lastSentenceEnd = Math.max(
+      truncated.lastIndexOf(&apos;.&apos;),
+      truncated.lastIndexOf(&apos;!&apos;),
+      truncated.lastIndexOf(&apos;?&apos;)
+    );
+
+    if (lastSentenceEnd &gt; maxLength * 0.7) {
+      return truncated.substring(0, lastSentenceEnd + 1);
+    }
+
+    return truncated + &apos;...&apos;;
+  }
+
+
+  /**
+   * Get enhanced system prompt based on Flutter app&apos;s approach
+   */
+  private getDefaultSystemPrompt(searchResults?: any[]): string {
+    const availableSources = searchResults?.length || 0;
+
+    return `You are a helpful AI assistant that answers questions based on the provided document context.
+
+CRITICAL CONSTRAINT - READ CAREFULLY:
+- You MUST ONLY use information from the provided context documents
+- You are FORBIDDEN from using any general knowledge, external information, or knowledge from your training data
+- If the context does not contain the answer, you MUST respond with &quot;I cannot answer this question based on the provided documents.&quot;
+- Do NOT attempt to answer questions about topics not covered in the context (e.g., &quot;who is the president&quot;, current events, general knowledge)
+- Every single statement you make must be supported by the provided context
+- NEVER answer questions about politics, current events, celebrities, sports, or any topic not in the documents
+- If someone asks &quot;who is the president&quot; or similar general knowledge questions, you must respond that you cannot answer based on the provided documents
+
+CONTEXT USAGE:
+- Use ONLY the provided context to inform your answers
+- Base your responses ENTIRELY on the given documents
+- Don&apos;t mention &quot;according to the context&quot; or similar phrases
+- If context doesn&apos;t contain relevant information, say so clearly
+
+MEDICAL ABBREVIATIONS:
+When processing medical queries, understand and use these common medical abbreviations:
+- &quot;rx&quot; or &quot;Rx&quot; means treatment or prescription
+- &quot;Tx&quot; or &quot;tx&quot; means treatment
+- &quot;Dx&quot; or &quot;dx&quot; means diagnosis (you should search for history, clinical features, and investigations of the condition)
+- &quot;inv&quot; or &quot;Inv&quot; means investigations or diagnostic tests
+
+CRITICAL CITATION ACCURACY REQUIREMENTS:
+- BEFORE citing any source, VERIFY that the information you&apos;re presenting actually appears in that source
+- Each citation [number] MUST reference a source that CONTAINS the specific information you&apos;re citing
+- NEVER cite a source that discusses a different topic, even if it&apos;s related
+- Example: If you&apos;re defining &quot;cataract&quot;, ONLY cite sources that actually contain the cataract definition
+- DO NOT cite sources about ophthalmoscopy or ultrasound when defining cataract
+- Read each source carefully and ensure the content matches what you&apos;re claiming
+- If you&apos;re unsure whether a source contains the information, DO NOT cite it
+- It is BETTER to have fewer citations than to cite irrelevant sources
+
+VANCOUVER CITATION REQUIREMENTS:
+- ALWAYS cite your sources using Vancouver style: [1], [2], [3] format
+- Each citation must reference the specific document chunk that DIRECTLY supports your statement
+- Use citations for ALL factual claims, statistics, quotes, and specific information
+- Citations are MANDATORY - every factual statement must have a citation
+- Don&apos;t cite general knowledge or common sense statements (but you shouldn&apos;t be using these anyway)
+- Place citations immediately after the information they support
+- Citations must be numbered sequentially in the order they appear in your response
+- CRITICAL: Only use citation numbers that correspond to the provided context sources (1 through ${availableSources})
+- NEVER invent citation numbers or use numbers outside the available range
+- Each citation number must match exactly one source from the provided context
+- WARNING: Citing incorrect sources will mislead users and is unacceptable
+
+RESPONSE GUIDELINES:
+- Be accurate and helpful
+- Provide comprehensive but concise answers
+- Handle unit conversions for medical/technical data (e.g., temperatures, weights)
+- Maintain a professional but conversational tone
+- If multiple documents provide conflicting information, acknowledge the discrepancy
+
+CITATION VERIFICATION PROCESS:
+1. Make a factual claim
+2. IMMEDIATELY check if the source [number] actually contains this information
+3. If YES, add the citation
+4. If NO, either find the correct source or remove the claim
+5. Double-check: Does source [number] really say what I&apos;m claiming?
+
+ANSWER STRUCTURE:
+1. Direct answer to the question
+2. Supporting details with VERIFIED citations
+3. Additional relevant context if available
+
+Remember: Your goal is to provide accurate, well-cited responses based SOLELY on the provided document context. NEVER use external knowledge. If the context doesn&apos;t contain the answer, explicitly state that you cannot answer based on the provided documents. CITATION ACCURACY IS YOUR HIGHEST PRIORITY.`;
+  }
+
+  /**
+   * Clear chat history for a session
+   */
+  async clearHistory(sessionId: string): Promise&lt;void&gt; {
+    await this.indexedDBServices.messageService.deleteMessagesBySession(sessionId);
+  }
+
+  /**
+   * Get message history for a session
+   */
+  async getHistory(sessionId: string): Promise&lt;Message[]&gt; {
+    // Get session to verify ownership and get userId
+    const session = await this.indexedDBServices.sessionService.getSession(sessionId);
+    if (!session) {
+      throw new Error(&apos;Session not found&apos;);
+    }
+    return await this.indexedDBServices.messageService.getMessagesBySession(sessionId, session.userId);
+  }
+
+  /**
+   * Validate streaming chunk for quality control
+   */
+  private validateStreamingChunk(chunk: string, fullResponse: string): {
+    isValid: boolean;
+    warnings: string[];
+  } {
+    const warnings: string[] = [];
+    let isValid = true;
+
+    // Check for repeated content (possible loops)
+    if (fullResponse.length &gt; 100 &amp;&amp; chunk.length &gt; 0) {
+      const recentText = fullResponse.slice(-100);
+      if (recentText.includes(chunk) &amp;&amp; chunk.length &gt; 10) {
+        warnings.push(&apos;Possible content repetition detected&apos;);
+        isValid = false;
+      }
+    }
+
+    // Check for excessive citation density
+    const citationMatches = (fullResponse + chunk).match(/\[\d+\]/g);
+    if (citationMatches &amp;&amp; citationMatches.length &gt; 10) {
+      warnings.push(&apos;High citation density detected&apos;);
+    }
+
+    // Check for response getting too long
+    if (fullResponse.length &gt; 8000) {
+      warnings.push(&apos;Response approaching maximum length&apos;);
+    }
+
+    return { isValid, warnings };
+  }
+}
+
+// Singleton instance
+export const chatPipeline = new ChatPipeline();</file><file path="src/app/session/[id]/page.tsx">&apos;use client&apos;;
 
 import React, { useEffect, useState, useRef } from &apos;react&apos;;
 

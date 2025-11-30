@@ -45,7 +45,7 @@ export const UI_CONFIG = {
   search: {
     defaultTopK: 4,
     minSimilarity: 0.1,
-    maxResults: 20,
+    maxResults: 8,
   },
 };
 

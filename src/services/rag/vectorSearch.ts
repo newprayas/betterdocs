@@ -18,7 +18,7 @@ export class VectorSearchService {
   ): Promise<VectorSearchResult[]> {
     try {
       const {
-        maxResults = 5,
+        maxResults = 8,
         similarityThreshold = 0.7,
         documentIds
       } = options;
@@ -344,7 +344,7 @@ export class VectorSearchService {
   ): Promise<VectorSearchResult[]> {
     try {
       const {
-        maxResults = 5,
+        maxResults = 8,
         similarityThreshold = 0.7,
         textWeight = 0.3,
         vectorWeight = 0.7
@@ -519,7 +519,7 @@ export class VectorSearchService {
   ): Promise<VectorSearchResult[]> {
     try {
       const {
-        maxResults = 5,
+        maxResults = 8,
         similarityThreshold = 0.7,
         textWeight = 0.3,
         vectorWeight = 0.7,
@@ -660,7 +660,7 @@ export class VectorSearchService {
 
   async findSimilarChunks(
     targetChunk: EmbeddingChunk,
-    maxResults: number = 5,
+    maxResults: number = 8,
     userId?: string
   ): Promise<VectorSearchResult[]> {
     try {
@@ -723,7 +723,7 @@ export class VectorSearchService {
   ): Promise<PageGroup[]> {
     try {
       const {
-        maxResults = 10, // Get more results to allow for page grouping
+        maxResults = 8, // Reduced from 10 to 8 to reduce noise
         similarityThreshold = 0.7,
         documentIds
       } = options;
