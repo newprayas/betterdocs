@@ -13,6 +13,92 @@ import { useDocumentStore } from '@/store';
 export class DocumentProcessor {
   private embeddingService = getIndexedDBServices().embeddingService;
 
+  /**
+   * Check if a document with the given filename already exists in the session
+   * Returns the existing document if found, undefined otherwise
+   */
+  async checkForDuplicateByFilename(
+    sessionId: string,
+    filename: string,
+    userId: string
+  ): Promise<Document | undefined> {
+    console.log(`🔍 DOCUMENT PROCESSOR DUPLICATE CHECK: Checking for duplicate filename "${filename}" in session "${sessionId}"`);
+    console.log(`🔍 DOCUMENT PROCESSOR DUPLICATE CHECK: Timestamp: ${new Date().toISOString()}`);
+    console.log(`🔍 DOCUMENT PROCESSOR DUPLICATE CHECK: User ID: ${userId}`);
+    
+    if (!sessionId || !filename || !userId) {
+      console.log('🔍 DOCUMENT PROCESSOR DUPLICATE CHECK: Missing required parameters');
+      return undefined;
+    }
+
+    try {
+      const { documentService } = getIndexedDBServices();
+      
+      // Check for exact filename match
+      console.log(`🔍 DOCUMENT PROCESSOR DUPLICATE CHECK: Checking exact filename match`);
+      let existingDoc = await documentService.getDocumentByFilename(sessionId, filename, userId);
+      if (existingDoc) {
+        console.log(`🔍 DOCUMENT PROCESSOR DUPLICATE CHECK: Found exact filename match:`, {
+          id: existingDoc.id,
+          filename: existingDoc.filename,
+          title: existingDoc.title,
+          status: existingDoc.status
+        });
+        return existingDoc;
+      }
+      
+      // Get all documents in the session for manual checking
+      console.log(`🔍 DOCUMENT PROCESSOR DUPLICATE CHECK: No exact match found, checking all documents in session`);
+      const allDocs = await documentService.getDocumentsBySession(sessionId, userId);
+      console.log(`🔍 DOCUMENT PROCESSOR DUPLICATE CHECK: Found ${allDocs.length} documents in session`);
+      
+      // Log all documents for debugging
+      console.log(`🔍 DOCUMENT PROCESSOR DUPLICATE CHECK: All documents in session:`, allDocs.map(doc => ({
+        id: doc.id,
+        filename: doc.filename,
+        title: doc.title,
+        status: doc.status,
+        enabled: doc.enabled
+      })));
+      
+      // Check for case-insensitive filename match
+      console.log(`🔍 DOCUMENT PROCESSOR DUPLICATE CHECK: Checking case-insensitive filename match`);
+      const caseInsensitiveMatch = allDocs.find(doc =>
+        doc.filename.toLowerCase() === filename.toLowerCase()
+      );
+      if (caseInsensitiveMatch) {
+        console.log(`🔍 DOCUMENT PROCESSOR DUPLICATE CHECK: Found case-insensitive filename match:`, {
+          id: caseInsensitiveMatch.id,
+          filename: caseInsensitiveMatch.filename,
+          title: caseInsensitiveMatch.title,
+          status: caseInsensitiveMatch.status
+        });
+        return caseInsensitiveMatch;
+      }
+      
+      // Check for filename match against title (in case title was set to filename)
+      console.log(`🔍 DOCUMENT PROCESSOR DUPLICATE CHECK: Checking filename vs title match`);
+      const titleMatch = allDocs.find(doc =>
+        doc.title === filename || doc.title?.toLowerCase() === filename.toLowerCase()
+      );
+      if (titleMatch) {
+        console.log(`🔍 DOCUMENT PROCESSOR DUPLICATE CHECK: Found title match:`, {
+          id: titleMatch.id,
+          filename: titleMatch.filename,
+          title: titleMatch.title,
+          status: titleMatch.status
+        });
+        return titleMatch;
+      }
+      
+      console.log(`🔍 DOCUMENT PROCESSOR DUPLICATE CHECK: No duplicate found for filename "${filename}"`);
+      return undefined;
+    } catch (error) {
+      console.error(`🔍 DOCUMENT PROCESSOR DUPLICATE CHECK ERROR: Error checking for duplicates:`, error);
+      return undefined;
+    }
+  }
+
   async processDocument(
     document: Document,
     onProgress?: (progress: EmbeddingGenerationProgress) => void
@@ -346,6 +432,8 @@ export class DocumentProcessor {
       console.log('🔍 DOCUMENT ID DEBUG: Package document ID:', packageDocId);
       console.log('🔍 SESSION ID DEBUG: Current session ID from URL:', sessionId);
       console.log('🔍 SESSION ID DEBUG: Session ID from package metadata:', packageData.export_metadata?.session_id);
+      console.log('🔍 DUPLICATE DEBUG: Starting document creation process at:', new Date().toISOString());
+      console.log('🔍 DUPLICATE DEBUG: About to check for existing documents in IndexedDB');
 
       // Always use the current session ID, not the one from package metadata
       // This ensures documents are associated with the current session
@@ -361,6 +449,12 @@ export class DocumentProcessor {
       let needsNewId = false;
 
       console.log('🔍 DOCUMENT ID DEBUG: Checking for existing document in current session:', !!document);
+      console.log('🔍 DUPLICATE DEBUG: Document check result at:', new Date().toISOString(), {
+        documentId: packageDocId,
+        foundInCurrentSession: !!document,
+        sessionId: sessionId,
+        userId: session?.userId
+      });
 
       // If document doesn't exist in current session, check if it exists in any session
       if (!document) {
@@ -436,9 +530,30 @@ export class DocumentProcessor {
           throw new Error(`Session not found: ${currentSessionId}`);
         }
 
+        // CRITICAL FIX: Check for duplicates before creating document
+        console.log('🔍 DUPLICATE PREVENTION: Checking for duplicates before document creation');
+        const duplicateDoc = await this.checkForDuplicateByFilename(
+          currentSessionId,
+          packageData.document_metadata.filename,
+          session.userId
+        );
+        
+        if (duplicateDoc) {
+          console.log('🔍 DUPLICATE PREVENTION: Found duplicate document, throwing error to prevent creation');
+          const duplicateError = new Error(
+            `Document "${packageData.document_metadata.filename}" already exists in this library. Skipping duplicate.`
+          );
+          // Mark as a special duplicate error that can be handled differently
+          (duplicateError as any).isDuplicate = true;
+          (duplicateError as any).duplicateDocumentId = duplicateDoc.id;
+          throw duplicateError;
+        }
+
+        console.log('🔍 DUPLICATE PREVENTION: No duplicates found, proceeding with document creation');
         document = await documentService.createDocument(documentCreate, session.userId);
 
         console.log('🔍 DOCUMENT ID DEBUG: Created document with sessionId:', document.sessionId);
+        console.log('🔍 DUPLICATE DEBUG: Document created in IndexedDB at:', new Date().toISOString());
         actualDocId = document.id;
         console.log('🔍 DOCUMENT ID DEBUG: Created new document with ID:', actualDocId);
         console.log('🔍 DOCUMENT ID DEBUG: Created document details:', {
@@ -446,8 +561,10 @@ export class DocumentProcessor {
           filename: document.filename,
           status: document.status,
           enabled: document.enabled,
-          sessionId: document.sessionId
+          sessionId: document.sessionId,
+          createdAt: document.createdAt
         });
+        console.log('🔍 DUPLICATE DEBUG: Document now available for duplicate checking in IndexedDB');
 
         // Validate the document was created with the correct session ID
         if (document.sessionId !== currentSessionId) {

@@ -64,6 +64,7 @@ export const useDocumentStore = create<DocumentStore>()(
             const operationId = userIdLogger.logOperationStart('DocumentStore', 'loadDocuments', userId);
 
             console.log('🔍 DOCUMENT STORE DEBUG: Calling getDocumentsBySession');
+            console.log('🔍 DUPLICATE DEBUG: Loading documents from IndexedDB at:', new Date().toISOString());
             userIdLogger.logServiceCall('DocumentStore', 'documentService', 'getDocumentsBySession', userId);
             const documents = await documentService.getDocumentsBySession(sessionId, userId);
 
@@ -80,12 +81,14 @@ export const useDocumentStore = create<DocumentStore>()(
             });
 
             console.log('🔍 DOCUMENT STORE DEBUG: About to update store state');
+            console.log('🔍 DUPLICATE DEBUG: Updating document store state at:', new Date().toISOString());
             
             userIdLogger.logOperationEnd('DocumentStore', operationId, userId);
             set({ documents });
 
             console.log('🔍 DOCUMENT STORE DEBUG: Store state updated, verifying...');
             const currentState = get();
+            console.log('🔍 DUPLICATE DEBUG: Document store state updated at:', new Date().toISOString());
             console.log('🔍 DOCUMENT STORE DEBUG: Current store state:', {
               documentCount: currentState.documents.length,
               documents: currentState.documents.map(doc => ({

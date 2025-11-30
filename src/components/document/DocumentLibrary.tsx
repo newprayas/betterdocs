@@ -6,6 +6,7 @@ import type { LibraryItem } from '@/types/library';
 import { documentProcessor } from '@/services/rag';
 import { useDocumentStore } from '@/store';
 import { Button, Card, Loading } from '@/components/ui';
+import { getIndexedDBServices } from '@/services/indexedDB';
 
 interface DocumentLibraryProps {
   sessionId: string;
@@ -100,8 +101,162 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
     setSelectAll(!selectAll);
   };
 
+  // Check for duplicate books directly in IndexedDB
+  const checkForDuplicate = async (book: LibraryItem): Promise<boolean> => {
+    console.log(`🔍 DUPLICATE CHECK: Starting duplicate check for book: "${book.name}"`);
+    console.log(`🔍 DUPLICATE CHECK: Timestamp: ${new Date().toISOString()}`);
+    console.log(`🔍 DUPLICATE CHECK: Book details:`, {
+      id: book.id,
+      name: book.name,
+      filename: book.filename,
+      description: book.description,
+      category: book.category
+    });
+    
+    try {
+      // Check if userId is available before proceeding
+      if (!userId) {
+        console.log('🔍 DUPLICATE CHECK: No userId available, cannot check for duplicates');
+        return false;
+      }
+      
+      // Get documents directly from IndexedDB to avoid timing issues with document store
+      const { documentService } = await getIndexedDBServices();
+      const documents = await documentService.getDocumentsBySession(sessionId, userId);
+      
+      console.log(`🔍 DUPLICATE CHECK: Comparing against ${documents.length} existing documents from IndexedDB`);
+      console.log(`🔍 DUPLICATE CHECK: IndexedDB query performed at: ${new Date().toISOString()}`);
+      
+      // Log all existing documents for detailed comparison
+      console.log(`🔍 DUPLICATE CHECK: Existing documents in IndexedDB:`, documents.map(doc => ({
+        id: doc.id,
+        filename: doc.filename,
+        title: doc.title,
+        sessionId: doc.sessionId,
+        status: doc.status,
+        enabled: doc.enabled,
+        createdAt: doc.createdAt
+      })));
+      
+      // PRIMARY CHECK: Compare book.filename with document.filename (this is the most reliable match)
+      console.log(`🔍 DUPLICATE CHECK: Checking book.filename vs doc.filename (PRIMARY CHECK)`);
+      const bookFilenameMatch = documents.some(doc => {
+        const matches = doc.filename === book.filename;
+        console.log(`🔍 DUPLICATE CHECK: Comparing book.filename "${book.filename}" with doc.filename "${doc.filename}" = ${matches}`);
+        return matches;
+      });
+      if (bookFilenameMatch) {
+        console.log(`🔍 DUPLICATE FOUND: Book filename match for "${book.filename}"`);
+        alert(`"${book.name}" is already in your library. Skipping duplicate.`);
+        return true;
+      }
+      
+      // SECONDARY CHECK: Compare book.filename with document.title (in case title was set to filename)
+      console.log(`🔍 DUPLICATE CHECK: Checking book.filename vs doc.title (SECONDARY CHECK)`);
+      const bookFilenameTitleMatch = documents.some(doc => {
+        const matches = doc.title === book.filename;
+        console.log(`🔍 DUPLICATE CHECK: Comparing book.filename "${book.filename}" with doc.title "${doc.title}" = ${matches}`);
+        return matches;
+      });
+      if (bookFilenameTitleMatch) {
+        console.log(`🔍 DUPLICATE FOUND: Book filename vs title match for "${book.filename}"`);
+        alert(`"${book.name}" is already in your library. Skipping duplicate.`);
+        return true;
+      }
+      
+      // TERTIARY CHECK: Compare book.name with document.filename (for backwards compatibility)
+      console.log(`🔍 DUPLICATE CHECK: Checking book.name vs doc.filename (TERTIARY CHECK)`);
+      const nameToFilenameMatch = documents.some(doc => {
+        const matches = doc.filename === book.name;
+        console.log(`🔍 DUPLICATE CHECK: Comparing book.name "${book.name}" with doc.filename "${doc.filename}" = ${matches}`);
+        return matches;
+      });
+      if (nameToFilenameMatch) {
+        console.log(`🔍 DUPLICATE FOUND: Book name to filename match for "${book.name}"`);
+        alert(`"${book.name}" is already in your library. Skipping duplicate.`);
+        return true;
+      }
+      
+      // QUATERNARY CHECK: Compare book.name with document.title (for backwards compatibility)
+      console.log(`🔍 DUPLICATE CHECK: Checking book.name vs doc.title (QUATERNARY CHECK)`);
+      const nameToTitleMatch = documents.some(doc => {
+        const matches = doc.title === book.name;
+        console.log(`🔍 DUPLICATE CHECK: Comparing book.name "${book.name}" with doc.title "${doc.title}" = ${matches}`);
+        return matches;
+      });
+      if (nameToTitleMatch) {
+        console.log(`🔍 DUPLICATE FOUND: Book name to title match for "${book.name}"`);
+        alert(`"${book.name}" is already in your library. Skipping duplicate.`);
+        return true;
+      }
+      
+      // CASE-INSENSITIVE CHECKS: As fallbacks
+      console.log(`🔍 DUPLICATE CHECK: Checking case-insensitive book.filename vs doc.filename`);
+      const caseInsensitiveFilenameMatch = documents.some(doc => {
+        const matches = doc.filename.toLowerCase() === book.filename.toLowerCase();
+        console.log(`🔍 DUPLICATE CHECK: Comparing "${book.filename.toLowerCase()}" with "${doc.filename.toLowerCase()}" = ${matches}`);
+        return matches;
+      });
+      if (caseInsensitiveFilenameMatch) {
+        console.log(`🔍 DUPLICATE FOUND: Case-insensitive filename match for "${book.filename}"`);
+        alert(`"${book.name}" is already in your library (case-insensitive match). Skipping duplicate.`);
+        return true;
+      }
+      
+      console.log(`🔍 DUPLICATE CHECK: Checking case-insensitive book.name vs doc.filename`);
+      const caseInsensitiveNameMatch = documents.some(doc => {
+        const matches = doc.filename.toLowerCase() === book.name.toLowerCase();
+        console.log(`🔍 DUPLICATE CHECK: Comparing "${book.name.toLowerCase()}" with "${doc.filename.toLowerCase()}" = ${matches}`);
+        return matches;
+      });
+      if (caseInsensitiveNameMatch) {
+        console.log(`🔍 DUPLICATE FOUND: Case-insensitive name match for "${book.name}"`);
+        alert(`"${book.name}" is already in your library (case-insensitive match). Skipping duplicate.`);
+        return true;
+      }
+      
+      console.log(`🔍 NO DUPLICATE: No duplicate found for "${book.name}" (filename: ${book.filename})`);
+      return false; // No duplicate found
+    } catch (error) {
+      console.error('🔍 DUPLICATE CHECK ERROR: Error checking for duplicates in IndexedDB:', error);
+      // If we can't check IndexedDB, fall back to document store as a last resort
+      console.log('🔍 DUPLICATE CHECK: Falling back to document store due to IndexedDB error');
+      const { documents } = useDocumentStore.getState();
+      console.log(`🔍 DUPLICATE CHECK: Comparing against ${documents.length} existing documents from document store (fallback)`);
+      
+      const bookFilenameMatch = documents.some(doc => doc.filename === book.filename);
+      if (bookFilenameMatch) {
+        console.log(`🔍 DUPLICATE FOUND: Book filename match for "${book.filename}" (fallback check)`);
+        alert(`"${book.name}" is already in your library. Skipping duplicate.`);
+        return true;
+      }
+      
+      console.log(`🔍 NO DUPLICATE: No duplicate found for "${book.name}" (fallback check)`);
+      return false;
+    }
+  };
+
   // Process a single book
   const processSingleBook = async (book: LibraryItem): Promise<void> => {
+    console.log(`🔍 PROCESSING: Starting to process book "${book.name}"`);
+    console.log(`🔍 DUPLICATE CHECK: Performing duplicate check for "${book.name}"`);
+    
+    // Check for duplicates before processing (now async)
+    const isDuplicate = await checkForDuplicate(book);
+    if (isDuplicate) {
+      console.log(`🔍 PROCESSING: Book "${book.name}" skipped due to being a duplicate`);
+      // Mark as skipped to show in UI
+      setProcessingStatus(prev => ({
+        ...prev,
+        [book.id]: {
+          status: 'error',
+          error: 'Duplicate document - already in library'
+        }
+      }));
+      return;
+    }
+    
+    console.log(`🔍 PROCESSING: Continuing with normal processing for "${book.name}" (no duplicate found)`);
     if (!userId) throw new Error("User ID is required");
 
     console.log('🔍 PROCESS SINGLE BOOK DEBUG: Starting processing for book:', {
@@ -177,6 +332,19 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
         timestamp: new Date().toISOString()
       });
 
+      // Check if this is a duplicate error and handle it specially
+      if (err instanceof Error && (err as any).isDuplicate) {
+        console.log('🔍 DUPLICATE PREVENTION: Handling duplicate error for book:', book.name);
+        setProcessingStatus(prev => ({
+          ...prev,
+          [book.id]: {
+            status: 'error',
+            error: 'Duplicate document - already in library'
+          }
+        }));
+        return; // Don't continue with regular error handling
+      }
+
       setProcessingStatus(prev => ({
         ...prev,
         [book.id]: {
@@ -196,8 +364,10 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
     const selectedBooksList = filteredBooks.filter(book => selectedBooks.has(book.id));
 
     try {
-      // Process all selected books
-      await Promise.all(selectedBooksList.map(book => processSingleBook(book)));
+      // Process all selected books sequentially to avoid race conditions in duplicate checking
+      for (const book of selectedBooksList) {
+        await processSingleBook(book);
+      }
 
       // Wait a moment for the final status updates
       await new Promise(resolve => setTimeout(resolve, 1000));
