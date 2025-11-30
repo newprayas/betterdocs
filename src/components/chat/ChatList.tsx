@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { MessageBubble } from './MessageBubble';
 import { Loading } from '../ui/Loading';
-import { ReadingSourcesLoader } from '../ui/ReadingSourcesLoader';
+import { ResponseProgressBar } from '../ui/ResponseProgressBar';
 import { EmptyStates } from '../common/EmptyState';
 import { useChatStore } from '../../store';
 import { Message, MessageSender } from '../../types';
@@ -16,7 +16,7 @@ export const ChatList: React.FC<ChatListProps> = ({
   sessionId,
   className,
 }) => {
-  const { messages, loadMessages, isStreaming, streamingContent, streamingCitations, isReadingSources } = useChatStore();
+  const { messages, loadMessages, isStreaming, streamingContent, streamingCitations, isReadingSources, progressPercentage, currentProgressStep } = useChatStore();
   const isLoading = false; // TODO: Add loading state to chat store
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -97,9 +97,10 @@ export const ChatList: React.FC<ChatListProps> = ({
         {/* Reading sources loading indicator */}
         {isReadingSources && (
           <div className="flex justify-start mb-3 sm:mb-4">
-            <div className="max-w-[85%] sm:max-w-xs lg:max-w-md xl:max-w-lg">
-              <ReadingSourcesLoader />
-            </div>
+            <ResponseProgressBar
+              progress={progressPercentage}
+              currentStep={currentProgressStep}
+            />
           </div>
         )}
         

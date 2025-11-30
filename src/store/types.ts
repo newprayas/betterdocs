@@ -33,6 +33,8 @@ export interface ChatStore {
   error: string | null;
   isLoading: boolean;
   isReadingSources: boolean;
+  progressPercentage: number;
+  currentProgressStep: string;
 
   // Actions
   loadMessages: (sessionId: string) => Promise<void>;
@@ -42,6 +44,7 @@ export interface ChatStore {
   addMessage: (message: Message) => void;
   setError: (error: string | null) => void;
   setReadingSourcesState: (isReadingSources: boolean) => void;
+  setProgressState: (percentage: number, step: string) => void;
 }
 
 export interface DocumentStore {

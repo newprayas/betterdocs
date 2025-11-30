@@ -28,6 +28,8 @@ export const useChatStore = create<ChatStore>()(
         error: null,
         isLoading: false,
         isReadingSources: false,
+        progressPercentage: 0,
+        currentProgressStep: '',
         
         // Actions
         loadMessages: async (sessionId: string) => {
@@ -79,6 +81,8 @@ export const useChatStore = create<ChatStore>()(
             error: null,
             isStreaming: false, // Don't show streaming content
             isReadingSources: true, // Show "Reading sources" instead
+            progressPercentage: 0,
+            currentProgressStep: 'Query Rewriting',
           }));
           
           try {
@@ -98,8 +102,30 @@ export const useChatStore = create<ChatStore>()(
               content,
               (event) => {
                 if (event.type === 'status') {
-                  // Could show status in UI if needed
+                  // Update progress based on status message
                   console.log('Chat status:', event.message);
+                  const { setProgressState } = get();
+                  
+                  switch (event.message) {
+                    case 'Query Rewriting':
+                      setProgressState(25, 'Query Rewriting');
+                      break;
+                    case 'Embedding Generation':
+                      setProgressState(50, 'Embedding Generation');
+                      break;
+                    case 'Vector Search':
+                      setProgressState(75, 'Vector Search');
+                      break;
+                    case 'Response Generation':
+                      setProgressState(90, 'Response Generation');
+                      break;
+                    case 'Response Formatting':
+                      setProgressState(95, 'Response Formatting');
+                      break;
+                    default:
+                      // For other status messages, don't update progress
+                      break;
+                  }
                 } else if (event.type === 'done') {
                   // Reload messages to get the final response
                   // Get session to verify ownership and get userId
@@ -113,13 +139,16 @@ export const useChatStore = create<ChatStore>()(
                       userIdLogger.logServiceCall('ChatStore', 'messageService', 'getMessagesBySession (done callback)', session.userId);
                       messageService.getMessagesBySession(sessionId, session.userId).then(messages => {
                         userIdLogger.logOperationEnd('ChatStore', operationId, finalUserId);
-                        set({
-                          messages,
-                          isStreaming: false,
-                          streamingContent: '',
-                          streamingCitations: [],
-                          isReadingSources: false
-                        });
+                          const { setProgressState } = get();
+                          setProgressState(100, 'Complete');
+                          
+                          set({
+                            messages,
+                            isStreaming: false,
+                            streamingContent: '',
+                            streamingCitations: [],
+                            isReadingSources: false,
+                          });
                       });
                     }
                   });
@@ -130,7 +159,9 @@ export const useChatStore = create<ChatStore>()(
                     isStreaming: false,
                     streamingContent: '',
                     streamingCitations: [],
-                    isReadingSources: false
+                    isReadingSources: false,
+                    progressPercentage: 0,
+                    currentProgressStep: '',
                   });
                 }
               },
@@ -180,6 +211,13 @@ export const useChatStore = create<ChatStore>()(
         
         setReadingSourcesState: (isReadingSources: boolean) => {
           set({ isReadingSources });
+        },
+        
+        setProgressState: (percentage: number, step: string) => {
+          set({
+            progressPercentage: percentage,
+            currentProgressStep: step
+          });
         },
       }),
       {

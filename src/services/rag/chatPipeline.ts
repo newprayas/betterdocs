@@ -145,6 +145,12 @@ export class ChatPipeline {
       // User message is now passed in as a parameter (already saved in chatStore)
       console.log('[MESSAGE STATUS]', 'User message already stored in database by chatStore');
 
+      // Update progress: Query Rewriting (25%)
+      if (onStreamEvent) {
+        onStreamEvent({ type: 'status', message: 'Query Rewriting' });
+      }
+      // Note: We'll update the store progress in the chatStore's sendMessage function
+
       // Get enabled documents for the session
       const sessionForDocuments = await this.indexedDBServices.sessionService.getSession(sessionId);
       if (!sessionForDocuments) {
@@ -171,6 +177,11 @@ export class ChatPipeline {
       
       // 🔴 PROMINENT LOG: Show the converted query for tracking
       console.log('🔴 Converted query -:', `"${standaloneQuery}"`);
+      
+      // Update progress: Embedding Generation (50%)
+      if (onStreamEvent) {
+        onStreamEvent({ type: 'status', message: 'Embedding Generation' });
+      }
       
       // 3. ENHANCE THE REWRITTEN QUERY, NOT THE ORIGINAL
       // Modify this line to pass 'standaloneQuery' instead of 'content'
@@ -211,6 +222,11 @@ export class ChatPipeline {
       console.log('[EMBEDDING GENERATION]', 'Creating vector embedding for enhanced query...');
       const queryEmbedding = await embeddingService.generateEmbedding(enhancedQuery);
       console.log('[EMBEDDING GENERATED]', `Vector created with ${queryEmbedding.length} dimensions`);
+      
+      // Update progress: Vector Search (75%)
+      if (onStreamEvent) {
+        onStreamEvent({ type: 'status', message: 'Vector Search' });
+      }
 
       // 5. PERFORM SEARCH USING THE REWRITTEN QUERY
       console.log('[VECTOR SEARCH]', 'Performing hybrid search...');
@@ -228,6 +244,11 @@ export class ChatPipeline {
       );
       console.log('[SEARCH RESULTS]', `${searchResults.length} relevant chunks found`);
       console.log('✅ CHUNKS USED =', searchResults.length);
+      
+      // Update progress: Response Generation (90%)
+      if (onStreamEvent) {
+        onStreamEvent({ type: 'status', message: 'Response Generation' });
+      }
 
       // Log detailed search results for debugging
       console.log('[SEARCH RESULTS DETAIL]', 'Detailed search results:');
@@ -599,6 +620,11 @@ export class ChatPipeline {
           console.log('[DEBUG FORMATTING]', `Formatting API key: ${settingsForFormatting.geminiApiKey ? 'YES' : 'NO'}`);
           console.log('[DEBUG FORMATTING]', `Main API key: ${settingsForFormatting.geminiApiKey ? 'YES' : 'NO'}`);
           console.log('[DEBUG FORMATTING]', `Response length: ${fullResponse.length}`);
+          
+          // Update progress: Response Formatting (95%)
+          if (onStreamEvent) {
+            onStreamEvent({ type: 'status', message: 'Response Formatting' });
+          }
           
           const formattedResponse = await ResponseFormatter.formatToBulletPoints(fullResponse, settingsForFormatting);
           console.log('[BULLET FORMATTING]', `Converted to bullet points: ${formattedResponse.length} characters`);
