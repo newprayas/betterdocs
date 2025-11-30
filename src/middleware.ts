@@ -76,8 +76,8 @@ export async function middleware(request: NextRequest) {
             data: { user },
         } = await supabase.auth.getUser()
 
-        // If no user and not on login or signup page, redirect to login
-        if (!user && !request.nextUrl.pathname.startsWith('/login') && !request.nextUrl.pathname.startsWith('/signup')) {
+        // If no user and not on login page, redirect to login
+        if (!user && !request.nextUrl.pathname.startsWith('/login')) {
             console.log('🔍 [MIDDLEWARE] No user detected, redirecting to login from:', request.nextUrl.pathname)
             const redirectUrl = new URL('/login', request.url)
             redirectUrl.searchParams.set('redirectedFrom', request.nextUrl.pathname)

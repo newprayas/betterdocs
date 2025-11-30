@@ -199,10 +199,22 @@ export const SimpleHeader: React.FC = () => {
               size="sm"
               className="p-2 text-gray-600 dark:text-gray-300 hover:text-red-500 dark:hover:text-red-400"
               onClick={async () => {
-                const { createClient } = await import('@/utils/supabase/client');
-                const supabase = createClient();
-                await supabase.auth.signOut();
-                window.location.href = '/login';
+                try {
+                  const { createClient } = await import('@/utils/supabase/client');
+                  const supabase = createClient();
+                  const { error } = await supabase.auth.signOut();
+                  
+                  if (error) {
+                    console.error('Sign out error:', error);
+                  }
+                  
+                  // Force redirect to login page after sign out
+                  window.location.href = '/login';
+                } catch (error) {
+                  console.error('Unexpected error during sign out:', error);
+                  // Still redirect to login even if there's an error
+                  window.location.href = '/login';
+                }
               }}
             >
               <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
