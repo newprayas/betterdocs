@@ -538,7 +538,7 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-      <Card className="w-full max-w-5xl h-[85vh] flex flex-col bg-gray-50 dark:bg-slate-900 shadow-2xl">
+      <Card className="w-full max-w-5xl h-[85vh] flex flex-col bg-gray-50 dark:bg-slate-900 shadow-2xl relative">
 
         {/* Header */}
         <div className="p-6 border-b border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 rounded-t-lg">
@@ -559,7 +559,7 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
         </div>
 
         {/* Content Area */}
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="flex-1 overflow-y-auto p-6 pb-24 relative z-10">
           {/* Controls Row - Moved inside scrollable area */}
           <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between mb-6">
             {/* Category Filter Pills */}
@@ -600,47 +600,6 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
                 </span>
               </label>
 
-              {selectedBooks.size > 0 && (
-                <div>
-                  <Button
-                    onClick={handleBatchDownload}
-                    disabled={isBatchProcessing}
-                    variant="primary"
-                    size="sm"
-                    className="flex items-center gap-2 px-2 py-0.5"
-                  >
-                    {isBatchProcessing ? (
-                      <>
-                        <Loading size="sm" />
-                        Processing ({selectedBooks.size})
-                      </>
-                    ) : (
-                      <>
-                        Add Selected ({selectedBooks.size})
-                      </>
-                    )}
-                  </Button>
-
-                  {isBatchProcessing && (
-                    <div className="w-full mt-3 mb-1 min-w-[200px]">
-                      <div className="flex justify-between text-xs mb-1 text-gray-600 dark:text-gray-400">
-                        <span>Overall Progress</span>
-                        <span>{totalProgress}%</span>
-                      </div>
-                      <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
-                        <div
-                          className="bg-blue-600 h-2 rounded-full transition-all duration-300 ease-out"
-                          style={{ width: `${totalProgress}%` }}
-                        ></div>
-                      </div>
-                    </div>
-                  )}
-
-                  <p className="text-gray-500 dark:text-gray-400 text-xs mt-2 text-center">
-                    {isBatchProcessing && "Please wait, it can take up to 1 minute ❤️"}
-                  </p>
-                </div>
-              )}
             </div>
           </div>
           {isLoadingList ? (
@@ -682,7 +641,7 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
                     `}
                   >
                     {/* Selection Checkbox */}
-                    <div className="absolute top-5 left-5 z-10">
+                    <div className="absolute top-5 left-5">
                       <input
                         type="checkbox"
                         checked={isSelected}
@@ -760,6 +719,51 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
             </div>
           )}
         </div>
+
+        {/* Fixed Footer with Add Selected Button */}
+        {selectedBooks.size > 0 && (
+          <div className="absolute bottom-0 left-0 right-0 p-6 bg-gray-50 dark:bg-slate-900 border-t border-gray-200 dark:border-slate-700 rounded-t-xl z-20">
+            <div className="flex flex-col items-center gap-3 mx-auto max-w-sm">
+              <Button
+                onClick={handleBatchDownload}
+                disabled={isBatchProcessing}
+                variant="primary"
+                size="sm"
+                className="flex items-center gap-2 px-4 py-2 shadow-lg rounded-lg"
+              >
+                {isBatchProcessing ? (
+                  <>
+                    <Loading size="sm" />
+                    Processing ({selectedBooks.size})
+                  </>
+                ) : (
+                  <>
+                    Add Selected ({selectedBooks.size})
+                  </>
+                )}
+              </Button>
+
+              {isBatchProcessing && (
+                <div className="w-full">
+                  <div className="flex justify-between text-xs mb-1 text-gray-600 dark:text-gray-400">
+                    <span>Overall Progress</span>
+                    <span>{totalProgress}%</span>
+                  </div>
+                  <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                    <div
+                      className="bg-blue-600 h-2 rounded-full transition-all duration-300 ease-out"
+                      style={{ width: `${totalProgress}%` }}
+                    ></div>
+                  </div>
+                </div>
+              )}
+
+              <p className="text-gray-500 dark:text-gray-400 text-xs text-center">
+                {isBatchProcessing && "Please wait, it can take up to 1 minute ❤️"}
+              </p>
+            </div>
+          </div>
+        )}
       </Card>
     </div>
   );
