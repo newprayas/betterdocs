@@ -229,6 +229,20 @@ export default function SettingsPage() {
           </p>
         </div>
 
+        {/* Start Chatting Button - Appears when API key is saved */}
+        {isApiKeySaved && (
+          <div className="flex justify-center mb-6">
+            <Button
+              variant="primary"
+              size="lg"
+              className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-8 rounded-lg shadow-md hover:shadow-lg transition-all duration-200"
+              onClick={() => router.push('/')}
+            >
+              Start Chatting
+            </Button>
+          </div>
+        )}
+
         <div className="space-y-6">
           {/* Success/Error Banner */}
           {showSaveBanner && (
