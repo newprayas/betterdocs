@@ -735,6 +735,7 @@ export class CitationService {
       // Extract text from last position to this citation group
       const textSegment = response.substring(lastIndex, citationPosition).replace(/[ \t]+/g, ' ').trim();
       
+      /*
       console.log(`[CONTEXT EXTRACTION MATCH]`, {
         citationNumbers: indices,
         citationPosition: citationPosition,
@@ -742,6 +743,7 @@ export class CitationService {
         lastPosition: lastIndex,
         segmentLength: textSegment.length
       });
+      */
       
       // If this segment has text, associate it with all citations in this group
       if (textSegment.length > 10 || citationContexts.size === 0) {
@@ -883,6 +885,7 @@ export class CitationService {
       reason = reasons.join('; ');
     }
 
+    /*
     console.log('[CONTENT MATCH RESULT]', {
       confidence: Math.round(confidence * 100) + '%',
       reason: reason,
@@ -891,6 +894,7 @@ export class CitationService {
       medicalMatches: matchingMedicalTerms.length,
       semanticSimilarity: Math.round(semanticSimilarity * 100) + '%'
     });
+    */
     console.log('=== CONTENT MATCH ANALYSIS END ===\n');
 
     return { confidence, reason };

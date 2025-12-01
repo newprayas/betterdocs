@@ -16,8 +16,7 @@ interface UserIdLogEntry {
 class UserIdDebugLogger {
   private logs: UserIdLogEntry[] = [];
   private maxLogs = 1000; // Keep last 1000 logs
-  private isEnabled = process.env.NODE_ENV === 'development' || 
-                     (typeof window !== 'undefined' && window.localStorage.getItem('debug-userId') === 'true');
+  private isEnabled = false; // typeof window !== 'undefined' && window.localStorage.getItem('debug-userId') === 'true';
 
   log(entry: Omit<UserIdLogEntry, 'timestamp'>) {
     if (!this.isEnabled) return;

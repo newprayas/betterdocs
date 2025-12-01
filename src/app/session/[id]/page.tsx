@@ -38,7 +38,7 @@ export default function SessionPage() {
       return;
     }
 
-    console.log('🔍 [SESSION_PAGE] Loading session with valid ID:', sessionId);
+    // console.log('🔍 [SESSION_PAGE] Loading session with valid ID:', sessionId);
   }, [sessionId, handleRouteError, safeNavigate]);
 
   const {

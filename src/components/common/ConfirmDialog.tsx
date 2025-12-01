@@ -126,13 +126,13 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
     }
   };
 
-  console.log('🔍 ConfirmDialog: About to render Modal', {
-    isOpen,
-    title,
-    message,
-    variant,
-    isLoading
-  });
+  // console.log('🔍 ConfirmDialog: About to render Modal', {
+  //   isOpen,
+  //   title,
+  //   message,
+  //   variant,
+  //   isLoading
+  // });
 
   return (
     <Modal

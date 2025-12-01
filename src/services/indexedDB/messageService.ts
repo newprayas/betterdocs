@@ -99,6 +99,7 @@ export class MessageService {
       };
       
       // DEBUG: Log each retrieved message
+      /*
       console.log('[MESSAGE SERVICE RETRIEVE DEBUG]', {
         messageId: message.id,
         content: message.content,
@@ -107,6 +108,7 @@ export class MessageService {
         bulletCount: (message.content.match(/^\* /gm) || []).length,
         firstFewLines: message.content.split('\n').slice(0, 5)
       });
+      */
       
       return processedMessage;
     });

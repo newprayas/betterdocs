@@ -31,7 +31,7 @@ function getOrCreatePortalContainer(): HTMLDivElement | null {
     document.body.appendChild(container);
     console.log('✅ Modal: New portal container created and appended to body');
   } else {
-    console.log('🔍 Modal: Using existing portal container');
+    // console.log('🔍 Modal: Using existing portal container');
   }
   
   return container;
@@ -56,18 +56,18 @@ export const Modal: React.FC<ModalProps> = ({
   if (!portalContainerRef.current) {
     portalContainerRef.current = getOrCreatePortalContainer();
     if (portalContainerRef.current) {
-      console.log('✅ Modal: Portal container initialized synchronously', {
-        container: portalContainerRef.current,
-        bodyChildren: typeof document !== 'undefined' ? document.body.children.length : 'N/A (SSR)',
-        containerStyles: portalContainerRef.current.style.cssText
-      });
+      // console.log('✅ Modal: Portal container initialized synchronously', {
+      //   container: portalContainerRef.current,
+      //   bodyChildren: typeof document !== 'undefined' ? document.body.children.length : 'N/A (SSR)',
+      //   containerStyles: portalContainerRef.current.style.cssText
+      // });
     }
   }
 
   // Cleanup effect for portal container
   useEffect(() => {
     return () => {
-      console.log('🔍 Modal: Cleanup effect triggered');
+      // console.log('🔍 Modal: Cleanup effect triggered');
       // Don't remove the container on unmount as it might be used by other modals
       // Instead, just clear our reference
       portalContainerRef.current = null;
@@ -75,7 +75,7 @@ export const Modal: React.FC<ModalProps> = ({
   }, []);
 
   useEffect(() => {
-    console.log('🔍 Modal: isOpen changed', { isOpen, isRendered: isRenderedRef.current });
+    // console.log('🔍 Modal: isOpen changed', { isOpen, isRendered: isRenderedRef.current });
     const handleEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && isOpen) {
         onClose();
@@ -132,17 +132,17 @@ export const Modal: React.FC<ModalProps> = ({
   };
 
   if (!isOpen) {
-    console.log('🔍 Modal: isOpen is false, returning null');
+    // console.log('🔍 Modal: isOpen is false, returning null');
     return null;
   }
 
-  console.log('🔍 Modal: About to render modal content', {
+  /* console.log('🔍 Modal: About to render modal content', {
     size,
     hasTitle: !!title,
     showCloseButton,
     closeOnBackdropClick,
     timestamp: new Date().toISOString()
-  });
+  }); */
 
   const sizeClasses = {
     sm: 'max-w-md',
@@ -229,14 +229,14 @@ export const Modal: React.FC<ModalProps> = ({
     </div>
   );
 
-  console.log('🔍 Modal: About to render via portal', {
-    hasPortalContainer: !!portalContainerRef.current,
-    portalContainer: portalContainerRef.current,
-    portalContainerChildren: portalContainerRef.current?.childNodes.length || 0,
-    isOpen,
-    isRendered: isRenderedRef.current,
-    timestamp: new Date().toISOString()
-  });
+  // console.log('🔍 Modal: About to render via portal', {
+  //   hasPortalContainer: !!portalContainerRef.current,
+  //   portalContainer: portalContainerRef.current,
+  //   portalContainerChildren: portalContainerRef.current?.childNodes.length || 0,
+  //   isOpen,
+  //   isRendered: isRenderedRef.current,
+  //   timestamp: new Date().toISOString()
+  // });
 
   // Only render if we have a valid portal container and modal is open
   if (!portalContainerRef.current || !isOpen) {

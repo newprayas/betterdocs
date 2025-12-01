@@ -79,7 +79,7 @@ export class DocumentService {
   async getDocumentsBySession(sessionId: string, userId: string): Promise<Document[]> {
     userIdLogger.logServiceCall('documentService', 'getDocumentsBySession', 'read', userId);
     
-    console.log('🔍 DOCUMENT SERVICE DEBUG: getDocumentsBySession called with:', { sessionId, userId });
+    // console.log('🔍 DOCUMENT SERVICE DEBUG: getDocumentsBySession called with:', { sessionId, userId });
 
     if (!db) {
       console.log('🔍 DOCUMENT SERVICE DEBUG: Database not available, returning empty array');
@@ -92,21 +92,21 @@ export class DocumentService {
       return [];
     }
 
-    console.log('🔍 DOCUMENT SERVICE DEBUG: Querying documents for session:', sessionId, 'and user:', userId);
+    // console.log('🔍 DOCUMENT SERVICE DEBUG: Querying documents for session:', sessionId, 'and user:', userId);
 
     // First, let's check all documents in the database
     const allDocs = await db.documents.toArray();
-    console.log('🔍 DOCUMENT SERVICE DEBUG: ALL documents in database:', {
-      totalCount: allDocs.length,
-      documents: allDocs.map(doc => ({
-        id: doc.id,
-        sessionId: doc.sessionId,
-        userId: doc.userId,
-        filename: doc.filename,
-        status: doc.status,
-        enabled: doc.enabled
-      }))
-    });
+    // console.log('🔍 DOCUMENT SERVICE DEBUG: ALL documents in database:', {
+    //   totalCount: allDocs.length,
+    //   documents: allDocs.map(doc => ({
+    //     id: doc.id,
+    //     sessionId: doc.sessionId,
+    //     userId: doc.userId,
+    //     filename: doc.filename,
+    //     status: doc.status,
+    //     enabled: doc.enabled
+    //   }))
+    // });
 
     // Now check the specific session query with userId filter
     const documents = await db.documents
@@ -115,17 +115,17 @@ export class DocumentService {
       .and((doc: Document) => doc.userId === userId)
       .sortBy('createdAt');
 
-    console.log('🔍 DOCUMENT SERVICE DEBUG: Raw documents from database:', {
-      count: documents.length,
-      documents: documents.map(doc => ({
-        id: doc.id,
-        filename: doc.filename,
-        status: doc.status,
-        enabled: doc.enabled,
-        sessionId: doc.sessionId,
-        userId: doc.userId
-      }))
-    });
+    // console.log('🔍 DOCUMENT SERVICE DEBUG: Raw documents from database:', {
+    //   count: documents.length,
+    //   documents: documents.map(doc => ({
+    //     id: doc.id,
+    //     filename: doc.filename,
+    //     status: doc.status,
+    //     enabled: doc.enabled,
+    //     sessionId: doc.sessionId,
+    //     userId: doc.userId
+    //   }))
+    // });
 
     // Ensure date fields are Date objects (handles IndexedDB serialization)
     const processedDocuments = documents.map(document => ({
@@ -134,18 +134,18 @@ export class DocumentService {
       processedAt: document.processedAt ? ensureDate(document.processedAt) : undefined
     }));
 
-    console.log('🔍 DOCUMENT SERVICE DEBUG: Processed documents to return:', {
-      count: processedDocuments.length,
-      documents: processedDocuments.map(doc => ({
-        id: doc.id,
-        filename: doc.filename,
-        status: doc.status,
-        enabled: doc.enabled,
-        sessionId: doc.sessionId,
-        userId: doc.userId,
-        processedAt: doc.processedAt
-      }))
-    });
+    // console.log('🔍 DOCUMENT SERVICE DEBUG: Processed documents to return:', {
+    //   count: processedDocuments.length,
+    //   documents: processedDocuments.map(doc => ({
+    //     id: doc.id,
+    //     filename: doc.filename,
+    //     status: doc.status,
+    //     enabled: doc.enabled,
+    //     sessionId: doc.sessionId,
+    //     userId: doc.userId,
+    //     processedAt: doc.processedAt
+    //   }))
+    // });
 
     return processedDocuments;
   }

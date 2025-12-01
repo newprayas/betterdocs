@@ -163,7 +163,7 @@ export class VectorSearchService {
       const pageNumber = this.getEffectivePageNumber(result);
       const pageKey = `${result.document.id}_${pageNumber || 'unknown'}`;
       
-      console.log('[CHUNK ANALYSIS]', {
+      /* console.log('[CHUNK ANALYSIS]', {
         chunkId: result.chunk.id,
         documentId: result.document.id,
         documentTitle: result.document.title,
@@ -173,7 +173,7 @@ export class VectorSearchService {
         effectivePageNumber: pageNumber,
         pageKey,
         contentPreview: result.chunk.content.substring(0, 100) + '...'
-      });
+      }); */
       
       if (!pageMap.has(pageKey)) {
         pageMap.set(pageKey, []);
@@ -239,7 +239,7 @@ export class VectorSearchService {
     const highestScoringChunk = sortedChunks[0];
     
     console.log('[SIMILARITY RANKING]', 'Chunks sorted by similarity:');
-    sortedChunks.forEach((chunk, index) => {
+    /* sortedChunks.forEach((chunk, index) => {
       console.log(`[RANK ${index + 1}]`, {
         chunkId: chunk.chunk.id,
         similarity: chunk.similarity,
@@ -248,7 +248,7 @@ export class VectorSearchService {
         effectivePage: this.getEffectivePageNumber(chunk),
         contentPreview: chunk.chunk.content.substring(0, 80) + '...'
       });
-    });
+    }); */
     
     console.log('[HIGHEST SCORING]', {
       chunkId: highestScoringChunk.chunk.id,
