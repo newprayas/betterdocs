@@ -5,6 +5,7 @@ import { cosineSimilarity, calculateVectorNorm } from '@/utils/vectorUtils';
 
 export class VectorSearchService {
   private embeddingService = getIndexedDBServices().embeddingService;
+  private documentService = getIndexedDBServices().documentService;
 
   async searchSimilar(
     queryEmbedding: Float32Array,
@@ -32,6 +33,9 @@ export class VectorSearchService {
         embeddings = await this.embeddingService.getEnabledEmbeddingsBySession(sessionId, options.userId);
       }
 
+      // Batch fetch all relevant documents at once to eliminate N+1 queries
+      const documentMap = await this.batchFetchDocuments(embeddings, documentIds, sessionId, options.userId);
+
       // Calculate similarities using optimized cosine similarity
       const results: VectorSearchResult[] = [];
       
@@ -41,8 +45,8 @@ export class VectorSearchService {
         const similarity = cosineSimilarity(queryEmbedding, embedding.embedding);
         
         if (similarity >= similarityThreshold) {
-          // Get document info - pass userId for ownership verification
-          const document = await this.getDocumentInfo(embedding.documentId, options.userId);
+          // Get document info from the pre-fetched map (O(1) lookup instead of database call)
+          const document = documentMap.get(embedding.documentId);
           
           if (document) {
             results.push({
@@ -85,6 +89,54 @@ export class VectorSearchService {
   private async getDocumentInfo(documentId: string, userId?: string) {
     const documentService = getIndexedDBServices().documentService;
     return await documentService.getDocument(documentId, userId);
+  }
+
+  /**
+   * Batch fetch all relevant documents to eliminate N+1 query pattern
+   * Creates a Map for O(1) document lookups during similarity calculations
+   */
+  private async batchFetchDocuments(
+    embeddings: EmbeddingChunk[],
+    documentIds?: string[],
+    sessionId?: string,
+    userId?: string
+  ): Promise<Map<string, any>> {
+    // Collect all unique document IDs from embeddings
+    const uniqueDocumentIds = new Set<string>();
+    
+    // Add document IDs from embeddings
+    embeddings.forEach(embedding => {
+      uniqueDocumentIds.add(embedding.documentId);
+    });
+    
+    // Add specific document IDs if provided
+    if (documentIds) {
+      documentIds.forEach(id => uniqueDocumentIds.add(id));
+    }
+    
+    // If no specific document IDs and we have a sessionId, get all enabled documents
+    if (uniqueDocumentIds.size === 0 && sessionId) {
+      const enabledDocuments = await this.documentService.getEnabledDocumentsBySession(sessionId, userId || '');
+      enabledDocuments.forEach(doc => uniqueDocumentIds.add(doc.id));
+    }
+    
+    // Fetch all documents in batch
+    const documentPromises = Array.from(uniqueDocumentIds).map(async (docId) => {
+      const document = await this.documentService.getDocument(docId, userId);
+      return document ? [docId, document] as [string, any] : null;
+    });
+    
+    const documentEntries = await Promise.all(documentPromises);
+    
+    // Create Map for O(1) lookups
+    const documentMap = new Map<string, any>();
+    documentEntries.forEach(entry => {
+      if (entry) {
+        documentMap.set(entry[0], entry[1]);
+      }
+    });
+    
+    return documentMap;
   }
 
   /**
@@ -406,6 +458,10 @@ export class VectorSearchService {
     try {
       const embeddings = await this.embeddingService.getEnabledEmbeddingsBySession(sessionId, userId);
       const queryLower = query.toLowerCase();
+      
+      // Batch fetch all relevant documents to eliminate N+1 queries
+      const documentMap = await this.batchFetchDocuments(embeddings, undefined, sessionId, userId);
+      
       const results: VectorSearchResult[] = [];
 
       for (const embedding of embeddings) {
@@ -415,8 +471,8 @@ export class VectorSearchService {
         const score = this.calculateTextScore(queryLower, contentLower);
 
         if (score > 0) {
-          // Get document info - pass userId for ownership verification
-          const document = await this.getDocumentInfo(embedding.documentId, userId);
+          // Get document info from the pre-fetched map (O(1) lookup instead of database call)
+          const document = documentMap.get(embedding.documentId);
           
           if (document) {
             results.push({
@@ -672,6 +728,9 @@ export class VectorSearchService {
       
       const embeddings = await this.embeddingService.getEmbeddingsByDocument(targetChunk.documentId);
       
+      // Batch fetch all documents for these embeddings to eliminate N+1 queries
+      const documentMap = await this.batchFetchDocuments(embeddings, [targetChunk.documentId], undefined, userId);
+      
       const results: VectorSearchResult[] = [];
       
       for (const embedding of embeddings) {
@@ -682,7 +741,8 @@ export class VectorSearchService {
         const similarity = cosineSimilarity(targetChunk.embedding, embedding.embedding);
         
         if (similarity > 0.5) { // Threshold for similarity
-          const document = await this.getDocumentInfo(embedding.documentId, userId);
+          // Get document info from the pre-fetched map (O(1) lookup instead of database call)
+          const document = documentMap.get(embedding.documentId);
           
           if (document) {
             results.push({

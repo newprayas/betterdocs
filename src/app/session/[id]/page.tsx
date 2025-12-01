@@ -291,10 +291,12 @@ export default function SessionPage() {
                 <div className="flex-shrink-0 mt-4 max-w-4xl mx-auto w-full">
                   <MessageInput
                     sessionId={sessionId}
-                    disabled={isStreaming || !settings?.geminiApiKey}
+                    disabled={isStreaming || !settings?.geminiApiKey || documents.length === 0}
                     placeholder={
                       !settings?.geminiApiKey
                         ? 'Please configure your API key in settings'
+                        : documents.length === 0
+                        ? 'Please add a book FIRST to chat'
                         : 'Ask a question about your documents...'
                     }
                     value={messageInput}
@@ -337,10 +339,12 @@ export default function SessionPage() {
                 <div className="flex-shrink-0 mt-4 max-w-4xl mx-auto w-full">
                   <MessageInput
                     sessionId={sessionId}
-                    disabled={isStreaming || !settings?.geminiApiKey}
+                    disabled={isStreaming || !settings?.geminiApiKey || documents.length === 0}
                     placeholder={
                       !settings?.geminiApiKey
                         ? 'Please configure your API key in settings'
+                        : documents.length === 0
+                        ? 'Please add a book FIRST to chat'
                         : 'Ask a question about your documents...'
                     }
                     value={messageInput}
