@@ -54,6 +54,7 @@ export default function SessionPage() {
     sendMessage,
     clearHistory,
     isStreaming,
+    loadMessages,
   } = useChatStore();
 
   const {
@@ -76,8 +77,9 @@ export default function SessionPage() {
     if (typeof window !== 'undefined' && sessionId) {
       setCurrentSessionId(sessionId);
       loadDocuments(sessionId);
+      loadMessages(sessionId);
     }
-  }, [sessionId, setCurrentSessionId, loadDocuments]);
+  }, [sessionId, setCurrentSessionId, loadDocuments, loadMessages]);
 
   // Redirect if session not found (client-side only)
   useEffect(() => {
@@ -221,7 +223,11 @@ export default function SessionPage() {
       <div className="flex-1 container mx-auto px-4 pt-6 pb-0 overflow-hidden flex flex-col">
         {activeTab === 'chat' && (
           <div className="flex-1 flex flex-col min-h-0">
-            {messages.length === 0 && !messagesLoading ? (
+            {messagesLoading ? (
+              <div className="flex-1 flex items-center justify-center">
+                <Loading size="lg" text="Loading history..." />
+              </div>
+            ) : messages.length === 0 ? (
               // This wrapper controls the layout to ensure input stays at bottom
               <div className="flex flex-col flex-1 min-h-0">
                 {/* This wrapper grows to fill all available space */}

@@ -16,17 +16,10 @@ export const ChatList: React.FC<ChatListProps> = ({
   sessionId,
   className,
 }) => {
-  const { messages, loadMessages, isStreaming, streamingContent, streamingCitations, isReadingSources, progressPercentage, currentProgressStep } = useChatStore();
-  const isLoading = false; // TODO: Add loading state to chat store
+  const { messages, isStreaming, streamingContent, streamingCitations, isReadingSources, progressPercentage, currentProgressStep } = useChatStore();
+  const isLoading = false; // Loading is now handled at the parent level
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-
-  // Load messages when session changes
-  useEffect(() => {
-    if (sessionId) {
-      loadMessages(sessionId);
-    }
-  }, [sessionId, loadMessages]);
 
   // Auto-scroll to bottom when new messages arrive or streaming updates
   useEffect(() => {

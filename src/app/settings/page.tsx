@@ -245,7 +245,7 @@ export default function SettingsPage() {
                   </span>
                   <span className="font-medium">
                     {showSaveBanner === 'success'
-                      ? '🎉 API saved successfully 🎉'
+                      ? 'API saved successfully'
                       : 'Enter a correct API key error'}
                   </span>
                 </div>

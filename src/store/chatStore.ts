@@ -36,6 +36,9 @@ export const useChatStore = create<ChatStore>()(
           const { userId: currentUserId } = useSessionStore.getState();
           const operationId = userIdLogger.logOperationStart('ChatStore', 'loadMessages', currentUserId);
           
+          // Set loading state at the beginning
+          set({ isLoading: true, error: null });
+          
           try {
             const messageService = getMessageService();
             if (!messageService) {
@@ -55,11 +58,12 @@ export const useChatStore = create<ChatStore>()(
             const messages = await messageService.getMessagesBySession(sessionId, session.userId);
             
             userIdLogger.logOperationEnd('ChatStore', operationId, currentUserId);
-            set({ messages });
+            set({ messages, isLoading: false });
           } catch (error) {
             userIdLogger.logError('ChatStore.loadMessages', error instanceof Error ? error : String(error), currentUserId);
             set({
               error: error instanceof Error ? error.message : 'Failed to load messages',
+              isLoading: false,
             });
           }
         },
