@@ -60,7 +60,7 @@ const PhrasePill: React.FC<PhrasePillProps> = ({
       aria-label={`Select phrase: ${phrase}`}
       className={clsx(
         // Base styles
-        'inline-flex items-center justify-center px-3 py-1.5 sm:px-4 sm:py-2',
+        'inline-flex items-center justify-center px-3 py-2 sm:px-4 sm:py-2',
         'text-xs sm:text-sm font-medium rounded-full',
         'transition-all duration-200 ease-in-out',
         'touch-manipulation',
