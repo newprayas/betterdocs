@@ -7,6 +7,7 @@ import { AppInitializer } from './AppInitializer';
 import SubscriptionModal from '@/components/SubscriptionModal';
 import { RouteErrorBoundary } from '@/components/common/RouteErrorBoundary';
 import { InstallPrompt } from '@/components/common/InstallPrompt';
+import { ThemeProvider } from '@/components/common/ThemeProvider';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -42,13 +43,14 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className="dark">
-      <body className={`${inter.className} bg-slate-950 text-slate-200 antialiased`}>
+    <html lang="en">
+      <body className={`${inter.className} bg-gray-50 dark:bg-slate-950 text-slate-900 dark:text-slate-200 antialiased`}>
         <Script
           id="error-suppression"
           strategy="beforeInteractive"
           src="/error-suppression.js"
         />
+        <ThemeProvider />
         <RouteErrorBoundary>
           <div id="root" className="min-h-screen flex flex-col">
             <AppInitializer />

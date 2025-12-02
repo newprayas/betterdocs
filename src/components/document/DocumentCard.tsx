@@ -331,13 +331,13 @@ export const DocumentCardCompact: React.FC<{
   const getStatusColor = () => {
     switch (document.status) {
       case 'completed':
-        return 'text-green-500';
+        return 'text-green-600 dark:text-green-400';
       case 'processing':
-        return 'text-blue-500';
+        return 'text-blue-600 dark:text-blue-400';
       case 'failed':
-        return 'text-red-500';
+        return 'text-red-600 dark:text-red-400';
       default:
-        return 'text-gray-500';
+        return 'text-gray-600 dark:text-gray-400';
     }
   };
 

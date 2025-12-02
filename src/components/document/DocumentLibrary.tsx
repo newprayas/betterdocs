@@ -508,11 +508,7 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
 
       console.log('🔍 FINAL COUNT DEBUG:', { successful, failed, total: selectedBooksList.length });
 
-      if (failed === 0) {
-        alert(`Successfully added ${successful} document(s) to your library!`);
-      } else {
-        alert(`Added ${successful} document(s). ${failed} document(s) failed to process.`);
-      }
+      alert("Books were added, you can start chatting!");
 
       // Clear selections and close modal
       setSelectedBooks(new Set());

@@ -9,6 +9,7 @@ import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
 import { Input } from '../../components/ui/Input';
 import { Modal } from '../../components/ui/Modal';
+import { Switch } from '../../components/ui/Switch';
 import { ConfirmDialog } from '../../components/common/ConfirmDialog';
 import { Header } from '../../components/layout/Header';
 import clsx from 'clsx';
@@ -415,6 +416,32 @@ export default function SettingsPage() {
             </div>
           </Card>
 
+          {/* Appearance Settings */}
+          <Card>
+            <div className="p-6">
+              <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">
+                Appearance
+              </h2>
+              
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex-1">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Dark Mode
+                    </label>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">
+                      Switch between light and dark themes
+                    </p>
+                  </div>
+                  <Switch
+                    checked={settings?.theme === 'dark'}
+                    onCheckedChange={(checked) => updateSettings({ theme: checked ? 'dark' : 'light' })}
+                    size="md"
+                  />
+                </div>
+              </div>
+            </div>
+          </Card>
 
         </div>
       </main>
