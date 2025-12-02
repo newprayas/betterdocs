@@ -93,7 +93,12 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(({
             : 'bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-700'
         )}>
           {/* Message Text */}
-          <div className="prose prose-slate prose-sm max-w-none dark:prose-invert">
+          <div className={clsx(
+            'prose prose-sm max-w-none',
+            isUser
+              ? 'text-white prose-p:text-white prose-strong:text-white prose-li:text-white prose-headings:text-white'
+              : 'text-gray-900 prose-p:text-gray-900 prose-li:text-gray-900 prose-strong:text-gray-900 prose-headings:text-gray-900 dark:text-gray-100 dark:prose-p:text-gray-200 dark:prose-li:text-gray-200 dark:prose-strong:text-white dark:prose-headings:text-white'
+          )}>
             <ReactMarkdown
               remarkPlugins={[remarkGfm]}
               rehypePlugins={[rehypeHighlight]}

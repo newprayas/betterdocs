@@ -154,6 +154,105 @@
   @apply text-slate-200;
 }
 
+/* Light mode prose styling */
+.prose-gray {
+  @apply text-gray-800;
+}
+
+.prose-gray h1,
+.prose-gray h2,
+.prose-gray h3,
+.prose-gray h4,
+.prose-gray h5,
+.prose-gray h6 {
+  @apply text-gray-900 font-semibold;
+}
+
+.prose-gray p {
+  @apply mb-4 leading-relaxed text-gray-800;
+}
+
+.prose-gray ul,
+.prose-gray ol {
+  @apply mb-4 space-y-1 text-gray-800;
+}
+
+.prose-gray li {
+  @apply leading-relaxed text-gray-800;
+}
+
+.prose-gray ul > li {
+  @apply mb-2 text-gray-800;
+}
+
+.prose-gray ul > li:last-child {
+  @apply mb-0;
+}
+
+/* Ensure bullet points display on separate lines */
+.prose-gray ul {
+  @apply list-disc pl-5 space-y-1; /* pl-5 gives space for the bullet, space-y-1 adds breathing room */
+  list-style-position: outside !important; /* Keeps bullet outside the text block */
+  margin-bottom: 1rem;
+}
+
+.prose-gray ul li {
+  @apply list-item; /* CRITICAL: Must be list-item, not block */
+  margin-left: 0.25rem;
+  padding-left: 0.25rem;
+}
+
+/* Make sure bullet points are visible */
+.prose-gray ul li::marker {
+  @apply text-gray-500; /* Use Tailwind colors for better theme support */
+  font-size: 0.9em !important;
+}
+
+/* Ensure nested lists are indented further */
+.prose-gray ul ul {
+  @apply pl-5 mt-1;
+  list-style-type: circle !important;
+}
+
+.prose-gray code {
+  @apply bg-gray-100 text-gray-800 px-1.5 py-0.5 rounded text-sm font-mono border border-gray-300;
+}
+
+.prose-gray pre {
+  @apply bg-gray-100 text-gray-800 p-4 rounded-lg overflow-x-auto text-sm border border-gray-300;
+}
+
+.prose-gray pre code {
+  @apply bg-transparent p-0 border-none;
+}
+
+.prose-gray blockquote {
+  @apply border-l-4 border-blue-500 pl-4 italic text-gray-700;
+}
+
+.prose-gray a {
+  @apply text-blue-600 hover:text-blue-700 underline transition-colors;
+}
+
+.prose-gray strong,
+.prose-gray b {
+  @apply text-gray-900 font-semibold;
+}
+
+.prose-gray table {
+  @apply w-full border-collapse border border-gray-300;
+}
+
+.prose-gray th,
+.prose-gray td {
+  @apply border border-gray-300 px-3 py-2 text-left text-gray-800;
+}
+
+.prose-gray th {
+  @apply bg-gray-100 font-semibold text-gray-900;
+}
+
+/* Dark mode prose styling (existing styles) */
 .prose h1,
 .prose h2,
 .prose h3,
@@ -229,7 +328,8 @@
   @apply text-blue-400 hover:text-blue-300 underline transition-colors;
 }
 
-.prose strong {
+.prose strong,
+.prose b {
   @apply text-slate-100 font-semibold;
 }
 
