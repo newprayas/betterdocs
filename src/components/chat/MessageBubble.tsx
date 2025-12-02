@@ -97,12 +97,25 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(({
             'prose prose-sm max-w-none',
             isUser
               ? 'text-white prose-p:text-white prose-strong:text-white prose-li:text-white prose-headings:text-white'
-              : 'text-gray-900 prose-p:text-gray-900 prose-li:text-gray-900 prose-strong:text-gray-900 prose-headings:text-gray-900 dark:text-gray-100 dark:prose-p:text-gray-200 dark:prose-li:text-gray-200 dark:prose-strong:text-white dark:prose-headings:text-white'
+              : 'text-gray-900 prose-p:text-gray-900 prose-li:text-gray-900 prose-strong:text-black prose-headings:text-black dark:text-gray-100 dark:prose-p:text-gray-200 dark:prose-li:text-gray-200 dark:prose-strong:text-white dark:prose-headings:text-white'
           )}>
             <ReactMarkdown
               remarkPlugins={[remarkGfm]}
               rehypePlugins={[rehypeHighlight]}
               components={{
+                // Custom strong component to override any conflicting styles
+                strong: ({ node, className, children, ...props }: any) => (
+                  <strong
+                    className={clsx(
+                      "font-bold",
+                      isUser ? "!text-white" : "!text-black dark:!text-white",
+                      className
+                    )}
+                    {...props}
+                  >
+                    {children}
+                  </strong>
+                ),
                 code: ({ node, className, children, ...props }: any) => {
                   const match = /language-(\w+)/.exec(className || '');
                   return !props.inline && match ? (
