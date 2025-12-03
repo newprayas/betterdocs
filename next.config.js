@@ -8,6 +8,12 @@ const nextConfig = {
   eslint: {
     ignoreDuringBuilds: false,
   },
+  // START NEW CODE
+  compiler: {
+    // Removes console.log in production, keeps console.error and console.warn
+    removeConsole: process.env.NODE_ENV === "production" ? { exclude: ['error', 'warn'] } : false,
+  },
+  // END NEW CODE
 
   webpack: (config, { dev, isServer }) => {
     // Enable WebAssembly support

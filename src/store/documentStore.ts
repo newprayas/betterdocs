@@ -348,8 +348,7 @@ export const useDocumentStore = create<DocumentStore>()(
       {
         name: 'document-store',
         partialize: (state) => ({
-          documents: state.documents,
-          userId: state.userId,
+          userId: state.userId, // Only keep userId
         }),
       }
     )

@@ -7810,7 +7810,6 @@ export const useSessionStore = create&lt;SessionStore&gt;()(
       {
         name: &apos;session-store&apos;,
         partialize: (state) =&gt; ({
-          sessions: state.sessions,
           currentSessionId: state.currentSessionId,
           userId: state.userId,
         }),
@@ -14415,258 +14414,12 @@ export const useDocumentStore = create&lt;DocumentStore&gt;()(
       {
         name: &apos;document-store&apos;,
         partialize: (state) =&gt; ({
-          documents: state.documents,
-          userId: state.userId,
+          userId: state.userId, // Only keep userId
         }),
       }
     )
   )
-);</file><file path="src/components/chat/MessageBubble.tsx">import React, { useMemo } from &apos;react&apos;; // Added useMemo
-import ReactMarkdown from &apos;react-markdown&apos;;
-import remarkGfm from &apos;remark-gfm&apos;;
-import rehypeHighlight from &apos;rehype-highlight&apos;;
-import { Message, Citation } from &apos;../../types&apos;;
-import { MessageSender } from &apos;../../types/message&apos;;
-import { CitationPanel } from &apos;./CitationPanel&apos;;
-import { formatTime } from &apos;../../utils/date&apos;;
-import clsx from &apos;clsx&apos;;
-
-interface MessageBubbleProps {
-  message: Message;
-  isStreaming?: boolean;
-  className?: string;
-}
-
-// 1. Wrap the component in React.memo to prevent re-renders on parent state changes (like typing)
-export const MessageBubble: React.FC&lt;MessageBubbleProps&gt; = React.memo(({
-  message,
-  isStreaming = false,
-  className,
-}) =&gt; {
-  const isUser = message.role === &apos;user&apos;;
-  
-  // 2. Memoize the content processing so it only runs when content/citations change
-  const processedContent = useMemo(() =&gt; {
-    const content = message.content;
-    const citations = message.citations;
-
-    if (!citations || citations.length === 0 || isUser) {
-      return content;
-    }
-    
-    const citationMap = new Map&lt;number, Citation&gt;();
-    citations.forEach((citation, index) =&gt; {
-      citationMap.set(index + 1, citation);
-    });
-    
-    let processed = content;
-    
-    processed = processed.replace(/\[citation:(\d+)\]/g, (match, num) =&gt; {
-      const citationNum = parseInt(num);
-      return citationMap.has(citationNum) ? `[${citationNum}]` : match;
-    });
-    
-    let citationCounter = 1;
-    processed = processed.replace(/\[citation\]/g, () =&gt; {
-      return `[${citationCounter++}]`;
-    });
-    
-    return processed;
-  }, [message.content, message.citations, isUser]);
-
-  // 3. REMOVED: All IndentationAnalyzer calls and console.logs
-  // These were running heavy regex on every render, causing the lag.
-
-  return (
-    &lt;div className={clsx(
-      &apos;flex gap-2 sm:gap-3 mb-3 sm:mb-4&apos;,
-      isUser ? &apos;justify-end&apos; : &apos;justify-start&apos;,
-      className
-    )}&gt;
-      {/* Avatar */}
-      {!isUser &amp;&amp; (
-        &lt;div className=&quot;flex-shrink-0&quot;&gt;
-          &lt;div className=&quot;w-7 h-7 sm:w-8 sm:h-8 bg-blue-500 rounded-full flex items-center justify-center&quot;&gt;
-            &lt;svg
-              className=&quot;w-4 h-4 sm:w-5 sm:h-5 text-white&quot;
-              fill=&quot;none&quot;
-              viewBox=&quot;0 0 24 24&quot;
-              stroke=&quot;currentColor&quot;
-            &gt;
-              &lt;path
-                strokeLinecap=&quot;round&quot;
-                strokeLinejoin=&quot;round&quot;
-                strokeWidth={2}
-                d=&quot;M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z&quot;
-              /&gt;
-            &lt;/svg&gt;
-          &lt;/div&gt;
-        &lt;/div&gt;
-      )}
-
-      {/* Message Content */}
-      &lt;div className={clsx(
-        &apos;max-w-[85%] sm:max-w-xs lg:max-w-md xl:max-w-lg&apos;,
-        isUser &amp;&amp; &apos;max-w-[85%] sm:max-w-xs lg:max-w-md&apos;
-      )}&gt;
-        &lt;div className={clsx(
-          &apos;rounded-lg px-3 py-2 sm:px-4 sm:py-3&apos;,
-          isUser
-            ? &apos;bg-blue-500 text-white ml-auto&apos;
-            : &apos;bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-700&apos;
-        )}&gt;
-          {/* Message Text */}
-          &lt;div className={clsx(
-            &apos;prose prose-sm max-w-none&apos;,
-            isUser
-              ? &apos;text-white prose-p:text-white prose-strong:text-white prose-li:text-white prose-headings:text-white&apos;
-              : &apos;text-gray-900 prose-p:text-gray-900 prose-li:text-gray-900 prose-strong:text-gray-900 prose-headings:text-gray-900 dark:text-gray-100 dark:prose-p:text-gray-200 dark:prose-li:text-gray-200 dark:prose-strong:text-white dark:prose-headings:text-white&apos;
-          )}&gt;
-            &lt;ReactMarkdown
-              remarkPlugins={[remarkGfm]}
-              rehypePlugins={[rehypeHighlight]}
-              components={{
-                code: ({ node, className, children, ...props }: any) =&gt; {
-                  const match = /language-(\w+)/.exec(className || &apos;&apos;);
-                  return !props.inline &amp;&amp; match ? (
-                    &lt;pre className={className}&gt;
-                      &lt;code className={className} {...props}&gt;
-                        {children}
-                      &lt;/code&gt;
-                    &lt;/pre&gt;
-                  ) : (
-                    &lt;code className={className} {...props}&gt;
-                      {children}
-                    &lt;/code&gt;
-                  );
-                },
-                a: ({ href, children }) =&gt; (
-                  &lt;a
-                    href={href}
-                    target=&quot;_blank&quot;
-                    rel=&quot;noopener noreferrer&quot;
-                    className=&quot;text-blue-500 hover:text-blue-600 underline&quot;
-                  &gt;
-                    {children}
-                  &lt;/a&gt;
-                ),
-                ul: ({ node, className, children, ...props }) =&gt; (
-                  &lt;ul
-                    className={clsx(&quot;pl-6 my-2 space-y-1 list-outside&quot;, className)}
-                    {...props}
-                  &gt;
-                    {children}
-                  &lt;/ul&gt;
-                ),
-                li: ({ node, className, children, ...props }) =&gt; (
-                  &lt;li
-                    className={clsx(&quot;pl-1 marker:text-gray-500 dark:marker:text-gray-400&quot;, className)}
-                    {...props}
-                  &gt;
-                    {children}
-                  &lt;/li&gt;
-                ),
-                span: ({ node, className, children, ...props }: any) =&gt; {
-                  const text = typeof children === &apos;string&apos; ? children : &apos;&apos;;
-                  const citationMatch = text.match(/^\[(\d+)\]$/);
-                  
-                  if (citationMatch &amp;&amp; !isUser) {
-                    const citationNum = parseInt(citationMatch[1]);
-                    return (
-                      &lt;span
-                        className={`citation-ref ${className || &apos;&apos;}`}
-                        title={`Citation ${citationNum}`}
-                        {...props}
-                      &gt;
-                        {citationNum}
-                      &lt;/span&gt;
-                    );
-                  }
-                  
-                  return (
-                    &lt;span className={className} {...props}&gt;
-                      {children}
-                    &lt;/span&gt;
-                  );
-                },
-              }}
-            &gt;
-              {processedContent}
-            &lt;/ReactMarkdown&gt;
-            
-            {isStreaming &amp;&amp; (
-              &lt;span className=&quot;inline-block w-2 h-4 bg-gray-400 dark:bg-gray-600 animate-pulse ml-1&quot; /&gt;
-            )}
-          &lt;/div&gt;
-
-          {/* Citations */}
-          {message.citations &amp;&amp; message.citations.length &gt; 0 &amp;&amp; !isUser &amp;&amp; (
-            &lt;div className=&quot;mt-3 pt-3 border-t border-gray-200 dark:border-gray-700&quot;&gt;
-              &lt;CitationPanel citations={message.citations} /&gt;
-            &lt;/div&gt;
-          )}
-        &lt;/div&gt;
-
-        {/* Timestamp */}
-        &lt;div className={clsx(
-          &apos;text-xs text-gray-500 dark:text-gray-400 mt-1&apos;,
-          isUser ? &apos;text-right&apos; : &apos;text-left&apos;
-        )}&gt;
-          {formatTime(message.timestamp || new Date())}
-        &lt;/div&gt;
-      &lt;/div&gt;
-
-      {/* User Avatar */}
-      {isUser &amp;&amp; (
-        &lt;div className=&quot;flex-shrink-0&quot;&gt;
-          &lt;div className=&quot;w-7 h-7 sm:w-8 sm:h-8 bg-gray-500 rounded-full flex items-center justify-center&quot;&gt;
-            &lt;svg
-              className=&quot;w-4 h-4 sm:w-5 sm:h-5 text-white&quot;
-              fill=&quot;none&quot;
-              viewBox=&quot;0 0 24 24&quot;
-              stroke=&quot;currentColor&quot;
-            &gt;
-              &lt;path
-                strokeLinecap=&quot;round&quot;
-                strokeLinejoin=&quot;round&quot;
-                strokeWidth={2}
-                d=&quot;M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z&quot;
-              /&gt;
-            &lt;/svg&gt;
-          &lt;/div&gt;
-        &lt;/div&gt;
-      )}
-    &lt;/div&gt;
-  );
-});
-
-// Display name for debugging
-MessageBubble.displayName = &apos;MessageBubble&apos;;
-
-// Streaming message bubble component
-export const StreamingMessageBubble: React.FC&lt;{
-  content: string;
-  citations?: any[];
-  className?: string;
-}&gt; = ({ content, citations, className }) =&gt; {
-  // Use useMemo to ensure the object reference remains stable unless content changes
-  const streamingMessage = useMemo&lt;Message&gt;(() =&gt; ({
-    id: &apos;streaming&apos;,
-    sessionId: &apos;&apos;,
-    content,
-    role: MessageSender.ASSISTANT,
-    timestamp: new Date(),
-    citations,
-  }), [content, citations]);
-
-  return (
-    &lt;MessageBubble
-      message={streamingMessage}
-      isStreaming={true}
-      className={className}
-    /&gt;
-  );
-};</file><file path="src/services/rag/citationService.ts">import type { VectorSearchResult } from &apos;@/types/embedding&apos;;
+);</file><file path="src/services/rag/citationService.ts">import type { VectorSearchResult } from &apos;@/types/embedding&apos;;
 import type { Citation as MessageCitation } from &apos;@/types/message&apos;;
 import type { SimplifiedCitation, SimplifiedCitationGroup, PageGroup } from &apos;@/types/citation&apos;;
 
@@ -18260,9 +18013,7 @@ export const useChatStore = create&lt;ChatStore&gt;()(
       }),
       {
         name: &apos;chat-store&apos;,
-        partialize: (state) =&gt; ({
-          messages: state.messages,
-        }),
+        partialize: (state) =&gt; ({}), // Don&apos;t persist chat messages to localStorage (too heavy)
       }
     )
   )
@@ -18637,7 +18388,265 @@ export default function RootLayout({
       &lt;/body&gt;
     &lt;/html&gt;
   );
-}</file><file path="src/services/rag/chatPipeline.ts">import { getIndexedDBServices } from &apos;../indexedDB&apos;;
+}</file><file path="src/components/chat/MessageBubble.tsx">import React, { useMemo } from &apos;react&apos;; // Added useMemo
+import ReactMarkdown from &apos;react-markdown&apos;;
+import remarkGfm from &apos;remark-gfm&apos;;
+import rehypeHighlight from &apos;rehype-highlight&apos;;
+import { Message, Citation } from &apos;../../types&apos;;
+import { MessageSender } from &apos;../../types/message&apos;;
+import { CitationPanel } from &apos;./CitationPanel&apos;;
+import { formatTime } from &apos;../../utils/date&apos;;
+import clsx from &apos;clsx&apos;;
+
+interface MessageBubbleProps {
+  message: Message;
+  isStreaming?: boolean;
+  className?: string;
+}
+
+// 1. Wrap the component in React.memo to prevent re-renders on parent state changes (like typing)
+export const MessageBubble: React.FC&lt;MessageBubbleProps&gt; = React.memo(({
+  message,
+  isStreaming = false,
+  className,
+}) =&gt; {
+  const isUser = message.role === &apos;user&apos;;
+  
+  // 2. Memoize the content processing so it only runs when content/citations change
+  const processedContent = useMemo(() =&gt; {
+    const content = message.content;
+    const citations = message.citations;
+
+    if (!citations || citations.length === 0 || isUser) {
+      return content;
+    }
+    
+    const citationMap = new Map&lt;number, Citation&gt;();
+    citations.forEach((citation, index) =&gt; {
+      citationMap.set(index + 1, citation);
+    });
+    
+    let processed = content;
+    
+    processed = processed.replace(/\[citation:(\d+)\]/g, (match, num) =&gt; {
+      const citationNum = parseInt(num);
+      return citationMap.has(citationNum) ? `[${citationNum}]` : match;
+    });
+    
+    let citationCounter = 1;
+    processed = processed.replace(/\[citation\]/g, () =&gt; {
+      return `[${citationCounter++}]`;
+    });
+    
+    return processed;
+  }, [message.content, message.citations, isUser]);
+
+  // 3. REMOVED: All IndentationAnalyzer calls and console.logs
+  // These were running heavy regex on every render, causing the lag.
+
+  return (
+    &lt;div className={clsx(
+      &apos;flex gap-2 sm:gap-3 mb-3 sm:mb-4&apos;,
+      isUser ? &apos;justify-end&apos; : &apos;justify-start&apos;,
+      className
+    )}&gt;
+      {/* Avatar */}
+      {!isUser &amp;&amp; (
+        &lt;div className=&quot;flex-shrink-0&quot;&gt;
+          &lt;div className=&quot;w-7 h-7 sm:w-8 sm:h-8 bg-blue-500 rounded-full flex items-center justify-center&quot;&gt;
+            &lt;svg
+              className=&quot;w-4 h-4 sm:w-5 sm:h-5 text-white&quot;
+              fill=&quot;none&quot;
+              viewBox=&quot;0 0 24 24&quot;
+              stroke=&quot;currentColor&quot;
+            &gt;
+              &lt;path
+                strokeLinecap=&quot;round&quot;
+                strokeLinejoin=&quot;round&quot;
+                strokeWidth={2}
+                d=&quot;M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z&quot;
+              /&gt;
+            &lt;/svg&gt;
+          &lt;/div&gt;
+        &lt;/div&gt;
+      )}
+
+      {/* Message Content */}
+      &lt;div className={clsx(
+        &apos;max-w-[85%] sm:max-w-xs lg:max-w-md xl:max-w-lg&apos;,
+        isUser &amp;&amp; &apos;max-w-[85%] sm:max-w-xs lg:max-w-md&apos;
+      )}&gt;
+        &lt;div className={clsx(
+          &apos;rounded-lg px-3 py-2 sm:px-4 sm:py-3&apos;,
+          isUser
+            ? &apos;bg-blue-500 text-white ml-auto&apos;
+            : &apos;bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-700&apos;
+        )}&gt;
+          {/* Message Text */}
+          &lt;div className={clsx(
+            &apos;prose prose-sm max-w-none&apos;,
+            isUser
+              ? &apos;text-white prose-p:text-white prose-strong:text-white prose-li:text-white prose-headings:text-white&apos;
+              : &apos;text-gray-900 prose-p:text-gray-900 prose-li:text-gray-900 prose-strong:text-black prose-headings:text-black dark:text-gray-100 dark:prose-p:text-gray-200 dark:prose-li:text-gray-200 dark:prose-strong:text-white dark:prose-headings:text-white&apos;
+          )}&gt;
+            &lt;ReactMarkdown
+              remarkPlugins={[remarkGfm]}
+              rehypePlugins={[rehypeHighlight]}
+              components={{
+                // Custom strong component to override any conflicting styles
+                strong: ({ node, className, children, ...props }: any) =&gt; (
+                  &lt;strong
+                    className={clsx(
+                      &quot;font-bold&quot;,
+                      isUser ? &quot;!text-white&quot; : &quot;!text-black dark:!text-white&quot;,
+                      className
+                    )}
+                    {...props}
+                  &gt;
+                    {children}
+                  &lt;/strong&gt;
+                ),
+                code: ({ node, className, children, ...props }: any) =&gt; {
+                  const match = /language-(\w+)/.exec(className || &apos;&apos;);
+                  return !props.inline &amp;&amp; match ? (
+                    &lt;pre className={className}&gt;
+                      &lt;code className={className} {...props}&gt;
+                        {children}
+                      &lt;/code&gt;
+                    &lt;/pre&gt;
+                  ) : (
+                    &lt;code className={className} {...props}&gt;
+                      {children}
+                    &lt;/code&gt;
+                  );
+                },
+                a: ({ href, children }) =&gt; (
+                  &lt;a
+                    href={href}
+                    target=&quot;_blank&quot;
+                    rel=&quot;noopener noreferrer&quot;
+                    className=&quot;text-blue-500 hover:text-blue-600 underline&quot;
+                  &gt;
+                    {children}
+                  &lt;/a&gt;
+                ),
+                ul: ({ node, className, children, ...props }) =&gt; (
+                  &lt;ul
+                    className={clsx(&quot;pl-6 my-2 space-y-1 list-outside&quot;, className)}
+                    {...props}
+                  &gt;
+                    {children}
+                  &lt;/ul&gt;
+                ),
+                li: ({ node, className, children, ...props }) =&gt; (
+                  &lt;li
+                    className={clsx(&quot;pl-1 marker:text-gray-500 dark:marker:text-gray-400&quot;, className)}
+                    {...props}
+                  &gt;
+                    {children}
+                  &lt;/li&gt;
+                ),
+                span: ({ node, className, children, ...props }: any) =&gt; {
+                  const text = typeof children === &apos;string&apos; ? children : &apos;&apos;;
+                  const citationMatch = text.match(/^\[(\d+)\]$/);
+                  
+                  if (citationMatch &amp;&amp; !isUser) {
+                    const citationNum = parseInt(citationMatch[1]);
+                    return (
+                      &lt;span
+                        className={`citation-ref ${className || &apos;&apos;}`}
+                        title={`Citation ${citationNum}`}
+                        {...props}
+                      &gt;
+                        {citationNum}
+                      &lt;/span&gt;
+                    );
+                  }
+                  
+                  return (
+                    &lt;span className={className} {...props}&gt;
+                      {children}
+                    &lt;/span&gt;
+                  );
+                },
+              }}
+            &gt;
+              {processedContent}
+            &lt;/ReactMarkdown&gt;
+            
+            {isStreaming &amp;&amp; (
+              &lt;span className=&quot;inline-block w-2 h-4 bg-gray-400 dark:bg-gray-600 animate-pulse ml-1&quot; /&gt;
+            )}
+          &lt;/div&gt;
+
+          {/* Citations */}
+          {message.citations &amp;&amp; message.citations.length &gt; 0 &amp;&amp; !isUser &amp;&amp; (
+            &lt;div className=&quot;mt-3 pt-3 border-t border-gray-200 dark:border-gray-700&quot;&gt;
+              &lt;CitationPanel citations={message.citations} /&gt;
+            &lt;/div&gt;
+          )}
+        &lt;/div&gt;
+
+        {/* Timestamp */}
+        &lt;div className={clsx(
+          &apos;text-xs text-gray-500 dark:text-gray-400 mt-1&apos;,
+          isUser ? &apos;text-right&apos; : &apos;text-left&apos;
+        )}&gt;
+          {formatTime(message.timestamp || new Date())}
+        &lt;/div&gt;
+      &lt;/div&gt;
+
+      {/* User Avatar */}
+      {isUser &amp;&amp; (
+        &lt;div className=&quot;flex-shrink-0&quot;&gt;
+          &lt;div className=&quot;w-7 h-7 sm:w-8 sm:h-8 bg-gray-500 rounded-full flex items-center justify-center&quot;&gt;
+            &lt;svg
+              className=&quot;w-4 h-4 sm:w-5 sm:h-5 text-white&quot;
+              fill=&quot;none&quot;
+              viewBox=&quot;0 0 24 24&quot;
+              stroke=&quot;currentColor&quot;
+            &gt;
+              &lt;path
+                strokeLinecap=&quot;round&quot;
+                strokeLinejoin=&quot;round&quot;
+                strokeWidth={2}
+                d=&quot;M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z&quot;
+              /&gt;
+            &lt;/svg&gt;
+          &lt;/div&gt;
+        &lt;/div&gt;
+      )}
+    &lt;/div&gt;
+  );
+});
+
+// Display name for debugging
+MessageBubble.displayName = &apos;MessageBubble&apos;;
+
+// Streaming message bubble component
+export const StreamingMessageBubble: React.FC&lt;{
+  content: string;
+  citations?: any[];
+  className?: string;
+}&gt; = ({ content, citations, className }) =&gt; {
+  // Use useMemo to ensure the object reference remains stable unless content changes
+  const streamingMessage = useMemo&lt;Message&gt;(() =&gt; ({
+    id: &apos;streaming&apos;,
+    sessionId: &apos;&apos;,
+    content,
+    role: MessageSender.ASSISTANT,
+    timestamp: new Date(),
+    citations,
+  }), [content, citations]);
+
+  return (
+    &lt;MessageBubble
+      message={streamingMessage}
+      isStreaming={true}
+      className={className}
+    /&gt;
+  );
+};</file><file path="src/services/rag/chatPipeline.ts">import { getIndexedDBServices } from &apos;../indexedDB&apos;;
 import { chatService, embeddingService } from &apos;../gemini&apos;;
 import { vectorSearchService } from &apos;./vectorSearch&apos;;
 import { documentProcessor } from &apos;./documentProcessor&apos;;
@@ -19650,6 +19659,12 @@ const nextConfig = {
   eslint: {
     ignoreDuringBuilds: false,
   },
+  // START NEW CODE
+  compiler: {
+    // Removes console.log in production, keeps console.error and console.warn
+    removeConsole: process.env.NODE_ENV === &quot;production&quot; ? { exclude: [&apos;error&apos;, &apos;warn&apos;] } : false,
+  },
+  // END NEW CODE
 
   webpack: (config, { dev, isServer }) =&gt; {
     // Enable WebAssembly support
@@ -19780,10 +19795,16 @@ export default function SessionPage() {
   useEffect(() =&gt; {
     if (typeof window !== &apos;undefined&apos; &amp;&amp; sessionId) {
       setCurrentSessionId(sessionId);
-      loadDocuments(sessionId);
       loadMessages(sessionId);
     }
-  }, [sessionId, setCurrentSessionId, loadDocuments, loadMessages]);
+  }, [sessionId, setCurrentSessionId, loadMessages]);
+
+  // NEW: Lazy load documents when tab changes
+  useEffect(() =&gt; {
+    if (activeTab === &apos;documents&apos; &amp;&amp; sessionId) {
+      loadDocuments(sessionId);
+    }
+  }, [activeTab, sessionId, loadDocuments]);
 
   // Redirect if session not found (client-side only)
   useEffect(() =&gt; {
@@ -19936,7 +19957,7 @@ export default function SessionPage() {
               &lt;div className=&quot;flex flex-col flex-1 min-h-0&quot;&gt;
                 {/* This wrapper grows to fill all available space */}
                 &lt;div className=&quot;flex-1 flex items-center justify-center&quot;&gt;
-                  {documents.length === 0 ? (
+                  {(currentSession?.documentCount || 0) === 0 ? (
                     &lt;EmptyState
                       title=&quot;No books added, Add books to chat 🥳&quot;
                       description=&quot;&quot;
@@ -20001,11 +20022,11 @@ export default function SessionPage() {
                 &lt;div className=&quot;flex-shrink-0 mt-4 max-w-4xl mx-auto w-full&quot;&gt;
                   &lt;MessageInput
                     sessionId={sessionId}
-                    disabled={isStreaming || !settings?.geminiApiKey || documents.length === 0}
+                    disabled={isStreaming || !settings?.geminiApiKey || (currentSession?.documentCount || 0) === 0}
                     placeholder={
                       !settings?.geminiApiKey
                         ? &apos;Please configure your API key in settings&apos;
-                        : documents.length === 0
+                        : (currentSession?.documentCount || 0) === 0
                         ? &apos;Please add a book FIRST to chat&apos;
                         : &apos;Ask a question about your documents...&apos;
                     }
@@ -20049,11 +20070,11 @@ export default function SessionPage() {
                 &lt;div className=&quot;flex-shrink-0 mt-4 max-w-4xl mx-auto w-full&quot;&gt;
                   &lt;MessageInput
                     sessionId={sessionId}
-                    disabled={isStreaming || !settings?.geminiApiKey || documents.length === 0}
+                    disabled={isStreaming || !settings?.geminiApiKey || (currentSession?.documentCount || 0) === 0}
                     placeholder={
                       !settings?.geminiApiKey
                         ? &apos;Please configure your API key in settings&apos;
-                        : documents.length === 0
+                        : (currentSession?.documentCount || 0) === 0
                         ? &apos;Please add a book FIRST to chat&apos;
                         : &apos;Ask a question about your documents...&apos;
                     }

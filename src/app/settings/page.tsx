@@ -400,7 +400,7 @@ export default function SettingsPage() {
                   <div className="mt-2 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
                     <div className="relative w-full" style={{ paddingBottom: '177.78%' }}>
                       <iframe
-                        src="https://www.youtube.com/embed/enYGfYGLu6k?rel=0&modestbranding=1&playsinline=1&controls=1"
+                        src="https://youtube.com/embed/S99m2suega0?rel=0&modestbranding=1&playsinline=1&controls=1"
                         title="How to get Gemini API Key"
                         className="absolute top-0 left-0 w-full h-full rounded-lg"
                         frameBorder="0"

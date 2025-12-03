@@ -208,7 +208,6 @@ export const useSessionStore = create<SessionStore>()(
       {
         name: 'session-store',
         partialize: (state) => ({
-          sessions: state.sessions,
           currentSessionId: state.currentSessionId,
           userId: state.userId,
         }),

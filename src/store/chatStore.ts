@@ -226,9 +226,7 @@ export const useChatStore = create<ChatStore>()(
       }),
       {
         name: 'chat-store',
-        partialize: (state) => ({
-          messages: state.messages,
-        }),
+        partialize: (state) => ({}), // Don't persist chat messages to localStorage (too heavy)
       }
     )
   )

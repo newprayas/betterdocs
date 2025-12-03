@@ -76,10 +76,16 @@ export default function SessionPage() {
   useEffect(() => {
     if (typeof window !== 'undefined' && sessionId) {
       setCurrentSessionId(sessionId);
-      loadDocuments(sessionId);
       loadMessages(sessionId);
     }
-  }, [sessionId, setCurrentSessionId, loadDocuments, loadMessages]);
+  }, [sessionId, setCurrentSessionId, loadMessages]);
+
+  // NEW: Lazy load documents when tab changes
+  useEffect(() => {
+    if (activeTab === 'documents' && sessionId) {
+      loadDocuments(sessionId);
+    }
+  }, [activeTab, sessionId, loadDocuments]);
 
   // Redirect if session not found (client-side only)
   useEffect(() => {
@@ -232,7 +238,7 @@ export default function SessionPage() {
               <div className="flex flex-col flex-1 min-h-0">
                 {/* This wrapper grows to fill all available space */}
                 <div className="flex-1 flex items-center justify-center">
-                  {documents.length === 0 ? (
+                  {(currentSession?.documentCount || 0) === 0 ? (
                     <EmptyState
                       title="No books added, Add books to chat 🥳"
                       description=""
@@ -297,11 +303,11 @@ export default function SessionPage() {
                 <div className="flex-shrink-0 mt-4 max-w-4xl mx-auto w-full">
                   <MessageInput
                     sessionId={sessionId}
-                    disabled={isStreaming || !settings?.geminiApiKey || documents.length === 0}
+                    disabled={isStreaming || !settings?.geminiApiKey || (currentSession?.documentCount || 0) === 0}
                     placeholder={
                       !settings?.geminiApiKey
                         ? 'Please configure your API key in settings'
-                        : documents.length === 0
+                        : (currentSession?.documentCount || 0) === 0
                         ? 'Please add a book FIRST to chat'
                         : 'Ask a question about your documents...'
                     }
@@ -345,11 +351,11 @@ export default function SessionPage() {
                 <div className="flex-shrink-0 mt-4 max-w-4xl mx-auto w-full">
                   <MessageInput
                     sessionId={sessionId}
-                    disabled={isStreaming || !settings?.geminiApiKey || documents.length === 0}
+                    disabled={isStreaming || !settings?.geminiApiKey || (currentSession?.documentCount || 0) === 0}
                     placeholder={
                       !settings?.geminiApiKey
                         ? 'Please configure your API key in settings'
-                        : documents.length === 0
+                        : (currentSession?.documentCount || 0) === 0
                         ? 'Please add a book FIRST to chat'
                         : 'Ask a question about your documents...'
                     }
