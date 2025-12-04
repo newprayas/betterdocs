@@ -27,15 +27,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   const handleCreateSession = async () => {
     const sessionName = `Chat ${sessions.length + 1}`;
-    const newSession = await createSession({
+    await createSession({
       name: sessionName,
       description: 'New chat session',
     });
-
-    if (newSession) {
-      router.push(`/session/${newSession.id}`);
-      onClose();
-    }
   };
 
   const handleDeleteSession = async (sessionId: string, event: React.MouseEvent) => {
