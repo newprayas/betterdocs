@@ -43,9 +43,8 @@ export const CreateSessionDialog: React.FC<CreateSessionDialogProps> = ({
 
       if (onCreate) {
         onCreate(newSession);
-      } else {
-        router.push(`/session/${newSession.id}`);
       }
+      // Session created - no auto-navigation
 
       // Reset form
       setName('');

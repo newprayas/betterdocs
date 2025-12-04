@@ -68,11 +68,11 @@ export const SessionList: React.FC<SessionListProps> = ({
     const sessionName = prompt('Enter session name:', 'New Chat');
     if (sessionName && sessionName.trim()) {
       try {
-        const newSession = await createSession({
+        await createSession({
           name: sessionName.trim(),
           description: '',
         });
-        router.push(`/session/${newSession.id}`);
+        // Session created - no auto-navigation
       } catch (error) {
         console.error('Failed to create session:', error);
       }
@@ -243,11 +243,11 @@ export const SessionListSidebar: React.FC<{
     const sessionName = prompt('Enter session name:', 'New Chat');
     if (sessionName && sessionName.trim()) {
       try {
-        const newSession = await createSession({
+        await createSession({
           name: sessionName.trim(),
           description: '',
         });
-        router.push(`/session/${newSession.id}`);
+        // Session created - no auto-navigation
       } catch (error) {
         console.error('Failed to create session:', error);
       }

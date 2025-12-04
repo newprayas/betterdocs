@@ -33,11 +33,9 @@ export default function HomePage() {
 
   const handleCreateSession = async (data: { name: string; description?: string; systemPrompt?: string }) => {
     try {
-      const session = await createSession(data);
+      await createSession(data);
       setIsCreateDialogOpen(false);
-
-      // Navigate to the new session
-      router.push(`/session/${session.id}`);
+      // Session created - no auto-navigation
     } catch (error) {
       console.error('Failed to create session:', error);
     }
@@ -127,9 +125,6 @@ export default function HomePage() {
       <CreateSessionDialog
         isOpen={isCreateDialogOpen}
         onClose={() => setIsCreateDialogOpen(false)}
-        onCreate={(session) => {
-          router.push(`/session/${session.id}`);
-        }}
       />
     </div>
   );
