@@ -79,16 +79,16 @@ export default function SessionPage() {
   // Load session data on mount (client-side only)
   useEffect(() => {
     let isMounted = true;
-    
+
     const loadSessionData = async () => {
       if (typeof window !== 'undefined' && sessionId) {
         // Set the current session ID immediately
         setCurrentSessionId(sessionId);
-        
+
         try {
           // Await the loadMessages call to ensure we don't show empty state before knowing for sure
           await loadMessages(sessionId);
-          
+
           // Only set isInitialLoad to false after the initial fetch is complete
           if (isMounted) {
             setIsInitialLoad(false);
@@ -101,9 +101,9 @@ export default function SessionPage() {
         }
       }
     };
-    
+
     loadSessionData();
-    
+
     // Cleanup function to prevent state updates on unmounted component
     return () => {
       isMounted = false;
@@ -338,8 +338,8 @@ export default function SessionPage() {
                       !settings?.geminiApiKey
                         ? 'Please configure your API key in settings'
                         : !hasDocuments
-                        ? 'Please add a book FIRST to chat'
-                        : 'Ask a question about your documents...'
+                          ? 'Please add a book FIRST to chat'
+                          : 'Ask a question about your documents...'
                     }
                     value={messageInput}
                     onChange={setMessageInput}
@@ -379,6 +379,18 @@ export default function SessionPage() {
 
                 {/* Message Input */}
                 <div className="flex-shrink-0 mt-4 max-w-4xl mx-auto w-full">
+                  {!hasDocuments && (
+                    <div className="mb-4 flex justify-center">
+                      <Button
+                        onClick={() => setActiveTab('documents')}
+                        variant="primary"
+                        size="md"
+                        className="shadow-lg"
+                      >
+                        📚 Add Books to Chat
+                      </Button>
+                    </div>
+                  )}
                   <MessageInput
                     sessionId={sessionId}
                     disabled={isStreaming || !settings?.geminiApiKey || !hasDocuments}
@@ -386,8 +398,8 @@ export default function SessionPage() {
                       !settings?.geminiApiKey
                         ? 'Please configure your API key in settings'
                         : !hasDocuments
-                        ? 'Please add a book FIRST to chat'
-                        : 'Ask a question about your documents...'
+                          ? 'Please add a book FIRST to chat'
+                          : 'Ask a question about your documents...'
                     }
                     value={messageInput}
                     onChange={setMessageInput}
