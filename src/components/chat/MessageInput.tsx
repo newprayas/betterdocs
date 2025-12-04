@@ -27,11 +27,11 @@ export const MessageInput: React.FC<MessageInputProps> = ({
   const [isComposing, setIsComposing] = useState(false);
   const internalTextareaRef = useRef<HTMLTextAreaElement>(null);
   const { sendMessage, isStreaming } = useChat();
-  
+
   // Use external value if provided, otherwise use internal state
   const message = value !== undefined ? value : internalMessage;
   const textareaRef = inputRef || internalTextareaRef;
-  
+
   // Handle message changes
   const handleMessageChange = (newValue: string) => {
     if (onChange) {
@@ -142,7 +142,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
                 touch-manipulation
               `}
             />
-            
+
             {/* Character count for long messages */}
             {message.length > 500 && (
               <div className="absolute bottom-1 sm:bottom-2 right-1 sm:right-2 text-xs text-gray-400 dark:text-gray-500">
@@ -156,7 +156,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
             onClick={handleSend}
             disabled={isDisabled}
             loading={isStreaming}
-            className="self-end px-3 sm:px-4"
+            className="self-center px-3 sm:px-4"
           >
             <svg
               className="w-4 h-4"
