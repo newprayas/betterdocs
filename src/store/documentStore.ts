@@ -32,30 +32,29 @@ export const useDocumentStore = create<DocumentStore>()(
         },
 
         clearDocuments: () => {
+          console.log('🧹 [DocumentStore] Clearing documents (Session switch/cleanup)');
+          const { userId } = get();
           userIdLogger.logStoreUpdate('DocumentStore', null, 'clearDocuments');
-          set({ documents: [], progressMap: {}, error: null, userId: null });
+          // Preserve userId when clearing documents for session switch
+          set({ documents: [], progressMap: {}, error: null, userId });
         },
 
         loadDocuments: async (sessionId: string) => {
           // Only run on client side
           if (typeof window === 'undefined') {
-            console.warn('[DOCUMENT STORE] Skipping loadDocuments during SSR');
             return;
           }
-          
+
           const { userId } = get();
-          
+
           try {
-            // console.log('🔍 DOCUMENT STORE DEBUG: Starting loadDocuments for session:', sessionId);
             const documentService = getDocumentService();
             if (!documentService) {
-              console.error('🔍 DOCUMENT STORE DEBUG: Document service not available');
               throw new Error('Document service not available');
             }
 
             if (!userId) {
               const errorMsg = 'User ID not found. Please log in.';
-              console.error('🔍 DOCUMENT STORE DEBUG: User ID not found');
               userIdLogger.logError('DocumentStore.loadDocuments', errorMsg, null);
               set({ error: errorMsg });
               return;
@@ -63,58 +62,16 @@ export const useDocumentStore = create<DocumentStore>()(
 
             const operationId = userIdLogger.logOperationStart('DocumentStore', 'loadDocuments', userId);
 
-            // console.log('🔍 DOCUMENT STORE DEBUG: Calling getDocumentsBySession');
-            // console.log('🔍 DUPLICATE DEBUG: Loading documents from IndexedDB at:', new Date().toISOString());
             userIdLogger.logServiceCall('DocumentStore', 'documentService', 'getDocumentsBySession', userId);
             const documents = await documentService.getDocumentsBySession(sessionId, userId);
 
-            // console.log('🔍 DOCUMENT STORE DEBUG: Documents retrieved from database:', {
-            //   sessionId,
-            //   count: documents.length,
-            //   documents: documents.map(doc => ({
-            //     id: doc.id,
-            //     filename: doc.filename,
-            //     enabled: doc.enabled,
-            //     status: doc.status,
-            //     processedAt: doc.processedAt
-            //   }))
-            // });
-
-            // console.log('🔍 DOCUMENT STORE DEBUG: About to update store state');
-            // console.log('🔍 DUPLICATE DEBUG: Updating document store state at:', new Date().toISOString());
-            
             userIdLogger.logOperationEnd('DocumentStore', operationId, userId);
             set({ documents });
 
-            // console.log('🔍 DOCUMENT STORE DEBUG: Store state updated, verifying...');
-            const currentState = get();
-            // console.log('🔍 DUPLICATE DEBUG: Document store state updated at:', new Date().toISOString());
-            // console.log('🔍 DOCUMENT STORE DEBUG: Current store state:', {
-            //   documentCount: currentState.documents.length,
-            //   documents: currentState.documents.map(doc => ({
-            //     id: doc.id,
-            //     filename: doc.filename,
-            //     enabled: doc.enabled,
-            //     status: doc.status,
-            //     processedAt: doc.processedAt
-            //   }))
-            // });
-
-            console.log('[DOCUMENT STORE] Loaded documents:', {
-              sessionId,
-              count: documents.length,
-              documents: documents.map(doc => ({
-                id: doc.id,
-                filename: doc.filename,
-                enabled: doc.enabled,
-                status: doc.status,
-                processedAt: doc.processedAt
-              }))
-            });
+            console.log(`📚 [DocumentStore] Loaded ${documents.length} documents for session ${sessionId}`);
           } catch (error) {
             userIdLogger.logError('DocumentStore.loadDocuments', error instanceof Error ? error : String(error), userId);
-            console.error('🔍 DOCUMENT STORE DEBUG: Failed to load documents:', error);
-            console.error('[DOCUMENT STORE] Failed to load documents:', error);
+            console.error('[DocumentStore] Failed to load documents:', error);
             set({
               error: error instanceof Error ? error.message : 'Failed to load documents',
             });
@@ -127,7 +84,7 @@ export const useDocumentStore = create<DocumentStore>()(
             console.warn('[DOCUMENT STORE] Skipping uploadDocuments during SSR');
             throw new Error('Cannot upload documents during SSR');
           }
-          
+
           const { userId } = get();
           if (!userId) {
             const errorMsg = 'User ID not found. Please log in.';
@@ -210,7 +167,7 @@ export const useDocumentStore = create<DocumentStore>()(
               set({ error: errorMsg });
               return;
             }
-            
+
             const operationId = userIdLogger.logOperationStart('DocumentStore', 'updateDocument', userId);
             userIdLogger.logServiceCall('DocumentStore', 'documentService', 'updateDocument', userId);
             await documentService.updateDocument(id, data, userId);
@@ -248,7 +205,7 @@ export const useDocumentStore = create<DocumentStore>()(
               set({ error: errorMsg });
               return;
             }
-            
+
             const operationId = userIdLogger.logOperationStart('DocumentStore', 'toggleDocumentEnabled', userId);
             const newEnabledStatus = !currentDoc.enabled;
             userIdLogger.logServiceCall('DocumentStore', 'documentService', 'toggleDocumentEnabled', userId);
@@ -270,7 +227,7 @@ export const useDocumentStore = create<DocumentStore>()(
         deleteDocument: async (id: string) => {
           try {
             console.log('🗑️ DocumentStore: Starting deleteDocument with ID:', id);
-            
+
             const documentService = getDocumentService();
             if (!documentService) {
               console.error('❌ DocumentStore: Document service not available');
@@ -285,10 +242,10 @@ export const useDocumentStore = create<DocumentStore>()(
               set({ error: errorMsg });
               return;
             }
-            
+
             const operationId = userIdLogger.logOperationStart('DocumentStore', 'deleteDocument', userId);
             console.log('🗑️ DocumentStore: About to call documentService.deleteDocument');
-            
+
             // First, perform the IndexedDB deletion
             userIdLogger.logServiceCall('DocumentStore', 'documentService', 'deleteDocument', userId);
             await documentService.deleteDocument(id, userId);

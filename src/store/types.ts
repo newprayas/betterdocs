@@ -27,6 +27,7 @@ export interface SessionStore {
 export interface ChatStore {
   // State
   messages: Message[];
+  messageCache: Record<string, Message[]>;
   isStreaming: boolean;
   streamingContent: string;
   streamingCitations: any[];
@@ -38,6 +39,7 @@ export interface ChatStore {
 
   // Actions
   loadMessages: (sessionId: string) => Promise<void>;
+  preloadMessages: (sessionIds: string[]) => Promise<void>;
   sendMessage: (sessionId: string, content: string) => Promise<void>;
   clearHistory: (sessionId: string) => Promise<void>;
   setStreamingState: (isStreaming: boolean, content?: string, citations?: any[]) => void;

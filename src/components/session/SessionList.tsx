@@ -5,7 +5,7 @@ import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
 import { Loading } from '../ui/Loading';
 import { EmptyStates } from '../common/EmptyState';
-import { useSessionStore } from '../../store';
+import { useSessionStore, useChatStore } from '../../store';
 import { useRouter } from 'next/navigation';
 import clsx from 'clsx';
 
@@ -24,7 +24,22 @@ export const SessionList: React.FC<SessionListProps> = ({
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const { sessions, isLoading, createSession } = useSessionStore();
+  const { preloadMessages } = useChatStore();
   const router = useRouter();
+
+  // Preload messages for top 5 sessions
+  useEffect(() => {
+    if (sessions.length > 0) {
+      // Sessions are already sorted by updatedAt in sessionStore/service
+      const topSessionIds = sessions.slice(0, 5).map(s => s.id);
+      preloadMessages(topSessionIds);
+
+      // Prefetch routes for instant navigation
+      topSessionIds.forEach(id => {
+        router.prefetch(`/session/${id}`);
+      });
+    }
+  }, [sessions, preloadMessages, router]);
 
   // Filter sessions based on search query
   const filteredSessions = sessions.filter(session =>
@@ -33,6 +48,15 @@ export const SessionList: React.FC<SessionListProps> = ({
   );
 
   const handleSessionClick = (session: Session) => {
+    // Track click time for performance monitoring
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem('session_click_time', JSON.stringify({
+        sessionId: session.id,
+        timestamp: performance.now()
+      }));
+      console.log(`⏱️ [Performance] Session clicked: ${session.id}`);
+    }
+
     if (onSessionSelect) {
       onSessionSelect(session);
     } else {

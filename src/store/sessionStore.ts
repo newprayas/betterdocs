@@ -33,9 +33,9 @@ export const useSessionStore = create<SessionStore>()(
             console.warn('[SESSION STORE] Skipping loadSessions during SSR');
             return;
           }
-          
+
           const operationId = userIdLogger.logOperationStart('SessionStore', 'loadSessions', userId);
-          
+
           set({ isLoading: true, error: null, userId });
           try {
             userIdLogger.logServiceCall('SessionStore', 'sessionService', 'getSessions', userId);
@@ -44,7 +44,7 @@ export const useSessionStore = create<SessionStore>()(
               throw new Error('Session service not available');
             }
             const sessions = await sessionService.getSessions(userId);
-            
+
             userIdLogger.logOperationEnd('SessionStore', operationId, userId);
             set({ sessions, isLoading: false });
           } catch (error) {
@@ -62,7 +62,7 @@ export const useSessionStore = create<SessionStore>()(
             console.warn('[SESSION STORE] Skipping createSession during SSR');
             throw new Error('Cannot create session during SSR');
           }
-          
+
           const { userId } = get();
           if (!userId) {
             const errorMsg = 'User ID not found. Please log in.';
@@ -159,23 +159,46 @@ export const useSessionStore = create<SessionStore>()(
 
         setCurrentSessionId: async (id: string | null) => {
           if (id) {
+            // Optimistic update: Try to find session in current list first
+            const { sessions, userId } = get();
+            const cachedSession = sessions.find(s => s.id === id);
+
+            if (cachedSession) {
+              console.log(`⚡️ [SessionStore] Optimistic cache hit for session ${id}`);
+              set({
+                currentSession: cachedSession,
+                currentSessionId: id
+              });
+            } else {
+              console.log(`⚠️ [SessionStore] Cache miss for session ${id} in list of ${sessions.length}`);
+            }
+
             try {
               const sessionService = getSessionService();
               if (!sessionService) {
                 throw new Error('Session service not available');
               }
-              const { userId } = get();
+
+              const startTime = performance.now();
               const session = await sessionService.getSession(id, userId || undefined);
+              console.log(`⏱️ [SessionStore] DB fetch for session ${id} took ${(performance.now() - startTime).toFixed(2)}ms`);
+
               set({
                 currentSession: session,
                 currentSessionId: id
               });
             } catch (error) {
-              set({
-                currentSession: null,
-                currentSessionId: null,
-                error: error instanceof Error ? error.message : 'Failed to load session'
-              });
+              // If we failed to load and didn't have a cached version, clear it
+              if (!cachedSession) {
+                set({
+                  currentSession: null,
+                  currentSessionId: null,
+                  error: error instanceof Error ? error.message : 'Failed to load session'
+                });
+              } else {
+                // If we had a cached version but update failed, just log it
+                console.error('Failed to refresh session data:', error);
+              }
             }
           } else {
             set({

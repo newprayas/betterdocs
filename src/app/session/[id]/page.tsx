@@ -80,23 +80,43 @@ export default function SessionPage() {
   useEffect(() => {
     let isMounted = true;
 
+    // Clear documents immediately when mounting a new session page
+    // This prevents "ghost documents" from previous sessions from showing up
+    // or incorrectly unlocking the chat
+    useDocumentStore.getState().clearDocuments();
+
     const loadSessionData = async () => {
       if (typeof window !== 'undefined' && sessionId) {
-        // Set the current session ID immediately
-        setCurrentSessionId(sessionId);
+        // Set the current session ID immediately (this will now be optimistic if cached)
+        // We don't await this because we want to render immediately with the cached data
+        // The store handles the DB fetch in the background
+        setCurrentSessionId(sessionId).catch(error => {
+          console.error('Failed to set current session:', error);
+        });
 
-        try {
-          // Await the loadMessages call to ensure we don't show empty state before knowing for sure
-          await loadMessages(sessionId);
+        // Load messages in background - don't await for UI render
+        loadMessages(sessionId).catch(error => {
+          console.error('Failed to load messages:', error);
+        });
 
-          // Only set isInitialLoad to false after the initial fetch is complete
-          if (isMounted) {
-            setIsInitialLoad(false);
-          }
-        } catch (error) {
-          console.error('Failed to load session data:', error);
-          if (isMounted) {
-            setIsInitialLoad(false);
+        // We can show the UI immediately if we have the session
+        if (isMounted) {
+          setIsInitialLoad(false);
+
+          // Log performance metric if available
+          try {
+            const clickDataStr = sessionStorage.getItem('session_click_time');
+            if (clickDataStr) {
+              const clickData = JSON.parse(clickDataStr);
+              if (clickData.sessionId === sessionId) {
+                const duration = performance.now() - clickData.timestamp;
+                console.log(`⏱️ [Performance] Session ${sessionId} opened in ${duration.toFixed(2)}ms`);
+                // Clear it so we don't log it again on refresh
+                sessionStorage.removeItem('session_click_time');
+              }
+            }
+          } catch (e) {
+            // Ignore performance logging errors
           }
         }
       }
@@ -107,6 +127,8 @@ export default function SessionPage() {
     // Cleanup function to prevent state updates on unmounted component
     return () => {
       isMounted = false;
+      // Also clear documents on unmount to be safe
+      useDocumentStore.getState().clearDocuments();
     };
   }, [sessionId, setCurrentSessionId, loadMessages]);
 
@@ -119,10 +141,12 @@ export default function SessionPage() {
 
   // Redirect if session not found (client-side only)
   useEffect(() => {
-    if (typeof window !== 'undefined' && !sessionLoading && !currentSession) {
-      router.push('/');
+    if (typeof window !== 'undefined' && !sessionLoading && !currentSession && !isInitialLoad) {
+      // Only redirect if we're done loading and still have no session
+      // router.push('/'); 
+      // Commented out to prevent accidental redirects during loading
     }
-  }, [currentSession, sessionLoading, router]);
+  }, [currentSession, sessionLoading, router, isInitialLoad]);
 
   const handleSendMessage = async (content: string) => {
     if (!sessionId) return;
@@ -172,7 +196,7 @@ export default function SessionPage() {
   };
 
 
-  if (isInitialLoad) {
+  if (isInitialLoad && !currentSession) {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
         <Header />

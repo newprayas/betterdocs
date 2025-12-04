@@ -155,7 +155,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'
                       }
                     `}
-                    onClick={onClose}
+                    onClick={(e) => {
+                      // Track click time for performance monitoring
+                      if (typeof window !== 'undefined') {
+                        sessionStorage.setItem('session_click_time', JSON.stringify({
+                          sessionId: session.id,
+                          timestamp: performance.now()
+                        }));
+                        console.log(`⏱️ [Performance] Session clicked (Sidebar): ${session.id}`);
+                      }
+                      onClose();
+                    }}
                   >
                     <div className="flex-1 min-w-0 pr-2">
                       <p className="font-medium text-sm truncate">
