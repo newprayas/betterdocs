@@ -1,4 +1,5 @@
 import { db } from './db';
+import Dexie from 'dexie';
 import type { Message, MessageCreate } from '@/types';
 import { ensureDate } from '@/utils/date';
 import { userIdLogger } from '@/utils/userIdDebugLogger';
@@ -65,9 +66,14 @@ export class MessageService {
   }
 
   /**
-   * Get all messages for a session ordered by createdAt
+   * Get messages for a session ordered by createdAt with pagination
    */
-  async getMessagesBySession(sessionId: string, userId?: string): Promise<Message[]> {
+  async getMessagesBySession(
+    sessionId: string,
+    userId?: string,
+    limit: number = 50,
+    offset: number = 0
+  ): Promise<Message[]> {
     userIdLogger.logServiceCall('messageService', 'getMessagesBySession', 'read', userId || null);
     
     if (!db) return [];
@@ -86,13 +92,25 @@ export class MessageService {
       }
     }
     
-    const messages = await db.messages
-      .where('sessionId')
-      .equals(sessionId)
-      .sortBy('timestamp');
+    // Use compound index for efficient querying
+    let collection = db.messages
+      .where('[sessionId+timestamp]')
+      .between([sessionId, Dexie.minKey], [sessionId, Dexie.maxKey])
+      .reverse(); // Get newest first
+    
+    // Apply offset if specified
+    if (offset > 0) {
+      collection = collection.offset(offset);
+    }
+    
+    // Apply limit and get results
+    const messages = await collection.limit(limit).toArray();
+    
+    // Reverse results back to chronological order
+    const chronologicalMessages = messages.reverse();
     
     // Ensure timestamp is a Date object (handles IndexedDB serialization)
-    const processedMessages = messages.map(message => {
+    const processedMessages = chronologicalMessages.map(message => {
       const processedMessage = {
         ...message,
         timestamp: ensureDate(message.timestamp)

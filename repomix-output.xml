@@ -7600,226 +7600,7 @@ export const useSettings = () =&gt; {
     setLoading: settingsStore.setLoading,
     setError: settingsStore.setError,
   };
-};</file><file path="src/store/sessionStore.ts">import { create } from &apos;zustand&apos;;
-import { devtools, persist } from &apos;zustand/middleware&apos;;
-import type { SessionStore, AppStore } from &apos;./types&apos;;
-import type { Session, SessionCreate, SessionUpdate } from &apos;@/types&apos;;
-import { getIndexedDBServices } from &apos;../services/indexedDB&apos;;
-import { userIdLogger } from &apos;../utils/userIdDebugLogger&apos;;
-
-// Helper function to get services (client-side only)
-const getSessionService = () =&gt; {
-  if (typeof window !== &apos;undefined&apos;) {
-    const services = getIndexedDBServices();
-    return services.sessionService;
-  }
-  return null;
-};
-
-export const useSessionStore = create&lt;SessionStore&gt;()(
-  devtools(
-    persist(
-      (set, get) =&gt; ({
-        // Initial state
-        sessions: [],
-        currentSession: null,
-        currentSessionId: null,
-        isLoading: false,
-        error: null,
-        userId: null,
-
-        // Actions
-        loadSessions: async (userId: string) =&gt; {
-          // Only run on client side
-          if (typeof window === &apos;undefined&apos;) {
-            console.warn(&apos;[SESSION STORE] Skipping loadSessions during SSR&apos;);
-            return;
-          }
-          
-          const operationId = userIdLogger.logOperationStart(&apos;SessionStore&apos;, &apos;loadSessions&apos;, userId);
-          
-          set({ isLoading: true, error: null, userId });
-          try {
-            userIdLogger.logServiceCall(&apos;SessionStore&apos;, &apos;sessionService&apos;, &apos;getSessions&apos;, userId);
-            const sessionService = getSessionService();
-            if (!sessionService) {
-              throw new Error(&apos;Session service not available&apos;);
-            }
-            const sessions = await sessionService.getSessions(userId);
-            
-            userIdLogger.logOperationEnd(&apos;SessionStore&apos;, operationId, userId);
-            set({ sessions, isLoading: false });
-          } catch (error) {
-            userIdLogger.logError(&apos;SessionStore.loadSessions&apos;, error instanceof Error ? error : String(error), userId);
-            set({
-              isLoading: false,
-              error: error instanceof Error ? error.message : &apos;Failed to load sessions&apos;
-            });
-          }
-        },
-
-        createSession: async (data: SessionCreate) =&gt; {
-          // Only run on client side
-          if (typeof window === &apos;undefined&apos;) {
-            console.warn(&apos;[SESSION STORE] Skipping createSession during SSR&apos;);
-            throw new Error(&apos;Cannot create session during SSR&apos;);
-          }
-          
-          const { userId } = get();
-          if (!userId) {
-            const errorMsg = &apos;User ID not found. Please log in.&apos;;
-            userIdLogger.logError(&apos;SessionStore.createSession&apos;, errorMsg, null);
-            set({ error: errorMsg });
-            throw new Error(&apos;User ID not found&apos;);
-          }
-
-          const operationId = userIdLogger.logOperationStart(&apos;SessionStore&apos;, &apos;createSession&apos;, userId);
-
-          set({ isLoading: true, error: null });
-          try {
-            userIdLogger.logServiceCall(&apos;SessionStore&apos;, &apos;sessionService&apos;, &apos;createSession&apos;, userId);
-            const sessionService = getSessionService();
-            if (!sessionService) {
-              throw new Error(&apos;Session service not available&apos;);
-            }
-            const newSession = await sessionService.createSession(data, userId);
-
-            userIdLogger.logOperationEnd(&apos;SessionStore&apos;, operationId, userId);
-            set(state =&gt; ({
-              sessions: [newSession, ...state.sessions],
-              isLoading: false
-            }));
-
-            return newSession;
-          } catch (error) {
-            userIdLogger.logError(&apos;SessionStore.createSession&apos;, error instanceof Error ? error : String(error), userId);
-            set({
-              isLoading: false,
-              error: error instanceof Error ? error.message : &apos;Failed to create session&apos;
-            });
-            throw error;
-          }
-        },
-
-        updateSession: async (id: string, data: SessionUpdate) =&gt; {
-          set({ isLoading: true, error: null });
-          try {
-            const sessionService = getSessionService();
-            if (!sessionService) {
-              throw new Error(&apos;Session service not available&apos;);
-            }
-            await sessionService.updateSession(id, data);
-
-            set(state =&gt; ({
-              sessions: state.sessions.map(session =&gt;
-                session.id === id
-                  ? { ...session, ...data, updatedAt: new Date() }
-                  : session
-              ),
-              currentSession: state.currentSession?.id === id
-                ? { ...state.currentSession, ...data, updatedAt: new Date() }
-                : state.currentSession,
-              isLoading: false,
-            }));
-          } catch (error) {
-            set({
-              isLoading: false,
-              error: error instanceof Error ? error.message : &apos;Failed to update session&apos;
-            });
-          }
-        },
-
-        deleteSession: async (id: string) =&gt; {
-          set({ isLoading: true, error: null });
-          try {
-            const sessionService = getSessionService();
-            if (!sessionService) {
-              throw new Error(&apos;Session service not available&apos;);
-            }
-            await sessionService.deleteSession(id);
-
-            set(state =&gt; ({
-              sessions: state.sessions.filter(session =&gt; session.id !== id),
-              currentSession: state.currentSession?.id === id ? null : state.currentSession,
-              currentSessionId: state.currentSessionId === id ? null : state.currentSessionId,
-              isLoading: false,
-            }));
-          } catch (error) {
-            set({
-              isLoading: false,
-              error: error instanceof Error ? error.message : &apos;Failed to delete session&apos;
-            });
-          }
-        },
-
-        setCurrentSession: (session: Session | null) =&gt; {
-          set({
-            currentSession: session,
-            currentSessionId: session?.id || null
-          });
-        },
-
-        setCurrentSessionId: async (id: string | null) =&gt; {
-          if (id) {
-            try {
-              const sessionService = getSessionService();
-              if (!sessionService) {
-                throw new Error(&apos;Session service not available&apos;);
-              }
-              const { userId } = get();
-              const session = await sessionService.getSession(id, userId || undefined);
-              set({
-                currentSession: session,
-                currentSessionId: id
-              });
-            } catch (error) {
-              set({
-                currentSession: null,
-                currentSessionId: null,
-                error: error instanceof Error ? error.message : &apos;Failed to load session&apos;
-              });
-            }
-          } else {
-            set({
-              currentSession: null,
-              currentSessionId: id
-            });
-          }
-        },
-
-        setError: (error: string | null) =&gt; {
-          set({ error });
-        },
-
-        setUserId: (userId: string | null) =&gt; {
-          userIdLogger.logStoreUpdate(&apos;SessionStore&apos;, userId, &apos;setUserId&apos;);
-          set({ userId });
-        },
-
-        clearSessions: () =&gt; {
-          userIdLogger.logStoreUpdate(&apos;SessionStore&apos;, null, &apos;clearSessions&apos;);
-          set({
-            sessions: [],
-            currentSession: null,
-            currentSessionId: null,
-            userId: null,
-            error: null
-          });
-        },
-      }),
-      {
-        name: &apos;session-store&apos;,
-        partialize: (state) =&gt; ({
-          currentSessionId: state.currentSessionId,
-          userId: state.userId,
-        }),
-      }
-    ),
-    {
-      name: &apos;session-store&apos;,
-    }
-  )
-);</file><file path="src/store/settingsStore.ts">import { create } from &apos;zustand&apos;;
+};</file><file path="src/store/settingsStore.ts">import { create } from &apos;zustand&apos;;
 import { devtools, persist } from &apos;zustand/middleware&apos;;
 import type { SettingsStore } from &apos;./types&apos;;
 import { AppSettings, SettingsUpdate } from &apos;@/types/settings&apos;;
@@ -11603,7 +11384,226 @@ ${response}`;
       .map(cit =&gt; cit.index)
       .filter((index, pos, arr) =&gt; arr.indexOf(index) === pos); // Remove duplicates
   }
-}</file><file path="src/store/types.ts">import type { Session, SessionCreate, SessionUpdate } from &apos;@/types&apos;;
+}</file><file path="src/store/sessionStore.ts">import { create } from &apos;zustand&apos;;
+import { devtools, persist } from &apos;zustand/middleware&apos;;
+import type { SessionStore, AppStore } from &apos;./types&apos;;
+import type { Session, SessionCreate, SessionUpdate } from &apos;@/types&apos;;
+import { getIndexedDBServices } from &apos;../services/indexedDB&apos;;
+import { userIdLogger } from &apos;../utils/userIdDebugLogger&apos;;
+
+// Helper function to get services (client-side only)
+const getSessionService = () =&gt; {
+  if (typeof window !== &apos;undefined&apos;) {
+    const services = getIndexedDBServices();
+    return services.sessionService;
+  }
+  return null;
+};
+
+export const useSessionStore = create&lt;SessionStore&gt;()(
+  devtools(
+    persist(
+      (set, get) =&gt; ({
+        // Initial state
+        sessions: [],
+        currentSession: null,
+        currentSessionId: null,
+        isLoading: false,
+        error: null,
+        userId: null,
+
+        // Actions
+        loadSessions: async (userId: string) =&gt; {
+          // Only run on client side
+          if (typeof window === &apos;undefined&apos;) {
+            console.warn(&apos;[SESSION STORE] Skipping loadSessions during SSR&apos;);
+            return;
+          }
+          
+          const operationId = userIdLogger.logOperationStart(&apos;SessionStore&apos;, &apos;loadSessions&apos;, userId);
+          
+          set({ isLoading: true, error: null, userId });
+          try {
+            userIdLogger.logServiceCall(&apos;SessionStore&apos;, &apos;sessionService&apos;, &apos;getSessions&apos;, userId);
+            const sessionService = getSessionService();
+            if (!sessionService) {
+              throw new Error(&apos;Session service not available&apos;);
+            }
+            const sessions = await sessionService.getSessions(userId);
+            
+            userIdLogger.logOperationEnd(&apos;SessionStore&apos;, operationId, userId);
+            set({ sessions, isLoading: false });
+          } catch (error) {
+            userIdLogger.logError(&apos;SessionStore.loadSessions&apos;, error instanceof Error ? error : String(error), userId);
+            set({
+              isLoading: false,
+              error: error instanceof Error ? error.message : &apos;Failed to load sessions&apos;
+            });
+          }
+        },
+
+        createSession: async (data: SessionCreate) =&gt; {
+          // Only run on client side
+          if (typeof window === &apos;undefined&apos;) {
+            console.warn(&apos;[SESSION STORE] Skipping createSession during SSR&apos;);
+            throw new Error(&apos;Cannot create session during SSR&apos;);
+          }
+          
+          const { userId } = get();
+          if (!userId) {
+            const errorMsg = &apos;User ID not found. Please log in.&apos;;
+            userIdLogger.logError(&apos;SessionStore.createSession&apos;, errorMsg, null);
+            set({ error: errorMsg });
+            throw new Error(&apos;User ID not found&apos;);
+          }
+
+          const operationId = userIdLogger.logOperationStart(&apos;SessionStore&apos;, &apos;createSession&apos;, userId);
+
+          set({ isLoading: true, error: null });
+          try {
+            userIdLogger.logServiceCall(&apos;SessionStore&apos;, &apos;sessionService&apos;, &apos;createSession&apos;, userId);
+            const sessionService = getSessionService();
+            if (!sessionService) {
+              throw new Error(&apos;Session service not available&apos;);
+            }
+            const newSession = await sessionService.createSession(data, userId);
+
+            userIdLogger.logOperationEnd(&apos;SessionStore&apos;, operationId, userId);
+            set(state =&gt; ({
+              sessions: [newSession, ...state.sessions],
+              isLoading: false
+            }));
+
+            return newSession;
+          } catch (error) {
+            userIdLogger.logError(&apos;SessionStore.createSession&apos;, error instanceof Error ? error : String(error), userId);
+            set({
+              isLoading: false,
+              error: error instanceof Error ? error.message : &apos;Failed to create session&apos;
+            });
+            throw error;
+          }
+        },
+
+        updateSession: async (id: string, data: SessionUpdate) =&gt; {
+          set({ isLoading: true, error: null });
+          try {
+            const sessionService = getSessionService();
+            if (!sessionService) {
+              throw new Error(&apos;Session service not available&apos;);
+            }
+            await sessionService.updateSession(id, data);
+
+            set(state =&gt; ({
+              sessions: state.sessions.map(session =&gt;
+                session.id === id
+                  ? { ...session, ...data, updatedAt: new Date() }
+                  : session
+              ),
+              currentSession: state.currentSession?.id === id
+                ? { ...state.currentSession, ...data, updatedAt: new Date() }
+                : state.currentSession,
+              isLoading: false,
+            }));
+          } catch (error) {
+            set({
+              isLoading: false,
+              error: error instanceof Error ? error.message : &apos;Failed to update session&apos;
+            });
+          }
+        },
+
+        deleteSession: async (id: string) =&gt; {
+          set({ isLoading: true, error: null });
+          try {
+            const sessionService = getSessionService();
+            if (!sessionService) {
+              throw new Error(&apos;Session service not available&apos;);
+            }
+            await sessionService.deleteSession(id);
+
+            set(state =&gt; ({
+              sessions: state.sessions.filter(session =&gt; session.id !== id),
+              currentSession: state.currentSession?.id === id ? null : state.currentSession,
+              currentSessionId: state.currentSessionId === id ? null : state.currentSessionId,
+              isLoading: false,
+            }));
+          } catch (error) {
+            set({
+              isLoading: false,
+              error: error instanceof Error ? error.message : &apos;Failed to delete session&apos;
+            });
+          }
+        },
+
+        setCurrentSession: (session: Session | null) =&gt; {
+          set({
+            currentSession: session,
+            currentSessionId: session?.id || null
+          });
+        },
+
+        setCurrentSessionId: async (id: string | null) =&gt; {
+          if (id) {
+            try {
+              const sessionService = getSessionService();
+              if (!sessionService) {
+                throw new Error(&apos;Session service not available&apos;);
+              }
+              const { userId } = get();
+              const session = await sessionService.getSession(id, userId || undefined);
+              set({
+                currentSession: session,
+                currentSessionId: id
+              });
+            } catch (error) {
+              set({
+                currentSession: null,
+                currentSessionId: null,
+                error: error instanceof Error ? error.message : &apos;Failed to load session&apos;
+              });
+            }
+          } else {
+            set({
+              currentSession: null,
+              currentSessionId: id
+            });
+          }
+        },
+
+        setError: (error: string | null) =&gt; {
+          set({ error });
+        },
+
+        setUserId: (userId: string | null) =&gt; {
+          userIdLogger.logStoreUpdate(&apos;SessionStore&apos;, userId, &apos;setUserId&apos;);
+          set({ userId });
+        },
+
+        clearSessions: () =&gt; {
+          userIdLogger.logStoreUpdate(&apos;SessionStore&apos;, null, &apos;clearSessions&apos;);
+          set({
+            sessions: [],
+            currentSession: null,
+            currentSessionId: null,
+            userId: null,
+            error: null
+          });
+        },
+      }),
+      {
+        name: &apos;session-store&apos;,
+        partialize: (state) =&gt; ({
+          currentSessionId: state.currentSessionId,
+          userId: state.userId,
+        }),
+      }
+    ),
+    {
+      name: &apos;session-store&apos;,
+    }
+  )
+);</file><file path="src/store/types.ts">import type { Session, SessionCreate, SessionUpdate } from &apos;@/types&apos;;
 import type { Message, ChatStreamEvent } from &apos;@/types&apos;;
 import type { Document, DocumentUpdate, DocumentProgress } from &apos;@/types&apos;;
 import type { AppSettings, SettingsUpdate } from &apos;@/types&apos;;
@@ -14064,362 +14064,7 @@ export class EmbeddingService {
   }
 }
 
-export const embeddingService = new EmbeddingService();</file><file path="src/store/documentStore.ts">import { create } from &apos;zustand&apos;;
-import { devtools, persist } from &apos;zustand/middleware&apos;;
-import type { DocumentStore } from &apos;./types&apos;;
-import { Document, DocumentUpdate, DocumentProgress } from &apos;@/types/document&apos;;
-import { getIndexedDBServices } from &apos;../services/indexedDB&apos;;
-import { userIdLogger } from &apos;../utils/userIdDebugLogger&apos;;
-
-// Helper function to get services (client-side only)
-const getDocumentService = () =&gt; {
-  if (typeof window !== &apos;undefined&apos;) {
-    const services = getIndexedDBServices();
-    return services.documentService;
-  }
-  return null;
-};
-
-export const useDocumentStore = create&lt;DocumentStore&gt;()(
-  devtools(
-    persist(
-      (set, get) =&gt; ({
-        // State
-        documents: [],
-        progressMap: {},
-        isUploading: false,
-        error: null,
-        userId: null,
-
-        // Actions
-        setUserId: (userId: string | null) =&gt; {
-          userIdLogger.logStoreUpdate(&apos;DocumentStore&apos;, userId, &apos;setUserId&apos;);
-          set({ userId });
-        },
-
-        clearDocuments: () =&gt; {
-          userIdLogger.logStoreUpdate(&apos;DocumentStore&apos;, null, &apos;clearDocuments&apos;);
-          set({ documents: [], progressMap: {}, error: null, userId: null });
-        },
-
-        loadDocuments: async (sessionId: string) =&gt; {
-          // Only run on client side
-          if (typeof window === &apos;undefined&apos;) {
-            console.warn(&apos;[DOCUMENT STORE] Skipping loadDocuments during SSR&apos;);
-            return;
-          }
-          
-          const { userId } = get();
-          
-          try {
-            // console.log(&apos;🔍 DOCUMENT STORE DEBUG: Starting loadDocuments for session:&apos;, sessionId);
-            const documentService = getDocumentService();
-            if (!documentService) {
-              console.error(&apos;🔍 DOCUMENT STORE DEBUG: Document service not available&apos;);
-              throw new Error(&apos;Document service not available&apos;);
-            }
-
-            if (!userId) {
-              const errorMsg = &apos;User ID not found. Please log in.&apos;;
-              console.error(&apos;🔍 DOCUMENT STORE DEBUG: User ID not found&apos;);
-              userIdLogger.logError(&apos;DocumentStore.loadDocuments&apos;, errorMsg, null);
-              set({ error: errorMsg });
-              return;
-            }
-
-            const operationId = userIdLogger.logOperationStart(&apos;DocumentStore&apos;, &apos;loadDocuments&apos;, userId);
-
-            // console.log(&apos;🔍 DOCUMENT STORE DEBUG: Calling getDocumentsBySession&apos;);
-            // console.log(&apos;🔍 DUPLICATE DEBUG: Loading documents from IndexedDB at:&apos;, new Date().toISOString());
-            userIdLogger.logServiceCall(&apos;DocumentStore&apos;, &apos;documentService&apos;, &apos;getDocumentsBySession&apos;, userId);
-            const documents = await documentService.getDocumentsBySession(sessionId, userId);
-
-            // console.log(&apos;🔍 DOCUMENT STORE DEBUG: Documents retrieved from database:&apos;, {
-            //   sessionId,
-            //   count: documents.length,
-            //   documents: documents.map(doc =&gt; ({
-            //     id: doc.id,
-            //     filename: doc.filename,
-            //     enabled: doc.enabled,
-            //     status: doc.status,
-            //     processedAt: doc.processedAt
-            //   }))
-            // });
-
-            // console.log(&apos;🔍 DOCUMENT STORE DEBUG: About to update store state&apos;);
-            // console.log(&apos;🔍 DUPLICATE DEBUG: Updating document store state at:&apos;, new Date().toISOString());
-            
-            userIdLogger.logOperationEnd(&apos;DocumentStore&apos;, operationId, userId);
-            set({ documents });
-
-            // console.log(&apos;🔍 DOCUMENT STORE DEBUG: Store state updated, verifying...&apos;);
-            const currentState = get();
-            // console.log(&apos;🔍 DUPLICATE DEBUG: Document store state updated at:&apos;, new Date().toISOString());
-            // console.log(&apos;🔍 DOCUMENT STORE DEBUG: Current store state:&apos;, {
-            //   documentCount: currentState.documents.length,
-            //   documents: currentState.documents.map(doc =&gt; ({
-            //     id: doc.id,
-            //     filename: doc.filename,
-            //     enabled: doc.enabled,
-            //     status: doc.status,
-            //     processedAt: doc.processedAt
-            //   }))
-            // });
-
-            console.log(&apos;[DOCUMENT STORE] Loaded documents:&apos;, {
-              sessionId,
-              count: documents.length,
-              documents: documents.map(doc =&gt; ({
-                id: doc.id,
-                filename: doc.filename,
-                enabled: doc.enabled,
-                status: doc.status,
-                processedAt: doc.processedAt
-              }))
-            });
-          } catch (error) {
-            userIdLogger.logError(&apos;DocumentStore.loadDocuments&apos;, error instanceof Error ? error : String(error), userId);
-            console.error(&apos;🔍 DOCUMENT STORE DEBUG: Failed to load documents:&apos;, error);
-            console.error(&apos;[DOCUMENT STORE] Failed to load documents:&apos;, error);
-            set({
-              error: error instanceof Error ? error.message : &apos;Failed to load documents&apos;,
-            });
-          }
-        },
-
-        uploadDocuments: async (sessionId: string, files: File[]) =&gt; {
-          // Only run on client side
-          if (typeof window === &apos;undefined&apos;) {
-            console.warn(&apos;[DOCUMENT STORE] Skipping uploadDocuments during SSR&apos;);
-            throw new Error(&apos;Cannot upload documents during SSR&apos;);
-          }
-          
-          const { userId } = get();
-          if (!userId) {
-            const errorMsg = &apos;User ID not found. Please log in.&apos;;
-            userIdLogger.logError(&apos;DocumentStore.uploadDocuments&apos;, errorMsg, null);
-            set({ error: errorMsg });
-            return;
-          }
-
-          set({ isUploading: true, error: null });
-
-          try {
-            const documentService = getDocumentService();
-            if (!documentService) {
-              throw new Error(&apos;Document service not available&apos;);
-            }
-
-            for (const file of files) {
-              // Create document entry
-              const document = await documentService.createDocument({
-                sessionId,
-                filename: file.name,
-                fileSize: file.size,
-                mimeType: file.type,
-              }, userId);
-
-              // Set initial progress
-              set(state =&gt; ({
-                progressMap: {
-                  ...state.progressMap,
-                  [document.id]: {
-                    status: &apos;pending&apos;,
-                    progress: 0,
-                  },
-                },
-              }));
-
-              // TODO: Implement actual file processing
-              // For now, simulate processing
-              setTimeout(() =&gt; {
-                set(state =&gt; ({
-                  progressMap: {
-                    ...state.progressMap,
-                    [document.id]: {
-                      status: &apos;completed&apos;,
-                      progress: 100,
-                    },
-                  },
-                }));
-
-                // Update document status
-                const docService = getDocumentService();
-                if (docService) {
-                  docService.updateDocument(document.id, {
-                    status: &apos;completed&apos;,
-                    processedAt: new Date(),
-                  }, userId);
-                }
-              }, 2000);
-            }
-
-            set({ isUploading: false });
-          } catch (error) {
-            set({
-              isUploading: false,
-              error: error instanceof Error ? error.message : &apos;Failed to upload documents&apos;,
-            });
-          }
-        },
-
-        updateDocument: async (id: string, data: DocumentUpdate) =&gt; {
-          try {
-            const documentService = getDocumentService();
-            if (!documentService) {
-              throw new Error(&apos;Document service not available&apos;);
-            }
-            const { userId } = get();
-            if (!userId) {
-              const errorMsg = &apos;User ID not found. Please log in.&apos;;
-              userIdLogger.logError(&apos;DocumentStore.updateDocument&apos;, errorMsg, null);
-              set({ error: errorMsg });
-              return;
-            }
-            
-            const operationId = userIdLogger.logOperationStart(&apos;DocumentStore&apos;, &apos;updateDocument&apos;, userId);
-            userIdLogger.logServiceCall(&apos;DocumentStore&apos;, &apos;documentService&apos;, &apos;updateDocument&apos;, userId);
-            await documentService.updateDocument(id, data, userId);
-            userIdLogger.logOperationEnd(&apos;DocumentStore&apos;, operationId, userId);
-
-            set(state =&gt; ({
-              documents: state.documents.map(doc =&gt;
-                doc.id === id ? { ...doc, ...data } : doc
-              ),
-            }));
-          } catch (error) {
-            set({
-              error: error instanceof Error ? error.message : &apos;Failed to update document&apos;,
-            });
-          }
-        },
-
-        toggleDocumentEnabled: async (id: string) =&gt; {
-          try {
-            const documentService = getDocumentService();
-            if (!documentService) {
-              throw new Error(&apos;Document service not available&apos;);
-            }
-
-            // Get current document to toggle its enabled status
-            const currentDoc = get().documents.find(doc =&gt; doc.id === id);
-            if (!currentDoc) {
-              throw new Error(&apos;Document not found&apos;);
-            }
-
-            const { userId } = get();
-            if (!userId) {
-              const errorMsg = &apos;User ID not found. Please log in.&apos;;
-              userIdLogger.logError(&apos;DocumentStore.toggleDocumentEnabled&apos;, errorMsg, null);
-              set({ error: errorMsg });
-              return;
-            }
-            
-            const operationId = userIdLogger.logOperationStart(&apos;DocumentStore&apos;, &apos;toggleDocumentEnabled&apos;, userId);
-            const newEnabledStatus = !currentDoc.enabled;
-            userIdLogger.logServiceCall(&apos;DocumentStore&apos;, &apos;documentService&apos;, &apos;toggleDocumentEnabled&apos;, userId);
-            await documentService.toggleDocumentEnabled(id, userId);
-            userIdLogger.logOperationEnd(&apos;DocumentStore&apos;, operationId, userId);
-
-            set(state =&gt; ({
-              documents: state.documents.map(doc =&gt;
-                doc.id === id ? { ...doc, enabled: newEnabledStatus } : doc
-              ),
-            }));
-          } catch (error) {
-            set({
-              error: error instanceof Error ? error.message : &apos;Failed to toggle document enabled status&apos;,
-            });
-          }
-        },
-
-        deleteDocument: async (id: string) =&gt; {
-          try {
-            console.log(&apos;🗑️ DocumentStore: Starting deleteDocument with ID:&apos;, id);
-            
-            const documentService = getDocumentService();
-            if (!documentService) {
-              console.error(&apos;❌ DocumentStore: Document service not available&apos;);
-              throw new Error(&apos;Document service not available&apos;);
-            }
-
-            const { userId } = get();
-            if (!userId) {
-              const errorMsg = &apos;User ID not found. Please log in.&apos;;
-              console.error(&apos;❌ DocumentStore: User ID not found&apos;);
-              userIdLogger.logError(&apos;DocumentStore.deleteDocument&apos;, errorMsg, null);
-              set({ error: errorMsg });
-              return;
-            }
-            
-            const operationId = userIdLogger.logOperationStart(&apos;DocumentStore&apos;, &apos;deleteDocument&apos;, userId);
-            console.log(&apos;🗑️ DocumentStore: About to call documentService.deleteDocument&apos;);
-            
-            // First, perform the IndexedDB deletion
-            userIdLogger.logServiceCall(&apos;DocumentStore&apos;, &apos;documentService&apos;, &apos;deleteDocument&apos;, userId);
-            await documentService.deleteDocument(id, userId);
-            console.log(&apos;✅ DocumentStore: Successfully deleted document from IndexedDB:&apos;, id);
-            userIdLogger.logOperationEnd(&apos;DocumentStore&apos;, operationId, userId);
-
-            // Update the state after successful IndexedDB deletion
-            console.log(&apos;🗑️ DocumentStore: Updating store state to remove document&apos;);
-            set(state =&gt; {
-              const newProgressMap = { ...state.progressMap };
-              delete newProgressMap[id];
-              return {
-                documents: state.documents.filter(doc =&gt; doc.id !== id),
-                progressMap: newProgressMap
-              };
-            });
-            console.log(&apos;✅ DocumentStore: Document deletion process completed successfully&apos;);
-          } catch (error) {
-            console.error(&apos;❌ DocumentStore: Failed to delete document:&apos;, {
-              id,
-              error: error instanceof Error ? error.message : error,
-              stack: error instanceof Error ? error.stack : undefined
-            });
-            // Set error state to be handled by UI components
-            const errorMessage = error instanceof Error ? error.message : &apos;Failed to delete document&apos;;
-            set({ error: errorMessage });
-            // Re-throw the error so the calling component can handle it
-            throw error;
-          }
-        },
-
-        setProgress: (documentId: string, progress: DocumentProgress) =&gt; {
-          set(state =&gt; ({
-            progressMap: {
-              ...state.progressMap,
-              [documentId]: progress,
-            },
-          }));
-        },
-
-        clearProgress: (documentId: string) =&gt; {
-          set(state =&gt; {
-            const newProgressMap = { ...state.progressMap };
-            delete newProgressMap[documentId];
-            return { progressMap: newProgressMap };
-          });
-        },
-
-        setUploading: (isUploading: boolean) =&gt; {
-          set({ isUploading });
-        },
-
-        setError: (error: string | null) =&gt; {
-          set({ error });
-        },
-      }),
-      {
-        name: &apos;document-store&apos;,
-        partialize: (state) =&gt; ({
-          userId: state.userId, // Only keep userId
-        }),
-      }
-    )
-  )
-);</file><file path="src/services/rag/citationService.ts">import type { VectorSearchResult } from &apos;@/types/embedding&apos;;
+export const embeddingService = new EmbeddingService();</file><file path="src/services/rag/citationService.ts">import type { VectorSearchResult } from &apos;@/types/embedding&apos;;
 import type { Citation as MessageCitation } from &apos;@/types/message&apos;;
 import type { SimplifiedCitation, SimplifiedCitationGroup, PageGroup } from &apos;@/types/citation&apos;;
 
@@ -17785,235 +17430,358 @@ export class VectorSearchService {
 }
 
 // Singleton instance
-export const vectorSearchService = new VectorSearchService();</file><file path="src/store/chatStore.ts">import { create } from &apos;zustand&apos;;
+export const vectorSearchService = new VectorSearchService();</file><file path="src/store/documentStore.ts">import { create } from &apos;zustand&apos;;
 import { devtools, persist } from &apos;zustand/middleware&apos;;
-import type { ChatStore } from &apos;./types&apos;;
-import { Message, MessageSender } from &apos;@/types/message&apos;;
+import type { DocumentStore } from &apos;./types&apos;;
+import { Document, DocumentUpdate, DocumentProgress } from &apos;@/types/document&apos;;
 import { getIndexedDBServices } from &apos;../services/indexedDB&apos;;
-import { chatPipeline } from &apos;../services/rag/chatPipeline&apos;;
-import { useSessionStore } from &apos;./sessionStore&apos;;
 import { userIdLogger } from &apos;../utils/userIdDebugLogger&apos;;
 
 // Helper function to get services (client-side only)
-const getMessageService = () =&gt; {
+const getDocumentService = () =&gt; {
   if (typeof window !== &apos;undefined&apos;) {
     const services = getIndexedDBServices();
-    return services.messageService;
+    return services.documentService;
   }
   return null;
 };
 
-export const useChatStore = create&lt;ChatStore&gt;()(
+export const useDocumentStore = create&lt;DocumentStore&gt;()(
   devtools(
     persist(
       (set, get) =&gt; ({
         // State
-        messages: [],
-        isStreaming: false,
-        streamingContent: &apos;&apos;,
-        streamingCitations: [],
+        documents: [],
+        progressMap: {},
+        isUploading: false,
         error: null,
-        isLoading: false,
-        isReadingSources: false,
-        progressPercentage: 0,
-        currentProgressStep: &apos;&apos;,
-        
+        userId: null,
+
         // Actions
-        loadMessages: async (sessionId: string) =&gt; {
-          const { userId: currentUserId } = useSessionStore.getState();
-          const operationId = userIdLogger.logOperationStart(&apos;ChatStore&apos;, &apos;loadMessages&apos;, currentUserId);
-          
-          // Set loading state at the beginning
-          set({ isLoading: true, error: null });
-          
-          try {
-            const messageService = getMessageService();
-            if (!messageService) {
-              throw new Error(&apos;Message service not available&apos;);
-            }
-            
-            // Get session to verify ownership and get userId
-            const services = getIndexedDBServices();
-            
-            userIdLogger.logServiceCall(&apos;ChatStore&apos;, &apos;sessionService&apos;, &apos;getSession&apos;, currentUserId);
-            const session = await services.sessionService.getSession(sessionId, currentUserId || undefined);
-            if (!session) {
-              throw new Error(&apos;Session not found&apos;);
-            }
-            
-            userIdLogger.logServiceCall(&apos;ChatStore&apos;, &apos;messageService&apos;, &apos;getMessagesBySession&apos;, session.userId);
-            const messages = await messageService.getMessagesBySession(sessionId, session.userId);
-            
-            userIdLogger.logOperationEnd(&apos;ChatStore&apos;, operationId, currentUserId);
-            set({ messages, isLoading: false });
-          } catch (error) {
-            userIdLogger.logError(&apos;ChatStore.loadMessages&apos;, error instanceof Error ? error : String(error), currentUserId);
-            set({
-              error: error instanceof Error ? error.message : &apos;Failed to load messages&apos;,
-              isLoading: false,
-            });
-          }
+        setUserId: (userId: string | null) =&gt; {
+          userIdLogger.logStoreUpdate(&apos;DocumentStore&apos;, userId, &apos;setUserId&apos;);
+          set({ userId });
         },
-        
-        sendMessage: async (sessionId: string, content: string) =&gt; {
-          const { userId: currentUserId } = useSessionStore.getState();
-          const operationId = userIdLogger.logOperationStart(&apos;ChatStore&apos;, &apos;sendMessage&apos;, currentUserId);
+
+        clearDocuments: () =&gt; {
+          userIdLogger.logStoreUpdate(&apos;DocumentStore&apos;, null, &apos;clearDocuments&apos;);
+          set({ documents: [], progressMap: {}, error: null, userId: null });
+        },
+
+        loadDocuments: async (sessionId: string) =&gt; {
+          // Only run on client side
+          if (typeof window === &apos;undefined&apos;) {
+            console.warn(&apos;[DOCUMENT STORE] Skipping loadDocuments during SSR&apos;);
+            return;
+          }
           
-          const userMessage: Message = {
-            id: crypto.randomUUID(),
-            content,
-            role: MessageSender.USER,
-            timestamp: new Date(),
-            sessionId,
-          };
-          
-          set(state =&gt; ({
-            messages: [...state.messages, userMessage],
-            error: null,
-            isStreaming: false, // Don&apos;t show streaming content
-            isReadingSources: true, // Show &quot;Reading sources&quot; instead
-            progressPercentage: 0,
-            currentProgressStep: &apos;Query Rewriting&apos;,
-          }));
+          const { userId } = get();
           
           try {
-            const messageService = getMessageService();
-            if (!messageService) {
-              throw new Error(&apos;Message service not available&apos;);
+            // console.log(&apos;🔍 DOCUMENT STORE DEBUG: Starting loadDocuments for session:&apos;, sessionId);
+            const documentService = getDocumentService();
+            if (!documentService) {
+              console.error(&apos;🔍 DOCUMENT STORE DEBUG: Document service not available&apos;);
+              throw new Error(&apos;Document service not available&apos;);
             }
+
+            if (!userId) {
+              const errorMsg = &apos;User ID not found. Please log in.&apos;;
+              console.error(&apos;🔍 DOCUMENT STORE DEBUG: User ID not found&apos;);
+              userIdLogger.logError(&apos;DocumentStore.loadDocuments&apos;, errorMsg, null);
+              set({ error: errorMsg });
+              return;
+            }
+
+            const operationId = userIdLogger.logOperationStart(&apos;DocumentStore&apos;, &apos;loadDocuments&apos;, userId);
+
+            // console.log(&apos;🔍 DOCUMENT STORE DEBUG: Calling getDocumentsBySession&apos;);
+            // console.log(&apos;🔍 DUPLICATE DEBUG: Loading documents from IndexedDB at:&apos;, new Date().toISOString());
+            userIdLogger.logServiceCall(&apos;DocumentStore&apos;, &apos;documentService&apos;, &apos;getDocumentsBySession&apos;, userId);
+            const documents = await documentService.getDocumentsBySession(sessionId, userId);
+
+            // console.log(&apos;🔍 DOCUMENT STORE DEBUG: Documents retrieved from database:&apos;, {
+            //   sessionId,
+            //   count: documents.length,
+            //   documents: documents.map(doc =&gt; ({
+            //     id: doc.id,
+            //     filename: doc.filename,
+            //     enabled: doc.enabled,
+            //     status: doc.status,
+            //     processedAt: doc.processedAt
+            //   }))
+            // });
+
+            // console.log(&apos;🔍 DOCUMENT STORE DEBUG: About to update store state&apos;);
+            // console.log(&apos;🔍 DUPLICATE DEBUG: Updating document store state at:&apos;, new Date().toISOString());
             
-            // Save user message to IndexedDB
-            userIdLogger.logServiceCall(&apos;ChatStore&apos;, &apos;messageService&apos;, &apos;createMessage&apos;, currentUserId);
-            await messageService.createMessage(userMessage);
-            
-            // Use the actual chat pipeline to generate response
-            // Pass the already created userMessage to avoid duplication
-            await chatPipeline.sendMessage(
+            userIdLogger.logOperationEnd(&apos;DocumentStore&apos;, operationId, userId);
+            set({ documents });
+
+            // console.log(&apos;🔍 DOCUMENT STORE DEBUG: Store state updated, verifying...&apos;);
+            const currentState = get();
+            // console.log(&apos;🔍 DUPLICATE DEBUG: Document store state updated at:&apos;, new Date().toISOString());
+            // console.log(&apos;🔍 DOCUMENT STORE DEBUG: Current store state:&apos;, {
+            //   documentCount: currentState.documents.length,
+            //   documents: currentState.documents.map(doc =&gt; ({
+            //     id: doc.id,
+            //     filename: doc.filename,
+            //     enabled: doc.enabled,
+            //     status: doc.status,
+            //     processedAt: doc.processedAt
+            //   }))
+            // });
+
+            console.log(&apos;[DOCUMENT STORE] Loaded documents:&apos;, {
               sessionId,
-              content,
-              (event) =&gt; {
-                if (event.type === &apos;status&apos;) {
-                  // Update progress based on status message
-                  console.log(&apos;Chat status:&apos;, event.message);
-                  const { setProgressState } = get();
-                  
-                  switch (event.message) {
-                    case &apos;Query Rewriting&apos;:
-                      setProgressState(25, &apos;Query Rewriting&apos;);
-                      break;
-                    case &apos;Embedding Generation&apos;:
-                      setProgressState(50, &apos;Embedding Generation&apos;);
-                      break;
-                    case &apos;Vector Search&apos;:
-                      setProgressState(75, &apos;Vector Search&apos;);
-                      break;
-                    case &apos;Response Generation&apos;:
-                      setProgressState(90, &apos;Response Generation&apos;);
-                      break;
-                    case &apos;Response Formatting&apos;:
-                      setProgressState(95, &apos;Response Formatting&apos;);
-                      break;
-                    default:
-                      // For other status messages, don&apos;t update progress
-                      break;
-                  }
-                } else if (event.type === &apos;done&apos;) {
-                  // Reload messages to get the final response
-                  // Get session to verify ownership and get userId
-                  const services = getIndexedDBServices();
-                  // Get userId from sessionStore
-                  const { userId: finalUserId } = useSessionStore.getState();
-                  
-                  userIdLogger.logServiceCall(&apos;ChatStore&apos;, &apos;sessionService&apos;, &apos;getSession (done callback)&apos;, finalUserId);
-                  services.sessionService.getSession(sessionId, finalUserId || undefined).then(session =&gt; {
-                    if (session) {
-                      userIdLogger.logServiceCall(&apos;ChatStore&apos;, &apos;messageService&apos;, &apos;getMessagesBySession (done callback)&apos;, session.userId);
-                      messageService.getMessagesBySession(sessionId, session.userId).then(messages =&gt; {
-                        userIdLogger.logOperationEnd(&apos;ChatStore&apos;, operationId, finalUserId);
-                          const { setProgressState } = get();
-                          setProgressState(100, &apos;Complete&apos;);
-                          
-                          set({
-                            messages,
-                            isStreaming: false,
-                            streamingContent: &apos;&apos;,
-                            streamingCitations: [],
-                            isReadingSources: false,
-                          });
-                      });
-                    }
-                  });
-                } else if (event.type === &apos;error&apos;) {
-                  userIdLogger.logError(&apos;ChatStore.sendMessage (pipeline error)&apos;, event.message || &apos;Unknown error&apos;, currentUserId);
-                  set({
-                    error: event.message || &apos;Failed to generate response&apos;,
-                    isStreaming: false,
-                    streamingContent: &apos;&apos;,
-                    streamingCitations: [],
-                    isReadingSources: false,
-                    progressPercentage: 0,
-                    currentProgressStep: &apos;&apos;,
-                  });
-                }
-              },
-              userMessage // Pass the already created userMessage
-            );
+              count: documents.length,
+              documents: documents.map(doc =&gt; ({
+                id: doc.id,
+                filename: doc.filename,
+                enabled: doc.enabled,
+                status: doc.status,
+                processedAt: doc.processedAt
+              }))
+            });
           } catch (error) {
-            userIdLogger.logError(&apos;ChatStore.sendMessage&apos;, error instanceof Error ? error : String(error), currentUserId);
+            userIdLogger.logError(&apos;DocumentStore.loadDocuments&apos;, error instanceof Error ? error : String(error), userId);
+            console.error(&apos;🔍 DOCUMENT STORE DEBUG: Failed to load documents:&apos;, error);
+            console.error(&apos;[DOCUMENT STORE] Failed to load documents:&apos;, error);
             set({
-              error: error instanceof Error ? error.message : &apos;Failed to send message&apos;,
-              isStreaming: false,
+              error: error instanceof Error ? error.message : &apos;Failed to load documents&apos;,
             });
           }
         },
-        
-        clearHistory: async (sessionId: string) =&gt; {
+
+        uploadDocuments: async (sessionId: string, files: File[]) =&gt; {
+          // Only run on client side
+          if (typeof window === &apos;undefined&apos;) {
+            console.warn(&apos;[DOCUMENT STORE] Skipping uploadDocuments during SSR&apos;);
+            throw new Error(&apos;Cannot upload documents during SSR&apos;);
+          }
+          
+          const { userId } = get();
+          if (!userId) {
+            const errorMsg = &apos;User ID not found. Please log in.&apos;;
+            userIdLogger.logError(&apos;DocumentStore.uploadDocuments&apos;, errorMsg, null);
+            set({ error: errorMsg });
+            return;
+          }
+
+          set({ isUploading: true, error: null });
+
           try {
-            const messageService = getMessageService();
-            if (!messageService) {
-              throw new Error(&apos;Message service not available&apos;);
+            const documentService = getDocumentService();
+            if (!documentService) {
+              throw new Error(&apos;Document service not available&apos;);
             }
-            await messageService.deleteMessagesBySession(sessionId);
-            set({ messages: [], error: null });
+
+            for (const file of files) {
+              // Create document entry
+              const document = await documentService.createDocument({
+                sessionId,
+                filename: file.name,
+                fileSize: file.size,
+                mimeType: file.type,
+              }, userId);
+
+              // Set initial progress
+              set(state =&gt; ({
+                progressMap: {
+                  ...state.progressMap,
+                  [document.id]: {
+                    status: &apos;pending&apos;,
+                    progress: 0,
+                  },
+                },
+              }));
+
+              // TODO: Implement actual file processing
+              // For now, simulate processing
+              setTimeout(() =&gt; {
+                set(state =&gt; ({
+                  progressMap: {
+                    ...state.progressMap,
+                    [document.id]: {
+                      status: &apos;completed&apos;,
+                      progress: 100,
+                    },
+                  },
+                }));
+
+                // Update document status
+                const docService = getDocumentService();
+                if (docService) {
+                  docService.updateDocument(document.id, {
+                    status: &apos;completed&apos;,
+                    processedAt: new Date(),
+                  }, userId);
+                }
+              }, 2000);
+            }
+
+            set({ isUploading: false });
           } catch (error) {
             set({
-              error: error instanceof Error ? error.message : &apos;Failed to clear messages&apos;,
+              isUploading: false,
+              error: error instanceof Error ? error.message : &apos;Failed to upload documents&apos;,
             });
           }
         },
-        
-        setStreamingState: (isStreaming: boolean, content?: string, citations?: any[]) =&gt; {
-          set({
-            isStreaming,
-            streamingContent: content || &apos;&apos;,
-            streamingCitations: citations || [],
+
+        updateDocument: async (id: string, data: DocumentUpdate) =&gt; {
+          try {
+            const documentService = getDocumentService();
+            if (!documentService) {
+              throw new Error(&apos;Document service not available&apos;);
+            }
+            const { userId } = get();
+            if (!userId) {
+              const errorMsg = &apos;User ID not found. Please log in.&apos;;
+              userIdLogger.logError(&apos;DocumentStore.updateDocument&apos;, errorMsg, null);
+              set({ error: errorMsg });
+              return;
+            }
+            
+            const operationId = userIdLogger.logOperationStart(&apos;DocumentStore&apos;, &apos;updateDocument&apos;, userId);
+            userIdLogger.logServiceCall(&apos;DocumentStore&apos;, &apos;documentService&apos;, &apos;updateDocument&apos;, userId);
+            await documentService.updateDocument(id, data, userId);
+            userIdLogger.logOperationEnd(&apos;DocumentStore&apos;, operationId, userId);
+
+            set(state =&gt; ({
+              documents: state.documents.map(doc =&gt;
+                doc.id === id ? { ...doc, ...data } : doc
+              ),
+            }));
+          } catch (error) {
+            set({
+              error: error instanceof Error ? error.message : &apos;Failed to update document&apos;,
+            });
+          }
+        },
+
+        toggleDocumentEnabled: async (id: string) =&gt; {
+          try {
+            const documentService = getDocumentService();
+            if (!documentService) {
+              throw new Error(&apos;Document service not available&apos;);
+            }
+
+            // Get current document to toggle its enabled status
+            const currentDoc = get().documents.find(doc =&gt; doc.id === id);
+            if (!currentDoc) {
+              throw new Error(&apos;Document not found&apos;);
+            }
+
+            const { userId } = get();
+            if (!userId) {
+              const errorMsg = &apos;User ID not found. Please log in.&apos;;
+              userIdLogger.logError(&apos;DocumentStore.toggleDocumentEnabled&apos;, errorMsg, null);
+              set({ error: errorMsg });
+              return;
+            }
+            
+            const operationId = userIdLogger.logOperationStart(&apos;DocumentStore&apos;, &apos;toggleDocumentEnabled&apos;, userId);
+            const newEnabledStatus = !currentDoc.enabled;
+            userIdLogger.logServiceCall(&apos;DocumentStore&apos;, &apos;documentService&apos;, &apos;toggleDocumentEnabled&apos;, userId);
+            await documentService.toggleDocumentEnabled(id, userId);
+            userIdLogger.logOperationEnd(&apos;DocumentStore&apos;, operationId, userId);
+
+            set(state =&gt; ({
+              documents: state.documents.map(doc =&gt;
+                doc.id === id ? { ...doc, enabled: newEnabledStatus } : doc
+              ),
+            }));
+          } catch (error) {
+            set({
+              error: error instanceof Error ? error.message : &apos;Failed to toggle document enabled status&apos;,
+            });
+          }
+        },
+
+        deleteDocument: async (id: string) =&gt; {
+          try {
+            console.log(&apos;🗑️ DocumentStore: Starting deleteDocument with ID:&apos;, id);
+            
+            const documentService = getDocumentService();
+            if (!documentService) {
+              console.error(&apos;❌ DocumentStore: Document service not available&apos;);
+              throw new Error(&apos;Document service not available&apos;);
+            }
+
+            const { userId } = get();
+            if (!userId) {
+              const errorMsg = &apos;User ID not found. Please log in.&apos;;
+              console.error(&apos;❌ DocumentStore: User ID not found&apos;);
+              userIdLogger.logError(&apos;DocumentStore.deleteDocument&apos;, errorMsg, null);
+              set({ error: errorMsg });
+              return;
+            }
+            
+            const operationId = userIdLogger.logOperationStart(&apos;DocumentStore&apos;, &apos;deleteDocument&apos;, userId);
+            console.log(&apos;🗑️ DocumentStore: About to call documentService.deleteDocument&apos;);
+            
+            // First, perform the IndexedDB deletion
+            userIdLogger.logServiceCall(&apos;DocumentStore&apos;, &apos;documentService&apos;, &apos;deleteDocument&apos;, userId);
+            await documentService.deleteDocument(id, userId);
+            console.log(&apos;✅ DocumentStore: Successfully deleted document from IndexedDB:&apos;, id);
+            userIdLogger.logOperationEnd(&apos;DocumentStore&apos;, operationId, userId);
+
+            // Update the state after successful IndexedDB deletion
+            console.log(&apos;🗑️ DocumentStore: Updating store state to remove document&apos;);
+            set(state =&gt; {
+              const newProgressMap = { ...state.progressMap };
+              delete newProgressMap[id];
+              return {
+                documents: state.documents.filter(doc =&gt; doc.id !== id),
+                progressMap: newProgressMap
+              };
+            });
+            console.log(&apos;✅ DocumentStore: Document deletion process completed successfully&apos;);
+          } catch (error) {
+            console.error(&apos;❌ DocumentStore: Failed to delete document:&apos;, {
+              id,
+              error: error instanceof Error ? error.message : error,
+              stack: error instanceof Error ? error.stack : undefined
+            });
+            // Set error state to be handled by UI components
+            const errorMessage = error instanceof Error ? error.message : &apos;Failed to delete document&apos;;
+            set({ error: errorMessage });
+            // Re-throw the error so the calling component can handle it
+            throw error;
+          }
+        },
+
+        setProgress: (documentId: string, progress: DocumentProgress) =&gt; {
+          set(state =&gt; ({
+            progressMap: {
+              ...state.progressMap,
+              [documentId]: progress,
+            },
+          }));
+        },
+
+        clearProgress: (documentId: string) =&gt; {
+          set(state =&gt; {
+            const newProgressMap = { ...state.progressMap };
+            delete newProgressMap[documentId];
+            return { progressMap: newProgressMap };
           });
         },
-        
-        addMessage: (message: Message) =&gt; {
-          set(state =&gt; ({
-            messages: [...state.messages, message],
-          }));
+
+        setUploading: (isUploading: boolean) =&gt; {
+          set({ isUploading });
         },
-        
+
         setError: (error: string | null) =&gt; {
           set({ error });
         },
-        
-        setReadingSourcesState: (isReadingSources: boolean) =&gt; {
-          set({ isReadingSources });
-        },
-        
-        setProgressState: (percentage: number, step: string) =&gt; {
-          set({
-            progressPercentage: percentage,
-            currentProgressStep: step
-          });
-        },
       }),
       {
-        name: &apos;chat-store&apos;,
-        partialize: (state) =&gt; ({}), // Don&apos;t persist chat messages to localStorage (too heavy)
+        name: &apos;document-store&apos;,
+        partialize: (state) =&gt; ({
+          userId: state.userId, // Only keep userId
+        }),
       }
     )
   )
@@ -18388,7 +18156,239 @@ export default function RootLayout({
       &lt;/body&gt;
     &lt;/html&gt;
   );
-}</file><file path="src/components/chat/MessageBubble.tsx">import React, { useMemo } from &apos;react&apos;; // Added useMemo
+}</file><file path="src/store/chatStore.ts">import { create } from &apos;zustand&apos;;
+import { devtools, persist } from &apos;zustand/middleware&apos;;
+import type { ChatStore } from &apos;./types&apos;;
+import { Message, MessageSender } from &apos;@/types/message&apos;;
+import { getIndexedDBServices } from &apos;../services/indexedDB&apos;;
+import { chatPipeline } from &apos;../services/rag/chatPipeline&apos;;
+import { useSessionStore } from &apos;./sessionStore&apos;;
+import { userIdLogger } from &apos;../utils/userIdDebugLogger&apos;;
+
+// Helper function to get services (client-side only)
+const getMessageService = () =&gt; {
+  if (typeof window !== &apos;undefined&apos;) {
+    const services = getIndexedDBServices();
+    return services.messageService;
+  }
+  return null;
+};
+
+export const useChatStore = create&lt;ChatStore&gt;()(
+  devtools(
+    persist(
+      (set, get) =&gt; ({
+        // State
+        messages: [],
+        isStreaming: false,
+        streamingContent: &apos;&apos;,
+        streamingCitations: [],
+        error: null,
+        isLoading: false,
+        isReadingSources: false,
+        progressPercentage: 0,
+        currentProgressStep: &apos;&apos;,
+        
+        // Actions
+        loadMessages: async (sessionId: string) =&gt; {
+          const { userId: currentUserId } = useSessionStore.getState();
+          const operationId = userIdLogger.logOperationStart(&apos;ChatStore&apos;, &apos;loadMessages&apos;, currentUserId);
+          
+          // Set loading state at the beginning
+          set({ isLoading: true, error: null });
+          
+          try {
+            const messageService = getMessageService();
+            if (!messageService) {
+              throw new Error(&apos;Message service not available&apos;);
+            }
+            
+            // Get session to verify ownership and get userId
+            const services = getIndexedDBServices();
+            
+            userIdLogger.logServiceCall(&apos;ChatStore&apos;, &apos;sessionService&apos;, &apos;getSession&apos;, currentUserId);
+            const session = await services.sessionService.getSession(sessionId, currentUserId || undefined);
+            if (!session) {
+              throw new Error(&apos;Session not found&apos;);
+            }
+            
+            userIdLogger.logServiceCall(&apos;ChatStore&apos;, &apos;messageService&apos;, &apos;getMessagesBySession&apos;, session.userId);
+            const messages = await messageService.getMessagesBySession(sessionId, session.userId);
+            
+            userIdLogger.logOperationEnd(&apos;ChatStore&apos;, operationId, currentUserId);
+            set({ messages, isLoading: false });
+          } catch (error) {
+            userIdLogger.logError(&apos;ChatStore.loadMessages&apos;, error instanceof Error ? error : String(error), currentUserId);
+            set({
+              error: error instanceof Error ? error.message : &apos;Failed to load messages&apos;,
+              isLoading: false,
+            });
+          }
+        },
+        
+        sendMessage: async (sessionId: string, content: string) =&gt; {
+          const { userId: currentUserId } = useSessionStore.getState();
+          const operationId = userIdLogger.logOperationStart(&apos;ChatStore&apos;, &apos;sendMessage&apos;, currentUserId);
+          
+          const userMessage: Message = {
+            id: crypto.randomUUID(),
+            content,
+            role: MessageSender.USER,
+            timestamp: new Date(),
+            sessionId,
+          };
+          
+          set(state =&gt; ({
+            messages: [...state.messages, userMessage],
+            error: null,
+            isStreaming: false, // Don&apos;t show streaming content
+            isReadingSources: true, // Show &quot;Reading sources&quot; instead
+            progressPercentage: 0,
+            currentProgressStep: &apos;Query Rewriting&apos;,
+          }));
+          
+          try {
+            const messageService = getMessageService();
+            if (!messageService) {
+              throw new Error(&apos;Message service not available&apos;);
+            }
+            
+            // Save user message to IndexedDB
+            userIdLogger.logServiceCall(&apos;ChatStore&apos;, &apos;messageService&apos;, &apos;createMessage&apos;, currentUserId);
+            await messageService.createMessage(userMessage);
+            
+            // Use the actual chat pipeline to generate response
+            // Pass the already created userMessage to avoid duplication
+            await chatPipeline.sendMessage(
+              sessionId,
+              content,
+              (event) =&gt; {
+                if (event.type === &apos;status&apos;) {
+                  // Update progress based on status message
+                  console.log(&apos;Chat status:&apos;, event.message);
+                  const { setProgressState } = get();
+                  
+                  switch (event.message) {
+                    case &apos;Query Rewriting&apos;:
+                      setProgressState(25, &apos;Query Rewriting&apos;);
+                      break;
+                    case &apos;Embedding Generation&apos;:
+                      setProgressState(50, &apos;Embedding Generation&apos;);
+                      break;
+                    case &apos;Vector Search&apos;:
+                      setProgressState(75, &apos;Vector Search&apos;);
+                      break;
+                    case &apos;Response Generation&apos;:
+                      setProgressState(90, &apos;Response Generation&apos;);
+                      break;
+                    case &apos;Response Formatting&apos;:
+                      setProgressState(95, &apos;Response Formatting&apos;);
+                      break;
+                    default:
+                      // For other status messages, don&apos;t update progress
+                      break;
+                  }
+                } else if (event.type === &apos;done&apos;) {
+                  // Reload messages to get the final response
+                  // Get session to verify ownership and get userId
+                  const services = getIndexedDBServices();
+                  // Get userId from sessionStore
+                  const { userId: finalUserId } = useSessionStore.getState();
+                  
+                  userIdLogger.logServiceCall(&apos;ChatStore&apos;, &apos;sessionService&apos;, &apos;getSession (done callback)&apos;, finalUserId);
+                  services.sessionService.getSession(sessionId, finalUserId || undefined).then(session =&gt; {
+                    if (session) {
+                      userIdLogger.logServiceCall(&apos;ChatStore&apos;, &apos;messageService&apos;, &apos;getMessagesBySession (done callback)&apos;, session.userId);
+                      messageService.getMessagesBySession(sessionId, session.userId).then(messages =&gt; {
+                        userIdLogger.logOperationEnd(&apos;ChatStore&apos;, operationId, finalUserId);
+                          const { setProgressState } = get();
+                          setProgressState(100, &apos;Complete&apos;);
+                          
+                          set({
+                            messages,
+                            isStreaming: false,
+                            streamingContent: &apos;&apos;,
+                            streamingCitations: [],
+                            isReadingSources: false,
+                          });
+                      });
+                    }
+                  });
+                } else if (event.type === &apos;error&apos;) {
+                  userIdLogger.logError(&apos;ChatStore.sendMessage (pipeline error)&apos;, event.message || &apos;Unknown error&apos;, currentUserId);
+                  set({
+                    error: event.message || &apos;Failed to generate response&apos;,
+                    isStreaming: false,
+                    streamingContent: &apos;&apos;,
+                    streamingCitations: [],
+                    isReadingSources: false,
+                    progressPercentage: 0,
+                    currentProgressStep: &apos;&apos;,
+                  });
+                }
+              },
+              userMessage // Pass the already created userMessage
+            );
+          } catch (error) {
+            userIdLogger.logError(&apos;ChatStore.sendMessage&apos;, error instanceof Error ? error : String(error), currentUserId);
+            set({
+              error: error instanceof Error ? error.message : &apos;Failed to send message&apos;,
+              isStreaming: false,
+            });
+          }
+        },
+        
+        clearHistory: async (sessionId: string) =&gt; {
+          try {
+            const messageService = getMessageService();
+            if (!messageService) {
+              throw new Error(&apos;Message service not available&apos;);
+            }
+            await messageService.deleteMessagesBySession(sessionId);
+            set({ messages: [], error: null });
+          } catch (error) {
+            set({
+              error: error instanceof Error ? error.message : &apos;Failed to clear messages&apos;,
+            });
+          }
+        },
+        
+        setStreamingState: (isStreaming: boolean, content?: string, citations?: any[]) =&gt; {
+          set({
+            isStreaming,
+            streamingContent: content || &apos;&apos;,
+            streamingCitations: citations || [],
+          });
+        },
+        
+        addMessage: (message: Message) =&gt; {
+          set(state =&gt; ({
+            messages: [...state.messages, message],
+          }));
+        },
+        
+        setError: (error: string | null) =&gt; {
+          set({ error });
+        },
+        
+        setReadingSourcesState: (isReadingSources: boolean) =&gt; {
+          set({ isReadingSources });
+        },
+        
+        setProgressState: (percentage: number, step: string) =&gt; {
+          set({
+            progressPercentage: percentage,
+            currentProgressStep: step
+          });
+        },
+      }),
+      {
+        name: &apos;chat-store&apos;,
+        partialize: (state) =&gt; ({}), // Don&apos;t persist chat messages to localStorage (too heavy)
+      }
+    )
+  )
+);</file><file path="src/components/chat/MessageBubble.tsx">import React, { useMemo } from &apos;react&apos;; // Added useMemo
 import ReactMarkdown from &apos;react-markdown&apos;;
 import remarkGfm from &apos;remark-gfm&apos;;
 import rehypeHighlight from &apos;rehype-highlight&apos;;
@@ -20969,7 +20969,146 @@ export const DocumentLibrary: React.FC&lt;DocumentLibraryProps&gt; = ({ sessionI
       &lt;/Card&gt;
     &lt;/div&gt;
   );
-};</file><file path="src/app/settings/page.tsx">&apos;use client&apos;;
+};</file><file path="src/middleware.ts">import { createServerClient, type CookieOptions } from &apos;@supabase/ssr&apos;
+import { NextResponse, type NextRequest } from &apos;next/server&apos;
+
+export const runtime = &apos;experimental-edge&apos;
+
+export async function middleware(request: NextRequest) {
+    console.log(&apos;🔍 [MIDDLEWARE] Processing request for:&apos;, request.nextUrl.pathname)
+
+    try {
+        // Check for required environment variables
+        if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+            console.error(&apos;❌ [MIDDLEWARE] Missing Supabase environment variables&apos;)
+            return NextResponse.next()
+        }
+
+        // Skip middleware for static assets and API routes
+        if (request.nextUrl.pathname.startsWith(&apos;/_next/&apos;) ||
+            request.nextUrl.pathname.startsWith(&apos;/api/&apos;) ||
+            request.nextUrl.pathname.includes(&apos;.&apos;)) {
+            return NextResponse.next()
+        }
+
+        let response = NextResponse.next({
+            request: {
+                headers: request.headers,
+            },
+        })
+
+        const supabase = createServerClient(
+            process.env.NEXT_PUBLIC_SUPABASE_URL!,
+            process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+            {
+                cookies: {
+                    get(name: string) {
+                        return request.cookies.get(name)?.value
+                    },
+                    set(name: string, value: string, options: CookieOptions) {
+                        request.cookies.set({
+                            name,
+                            value,
+                            ...options,
+                        })
+                        response = NextResponse.next({
+                            request: {
+                                headers: request.headers,
+                            },
+                        })
+                        response.cookies.set({
+                            name,
+                            value,
+                            ...options,
+                        })
+                    },
+                    remove(name: string, options: CookieOptions) {
+                        request.cookies.set({
+                            name,
+                            value: &apos;&apos;,
+                            ...options,
+                        })
+                        response = NextResponse.next({
+                            request: {
+                                headers: request.headers,
+                            },
+                        })
+                        response.cookies.set({
+                            name,
+                            value: &apos;&apos;,
+                            ...options,
+                        })
+                    },
+                },
+            }
+        )
+
+        const {
+            data: { user },
+        } = await supabase.auth.getUser()
+
+        // If no user and not on login page, redirect to login
+        if (!user &amp;&amp; !request.nextUrl.pathname.startsWith(&apos;/login&apos;)) {
+            console.log(&apos;🔍 [MIDDLEWARE] No user detected, redirecting to login from:&apos;, request.nextUrl.pathname)
+            const redirectUrl = new URL(&apos;/login&apos;, request.url)
+            redirectUrl.searchParams.set(&apos;redirectedFrom&apos;, request.nextUrl.pathname)
+            return NextResponse.redirect(redirectUrl)
+        }
+
+        // If user is logged in and on login page, redirect to home
+        if (user &amp;&amp; request.nextUrl.pathname.startsWith(&apos;/login&apos;)) {
+            return NextResponse.redirect(new URL(&apos;/&apos;, request.url))
+        }
+
+        // Access Control Logic
+        if (user) {
+            // Check profile for subscription status
+            const { data: profile } = await supabase
+                .from(&apos;profiles&apos;)
+                .select(&apos;*&apos;)
+                .eq(&apos;id&apos;, user.id)
+                .single()
+
+            if (profile) {
+                const now = new Date()
+                const trialStart = new Date(profile.trial_start_date)
+                const trialEnd = new Date(trialStart.getTime() + 30 * 24 * 60 * 60 * 1000) // 30 days
+                const isSubscribed = profile.is_subscribed
+                const isTrialActive = now &lt; trialEnd
+
+                // If trial expired and not subscribed, we might want to block access or show a modal.
+                // For middleware, we can redirect to a &quot;payment required&quot; page or let the app handle the modal.
+                // The user requested a modal, so we&apos;ll let the app handle it, but we pass a header or cookie to indicate status?
+                // Or we can just let the client-side check handle the modal display.
+
+                // However, to be secure, we should probably block API routes if expired.
+                // For now, let&apos;s just ensure they are logged in. The modal will be handled in the layout.
+            }
+        }
+
+        return response
+    } catch (error) {
+        console.error(&apos;❌ [MIDDLEWARE ERROR]:&apos;, error)
+        // In case of error, allow the request to proceed instead of crashing with 404
+        return NextResponse.next()
+    }
+}
+
+export const config = {
+    matcher: [
+        /*
+         * Match all request paths except for the ones starting with:
+         * - _next/static (static files)
+         * - _next/image (image optimization files)
+         * - favicon.ico (favicon file)
+         * - auth/callback (auth callback)
+         * - api routes (if any)
+         * - static assets
+         * Feel free to modify this pattern to include more paths.
+         */
+        &apos;/((?!_next/static|_next/image|favicon.ico|auth/callback|api/|.*\\.(?:svg|png|jpg|jpeg|gif|webp|js|css|json)$).*)&apos;,
+    ],
+}</file><file path="src/app/settings/page.tsx">&apos;use client&apos;;
 
 import React, { useState, useEffect } from &apos;react&apos;;
 
@@ -21371,7 +21510,7 @@ export default function SettingsPage() {
                   &lt;div className=&quot;mt-2 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700&quot;&gt;
                     &lt;div className=&quot;relative w-full&quot; style={{ paddingBottom: &apos;177.78%&apos; }}&gt;
                       &lt;iframe
-                        src=&quot;https://www.youtube.com/embed/enYGfYGLu6k?rel=0&amp;modestbranding=1&amp;playsinline=1&amp;controls=1&quot;
+                        src=&quot;https://youtube.com/embed/S99m2suega0?rel=0&amp;modestbranding=1&amp;playsinline=1&amp;controls=1&quot;
                         title=&quot;How to get Gemini API Key&quot;
                         className=&quot;absolute top-0 left-0 w-full h-full rounded-lg&quot;
                         frameBorder=&quot;0&quot;
@@ -21466,143 +21605,4 @@ export default function SettingsPage() {
       /&gt;
     &lt;/div&gt;
   );
-}</file><file path="src/middleware.ts">import { createServerClient, type CookieOptions } from &apos;@supabase/ssr&apos;
-import { NextResponse, type NextRequest } from &apos;next/server&apos;
-
-export const runtime = &apos;experimental-edge&apos;
-
-export async function middleware(request: NextRequest) {
-    console.log(&apos;🔍 [MIDDLEWARE] Processing request for:&apos;, request.nextUrl.pathname)
-
-    try {
-        // Check for required environment variables
-        if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
-            console.error(&apos;❌ [MIDDLEWARE] Missing Supabase environment variables&apos;)
-            return NextResponse.next()
-        }
-
-        // Skip middleware for static assets and API routes
-        if (request.nextUrl.pathname.startsWith(&apos;/_next/&apos;) ||
-            request.nextUrl.pathname.startsWith(&apos;/api/&apos;) ||
-            request.nextUrl.pathname.includes(&apos;.&apos;)) {
-            return NextResponse.next()
-        }
-
-        let response = NextResponse.next({
-            request: {
-                headers: request.headers,
-            },
-        })
-
-        const supabase = createServerClient(
-            process.env.NEXT_PUBLIC_SUPABASE_URL!,
-            process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-            {
-                cookies: {
-                    get(name: string) {
-                        return request.cookies.get(name)?.value
-                    },
-                    set(name: string, value: string, options: CookieOptions) {
-                        request.cookies.set({
-                            name,
-                            value,
-                            ...options,
-                        })
-                        response = NextResponse.next({
-                            request: {
-                                headers: request.headers,
-                            },
-                        })
-                        response.cookies.set({
-                            name,
-                            value,
-                            ...options,
-                        })
-                    },
-                    remove(name: string, options: CookieOptions) {
-                        request.cookies.set({
-                            name,
-                            value: &apos;&apos;,
-                            ...options,
-                        })
-                        response = NextResponse.next({
-                            request: {
-                                headers: request.headers,
-                            },
-                        })
-                        response.cookies.set({
-                            name,
-                            value: &apos;&apos;,
-                            ...options,
-                        })
-                    },
-                },
-            }
-        )
-
-        const {
-            data: { user },
-        } = await supabase.auth.getUser()
-
-        // If no user and not on login page, redirect to login
-        if (!user &amp;&amp; !request.nextUrl.pathname.startsWith(&apos;/login&apos;)) {
-            console.log(&apos;🔍 [MIDDLEWARE] No user detected, redirecting to login from:&apos;, request.nextUrl.pathname)
-            const redirectUrl = new URL(&apos;/login&apos;, request.url)
-            redirectUrl.searchParams.set(&apos;redirectedFrom&apos;, request.nextUrl.pathname)
-            return NextResponse.redirect(redirectUrl)
-        }
-
-        // If user is logged in and on login page, redirect to home
-        if (user &amp;&amp; request.nextUrl.pathname.startsWith(&apos;/login&apos;)) {
-            return NextResponse.redirect(new URL(&apos;/&apos;, request.url))
-        }
-
-        // Access Control Logic
-        if (user) {
-            // Check profile for subscription status
-            const { data: profile } = await supabase
-                .from(&apos;profiles&apos;)
-                .select(&apos;*&apos;)
-                .eq(&apos;id&apos;, user.id)
-                .single()
-
-            if (profile) {
-                const now = new Date()
-                const trialStart = new Date(profile.trial_start_date)
-                const trialEnd = new Date(trialStart.getTime() + 30 * 24 * 60 * 60 * 1000) // 30 days
-                const isSubscribed = profile.is_subscribed
-                const isTrialActive = now &lt; trialEnd
-
-                // If trial expired and not subscribed, we might want to block access or show a modal.
-                // For middleware, we can redirect to a &quot;payment required&quot; page or let the app handle the modal.
-                // The user requested a modal, so we&apos;ll let the app handle it, but we pass a header or cookie to indicate status?
-                // Or we can just let the client-side check handle the modal display.
-
-                // However, to be secure, we should probably block API routes if expired.
-                // For now, let&apos;s just ensure they are logged in. The modal will be handled in the layout.
-            }
-        }
-
-        return response
-    } catch (error) {
-        console.error(&apos;❌ [MIDDLEWARE ERROR]:&apos;, error)
-        // In case of error, allow the request to proceed instead of crashing with 404
-        return NextResponse.next()
-    }
-}
-
-export const config = {
-    matcher: [
-        /*
-         * Match all request paths except for the ones starting with:
-         * - _next/static (static files)
-         * - _next/image (image optimization files)
-         * - favicon.ico (favicon file)
-         * - auth/callback (auth callback)
-         * - api routes (if any)
-         * - static assets
-         * Feel free to modify this pattern to include more paths.
-         */
-        &apos;/((?!_next/static|_next/image|favicon.ico|auth/callback|api/|.*\\.(?:svg|png|jpg|jpeg|gif|webp|js|css|json)$).*)&apos;,
-    ],
 }</file></files></repomix>

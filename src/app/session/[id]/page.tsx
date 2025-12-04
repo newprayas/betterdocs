@@ -66,18 +66,48 @@ export default function SessionPage() {
   const { settings } = useSettingsStore();
   const { userId } = useSessionStore();
 
+  // ADD THIS VARIABLE
+  const hasDocuments = (currentSession?.documentCount || 0) > 0 || documents.length > 0;
+
   const [activeTab, setActiveTab] = useState('chat');
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isLibraryOpen, setIsLibraryOpen] = useState(false);
   const [messageInput, setMessageInput] = useState('');
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
   const messageInputRef = useRef<HTMLTextAreaElement>(null);
 
   // Load session data on mount (client-side only)
   useEffect(() => {
-    if (typeof window !== 'undefined' && sessionId) {
-      setCurrentSessionId(sessionId);
-      loadMessages(sessionId);
-    }
+    let isMounted = true;
+    
+    const loadSessionData = async () => {
+      if (typeof window !== 'undefined' && sessionId) {
+        // Set the current session ID immediately
+        setCurrentSessionId(sessionId);
+        
+        try {
+          // Await the loadMessages call to ensure we don't show empty state before knowing for sure
+          await loadMessages(sessionId);
+          
+          // Only set isInitialLoad to false after the initial fetch is complete
+          if (isMounted) {
+            setIsInitialLoad(false);
+          }
+        } catch (error) {
+          console.error('Failed to load session data:', error);
+          if (isMounted) {
+            setIsInitialLoad(false);
+          }
+        }
+      }
+    };
+    
+    loadSessionData();
+    
+    // Cleanup function to prevent state updates on unmounted component
+    return () => {
+      isMounted = false;
+    };
   }, [sessionId, setCurrentSessionId, loadMessages]);
 
   // NEW: Lazy load documents when tab changes
@@ -142,7 +172,7 @@ export default function SessionPage() {
   };
 
 
-  if (sessionLoading) {
+  if (isInitialLoad) {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
         <Header />
@@ -229,7 +259,7 @@ export default function SessionPage() {
       <div className="flex-1 container mx-auto px-4 pt-6 pb-0 overflow-hidden flex flex-col">
         {activeTab === 'chat' && (
           <div className="flex-1 flex flex-col min-h-0">
-            {messagesLoading ? (
+            {messagesLoading && !isInitialLoad ? (
               <div className="flex-1 flex items-center justify-center">
                 <Loading size="lg" text="Loading history..." />
               </div>
@@ -238,7 +268,7 @@ export default function SessionPage() {
               <div className="flex flex-col flex-1 min-h-0">
                 {/* This wrapper grows to fill all available space */}
                 <div className="flex-1 flex items-center justify-center">
-                  {(currentSession?.documentCount || 0) === 0 ? (
+                  {!hasDocuments ? (
                     <EmptyState
                       title="No books added, Add books to chat 🥳"
                       description=""
@@ -303,11 +333,11 @@ export default function SessionPage() {
                 <div className="flex-shrink-0 mt-4 max-w-4xl mx-auto w-full">
                   <MessageInput
                     sessionId={sessionId}
-                    disabled={isStreaming || !settings?.geminiApiKey || (currentSession?.documentCount || 0) === 0}
+                    disabled={isStreaming || !settings?.geminiApiKey || !hasDocuments}
                     placeholder={
                       !settings?.geminiApiKey
                         ? 'Please configure your API key in settings'
-                        : (currentSession?.documentCount || 0) === 0
+                        : !hasDocuments
                         ? 'Please add a book FIRST to chat'
                         : 'Ask a question about your documents...'
                     }
@@ -351,11 +381,11 @@ export default function SessionPage() {
                 <div className="flex-shrink-0 mt-4 max-w-4xl mx-auto w-full">
                   <MessageInput
                     sessionId={sessionId}
-                    disabled={isStreaming || !settings?.geminiApiKey || (currentSession?.documentCount || 0) === 0}
+                    disabled={isStreaming || !settings?.geminiApiKey || !hasDocuments}
                     placeholder={
                       !settings?.geminiApiKey
                         ? 'Please configure your API key in settings'
-                        : (currentSession?.documentCount || 0) === 0
+                        : !hasDocuments
                         ? 'Please add a book FIRST to chat'
                         : 'Ask a question about your documents...'
                     }

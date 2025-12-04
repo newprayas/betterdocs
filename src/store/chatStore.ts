@@ -36,8 +36,8 @@ export const useChatStore = create<ChatStore>()(
           const { userId: currentUserId } = useSessionStore.getState();
           const operationId = userIdLogger.logOperationStart('ChatStore', 'loadMessages', currentUserId);
           
-          // Set loading state at the beginning
-          set({ isLoading: true, error: null });
+          // Set loading state immediately and clear previous messages to avoid flickering
+          set({ isLoading: true, error: null, messages: [] });
           
           try {
             const messageService = getMessageService();
@@ -45,20 +45,25 @@ export const useChatStore = create<ChatStore>()(
               throw new Error('Message service not available');
             }
             
-            // Get session to verify ownership and get userId
+            // Get services
             const services = getIndexedDBServices();
             
+            // Run session validation and message fetching in parallel
             userIdLogger.logServiceCall('ChatStore', 'sessionService', 'getSession', currentUserId);
-            const session = await services.sessionService.getSession(sessionId, currentUserId || undefined);
+            userIdLogger.logServiceCall('ChatStore', 'messageService', 'getMessagesBySession', currentUserId);
+            
+            const [session, messages] = await Promise.all([
+              services.sessionService.getSession(sessionId, currentUserId || undefined),
+              messageService?.getMessagesBySession(sessionId, currentUserId || undefined, 50) // Fetch only last 50 messages initially
+            ]);
+            
+            // Check if session exists
             if (!session) {
               throw new Error('Session not found');
             }
             
-            userIdLogger.logServiceCall('ChatStore', 'messageService', 'getMessagesBySession', session.userId);
-            const messages = await messageService.getMessagesBySession(sessionId, session.userId);
-            
             userIdLogger.logOperationEnd('ChatStore', operationId, currentUserId);
-            set({ messages, isLoading: false });
+            set({ messages: messages || [], isLoading: false });
           } catch (error) {
             userIdLogger.logError('ChatStore.loadMessages', error instanceof Error ? error : String(error), currentUserId);
             set({

@@ -1,11 +1,19 @@
 import React, { useEffect, useRef } from 'react';
-import { MessageBubble } from './MessageBubble';
+import dynamic from 'next/dynamic';
 import { Loading } from '../ui/Loading';
 import { ResponseProgressBar } from '../ui/ResponseProgressBar';
 import { EmptyStates } from '../common/EmptyState';
 import { useChatStore } from '../../store';
 import { Message, MessageSender } from '../../types';
 import { isToday, isYesterday, ensureDate } from '../../utils/date';
+
+const MessageBubble = dynamic(
+  () => import('./MessageBubble').then(mod => mod.MessageBubble),
+  {
+    loading: () => <div className="h-16 bg-gray-100 dark:bg-gray-800 rounded-lg animate-pulse mb-4" />,
+    ssr: false
+  }
+);
 
 interface ChatListProps {
   sessionId: string;
