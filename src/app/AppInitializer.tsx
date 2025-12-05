@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { geminiService } from '../services/gemini';
-import { useSettingsStore, useSessionStore, useDocumentStore } from '../store';
+import { useSettingsStore, useSessionStore, useDocumentStore, useChatStore } from '../store';
 import { createClient } from '../utils/supabase/client';
 import { userIdLogger } from '../utils/userIdDebugLogger';
 
@@ -102,8 +102,21 @@ export function AppInitializer() {
           loadSettings(userId).finally(() => {
             userIdLogger.logOperationEnd('AppInitializer', settingsOpId, userId);
           }),
-          loadSessions(userId).finally(() => {
+          loadSessions(userId).then(async () => {
             userIdLogger.logOperationEnd('AppInitializer', sessionsOpId, userId);
+            // Preload messages for top 5 sessions immediately after loading sessions
+            const currentSessions = useSessionStore.getState().sessions;
+            if (currentSessions.length > 0) {
+              const topSessionIds = currentSessions.slice(0, 5).map(s => s.id);
+              console.log('[APP INIT] 🚀 Triggering global preload for', topSessionIds.length, 'sessions');
+              // We import the store directly to avoid hook rules in this async callback if needed, 
+              // but since we are in a component, we can use the hook's method if we extracted it.
+              // However, to be safe and clean, we'll use the store instance method if available or just the hook.
+              // Since we are inside useEffect, we can't use the hook *inside* the callback easily without closure issues.
+              // Better to use the store's getState() method for actions if possible, or just call the method we got from the hook.
+              // We'll use the method from the hook which we need to add to the component scope.
+              useChatStore.getState().preloadMessages(topSessionIds);
+            }
           })
         ]);
       } else {

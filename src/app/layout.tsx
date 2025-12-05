@@ -37,6 +37,8 @@ export const viewport: Viewport = {
   interactiveWidget: 'resizes-content',
 };
 
+import { ServiceWorkerRegister } from './register-sw';
+
 export default function RootLayout({
   children,
 }: {
@@ -54,6 +56,7 @@ export default function RootLayout({
         <RouteErrorBoundary>
           <div id="root" className="min-h-screen flex flex-col">
             <AppInitializer />
+            <ServiceWorkerRegister />
             <SubscriptionModal />
             <InstallPrompt />
             {children}
