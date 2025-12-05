@@ -49,7 +49,7 @@ export default function HomePage() {
               if (timeSinceLastActive < TWELVE_HOURS) {
                 console.log(`🚀 [PWA Resume] Resuming session ${lastSessionId}`);
                 sessionStorage.setItem('hasLaunched', 'true'); // Mark as launched so we don't loop
-                router.replace(`/session/${lastSessionId}`);
+                router.push(`/session/${lastSessionId}`);
                 return; // Stop loading home page stuff
               }
             }

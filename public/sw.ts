@@ -1,4 +1,5 @@
 
+
 const CACHE_NAME = 'meddy-cache-v1';
 const STATIC_ASSETS = [
     '/',
@@ -16,7 +17,7 @@ self.addEventListener('install', (event: any) => {
             return cache.addAll(STATIC_ASSETS);
         })
     );
-    self.skipWaiting();
+    (self as any).skipWaiting();
 });
 
 // Activate event - cleanup old caches
@@ -34,7 +35,7 @@ self.addEventListener('activate', (event: any) => {
             );
         })
     );
-    return self.clients.claim();
+    return (self as any).clients.claim();
 });
 
 // Fetch event - serve from cache, then network
@@ -69,3 +70,4 @@ self.addEventListener('fetch', (event: any) => {
         })
     );
 });
+

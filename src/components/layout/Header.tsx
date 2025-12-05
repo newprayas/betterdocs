@@ -19,7 +19,9 @@ export const Header: React.FC<HeaderProps> = ({
   const { settings } = useSettingsStore();
 
   const handleBack = () => {
-    router.back();
+    // Always go to home when clicking back in the header
+    // This is safer than router.back() which might exit the app if history is empty
+    router.push('/');
   };
 
   return (
@@ -203,11 +205,11 @@ export const SimpleHeader: React.FC = () => {
                   const { createClient } = await import('@/utils/supabase/client');
                   const supabase = createClient();
                   const { error } = await supabase.auth.signOut();
-                  
+
                   if (error) {
                     console.error('Sign out error:', error);
                   }
-                  
+
                   // Force redirect to login page after sign out
                   window.location.href = '/login';
                 } catch (error) {

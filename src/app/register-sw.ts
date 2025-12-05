@@ -4,7 +4,7 @@ import { useEffect } from 'react';
 
 export function ServiceWorkerRegister() {
     useEffect(() => {
-        if ('serviceWorker' in navigator && window.location.hostname !== 'localhost') {
+        if ('serviceWorker' in navigator) {
             navigator.serviceWorker
                 .register('/sw.ts')
                 .then((registration) => {
