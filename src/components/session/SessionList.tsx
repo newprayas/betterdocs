@@ -14,6 +14,7 @@ interface SessionListProps {
   showCreateButton?: boolean;
   onSessionSelect?: (session: Session) => void;
   className?: string;
+  disabled?: boolean;
 }
 
 export const SessionList: React.FC<SessionListProps> = ({
@@ -21,25 +22,23 @@ export const SessionList: React.FC<SessionListProps> = ({
   showCreateButton = true,
   onSessionSelect,
   className,
+  disabled = false,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const { sessions, isLoading, createSession } = useSessionStore();
   const { preloadMessages } = useChatStore();
   const router = useRouter();
 
-  // Preload messages for top 5 sessions
+  // Preload messages logic moved to HomePage for initial app loading screen
   useEffect(() => {
     if (sessions.length > 0) {
-      // Sessions are already sorted by updatedAt in sessionStore/service
-      const topSessionIds = sessions.slice(0, 5).map(s => s.id);
-      preloadMessages(topSessionIds);
-
       // Prefetch routes for instant navigation
+      const topSessionIds = sessions.slice(0, 5).map(s => s.id);
       topSessionIds.forEach(id => {
         router.prefetch(`/session/${id}`);
       });
     }
-  }, [sessions, preloadMessages, router]);
+  }, [sessions, router]);
 
   // Filter sessions based on search query
   const filteredSessions = sessions.filter(session =>
@@ -48,6 +47,11 @@ export const SessionList: React.FC<SessionListProps> = ({
   );
 
   const handleSessionClick = (session: Session) => {
+    // Prevent clicks when disabled (during preloading)
+    if (disabled) {
+      return;
+    }
+
     // Track click time for performance monitoring
     if (typeof window !== 'undefined') {
       sessionStorage.setItem('session_click_time', JSON.stringify({
@@ -166,59 +170,61 @@ export const SessionList: React.FC<SessionListProps> = ({
         </div>
       )}
 
-      {/* Sessions Display */}
-      {filteredSessions.length === 0 ? (
-        <div className="text-center py-8">
-          <p className="text-gray-500 dark:text-gray-400">
-            No sessions found matching "{searchQuery}"
-          </p>
-        </div>
-      ) : (
-        <>
-          {variant === 'grid' && (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {filteredSessions.map((session) => (
-                <SessionCard
-                  key={session.id}
-                  session={session}
-                  onClick={() => handleSessionClick(session)}
-                />
-              ))}
-            </div>
-          )}
+      {/* Sessions Display - with disabled state */}
+      <div className={disabled ? 'opacity-50 pointer-events-none' : ''}>
+        {filteredSessions.length === 0 ? (
+          <div className="text-center py-8">
+            <p className="text-gray-500 dark:text-gray-400">
+              No sessions found matching "{searchQuery}"
+            </p>
+          </div>
+        ) : (
+          <>
+            {variant === 'grid' && (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {filteredSessions.map((session) => (
+                  <SessionCard
+                    key={session.id}
+                    session={session}
+                    onClick={() => handleSessionClick(session)}
+                  />
+                ))}
+              </div>
+            )}
 
-          {variant === 'list' && (
-            <div className="space-y-4">
-              {filteredSessions.map((session) => (
-                <SessionCard
-                  key={session.id}
-                  session={session}
-                  onClick={() => handleSessionClick(session)}
-                />
-              ))}
-            </div>
-          )}
+            {variant === 'list' && (
+              <div className="space-y-4">
+                {filteredSessions.map((session) => (
+                  <SessionCard
+                    key={session.id}
+                    session={session}
+                    onClick={() => handleSessionClick(session)}
+                  />
+                ))}
+              </div>
+            )}
 
-          {variant === 'compact' && (
-            <div className="space-y-2">
-              {filteredSessions.map((session) => (
-                <SessionCardCompact
-                  key={session.id}
-                  session={session}
-                  onClick={() => handleSessionClick(session)}
-                />
-              ))}
-            </div>
-          )}
-        </>
-      )}
+            {variant === 'compact' && (
+              <div className="space-y-2">
+                {filteredSessions.map((session) => (
+                  <SessionCardCompact
+                    key={session.id}
+                    session={session}
+                    onClick={() => handleSessionClick(session)}
+                  />
+                ))}
+              </div>
+            )}
+          </>
+        )}
 
-      {/* Session Count */}
-      {searchQuery && (
-        <div className="mt-4 text-sm text-gray-500 dark:text-gray-400 text-center">
-          Showing {filteredSessions.length} of {sessions.length} sessions
-        </div>
-      )}
+        {/* Session Count */}
+        {searchQuery && (
+          <div className="mt-4 text-sm text-gray-500 dark:text-gray-400 text-center">
+            Showing {filteredSessions.length} of {sessions.length} sessions
+          </div>
+        )}
+      </div>
     </div>
   );
 };

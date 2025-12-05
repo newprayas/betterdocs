@@ -108,17 +108,33 @@ export const useSessionStore = create<SessionStore>()(
             }
             await sessionService.updateSession(id, data);
 
-            set(state => ({
-              sessions: state.sessions.map(session =>
-                session.id === id
-                  ? { ...session, ...data, updatedAt: new Date() }
-                  : session
-              ),
-              currentSession: state.currentSession?.id === id
-                ? { ...state.currentSession, ...data, updatedAt: new Date() }
-                : state.currentSession,
-              isLoading: false,
-            }));
+            await sessionService.updateSession(id, data);
+
+            // Reload sessions to ensure correct sorting (updatedAt changed)
+            const { userId } = get();
+            if (userId) {
+              const sessions = await sessionService.getSessions(userId);
+              set(state => ({
+                sessions,
+                currentSession: state.currentSession?.id === id
+                  ? { ...state.currentSession, ...data, updatedAt: new Date() }
+                  : state.currentSession,
+                isLoading: false,
+              }));
+            } else {
+              // Fallback for no user (shouldn't happen given checks)
+              set(state => ({
+                sessions: state.sessions.map(session =>
+                  session.id === id
+                    ? { ...session, ...data, updatedAt: new Date() }
+                    : session
+                ),
+                currentSession: state.currentSession?.id === id
+                  ? { ...state.currentSession, ...data, updatedAt: new Date() }
+                  : state.currentSession,
+                isLoading: false,
+              }));
+            }
           } catch (error) {
             set({
               isLoading: false,

@@ -36,6 +36,8 @@ export interface ChatStore {
   isReadingSources: boolean;
   progressPercentage: number;
   currentProgressStep: string;
+  isPreloading: boolean;
+  preloadingProgress: number;
 
   // Actions
   loadMessages: (sessionId: string) => Promise<void>;

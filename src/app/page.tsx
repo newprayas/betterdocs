@@ -3,33 +3,56 @@
 import React, { useEffect, useState } from 'react';
 
 export const dynamic = 'force-dynamic';
-import { useSessionStore, useDocumentStore } from '../store';
+import { useSessionStore, useDocumentStore, useChatStore } from '../store';
 import { SessionList } from '../components/session';
 import { Button } from '../components/ui';
 import { CreateSessionDialog } from '../components/session';
 import { EmptyState } from '../components/common';
+import { LoadingScreen } from '../components/ui/LoadingScreen';
 import { SimpleHeader } from '../components/layout';
 import { useRouter } from 'next/navigation';
 import type { Session } from '../types';
 
 export default function HomePage() {
   const router = useRouter();
-  const { sessions, loadSessions, createSession, isLoading, currentSessionId, setCurrentSession, userId } = useSessionStore();
+  const { sessions, loadSessions, createSession, isLoading: isSessionLoading, currentSessionId, setCurrentSession, userId } = useSessionStore();
   const { loadDocuments } = useDocumentStore();
+  const { preloadMessages, isPreloading, preloadingProgress } = useChatStore();
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
+  const [isAppReady, setIsAppReady] = useState(false);
 
   // Prevent hydration mismatch
   useEffect(() => {
     setIsMounted(true);
   }, []);
 
-  // Load sessions on mount (client-side only)
+  // Load sessions and preload messages on mount (client-side only)
   useEffect(() => {
-    if (isMounted && userId) {
-      loadSessions(userId);
-    }
-  }, [loadSessions, isMounted, userId]);
+    const initApp = async () => {
+      if (isMounted && userId) {
+        // 1. Load sessions first
+        await loadSessions(userId);
+
+        // 2. Preload messages for top 5 sessions
+        const currentSessions = useSessionStore.getState().sessions;
+        if (currentSessions.length > 0) {
+          const topSessionIds = currentSessions.slice(0, 5).map(s => s.id);
+          await preloadMessages(topSessionIds);
+        }
+
+        // 3. Mark app as ready
+        setIsAppReady(true);
+      } else if (isMounted && !userId) {
+        // If no user, we're ready (empty state)
+        setIsAppReady(true);
+      }
+    };
+
+    initApp();
+  }, [loadSessions, preloadMessages, isMounted, userId]);
+
+  if (!isMounted) return null;
 
   const handleCreateSession = async (data: { name: string; description?: string; systemPrompt?: string }) => {
     try {
@@ -84,8 +107,30 @@ export default function HomePage() {
           </div>
         </div>
 
+        {/* Inline Progress Bar - shown while preloading */}
+        {isPreloading && preloadingProgress < 100 && (
+          <div className="mb-6 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+            <div className="flex flex-col space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium text-blue-900 dark:text-blue-100">
+                  Preparing your chats...
+                </span>
+                <span className="text-xs text-blue-600 dark:text-blue-400">
+                  {Math.round(preloadingProgress)}%
+                </span>
+              </div>
+              <div className="w-full bg-blue-200 dark:bg-blue-800 rounded-full h-2 overflow-hidden">
+                <div
+                  className="bg-blue-600 dark:bg-blue-500 h-full rounded-full transition-all duration-300 ease-out"
+                  style={{ width: `${Math.max(5, Math.min(100, preloadingProgress))}%` }}
+                />
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Sessions List */}
-        {isMounted && sessions.length === 0 && !isLoading ? (
+        {isMounted && sessions.length === 0 && !isSessionLoading ? (
           <EmptyState
             title="No conversations yet"
             description="Start your first conversation to begin chatting with your documents"
@@ -117,6 +162,7 @@ export default function HomePage() {
           <SessionList
             onSessionSelect={handleSessionSelect}
             showCreateButton={false} // We have our own create button
+            disabled={isPreloading && preloadingProgress < 100}
           />
         )}
       </main>

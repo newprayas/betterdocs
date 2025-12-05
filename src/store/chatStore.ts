@@ -31,6 +31,8 @@ export const useChatStore = create<ChatStore>()(
         isReadingSources: false,
         progressPercentage: 0,
         currentProgressStep: '',
+        isPreloading: false,
+        preloadingProgress: 0,
 
         // Actions
         loadMessages: async (sessionId: string) => {
@@ -102,17 +104,27 @@ export const useChatStore = create<ChatStore>()(
 
           if (sessionsToFetch.length === 0) {
             console.log('✨ [ChatStore] All top sessions already cached. No preloading needed.');
+            set({ isPreloading: false, preloadingProgress: 100 });
             return;
           }
 
           console.log(`🔥 [ChatStore] Preloading ${sessionsToFetch.length} sessions:`, sessionsToFetch);
+          set({ isPreloading: true, preloadingProgress: 0 });
 
           try {
+            let completedCount = 0;
+            const totalToFetch = sessionsToFetch.length;
+
             // Fetch messages for each session in parallel
             const results = await Promise.all(
               sessionsToFetch.map(async (sessionId) => {
                 try {
                   const messages = await messageService.getMessagesBySession(sessionId, currentUserId, 20);
+
+                  // Update progress
+                  completedCount++;
+                  set({ preloadingProgress: (completedCount / totalToFetch) * 100 });
+
                   return { sessionId, messages };
                 } catch (e) {
                   console.warn(`Failed to preload session ${sessionId}`, e);
@@ -129,12 +141,17 @@ export const useChatStore = create<ChatStore>()(
                   newCache[result.sessionId] = result.messages;
                 }
               });
-              return { messageCache: newCache };
+              return {
+                messageCache: newCache,
+                isPreloading: false,
+                preloadingProgress: 100
+              };
             });
 
             console.log(`✅ [ChatStore] Preloaded ${results.filter(r => r !== null).length} sessions into cache`);
           } catch (error) {
             console.error('Failed to preload messages:', error);
+            set({ isPreloading: false, preloadingProgress: 0 });
           }
         },
 
@@ -176,6 +193,10 @@ export const useChatStore = create<ChatStore>()(
             // Save user message to IndexedDB
             userIdLogger.logServiceCall('ChatStore', 'messageService', 'createMessage', currentUserId);
             await messageService.createMessage(userMessage);
+
+            // Update session timestamp to move it to the top
+            const services = getIndexedDBServices();
+            await services.sessionService.updateSession(sessionId, { updatedAt: new Date() }, currentUserId || undefined);
 
             // Use the actual chat pipeline to generate response
             // Pass the already created userMessage to avoid duplication
