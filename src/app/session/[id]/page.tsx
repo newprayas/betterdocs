@@ -139,31 +139,8 @@ export default function SessionPage() {
     }
   }, [activeTab, sessionId, loadDocuments]);
 
-  // NEW: Track last active session for PWA resume
-  useEffect(() => {
-    if (sessionId) {
-      const saveSessionActivity = () => {
-        try {
-          localStorage.setItem('lastActiveSessionId', sessionId);
-          localStorage.setItem('lastActiveSessionTime', Date.now().toString());
-        } catch (e) {
-          console.error('Failed to save session activity', e);
-        }
-      };
-
-      saveSessionActivity();
-
-      // Also update on visibility change (e.g. when coming back to app)
-      const handleVisibilityChange = () => {
-        if (document.visibilityState === 'visible') {
-          saveSessionActivity();
-        }
-      };
-
-      document.addEventListener('visibilitychange', handleVisibilityChange);
-      return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-    }
-  }, [sessionId]);
+  // NEW: Track last active session for PWA resume (Removed as per user request)
+  // We no longer track this as we always want to land on home page
 
   // Redirect if session not found (client-side only)
   useEffect(() => {

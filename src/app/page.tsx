@@ -31,35 +31,9 @@ export default function HomePage() {
   useEffect(() => {
     const initApp = async () => {
       if (isMounted && userId) {
-        // 0. Check for PWA Resume (Auto-redirect to last session)
-        try {
-          // We use sessionStorage to detect if this is a "fresh" tab/launch
-          // sessionStorage is cleared when the tab/app is closed
-          const isFreshLaunch = !sessionStorage.getItem('hasLaunched');
+        // 0. Check for PWA Resume (Removed as per user request)
+        // We now always land on the home page, but keep global preloading active.
 
-          if (isFreshLaunch) {
-            const lastSessionId = localStorage.getItem('lastActiveSessionId');
-            const lastSessionTime = localStorage.getItem('lastActiveSessionTime');
-
-            if (lastSessionId && lastSessionTime) {
-              const timeSinceLastActive = Date.now() - parseInt(lastSessionTime, 10);
-              const TWELVE_HOURS = 12 * 60 * 60 * 1000;
-
-              // Only resume if within 12 hours
-              if (timeSinceLastActive < TWELVE_HOURS) {
-                console.log(`🚀 [PWA Resume] Resuming session ${lastSessionId}`);
-                sessionStorage.setItem('hasLaunched', 'true'); // Mark as launched so we don't loop
-                router.push(`/session/${lastSessionId}`);
-                return; // Stop loading home page stuff
-              }
-            }
-          }
-
-          // Mark as launched immediately if we didn't redirect
-          sessionStorage.setItem('hasLaunched', 'true');
-        } catch (e) {
-          console.error('Failed to check resume state', e);
-        }
 
         // 1. Load sessions first
         await loadSessions(userId);
