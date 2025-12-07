@@ -240,19 +240,20 @@ export default function SessionPage() {
       </div>
 
       {/* Sticky Tab Navigation */}
-      <div className="sticky top-14 sm:top-16 z-30 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
-        <div className="container mx-auto px-3 sm:px-4">
+      <div className="sticky top-14 sm:top-16 z-30 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 py-3">
+        <div className="container mx-auto px-4 sm:px-6 max-w-4xl flex justify-center">
           <TabBar
             tabs={ChatTabs.ChatDocuments}
             activeTab={activeTab}
             onTabChange={setActiveTab}
-            variant="underline"
+            variant="pills"
+            className="w-full sm:w-auto min-w-[300px]"
             actions={
               <DropdownMenu
                 trigger={
-                  <Button variant="ghost" size="sm" className="p-2">
+                  <Button variant="ghost" size="sm" className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800">
                     <svg
-                      className="h-4 w-4 sm:h-5 sm:w-5 text-gray-700 dark:text-gray-200"
+                      className="h-5 w-5 text-gray-500 dark:text-gray-400"
                       fill="none"
                       viewBox="0 0 24 24"
                       stroke="currentColor"
@@ -282,8 +283,36 @@ export default function SessionPage() {
         </div>
       </div>
 
-      {/* Tab Content */}
-      <div className="flex-1 container mx-auto px-4 pt-6 pb-0 overflow-hidden flex flex-col">
+      {/* Tab Content with Swipe Support */}
+      <div
+        className="flex-1 container mx-auto px-4 pt-4 pb-0 overflow-hidden flex flex-col"
+        onTouchStart={(e) => {
+          const touch = e.touches[0];
+          // Store start position
+          (e.currentTarget as any)._touchStartX = touch.clientX;
+          (e.currentTarget as any)._touchStartY = touch.clientY;
+        }}
+        onTouchEnd={(e) => {
+          const touch = e.changedTouches[0];
+          const deltaX = touch.clientX - ((e.currentTarget as any)._touchStartX || 0);
+          const deltaY = touch.clientY - ((e.currentTarget as any)._touchStartY || 0);
+
+          // Thresholds
+          const minSwipeDistance = 75;
+          const maxVerticalDistance = 100;
+
+          if (Math.abs(deltaX) > minSwipeDistance && Math.abs(deltaY) < maxVerticalDistance) {
+            // Horizontal swipe detected
+            if (deltaX > 0) {
+              // Right swipe (move to left tab)
+              if (activeTab === 'documents') setActiveTab('chat');
+            } else {
+              // Left swipe (move to right tab)
+              if (activeTab === 'chat') setActiveTab('documents');
+            }
+          }
+        }}
+      >
         {activeTab === 'chat' && (
           <div className="flex-1 flex flex-col min-h-0">
             {messagesLoading && !isInitialLoad ? (

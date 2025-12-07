@@ -37,7 +37,7 @@ export const TabBar: React.FC<TabBarProps> = ({
   const getVariantClasses = () => {
     switch (variant) {
       case 'pills':
-        return 'bg-gray-100 dark:bg-gray-800 p-1 rounded-lg gap-1';
+        return 'bg-gray-100 dark:bg-gray-800/50 p-1.5 rounded-full gap-1 border border-gray-200 dark:border-gray-700/50';
       case 'underline':
         return 'border-b border-gray-200 dark:border-gray-700 gap-8';
       default:
@@ -56,10 +56,10 @@ export const TabBar: React.FC<TabBarProps> = ({
       case 'pills':
         return clsx(
           baseClasses,
-          'px-3 py-2 rounded-md',
+          'px-3 py-2 rounded-full text-sm font-medium',
           activeTab === tab.id
-            ? 'bg-white dark:bg-gray-900 text-blue-600 dark:text-blue-400 shadow-sm'
-            : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
+            ? 'bg-blue-600 text-white shadow-md' // Active: Blue bg, White text
+            : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800' // Inactive: Gray text
         );
       case 'underline':
         return clsx(
@@ -81,8 +81,14 @@ export const TabBar: React.FC<TabBarProps> = ({
   };
 
   return (
-    <div className={clsx('flex justify-between items-center pt-2', getVariantClasses(), className)}>
-      <div className="flex gap-8">
+    <div className={clsx('flex justify-between items-center w-full', className)}>
+      {/* Tabs Group (Left) */}
+      <div className={clsx(
+        'flex items-center',
+        variant === 'pills'
+          ? 'bg-gray-100 dark:bg-gray-800/50 p-1 rounded-full gap-1 border border-gray-200 dark:border-gray-700/50'
+          : 'gap-8 border-b border-gray-200 dark:border-gray-700 w-full justify-center' // Default style
+      )}>
         {tabs.map((tab) => (
           <button
             key={tab.id}
@@ -95,11 +101,11 @@ export const TabBar: React.FC<TabBarProps> = ({
                 {tab.icon}
               </span>
             )}
-            
+
             <span className="truncate">
               {tab.label}
             </span>
-            
+
             {tab.badge && (
               <span className={clsx(
                 'inline-flex items-center justify-center px-2 py-1 text-xs font-bold rounded-full',
@@ -113,9 +119,10 @@ export const TabBar: React.FC<TabBarProps> = ({
           </button>
         ))}
       </div>
-      
+
+      {/* Actions Group (Right) */}
       {actions && (
-        <div className="ml-4">
+        <div className="flex-shrink-0 ml-4">
           {actions}
         </div>
       )}
