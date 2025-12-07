@@ -37,6 +37,7 @@ export const viewport: Viewport = {
   interactiveWidget: 'resizes-content',
 };
 
+import { GlobalLoadingScreen } from '@/components/ui/GlobalLoadingScreen';
 import { ServiceWorkerRegister } from './register-sw';
 
 export default function RootLayout({
@@ -56,6 +57,7 @@ export default function RootLayout({
         <RouteErrorBoundary>
           <div id="root" className="min-h-screen flex flex-col">
             <AppInitializer />
+            <GlobalLoadingScreen minDisplayTime={1500} />
             <ServiceWorkerRegister />
             <SubscriptionModal />
             <InstallPrompt />
