@@ -17,7 +17,7 @@ export const CreateSessionDialog: React.FC<CreateSessionDialogProps> = ({
   onCreate,
 }) => {
   const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
+
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -38,7 +38,7 @@ export const CreateSessionDialog: React.FC<CreateSessionDialogProps> = ({
     try {
       const newSession = await createSession({
         name: name.trim(),
-        description: description.trim() || undefined,
+
       });
 
       if (onCreate) {
@@ -48,7 +48,7 @@ export const CreateSessionDialog: React.FC<CreateSessionDialogProps> = ({
 
       // Reset form
       setName('');
-      setDescription('');
+
       onClose();
     } catch (error) {
       setError(error instanceof Error ? error.message : 'Failed to create session');
@@ -60,7 +60,7 @@ export const CreateSessionDialog: React.FC<CreateSessionDialogProps> = ({
   const handleClose = () => {
     if (!isLoading) {
       setName('');
-      setDescription('');
+      setName('');
       setError('');
       onClose();
     }
@@ -92,28 +92,7 @@ export const CreateSessionDialog: React.FC<CreateSessionDialogProps> = ({
           />
         </div>
 
-        {/* Description */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-            Description (optional)
-          </label>
-          <textarea
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            placeholder="Brief description of this chat's purpose"
-            rows={3}
-            disabled={isLoading}
-            className={`
-              w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg
-              bg-white dark:bg-gray-800
-              text-gray-900 dark:text-gray-100
-              placeholder-gray-500 dark:placeholder-gray-400
-              focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent
-              disabled:opacity-50 disabled:cursor-not-allowed
-              transition-colors duration-200
-            `}
-          />
-        </div>
+
 
 
         {/* Error Message */}
