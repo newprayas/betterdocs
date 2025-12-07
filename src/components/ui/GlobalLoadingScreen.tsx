@@ -104,24 +104,20 @@ export const GlobalLoadingScreen: React.FC<GlobalLoadingScreenProps> = ({
         <div className="fixed inset-0 z-[9999] bg-white dark:bg-gray-950 flex flex-col items-center justify-center transition-opacity duration-300">
             <div className="flex flex-col items-center space-y-8 animate-in fade-in zoom-in duration-300">
                 {/* Logo or App Name */}
-                <div className="relative">
-                    <div className="h-20 w-20 bg-blue-600 rounded-2xl flex items-center justify-center shadow-lg shadow-blue-500/30 mb-4">
-                        <svg
-                            className="h-10 w-10 text-white"
-                            fill="none"
-                            viewBox="0 0 24 24"
-                            stroke="currentColor"
-                        >
-                            <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth={2}
-                                d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"
-                            />
-                        </svg>
-                    </div>
-                    {/* Pulsing ring */}
-                    <div className="absolute inset-0 rounded-2xl ring-4 ring-blue-400/30 animate-pulse" />
+                <div className="relative mb-4">
+                    <svg
+                        className="h-20 w-20 text-blue-600 dark:text-blue-500"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                    >
+                        <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"
+                        />
+                    </svg>
                 </div>
 
                 <div className="text-center space-y-2">
