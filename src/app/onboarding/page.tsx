@@ -13,8 +13,8 @@ const carouselSlides = [
   {
     id: 1,
     title: 'Chat with Medical Books',
-    subtitle: 'Entire books, no size limit!',
-    description: 'Upload your textbooks and ask questions directly. Get answers from your own trusted resources.',
+    subtitle: 'Entire books, no limits!',
+    description: 'Can read whole textbooks and ask questions directly. Get answers from your own trusted resources.',
     image: '/onboarding/Screenshot_2025-12-08-00-53-21-734_com.android.chrome.jpg',
     gradient: 'from-blue-600 to-indigo-700',
     iconBg: 'bg-blue-500',
@@ -28,7 +28,7 @@ const carouselSlides = [
     id: 2,
     title: 'Get Verified Answers with Sources',
     subtitle: 'Answers you can trust',
-    description: 'Every response includes citations, so you can verify information and trace it back to the source.',
+    description: 'Every response includes citations - book name, page number and even the exact paragraph - so you can verify information and trace it back to the source.',
     image: '/onboarding/Screenshot_2025-12-08-00-56-09-186_com.android.chrome.jpg',
     gradient: 'from-emerald-500 to-teal-600',
     iconBg: 'bg-emerald-500',
@@ -40,9 +40,9 @@ const carouselSlides = [
   },
   {
     id: 3,
-    title: 'No Random Internet Answers',
-    subtitle: 'Only books you choose',
-    description: 'Unlike generic AI, your answers come exclusively from the medical books you upload. No guesswork.',
+    title: 'Only TRUSTED answers',
+    subtitle: 'From only the books you choose',
+    description: 'Only answers from the books given to it - Answers you can fully trust. Say it with confidence if someone asks - you have all the sources!',
     image: '/onboarding/Screenshot_2025-12-08-00-59-03-643_com.android.chrome.jpg',
     gradient: 'from-pink-500 to-rose-600',
     iconBg: 'bg-pink-500',
@@ -55,8 +55,8 @@ const carouselSlides = [
   {
     id: 4,
     title: 'You Are in Control',
-    subtitle: 'Your data, your way',
-    description: 'Manage your chat sessions, organize your books, and access everything offline. Complete privacy.',
+    subtitle: 'You choose the books',
+    description: 'Decide where your information comes from. No more blindly trusting the internet - doctors demand accuracy, not guesswork!',
     image: '/onboarding/Screenshot_2025-12-08-01-06-06-329_com.android.chrome.jpg',
     gradient: 'from-purple-500 to-violet-600',
     iconBg: 'bg-purple-500',
@@ -91,6 +91,7 @@ export default function OnboardingPage() {
   }, [router]);
 
   const handleNextSlide = () => {
+    window.scrollTo(0, 0);
     if (currentSlide < carouselSlides.length - 1) {
       setCurrentSlide(currentSlide + 1);
     } else {
@@ -100,16 +101,19 @@ export default function OnboardingPage() {
   };
 
   const handlePrevSlide = () => {
+    window.scrollTo(0, 0);
     if (currentSlide > 0) {
       setCurrentSlide(currentSlide - 1);
     }
   };
 
   const handleSkipCarousel = () => {
+    window.scrollTo(0, 0);
     setCurrentStep('apiSetup');
   };
 
   const handleBackToCarousel = () => {
+    window.scrollTo(0, 0);
     setCurrentStep('carousel');
     setCurrentSlide(carouselSlides.length - 1);
   };
