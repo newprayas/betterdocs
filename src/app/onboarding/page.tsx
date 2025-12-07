@@ -1,297 +1,357 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSettingsStore } from '../../store';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
 import { Input } from '../../components/ui/Input';
-import { Header } from '../../components/layout/Header';
 import clsx from 'clsx';
+
+// Define carousel slides data
+const carouselSlides = [
+  {
+    id: 1,
+    title: 'Chat with Medical Books',
+    subtitle: 'Entire books, no size limit!',
+    description: 'Upload your textbooks and ask questions directly. Get answers from your own trusted resources.',
+    image: '/onboarding/Screenshot_2025-12-08-00-53-21-734_com.android.chrome.jpg',
+    gradient: 'from-blue-600 to-indigo-700',
+    iconBg: 'bg-blue-500',
+    icon: (
+      <svg className="w-8 h-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+      </svg>
+    ),
+  },
+  {
+    id: 2,
+    title: 'Get Verified Answers with Sources',
+    subtitle: 'Answers you can trust',
+    description: 'Every response includes citations, so you can verify information and trace it back to the source.',
+    image: '/onboarding/Screenshot_2025-12-08-00-56-09-186_com.android.chrome.jpg',
+    gradient: 'from-emerald-500 to-teal-600',
+    iconBg: 'bg-emerald-500',
+    icon: (
+      <svg className="w-8 h-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+      </svg>
+    ),
+  },
+  {
+    id: 3,
+    title: 'No Random Internet Answers',
+    subtitle: 'Only books you choose',
+    description: 'Unlike generic AI, your answers come exclusively from the medical books you upload. No guesswork.',
+    image: '/onboarding/Screenshot_2025-12-08-00-59-03-643_com.android.chrome.jpg',
+    gradient: 'from-pink-500 to-rose-600',
+    iconBg: 'bg-pink-500',
+    icon: (
+      <svg className="w-8 h-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+      </svg>
+    ),
+  },
+  {
+    id: 4,
+    title: 'You Are in Control',
+    subtitle: 'Your data, your way',
+    description: 'Manage your chat sessions, organize your books, and access everything offline. Complete privacy.',
+    image: '/onboarding/Screenshot_2025-12-08-01-06-06-329_com.android.chrome.jpg',
+    gradient: 'from-purple-500 to-violet-600',
+    iconBg: 'bg-purple-500',
+    icon: (
+      <svg className="w-8 h-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+      </svg>
+    ),
+  },
+];
+
+type OnboardingStep = 'carousel' | 'apiSetup';
 
 export default function OnboardingPage() {
   const router = useRouter();
   const { updateSettings, validateApiKey } = useSettingsStore();
-  
-  const [step, setStep] = useState(1);
+
+  const [currentStep, setCurrentStep] = useState<OnboardingStep>('carousel');
+  const [currentSlide, setCurrentSlide] = useState(0);
   const [apiKey, setApiKey] = useState('');
-  const [model, setModel] = useState('gemini-1.5-flash');
+  const [model, setModel] = useState('gemini-2.5-flash-lite');
   const [isValidating, setIsValidating] = useState(false);
   const [validationError, setValidationError] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
+  const [isCompleting, setIsCompleting] = useState(false);
 
-  const totalSteps = 3;
+  // Check if already onboarded
+  useEffect(() => {
+    const onboarded = localStorage.getItem('onboarding_completed');
+    if (onboarded === 'true') {
+      router.replace('/');
+    }
+  }, [router]);
 
-  const handleNext = async () => {
-    if (step === 2) {
-      // Validate API key before proceeding
-      if (!apiKey.trim()) {
-        setValidationError('Please enter an API key');
-        return;
-      }
-
-      setIsValidating(true);
-      setValidationError('');
-
-      try {
-        const error = await validateApiKey(apiKey);
-        if (error) {
-          setValidationError(error);
-          return;
-        }
-        setStep(step + 1);
-      } catch (error) {
-        setValidationError('Failed to validate API key. Please check your connection and try again.');
-      } finally {
-        setIsValidating(false);
-      }
+  const handleNextSlide = () => {
+    if (currentSlide < carouselSlides.length - 1) {
+      setCurrentSlide(currentSlide + 1);
     } else {
-      setStep(step + 1);
+      // Move to API setup
+      setCurrentStep('apiSetup');
     }
   };
 
-  const handleBack = () => {
-    setStep(step - 1);
+  const handlePrevSlide = () => {
+    if (currentSlide > 0) {
+      setCurrentSlide(currentSlide - 1);
+    }
+  };
+
+  const handleSkipCarousel = () => {
+    setCurrentStep('apiSetup');
+  };
+
+  const handleBackToCarousel = () => {
+    setCurrentStep('carousel');
+    setCurrentSlide(carouselSlides.length - 1);
   };
 
   const handleComplete = async () => {
-    setIsLoading(true);
+    if (!apiKey.trim()) {
+      setValidationError('Please enter an API key to continue');
+      return;
+    }
+
+    setIsValidating(true);
+    setValidationError('');
+
     try {
+      const error = await validateApiKey(apiKey);
+      if (error) {
+        setValidationError(error);
+        setIsValidating(false);
+        return;
+      }
+
+      setIsCompleting(true);
       await updateSettings({
         geminiApiKey: apiKey,
         model: model,
       });
+
+      // Mark onboarding as complete
+      localStorage.setItem('onboarding_completed', 'true');
+
       router.push('/');
     } catch (error) {
-      console.error('Failed to save settings:', error);
+      setValidationError('Failed to validate API key. Please check your connection and try again.');
     } finally {
-      setIsLoading(false);
+      setIsValidating(false);
+      setIsCompleting(false);
     }
   };
 
-  const renderStep = () => {
-    switch (step) {
-      case 1:
-        return (
-          <div className="text-center space-y-6">
-            <div className="mx-auto w-16 h-16 bg-blue-100 dark:bg-blue-900 rounded-full flex items-center justify-center">
-              <svg className="w-8 h-8 text-blue-600 dark:text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-              </svg>
-            </div>
-            
-            <div>
-              <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-4">
-                Welcome to Meddy
-              </h2>
-              <p className="text-gray-600 dark:text-gray-300 max-w-md mx-auto">
-                Your private RAG (Retrieval-Augmented Generation) chat application for documents. 
-                Chat with your documents using AI-powered search and context retrieval.
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 max-w-2xl mx-auto">
-              <Card className="p-4 text-center">
-                <div className="w-12 h-12 bg-green-100 dark:bg-green-900 rounded-full flex items-center justify-center mx-auto mb-3">
-                  <svg className="w-6 h-6 text-green-600 dark:text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                  </svg>
-                </div>
-                <h3 className="font-semibold text-gray-900 dark:text-white mb-2">Upload Documents</h3>
-                <p className="text-sm text-gray-600 dark:text-gray-300">Import PDF, DOC, TXT files for AI analysis</p>
-              </Card>
-
-              <Card className="p-4 text-center">
-                <div className="w-12 h-12 bg-blue-100 dark:bg-blue-900 rounded-full flex items-center justify-center mx-auto mb-3">
-                  <svg className="w-6 h-6 text-blue-600 dark:text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                  </svg>
-                </div>
-                <h3 className="font-semibold text-gray-900 dark:text-white mb-2">Chat & Query</h3>
-                <p className="text-sm text-gray-600 dark:text-gray-300">Ask questions and get AI-powered responses</p>
-              </Card>
-
-              <Card className="p-4 text-center">
-                <div className="w-12 h-12 bg-purple-100 dark:bg-purple-900 rounded-full flex items-center justify-center mx-auto mb-3">
-                  <svg className="w-6 h-6 text-purple-600 dark:text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
-                  </svg>
-                </div>
-                <h3 className="font-semibold text-gray-900 dark:text-white mb-2">Get Citations</h3>
-                <p className="text-sm text-gray-600 dark:text-gray-300">See source documents for every response</p>
-              </Card>
-            </div>
-          </div>
-        );
-
-      case 2:
-        return (
-          <div className="space-y-6">
-            <div className="text-center">
-              <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-4">
-                Set Up API Key
-              </h2>
-              <p className="text-gray-600 dark:text-gray-300">
-                Get your free Gemini API key from Google AI Studio to enable AI chat functionality
-              </p>
-            </div>
-
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  Gemini API Key
-                </label>
-                <Input
-                  type="password"
-                  value={apiKey}
-                  onChange={(e) => {
-                    setApiKey(e.target.value);
-                    setValidationError('');
-                  }}
-                  placeholder="AIza..."
-                  className={clsx(
-                    validationError && 'border-red-300 focus:border-red-500 focus:ring-red-500'
-                  )}
-                />
-                {validationError && (
-                  <p className="text-sm text-red-600 dark:text-red-400 mt-1">{validationError}</p>
-                )}
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  Model
-                </label>
-                <select
-                  value={model}
-                  onChange={(e) => setModel(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
-                >
-                  <option value="gemini-1.5-flash">Gemini 1.5 Flash (Fast, Cost-effective)</option>
-                  <option value="gemini-1.5-pro">Gemini 1.5 Pro (Advanced)</option>
-                  <option value="gemini-pro">Gemini Pro (Legacy)</option>
-                </select>
-              </div>
-
-              <Card className="p-4 bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800">
-                <h3 className="font-semibold text-blue-900 dark:text-blue-100 mb-2">
-                  How to get your API key:
-                </h3>
-                <ol className="text-sm text-blue-800 dark:text-blue-200 space-y-1 list-decimal list-inside">
-                  <li>Visit <a href="https://makersuite.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="underline hover:no-underline">Google AI Studio</a></li>
-                  <li>Sign in with your Google account</li>
-                  <li>Click "Create API Key"</li>
-                  <li>Copy your API key and paste it above</li>
-                </ol>
-              </Card>
-            </div>
-          </div>
-        );
-
-      case 3:
-        return (
-          <div className="text-center space-y-6">
-            <div className="mx-auto w-16 h-16 bg-green-100 dark:bg-green-900 rounded-full flex items-center justify-center">
-              <svg className="w-8 h-8 text-green-600 dark:text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-              </svg>
-            </div>
-            
-            <div>
-              <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-4">
-                You're All Set!
-              </h2>
-              <p className="text-gray-600 dark:text-gray-300 max-w-md mx-auto">
-                Your Meddy account is configured and ready to use. Start by creating your first chat session and uploading some documents.
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-lg mx-auto">
-              <Card className="p-4">
-                <h3 className="font-semibold text-gray-900 dark:text-white mb-2">Quick Start Tips</h3>
-                <ul className="text-sm text-gray-600 dark:text-gray-300 text-left space-y-1">
-                  <li>• Create a session for each topic</li>
-                  <li>• Upload relevant documents</li>
-                  <li>• Ask specific questions</li>
-                  <li>• Check citations for sources</li>
-                </ul>
-              </Card>
-
-              <Card className="p-4">
-                <h3 className="font-semibold text-gray-900 dark:text-white mb-2">Privacy First</h3>
-                <ul className="text-sm text-gray-600 dark:text-gray-300 text-left space-y-1">
-                  <li>• All data stored locally</li>
-                  <li>• No cloud dependencies</li>
-                  <li>• Your documents stay private</li>
-                  <li>• Works offline after setup</li>
-                </ul>
-              </Card>
-            </div>
-          </div>
-        );
-
-      default:
-        return null;
-    }
-  };
+  const currentSlideData = carouselSlides[currentSlide];
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col">
-      <Header />
-      
-      <main className="flex-1 container mx-auto px-4 py-8 max-w-4xl overflow-y-auto">
-        {/* Progress Bar */}
-        <div className="mb-8">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-medium text-gray-600 dark:text-gray-300">
-              Step {step} of {totalSteps}
-            </span>
-            <span className="text-sm font-medium text-gray-600 dark:text-gray-300">
-              {Math.round((step / totalSteps) * 100)}% Complete
-            </span>
-          </div>
-          <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
-            <div
-              className="bg-blue-500 h-2 rounded-full transition-all duration-300"
-              style={{ width: `${(step / totalSteps) * 100}%` }}
-            />
+    <div className="min-h-screen bg-gray-900 flex flex-col overflow-hidden">
+      {currentStep === 'carousel' ? (
+        // --- CAROUSEL VIEW ---
+        <div className="flex-1 flex flex-col relative">
+          {/* Background Gradient */}
+          <div className={`absolute inset-0 bg-gradient-to-br ${currentSlideData.gradient} opacity-20 transition-all duration-700`} />
+
+          {/* Content */}
+          <div className="relative flex-1 flex flex-col px-6 py-8 max-w-lg mx-auto w-full">
+            {/* Header with progress indicators */}
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex gap-2">
+                {carouselSlides.map((_, index) => (
+                  <div
+                    key={index}
+                    className={clsx(
+                      'h-1.5 rounded-full transition-all duration-300',
+                      index === currentSlide
+                        ? 'w-8 bg-white'
+                        : index < currentSlide
+                          ? 'w-4 bg-white/60'
+                          : 'w-4 bg-white/30'
+                    )}
+                  />
+                ))}
+              </div>
+              <button
+                onClick={handleSkipCarousel}
+                className="text-white/70 hover:text-white text-sm font-medium transition-colors"
+              >
+                Skip
+              </button>
+            </div>
+
+            {/* Icon Badge */}
+            <div className={`w-16 h-16 ${currentSlideData.iconBg} rounded-2xl flex items-center justify-center mb-6 shadow-lg`}>
+              {currentSlideData.icon}
+            </div>
+
+            {/* Title & Subtitle */}
+            <h1 className="text-3xl font-bold text-white mb-2">
+              {currentSlideData.title}
+            </h1>
+            <p className="text-lg text-white/80 font-medium mb-3">
+              {currentSlideData.subtitle}
+            </p>
+            <p className="text-base text-white/60 mb-6">
+              {currentSlideData.description}
+            </p>
+
+            {/* Image Mockup */}
+            <div className="flex-1 relative rounded-2xl overflow-hidden shadow-2xl border border-white/10 bg-gray-800 mb-6">
+              <img
+                src={currentSlideData.image}
+                alt={currentSlideData.title}
+                className="w-full h-full object-cover object-top"
+              />
+              {/* Gradient overlay at bottom */}
+              <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-gray-900/80 to-transparent" />
+            </div>
+
+            {/* Navigation Buttons */}
+            <div className="flex gap-4">
+              {currentSlide > 0 && (
+                <button
+                  className="flex-1 py-3 px-6 rounded-xl border-2 border-white/50 text-white font-semibold hover:bg-white/20 transition-all"
+                  onClick={handlePrevSlide}
+                >
+                  Back
+                </button>
+              )}
+              <button
+                className={clsx(
+                  'flex-1 py-3 px-6 rounded-xl bg-white text-gray-900 font-semibold hover:bg-gray-100 transition-all shadow-lg',
+                  currentSlide === 0 && 'w-full'
+                )}
+                onClick={handleNextSlide}
+              >
+                {currentSlide < carouselSlides.length - 1 ? 'Next' : 'Get Started'}
+              </button>
+            </div>
           </div>
         </div>
-
-        {/* Content */}
-        <Card className="p-8">
-          {renderStep()}
-        </Card>
-
-        {/* Navigation */}
-        <div className="flex justify-between items-center mt-8">
-          <Button
-            variant="outline"
-            onClick={step === 1 ? () => router.push('/') : handleBack}
-            disabled={isLoading}
+      ) : (
+        // --- API SETUP VIEW ---
+        <div className="flex-1 flex flex-col px-6 py-8 max-w-lg mx-auto w-full overflow-y-auto">
+          {/* Header */}
+          <button
+            onClick={handleBackToCarousel}
+            className="flex items-center gap-2 text-white/70 hover:text-white mb-6 transition-colors"
           >
-            {step === 1 ? 'Skip' : 'Back'}
-          </Button>
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+            Back
+          </button>
 
-          {step < totalSteps ? (
-            <Button
-              onClick={handleNext}
-              disabled={isValidating || (step === 2 && !apiKey.trim())}
-              loading={isValidating}
-            >
-              {step === 2 ? 'Validate & Continue' : 'Next'}
-            </Button>
-          ) : (
+          {/* Icon */}
+          <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl flex items-center justify-center mb-6 shadow-lg">
+            <svg className="w-8 h-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+            </svg>
+          </div>
+
+          {/* Title */}
+          <h1 className="text-2xl font-bold text-white mb-2">
+            One Quick Setup
+          </h1>
+          <p className="text-white/60 mb-6">
+            Before we start, we need to set up your AI key. It takes less than 30 seconds!
+          </p>
+
+          {/* Explanation Card */}
+          <Card className="p-4 bg-blue-500/10 border-blue-500/30 mb-6">
+            <h3 className="font-semibold text-blue-300 mb-2 flex items-center gap-2">
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              What's an API Key?
+            </h3>
+            <p className="text-sm text-blue-200/80">
+              Think of it as a password that lets Meddy talk to the books. It's free, takes seconds to get, and you only need to do this once. Your key is stored safely on your device.
+            </p>
+          </Card>
+
+          {/* Video Tutorial */}
+          <div className="mb-6">
+            <h3 className="font-semibold text-white mb-3">Watch how to get your key:</h3>
+            <div className="aspect-[9/16] max-h-[400px] mx-auto rounded-xl overflow-hidden bg-gray-800 border border-white/10">
+              <iframe
+                src="https://youtube.com/embed/S99m2suega0?rel=0&modestbranding=1&playsinline=1&controls=1"
+                title="API Key Tutorial"
+                className="w-full h-full"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allowFullScreen
+              />
+            </div>
+          </div>
+
+          {/* Get API Key Link */}
+          <a
+            href="https://aistudio.google.com/app/apikey"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center justify-center gap-2 w-full py-3 px-4 mb-6 rounded-xl bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-semibold hover:from-blue-600 hover:to-indigo-700 transition-all shadow-lg"
+          >
+            Get Your Free API Key
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+            </svg>
+          </a>
+
+          {/* API Key Input */}
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-white/80 mb-2">
+                Paste your API Key here
+              </label>
+              <Input
+                type="password"
+                value={apiKey}
+                onChange={(e) => {
+                  setApiKey(e.target.value);
+                  setValidationError('');
+                }}
+                placeholder="AIza..."
+                className={clsx(
+                  'bg-gray-800 border-gray-700 text-white placeholder-gray-500',
+                  validationError && 'border-red-500 focus:border-red-500 focus:ring-red-500'
+                )}
+              />
+              {validationError && (
+                <p className="text-sm text-red-400 mt-2 flex items-center gap-1">
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  {validationError}
+                </p>
+              )}
+            </div>
+          </div>
+
+          {/* Complete Button */}
+          <div className="mt-8">
             <Button
               onClick={handleComplete}
-              disabled={isLoading}
-              loading={isLoading}
+              disabled={isValidating || isCompleting || !apiKey.trim()}
+              loading={isValidating || isCompleting}
+              className="w-full py-3 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white font-semibold text-lg shadow-lg disabled:opacity-50"
             >
-              Get Started
+              {isValidating ? 'Validating...' : isCompleting ? 'Setting up...' : 'Complete Setup'}
             </Button>
-          )}
+          </div>
+
+          {/* Footer note */}
+          <p className="text-center text-white/40 text-xs mt-6">
+            This is a one-time setup. You can change your API key later in Settings.
+          </p>
         </div>
-      </main>
+      )}
     </div>
   );
 }
