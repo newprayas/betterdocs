@@ -47,7 +47,7 @@ export const TabBar: React.FC<TabBarProps> = ({
 
   const getTabClasses = (tab: TabItem) => {
     const baseClasses = clsx(
-      'flex items-center gap-2 font-medium transition-colors duration-200',
+      'flex items-center gap-2 font-medium',
       sizeClasses[size],
       tab.disabled && 'opacity-50 cursor-not-allowed'
     );
@@ -56,10 +56,13 @@ export const TabBar: React.FC<TabBarProps> = ({
       case 'pills':
         return clsx(
           baseClasses,
-          'px-3 py-2 rounded-full text-sm font-medium',
+          // Base styling with smooth transitions for all properties
+          'px-4 py-2.5 rounded-full text-sm font-medium',
+          'transition-[background-color,color,box-shadow] duration-100 ease-in-out',
+          // Active state: Blue background, white text
           activeTab === tab.id
-            ? 'bg-blue-600 text-white shadow-md' // Active: Blue bg, White text
-            : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800' // Inactive: Gray text
+            ? 'bg-blue-600 text-white shadow-md'
+            : 'bg-transparent text-gray-600 dark:text-gray-400 hover:bg-gray-200/60 dark:hover:bg-gray-700/60'
         );
       case 'underline':
         return clsx(
@@ -89,35 +92,44 @@ export const TabBar: React.FC<TabBarProps> = ({
           ? 'bg-gray-100 dark:bg-gray-800/50 p-1 rounded-full gap-1 border border-gray-200 dark:border-gray-700/50'
           : 'gap-8 border-b border-gray-200 dark:border-gray-700 w-full justify-center' // Default style
       )}>
-        {tabs.map((tab) => (
-          <button
-            key={tab.id}
-            className={getTabClasses(tab)}
-            onClick={() => !tab.disabled && onTabChange(tab.id)}
-            disabled={tab.disabled}
-          >
-            {tab.icon && (
-              <span className="flex-shrink-0">
-                {tab.icon}
-              </span>
-            )}
+        {tabs.map((tab) => {
+          const isActive = activeTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              className={getTabClasses(tab)}
+              onClick={() => !tab.disabled && onTabChange(tab.id)}
+              disabled={tab.disabled}
+              data-active={isActive}
+              style={variant === 'pills' && isActive ? {
+                backgroundColor: '#2563eb', // blue-600
+                color: 'white',
+                boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)'
+              } : undefined}
+            >
+              {tab.icon && (
+                <span className="flex-shrink-0" style={isActive ? { color: 'white' } : undefined}>
+                  {tab.icon}
+                </span>
+              )}
 
-            <span className="truncate">
-              {tab.label}
-            </span>
-
-            {tab.badge && (
-              <span className={clsx(
-                'inline-flex items-center justify-center px-2 py-1 text-xs font-bold rounded-full',
-                activeTab === tab.id
-                  ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200'
-                  : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200'
-              )}>
-                {tab.badge}
+              <span className="truncate">
+                {tab.label}
               </span>
-            )}
-          </button>
-        ))}
+
+              {tab.badge && (
+                <span className={clsx(
+                  'inline-flex items-center justify-center px-2 py-1 text-xs font-bold rounded-full',
+                  isActive
+                    ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200'
+                    : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200'
+                )}>
+                  {tab.badge}
+                </span>
+              )}
+            </button>
+          );
+        })}
       </div>
 
       {/* Actions Group (Right) */}

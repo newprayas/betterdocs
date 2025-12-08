@@ -286,32 +286,6 @@ export default function SessionPage() {
       {/* Tab Content with Swipe Support */}
       <div
         className="flex-1 container mx-auto px-4 pt-4 pb-0 overflow-hidden flex flex-col"
-        onTouchStart={(e) => {
-          const touch = e.touches[0];
-          // Store start position
-          (e.currentTarget as any)._touchStartX = touch.clientX;
-          (e.currentTarget as any)._touchStartY = touch.clientY;
-        }}
-        onTouchEnd={(e) => {
-          const touch = e.changedTouches[0];
-          const deltaX = touch.clientX - ((e.currentTarget as any)._touchStartX || 0);
-          const deltaY = touch.clientY - ((e.currentTarget as any)._touchStartY || 0);
-
-          // Thresholds
-          const minSwipeDistance = 75;
-          const maxVerticalDistance = 100;
-
-          if (Math.abs(deltaX) > minSwipeDistance && Math.abs(deltaY) < maxVerticalDistance) {
-            // Horizontal swipe detected
-            if (deltaX > 0) {
-              // Right swipe (move to left tab)
-              if (activeTab === 'documents') setActiveTab('chat');
-            } else {
-              // Left swipe (move to right tab)
-              if (activeTab === 'chat') setActiveTab('documents');
-            }
-          }
-        }}
       >
         {activeTab === 'chat' && (
           <div className="flex-1 flex flex-col min-h-0">
