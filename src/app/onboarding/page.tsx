@@ -284,7 +284,7 @@ export default function OnboardingPage() {
           {/* Video Tutorial */}
           <div className="mb-6">
             <h3 className="font-semibold text-white mb-3">Watch how to get your key:</h3>
-            <div className="aspect-[9/16] max-h-[400px] mx-auto rounded-xl overflow-hidden bg-gray-800 border border-white/10">
+            <div className="aspect-[9/16] mx-auto rounded-xl overflow-hidden bg-gray-800 border border-white/10">
               <iframe
                 src="https://youtube.com/embed/S99m2suega0?rel=0&modestbranding=1&playsinline=1&controls=1"
                 title="API Key Tutorial"
