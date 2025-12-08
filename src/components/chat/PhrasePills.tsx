@@ -9,7 +9,7 @@ const DEFAULT_PHRASES = [
   "Causes",
   "Risk factors",
   "Pathogenesis",
-  "Features",
+  "Clinical Features",
   "Investigations",
   "Treatment",
   "Difference between"
