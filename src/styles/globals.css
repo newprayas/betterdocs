@@ -7,124 +7,143 @@
   html {
     @apply scroll-smooth;
   }
-  
+
   body {
-    @apply bg-slate-950 text-slate-200 antialiased;
+    @apply bg-gray-50 text-gray-900 antialiased;
+    @apply dark:bg-slate-950 dark:text-slate-200;
     font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
   }
-  
+
   * {
-    @apply border-slate-800;
+    @apply border-gray-200 dark:border-slate-800;
   }
 }
 
 /* Custom component styles */
 @layer components {
-  /* Scrollbar styling */
+
+  /* Scrollbar styling - Light theme default */
   .scrollbar-thin {
     scrollbar-width: thin;
-    scrollbar-color: rgb(51 65 85) rgb(15 23 42);
+    scrollbar-color: rgb(203 213 225) rgb(241 245 249);
   }
-  
+
   .scrollbar-thin::-webkit-scrollbar {
     width: 6px;
   }
-  
+
   .scrollbar-thin::-webkit-scrollbar-track {
-    background: rgb(15 23 42);
+    background: rgb(241 245 249);
   }
-  
+
   .scrollbar-thin::-webkit-scrollbar-thumb {
-    background-color: rgb(51 65 85);
+    background-color: rgb(203 213 225);
     border-radius: 3px;
   }
-  
+
   .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    background-color: rgb(148 163 184);
+  }
+
+  /* Scrollbar styling - Dark theme */
+  .dark .scrollbar-thin {
+    scrollbar-color: rgb(51 65 85) rgb(15 23 42);
+  }
+
+  .dark .scrollbar-thin::-webkit-scrollbar-track {
+    background: rgb(15 23 42);
+  }
+
+  .dark .scrollbar-thin::-webkit-scrollbar-thumb {
+    background-color: rgb(51 65 85);
+  }
+
+  .dark .scrollbar-thin::-webkit-scrollbar-thumb:hover {
     background-color: rgb(71 85 105);
   }
-  
+
   /* Glass effect */
   .glass {
-    @apply bg-slate-900/80 backdrop-blur-sm border border-slate-700/50;
+    @apply bg-white/80 dark:bg-slate-900/80 backdrop-blur-sm border border-gray-200/50 dark:border-slate-700/50;
   }
-  
+
   /* Message bubble styles */
   .message-bubble {
     @apply max-w-xs lg:max-w-md px-4 py-2 rounded-lg;
   }
-  
+
   .message-user {
     @apply bg-blue-500 text-white;
   }
-  
+
   .message-assistant {
-    @apply bg-slate-800 text-slate-200 border border-slate-700;
+    @apply bg-gray-100 dark:bg-slate-800 text-gray-900 dark:text-slate-200 border border-gray-200 dark:border-slate-700;
   }
-  
+
   /* Card styles */
   .card {
-    @apply bg-slate-900 rounded-xl border border-slate-800 shadow-lg;
+    @apply bg-white dark:bg-slate-900 rounded-xl border border-gray-200 dark:border-slate-800 shadow-lg;
   }
-  
+
   .card-hover {
-    @apply transition-all duration-200 hover:bg-slate-800 hover:border-slate-700 hover:shadow-xl;
+    @apply transition-all duration-200 hover:bg-gray-50 dark:hover:bg-slate-800 hover:border-gray-300 dark:hover:border-slate-700 hover:shadow-xl;
   }
-  
+
   /* Input styles */
   .input-field {
-    @apply bg-slate-950 border border-slate-700 rounded-lg px-4 py-3 text-slate-200 placeholder-slate-500 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 focus:outline-none transition-all duration-200;
+    @apply bg-white dark:bg-slate-950 border border-gray-300 dark:border-slate-700 rounded-lg px-4 py-3 text-gray-900 dark:text-slate-200 placeholder-gray-400 dark:placeholder-slate-500 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 focus:outline-none transition-all duration-200;
   }
-  
+
   /* Button styles */
   .btn-primary {
     @apply bg-blue-500 hover:bg-blue-600 text-white font-medium py-2 px-4 rounded-lg transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 disabled:opacity-50 disabled:cursor-not-allowed;
   }
-  
+
   .btn-secondary {
-    @apply bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium py-2 px-4 rounded-lg border border-slate-700 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-slate-500/20 disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply bg-gray-100 dark:bg-slate-800 hover:bg-gray-200 dark:hover:bg-slate-700 text-gray-700 dark:text-slate-200 font-medium py-2 px-4 rounded-lg border border-gray-300 dark:border-slate-700 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-gray-500/20 dark:focus:ring-slate-500/20 disabled:opacity-50 disabled:cursor-not-allowed;
   }
-  
+
   /* Loading animation */
   .loading-dots {
     @apply inline-flex space-x-1;
   }
-  
+
   .loading-dots div {
     @apply w-2 h-2 bg-blue-500 rounded-full animate-pulse;
     animation-delay: calc(var(--i) * 0.2s);
   }
-  
+
   /* Citation panel */
   .citation-panel {
     @apply bg-slate-800/50 rounded-lg border border-slate-700/50 p-3 mt-2;
   }
-  
+
   .citation-item {
     @apply flex items-start space-x-2 mb-2 last:mb-0;
   }
-  
+
   .citation-number {
     @apply flex-shrink-0 w-4.5 h-4.5 bg-blue-500 rounded text-white text-xs font-bold flex items-center justify-center;
   }
-  
+
   /* Vancouver style citation references */
   .citation-ref {
     @apply inline-flex items-center justify-center w-5 h-5 text-xs font-medium text-blue-600 dark:text-blue-400 bg-blue-100 dark:bg-blue-900 rounded-sm cursor-pointer hover:bg-blue-200 dark:hover:bg-blue-800 transition-colors;
   }
-  
+
   /* Page citation group */
   .page-citation-group {
     @apply bg-gray-50 dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-700;
   }
-  
+
   .page-citation-header {
     @apply flex items-center justify-between mb-3;
   }
-  
+
   .page-citation-title {
     @apply text-sm font-semibold text-gray-900 dark:text-gray-100;
   }
-  
+
   .page-citation-content {
     @apply text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap;
   }
@@ -135,15 +154,15 @@
   .text-balance {
     text-wrap: balance;
   }
-  
+
   .bg-gradient-radial {
     background: radial-gradient(circle at center, rgb(15 23 42) 0%, rgb(2 6 23) 100%);
   }
-  
+
   .shadow-glow {
     box-shadow: 0 0 20px rgb(59 130 246 / 0.3);
   }
-  
+
   .shadow-glow-intense {
     box-shadow: 0 0 40px rgb(59 130 246 / 0.5);
   }
@@ -181,30 +200,34 @@
   @apply leading-relaxed text-gray-800;
 }
 
-.prose-gray ul > li {
+.prose-gray ul>li {
   @apply mb-2 text-gray-800;
 }
 
-.prose-gray ul > li:last-child {
+.prose-gray ul>li:last-child {
   @apply mb-0;
 }
 
 /* Ensure bullet points display on separate lines */
 .prose-gray ul {
-  @apply list-disc pl-5 space-y-1; /* pl-5 gives space for the bullet, space-y-1 adds breathing room */
-  list-style-position: outside !important; /* Keeps bullet outside the text block */
+  @apply list-disc pl-5 space-y-1;
+  /* pl-5 gives space for the bullet, space-y-1 adds breathing room */
+  list-style-position: outside !important;
+  /* Keeps bullet outside the text block */
   margin-bottom: 1rem;
 }
 
 .prose-gray ul li {
-  @apply list-item; /* CRITICAL: Must be list-item, not block */
+  @apply list-item;
+  /* CRITICAL: Must be list-item, not block */
   margin-left: 0.25rem;
   padding-left: 0.25rem;
 }
 
 /* Make sure bullet points are visible */
 .prose-gray ul li::marker {
-  @apply text-gray-500; /* Use Tailwind colors for better theme support */
+  @apply text-gray-500;
+  /* Use Tailwind colors for better theme support */
   font-size: 0.9em !important;
 }
 
@@ -275,30 +298,34 @@
   @apply leading-relaxed;
 }
 
-.prose ul > li {
+.prose ul>li {
   @apply mb-2;
 }
 
-.prose ul > li:last-child {
+.prose ul>li:last-child {
   @apply mb-0;
 }
 
 /* Ensure bullet points display on separate lines */
 .prose ul {
-  @apply list-disc pl-5 space-y-1; /* pl-5 gives space for the bullet, space-y-1 adds breathing room */
-  list-style-position: outside !important; /* Keeps bullet outside the text block */
+  @apply list-disc pl-5 space-y-1;
+  /* pl-5 gives space for the bullet, space-y-1 adds breathing room */
+  list-style-position: outside !important;
+  /* Keeps bullet outside the text block */
   margin-bottom: 1rem;
 }
 
 .prose ul li {
-  @apply list-item; /* CRITICAL: Must be list-item, not block */
+  @apply list-item;
+  /* CRITICAL: Must be list-item, not block */
   margin-left: 0.25rem;
   padding-left: 0.25rem;
 }
 
 /* Make sure bullet points are visible */
 .prose ul li::marker {
-  @apply text-slate-400 dark:text-slate-500; /* Use Tailwind colors for better theme support */
+  @apply text-slate-400 dark:text-slate-500;
+  /* Use Tailwind colors for better theme support */
   font-size: 0.9em !important;
 }
 
@@ -351,15 +378,15 @@
   .no-print {
     display: none !important;
   }
-  
+
   body {
     @apply bg-white text-black;
   }
-  
+
   .card {
     @apply bg-white border border-gray-300 shadow-none;
   }
-  
+
   .message-bubble {
     @apply bg-gray-100 text-black border border-gray-300;
   }
@@ -367,6 +394,7 @@
 
 /* Accessibility */
 @media (prefers-reduced-motion: reduce) {
+
   *,
   *::before,
   *::after {
@@ -382,21 +410,23 @@
   .card {
     @apply border-2 border-slate-600;
   }
-  
+
   .btn-primary {
     @apply border-2 border-blue-400;
   }
-  
+
   .input-field {
     @apply border-2 border-slate-600;
   }
 }
+
 /* Ensure nested lists have deep indentation */
-.prose ul > li > ul {
+.prose ul>li>ul {
   padding-left: 1.5em;
   margin-top: 0.25em;
   margin-bottom: 0.25em;
-  list-style-type: circle; /* Changes bullet style for sub-items */
+  list-style-type: circle;
+  /* Changes bullet style for sub-items */
 }
 
 /* FIX: Force visual indentation for nested lists in prose */
@@ -404,23 +434,24 @@
 .prose ol ul,
 .prose ul ol,
 .prose ol ol {
-  padding-left: 1.5rem !important; /* 24px indent */
+  padding-left: 1.5rem !important;
+  /* 24px indent */
   margin-top: 0.25rem;
   margin-bottom: 0.25rem;
 }
 
 /* FIX: Distinct bullet styles for nesting levels */
 /* Level 1: Disc (Default) */
-.prose ul > li {
+.prose ul>li {
   list-style-type: disc;
 }
 
 /* Level 2: Hollow Circle */
-.prose ul > li > ul > li {
+.prose ul>li>ul>li {
   list-style-type: circle !important;
 }
 
 /* Level 3: Square */
-.prose ul > li > ul > li > ul > li {
+.prose ul>li>ul>li>ul>li {
   list-style-type: square !important;
 }
