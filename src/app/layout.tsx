@@ -57,7 +57,7 @@ export default function RootLayout({
         <RouteErrorBoundary>
           <div id="root" className="min-h-screen flex flex-col">
             <AppInitializer />
-            <GlobalLoadingScreen minDisplayTime={1500} />
+            <GlobalLoadingScreen minDisplayTime={2000} />
             <ServiceWorkerRegister />
             <SubscriptionModal />
             <InstallPrompt />

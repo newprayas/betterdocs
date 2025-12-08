@@ -8,7 +8,7 @@ interface GlobalLoadingScreenProps {
 }
 
 export const GlobalLoadingScreen: React.FC<GlobalLoadingScreenProps> = ({
-    minDisplayTime = 1500
+    minDisplayTime = 2000
 }) => {
     const [isVisible, setIsVisible] = useState(true);
     const [minTimerExpired, setMinTimerExpired] = useState(false);
