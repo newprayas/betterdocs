@@ -99,6 +99,12 @@ export default function SessionPage() {
           console.error('Failed to load messages:', error);
         });
 
+        // IMPORTANT: Load documents on mount to ensure hasDocuments check works correctly
+        // This fixes the race condition where Chat tab shows "Add books" even when books exist
+        loadDocuments(sessionId).catch(error => {
+          console.error('Failed to load documents:', error);
+        });
+
         // We can show the UI immediately if we have the session
         if (isMounted) {
           setIsInitialLoad(false);
@@ -130,9 +136,9 @@ export default function SessionPage() {
       // Also clear documents on unmount to be safe
       useDocumentStore.getState().clearDocuments();
     };
-  }, [sessionId, setCurrentSessionId, loadMessages]);
+  }, [sessionId, setCurrentSessionId, loadMessages, loadDocuments]);
 
-  // NEW: Lazy load documents when tab changes
+  // Refresh documents when switching to Documents tab (in case new docs were added)
   useEffect(() => {
     if (activeTab === 'documents' && sessionId) {
       loadDocuments(sessionId);
