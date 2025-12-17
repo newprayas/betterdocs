@@ -107,10 +107,7 @@ export default function OnboardingPage() {
     }
   };
 
-  const handleSkipCarousel = () => {
-    window.scrollTo(0, 0);
-    setCurrentStep('apiSetup');
-  };
+
 
   const handleBackToCarousel = () => {
     window.scrollTo(0, 0);
@@ -182,12 +179,7 @@ export default function OnboardingPage() {
                   />
                 ))}
               </div>
-              <button
-                onClick={handleSkipCarousel}
-                className="text-white/70 hover:text-white text-sm font-medium transition-colors"
-              >
-                Skip
-              </button>
+
             </div>
 
             {/* Icon Badge */}
