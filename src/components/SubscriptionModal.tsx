@@ -53,11 +53,11 @@ export default function SubscriptionModal() {
                     leaveFrom="opacity-100"
                     leaveTo="opacity-0"
                 >
-                    <div className="fixed inset-0 bg-gray-900 bg-opacity-75 transition-opacity" />
+                    <div className="fixed inset-0 bg-gray-900/90 backdrop-blur-sm transition-opacity" />
                 </Transition.Child>
 
                 <div className="fixed inset-0 z-10 w-screen overflow-y-auto">
-                    <div className="flex min-h-full items-end justify-center p-4 text-center sm:items-center sm:p-0">
+                    <div className="flex min-h-full items-center justify-center p-4 text-center sm:p-0">
                         <Transition.Child
                             as={Fragment}
                             enter="ease-out duration-300"
@@ -67,33 +67,56 @@ export default function SubscriptionModal() {
                             leaveFrom="opacity-100 translate-y-0 sm:scale-100"
                             leaveTo="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
                         >
-                            <Dialog.Panel className="relative transform overflow-hidden rounded-lg bg-white px-4 pb-4 pt-5 text-left shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-sm sm:p-6">
+                            <Dialog.Panel className="relative transform overflow-hidden rounded-2xl bg-white dark:bg-slate-900 px-4 pb-4 pt-5 text-left shadow-2xl transition-all sm:my-8 sm:w-full sm:max-w-xl sm:p-8 border border-gray-200 dark:border-slate-800">
                                 <div>
-                                    <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-indigo-100">
-                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6 text-indigo-600">
-                                            <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
+                                    <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 mb-6 shadow-lg shadow-indigo-500/30">
+                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-8 h-8 text-white">
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12z" />
                                         </svg>
                                     </div>
                                     <div className="mt-3 text-center sm:mt-5">
-                                        <Dialog.Title as="h3" className="text-base font-semibold leading-6 text-gray-900">
-                                            Free Trial Ended
+                                        <Dialog.Title as="h3" className="text-2xl font-bold leading-6 text-gray-900 dark:text-white mb-2">
+                                            Hey there!
                                         </Dialog.Title>
-                                        <div className="mt-2">
-                                            <p className="text-sm text-gray-500">
-                                                Your 1-month free trial has expired. To continue using the app, please subscribe.
+                                        <div className="mt-4 space-y-4 text-left">
+                                            <p className="text-sm sm:text-base text-gray-600 dark:text-gray-300 leading-relaxed">
+                                                It's awesome that you love the app and we are so happy it has been useful to you ❤️
                                             </p>
+                                            <p className="text-sm sm:text-base text-gray-600 dark:text-gray-300 leading-relaxed">
+                                                However, to keep this app running we need to pay some bills - mainly the cost and months of work to develop this app, server costs to host this website, and API cost to provide your answers. We really wish we could keep this app as a free service (free is awesome!), but these costs are unavoidable - we have to pay these companies to run our app, which you are a part of now ✨
+                                            </p>
+                                            <div className="bg-indigo-50 dark:bg-indigo-900/20 p-4 rounded-xl border border-indigo-100 dark:border-indigo-800/30">
+                                                <p className="text-sm sm:text-base font-medium text-gray-800 dark:text-gray-200 leading-relaxed">
+                                                    Hence if you find this app useful and also would want it to continue existing, please consider subscribing for a small fee of just <span className="text-indigo-600 dark:text-indigo-400 font-bold">'100 tk per month'</span> ✨ <span className="text-xs text-gray-500 dark:text-gray-400 block mt-1">(less than a cup of coffee a month for all the medical knowledge you need every day)</span>
+                                                </p>
+                                            </div>
+                                            <p className="text-sm sm:text-base text-gray-600 dark:text-gray-300 leading-relaxed">
+                                                Without your support we will have so sadly shut this app down for everyone too who love it as much as you do 😔
+                                            </p>
+                                            <p className="text-sm sm:text-base font-medium text-gray-900 dark:text-white text-center mt-6">
+                                                Every subscription counts, truly appreciate the support ❤️
+                                                <br />
+                                                <span className="text-sm font-normal text-gray-500 dark:text-gray-400 mt-2 block">Thanks!</span>
+                                            </p>
+
                                         </div>
                                     </div>
                                 </div>
-                                <div className="mt-5 sm:mt-6">
+                                <div className="mt-8 flex flex-col gap-3">
                                     <a
-                                        href="https://t.me/your_telegram_username" // Replace with actual link or env var
+                                        href="https://t.me/prayas_ojha"
                                         target="_blank"
                                         rel="noopener noreferrer"
-                                        className="inline-flex w-full justify-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
+                                        className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 px-4 py-3.5 text-base font-semibold text-white shadow-lg shadow-indigo-500/25 hover:from-indigo-500 hover:to-purple-500 hover:shadow-indigo-500/40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 transition-all transform hover:-translate-y-0.5"
                                     >
-                                        Contact for Subscription
+                                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                                        </svg>
+                                        Contact us Via Telegram for payment details
                                     </a>
+                                    <p className="text-xs text-center text-gray-400 dark:text-gray-500 mt-2">
+                                        ✨ You can continue using the app as normal, as soon as your subscribe ✨
+                                    </p>
                                 </div>
                             </Dialog.Panel>
                         </Transition.Child>
