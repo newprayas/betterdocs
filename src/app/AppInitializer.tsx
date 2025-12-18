@@ -150,7 +150,34 @@ export function AppInitializer() {
 
       initializeGemini();
     }
-  }, [isClient, settings?.geminiApiKey, settings?.model]); // Also update dependency
+  }, [isClient, settings?.geminiApiKey, settings?.model]);
+
+  // Global Storage Check
+  useEffect(() => {
+    if (!isClient) return;
+
+    const checkStorage = async () => {
+      try {
+        if (navigator.storage && navigator.storage.estimate) {
+          const { usage, quota } = await navigator.storage.estimate();
+          if (usage && quota) {
+            const percentage = (usage / quota) * 100;
+            console.log(`[APP INIT] Storage usage: ${percentage.toFixed(1)}% (${(usage / 1024 / 1024).toFixed(1)}MB / ${(quota / 1024 / 1024).toFixed(1)}MB)`);
+
+            if (percentage > 80) {
+              console.warn('[APP INIT] ⚠️ STORAGE CRITICAL: Usage > 80%. Mobile crashes likely.');
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('[APP INIT] Failed to check storage quota', e);
+      }
+    };
+
+    // Check after a short delay to let main threads settle
+    const timer = setTimeout(checkStorage, 5000);
+    return () => clearTimeout(timer);
+  }, [isClient]);
 
   // This component doesn't render anything
   return null;

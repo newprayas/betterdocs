@@ -230,36 +230,103 @@ export const useChatStore = create<ChatStore>()(
                       break;
                   }
                 } else if (event.type === 'done') {
+                  const { content: finalContent, citations: finalCitations } = event;
+
                   // Reload messages to get the final response
                   // Get session to verify ownership and get userId
                   const services = getIndexedDBServices();
                   // Get userId from sessionStore
                   const { userId: finalUserId } = useSessionStore.getState();
+                  const { setProgressState } = get();
+
+                  // OPTIMISTIC UPDATE: If we have content, update UI immediately
+                  if (finalContent) {
+                    console.log('⚡️ [ChatStore] Optimistic update with final content');
+
+                    set(state => {
+                      // Create message object
+                      const assistantMessage: Message = {
+                        id: crypto.randomUUID(), // Local ID
+                        sessionId,
+                        content: finalContent,
+                        role: MessageSender.ASSISTANT,
+                        timestamp: new Date(),
+                        citations: finalCitations
+                      };
+
+                      const newMessages = [...state.messages, assistantMessage];
+
+                      return {
+                        messages: newMessages,
+                        isStreaming: false, // Stop streaming interface
+                        streamingContent: '',
+                        streamingCitations: [],
+                        isReadingSources: false,
+                        progressPercentage: 100,
+                        currentProgressStep: 'Complete',
+                        // Update cache immediately
+                        messageCache: {
+                          ...state.messageCache,
+                          [sessionId]: newMessages
+                        }
+                      };
+                    });
+                  }
 
                   userIdLogger.logServiceCall('ChatStore', 'sessionService', 'getSession (done callback)', finalUserId);
-                  services.sessionService.getSession(sessionId, finalUserId || undefined).then(session => {
-                    if (session) {
+
+                  // Use robust async error handling to prevent UI hanging
+                  (async () => {
+                    try {
+                      const session = await services.sessionService.getSession(sessionId, finalUserId || undefined);
+
+                      if (!session) {
+                        throw new Error(`Session ${sessionId} not found during completion callback`);
+                      }
+
                       userIdLogger.logServiceCall('ChatStore', 'messageService', 'getMessagesBySession (done callback)', session.userId);
-                      messageService.getMessagesBySession(sessionId, session.userId).then(messages => {
-                        userIdLogger.logOperationEnd('ChatStore', operationId, finalUserId);
+                      const messages = await messageService.getMessagesBySession(sessionId, session.userId);
+
+                      userIdLogger.logOperationEnd('ChatStore', operationId, finalUserId);
+
+                      // If we didn't do optimistic update (legacy path), update now
+                      if (!finalContent) {
                         const { setProgressState } = get();
                         setProgressState(100, 'Complete');
+                      }
 
-                        set(state => ({
-                          messages,
+                      set(state => ({
+                        messages,
+                        isStreaming: false,
+                        streamingContent: '',
+                        streamingCitations: [],
+                        isReadingSources: false,
+                        // Update cache with final messages
+                        messageCache: {
+                          ...state.messageCache,
+                          [sessionId]: messages
+                        }
+                      }));
+                    } catch (error) {
+                      console.error('[ChatStore] Error checking for new messages in done callback:', error);
+                      userIdLogger.logError('ChatStore.sendMessage.doneCallback', error instanceof Error ? error : String(error), finalUserId);
+
+                      // Fallback: If we didn't have content and DB failed, show error
+                      // If we DID have content, we just log the warning (UI is already fine)
+                      if (!finalContent) {
+                        const { setProgressState } = get();
+                        setProgressState(100, 'Complete');
+                        set({
                           isStreaming: false,
                           streamingContent: '',
                           streamingCitations: [],
                           isReadingSources: false,
-                          // Update cache with final messages
-                          messageCache: {
-                            ...state.messageCache,
-                            [sessionId]: messages
-                          }
-                        }));
-                      });
+                          // Don't clear messages, just stop loading state
+                          error: 'Response generated, but failed to refresh chat history. Pull to refresh.',
+                        });
+                      }
                     }
-                  });
+                  })();
                 } else if (event.type === 'error') {
                   userIdLogger.logError('ChatStore.sendMessage (pipeline error)', event.message || 'Unknown error', currentUserId);
                   set({

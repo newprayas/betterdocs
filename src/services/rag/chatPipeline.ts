@@ -105,7 +105,7 @@ export class ChatPipeline {
       // Use a specialized instance for rewriting to avoid interfering with main chat state
       // We reuse the existing Gemini service structure but make a quick generation call
       const { geminiService } = await import('../gemini/geminiService');
-      
+
       // Note: We rely on the service already being initialized in AppInitializer,
       // but we pass options to ensure we use a fast/cheap configuration.
       const rewrittenQuery = await geminiService.generateResponse(
@@ -174,15 +174,15 @@ export class ChatPipeline {
       // This converts "What are its causes?" -> "What are the causes of cataract?"
       console.log('[REWRITING]', 'Generating standalone query...');
       const standaloneQuery = await this.generateStandaloneQuery(content, history, apiKey, model);
-      
+
       // 🔴 PROMINENT LOG: Show the converted query for tracking
       console.log('🔴 Converted query -:', `"${standaloneQuery}"`);
-      
+
       // Update progress: Embedding Generation (50%)
       if (onStreamEvent) {
         onStreamEvent({ type: 'status', message: 'Embedding Generation' });
       }
-      
+
       // 3. ENHANCE THE REWRITTEN QUERY, NOT THE ORIGINAL
       // Modify this line to pass 'standaloneQuery' instead of 'content'
       const enhancedQuery = await this.enhanceQueryWithContext(sessionId, standaloneQuery);
@@ -222,7 +222,7 @@ export class ChatPipeline {
       console.log('[EMBEDDING GENERATION]', 'Creating vector embedding for enhanced query...');
       const queryEmbedding = await embeddingService.generateEmbedding(enhancedQuery);
       console.log('[EMBEDDING GENERATED]', `Vector created with ${queryEmbedding.length} dimensions`);
-      
+
       // Update progress: Vector Search (75%)
       if (onStreamEvent) {
         onStreamEvent({ type: 'status', message: 'Vector Search' });
@@ -244,7 +244,7 @@ export class ChatPipeline {
       );
       console.log('[SEARCH RESULTS]', `${searchResults.length} relevant chunks found`);
       console.log('✅ CHUNKS USED =', searchResults.length);
-      
+
       // Update progress: Response Generation (90%)
       if (onStreamEvent) {
         onStreamEvent({ type: 'status', message: 'Response Generation' });
@@ -274,7 +274,7 @@ export class ChatPipeline {
       // ... The rest of the function (Context Building, LLM Generation) remains the same ...
       // IMPORTANT: The final LLM call (generateSimplifiedContextualResponse)
       // should use the standalone query for better context understanding
-      
+
       await this.generateSimplifiedContextualResponse(
         sessionId,
         standaloneQuery, // Use the rewritten query instead of original content
@@ -368,7 +368,13 @@ export class ChatPipeline {
 
           this.indexedDBServices.messageService.createMessage(assistantMessage);
           console.log('[RESPONSE SAVED]', 'Direct response stored in database');
-          if (onStreamEvent) onStreamEvent(event);
+          if (onStreamEvent) {
+            onStreamEvent({
+              type: 'done',
+              content: fullResponse,
+              citations: citations.length > 0 ? citations : undefined
+            });
+          }
         } else if (event.type === 'error') {
           console.error('[DIRECT MODE ERROR]', 'Streaming error:', event.error);
           if (onStreamEvent) onStreamEvent(event);
@@ -499,7 +505,14 @@ export class ChatPipeline {
 
           this.indexedDBServices.messageService.createMessage(assistantMessage);
           console.log('[RESPONSE SAVED]', 'Contextual response with citations stored in database');
-          if (onStreamEvent) onStreamEvent({ type: 'done' });
+          console.log('[RESPONSE SAVED]', 'Contextual response with citations stored in database');
+          if (onStreamEvent) {
+            onStreamEvent({
+              type: 'done',
+              content: citationResult.renumberedResponse,
+              citations: citationMetadata
+            });
+          }
         } else if (event.type === 'error') {
           console.error('[RAG MODE ERROR]', 'Streaming error:', event.error);
           if (onStreamEvent) onStreamEvent({
@@ -620,15 +633,15 @@ export class ChatPipeline {
           console.log('[DEBUG FORMATTING]', `Formatting API key: ${settingsForFormatting.geminiApiKey ? 'YES' : 'NO'}`);
           console.log('[DEBUG FORMATTING]', `Main API key: ${settingsForFormatting.geminiApiKey ? 'YES' : 'NO'}`);
           console.log('[DEBUG FORMATTING]', `Response length: ${fullResponse.length}`);
-          
+
           // Update progress: Response Formatting (95%)
           if (onStreamEvent) {
             onStreamEvent({ type: 'status', message: 'Response Formatting' });
           }
-          
+
           const formattedResponse = await ResponseFormatter.formatToBulletPoints(fullResponse, settingsForFormatting);
           console.log('[BULLET FORMATTING]', `Converted to bullet points: ${formattedResponse.length} characters`);
-          
+
           // DEBUG: Log formatted response before citation processing
           console.log('[PRE-CITATION DEBUG]', {
             formattedResponseLength: formattedResponse.length,
@@ -641,7 +654,7 @@ export class ChatPipeline {
 
           // Process citations using simplified system
           const citationResult: SimplifiedCitationGroup = citationService.processSimplifiedCitations(formattedResponse, searchResults);
-          
+
           // DEBUG: Log response after citation processing
           console.log('[POST-CITATION DEBUG]', {
             renumberedResponseLength: citationResult.renumberedResponse.length,
@@ -688,7 +701,14 @@ export class ChatPipeline {
 
           this.indexedDBServices.messageService.createMessage(assistantMessage);
           console.log('[SIMPLIFIED RESPONSE SAVED]', 'Simplified contextual response with citations stored in database');
-          if (onStreamEvent) onStreamEvent({ type: 'done' });
+          console.log('[SIMPLIFIED RESPONSE SAVED]', 'Simplified contextual response with citations stored in database');
+          if (onStreamEvent) {
+            onStreamEvent({
+              type: 'done',
+              content: citationResult.renumberedResponse,
+              citations: citationMetadata
+            });
+          }
         } else if (event.type === 'error') {
           console.error('[SIMPLIFIED RAG MODE ERROR]', 'Streaming error:', event.error);
           if (onStreamEvent) onStreamEvent({
@@ -732,7 +752,7 @@ When processing medical queries, understand and use these common medical abbrevi
 - "Dx" or "dx" means diagnosis (you should search for history, clinical features, AND investigations of the condition)
 - "inv" or "Inv" means investigations or diagnostic tests
 - "Give details about: mans Give all the information you can find about hte given query form the sources in a summarized way 
-- "Features" means - give information on HISTORY and CLINICAL features (examination findings) of the particualr condition
+- "Features" means ONLY CLINICAL FEATURES- give information on HISTORY and CLINICAL examination findings of the particualr condition
 
 
 SIMPLIFIED VANCOUVER CITATION REQUIREMENTS:
