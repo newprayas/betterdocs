@@ -28,6 +28,8 @@ export default function SettingsPage() {
 
   const [localSettings, setLocalSettings] = useState({
     geminiApiKey: '',
+    groqApiKey: '',
+    groqModel: 'llama-3.3-70b-versatile',
   });
 
   const [showApiKeyDialog, setShowApiKeyDialog] = useState(false);
@@ -40,7 +42,9 @@ export default function SettingsPage() {
   const [isMounted, setIsMounted] = useState(false);
   const [showSaveBanner, setShowSaveBanner] = useState<'success' | 'error' | null>(null);
   const [isApiKeySaved, setIsApiKeySaved] = useState(false);
+  const [isGroqApiKeySaved, setIsGroqApiKeySaved] = useState(false);
   const [savedApiKey, setSavedApiKey] = useState('');
+  const [savedGroqApiKey, setSavedGroqApiKey] = useState('');
 
   useEffect(() => {
     setIsMounted(true);
@@ -59,9 +63,13 @@ export default function SettingsPage() {
       });
       setLocalSettings({
         geminiApiKey: settings.geminiApiKey || '',
+        groqApiKey: settings.groqApiKey || '',
+        groqModel: settings.groqModel || 'llama-3.3-70b-versatile',
       });
       setSavedApiKey(settings.geminiApiKey || '');
+      setSavedGroqApiKey(settings.groqApiKey || '');
       setIsApiKeySaved(!!settings.geminiApiKey);
+      setIsGroqApiKeySaved(!!settings.groqApiKey);
     }
   }, [settings]);
 
@@ -72,6 +80,9 @@ export default function SettingsPage() {
     // Re-enable save button if API key is changed from saved value
     if (field === 'geminiApiKey' && value !== savedApiKey) {
       setIsApiKeySaved(false);
+    }
+    if (field === 'groqApiKey' && value !== savedGroqApiKey) {
+      setIsGroqApiKeySaved(false);
     }
   };
 
@@ -92,6 +103,8 @@ export default function SettingsPage() {
     try {
       const defaultSettings = {
         geminiApiKey: '',
+        groqApiKey: '',
+        groqModel: 'llama-3.3-70b-versatile',
       };
       await updateSettings(defaultSettings);
       setLocalSettings(defaultSettings);
@@ -120,6 +133,62 @@ export default function SettingsPage() {
     }
   };
 
+
+  const handleTestGroqConnection = async () => {
+    if (!localSettings.groqApiKey) {
+      setValidationResult({
+        isValid: false,
+        error: {
+          type: 'INVALID_KEY',
+          message: 'Please enter a Groq API key first'
+        }
+      });
+      setShowValidationError(true);
+      setConnectionStatus('error');
+      setTimeout(() => setConnectionStatus('idle'), 3000);
+      return;
+    }
+
+    setIsTestingConnection(true);
+    setConnectionStatus('testing');
+    setShowValidationError(false);
+
+    try {
+      const { groqService } = await import('../../services/groq/groqService');
+      const isValid = await groqService.validateApiKey(localSettings.groqApiKey);
+
+      if (isValid) {
+        setValidationResult({ isValid: true });
+        setConnectionStatus('success');
+        setTimeout(() => setConnectionStatus('idle'), 5000);
+      } else {
+        setValidationResult({
+          isValid: false,
+          error: {
+            type: 'INVALID_KEY',
+            message: 'Invalid Groq API Key. Please check and try again.'
+          }
+        });
+        setConnectionStatus('error');
+        setShowValidationError(true);
+        setTimeout(() => setConnectionStatus('idle'), 5000);
+      }
+    } catch (error) {
+      setValidationResult({
+        isValid: false,
+        error: {
+          type: 'UNKNOWN_ERROR',
+          message: 'Failed to test Groq API key connection',
+          details: error instanceof Error ? error.message : String(error)
+        }
+      });
+      setConnectionStatus('error');
+      setShowValidationError(true);
+      setTimeout(() => setConnectionStatus('idle'), 5000);
+    } finally {
+      setIsTestingConnection(false);
+    }
+  };
 
   const handleTestConnection = async () => {
     if (!localSettings.geminiApiKey) {
@@ -409,6 +478,87 @@ export default function SettingsPage() {
                         allowFullScreen
                         loading="lazy"
                       />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Groq Configuration */}
+                <div className="mt-8 pt-8 border-t border-gray-200 dark:border-gray-700">
+                  <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">
+                    Groq LLM Configuration (For Faster Chat)
+                  </h3>
+
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        Groq API Key
+                      </label>
+                      <Input
+                        type="password"
+                        value={localSettings.groqApiKey}
+                        onChange={(e) => handleSettingChange('groqApiKey', e.target.value)}
+                        placeholder="gsk_..."
+                        className="w-full mb-2"
+                      />
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
+                        Get your key from <a href="https://console.groq.com/keys" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">Groq Console</a>
+                      </p>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                            Model selection
+                          </label>
+                          <select
+                            value={localSettings.groqModel}
+                            onChange={(e) => handleSettingChange('groqModel', e.target.value)}
+                            className="w-full px-3 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          >
+                            <option value="llama-3.3-70b-versatile">Llama 3.3 70B (Versatile)</option>
+                            <option value="deepseek-r1-distill-llama-70b">DeepSeek R1 70B (Reasoning)</option>
+                            <option value="mixtral-8x7b-32768">Mixtral 8x7B</option>
+                            <option value="llama-3.1-8b-instant">Llama 3.1 8B (Instant)</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      <div className="flex justify-center">
+                        <Button
+                          variant="primary"
+                          size="md"
+                          className="w-full max-w-sm py-2 shadow-md hover:shadow-lg transition-all duration-200"
+                          onClick={async () => {
+                            if (localSettings.groqApiKey) {
+                              try {
+                                console.log('[SETTINGS PAGE] Testing and saving Groq API key...');
+                                const { groqService } = await import('../../services/groq/groqService');
+                                const isValid = await groqService.validateApiKey(localSettings.groqApiKey);
+
+                                if (isValid) {
+                                  await updateSettings({
+                                    groqApiKey: localSettings.groqApiKey,
+                                    groqModel: localSettings.groqModel
+                                  });
+                                  setHasChanges(false);
+                                  setSavedGroqApiKey(localSettings.groqApiKey);
+                                  setIsGroqApiKeySaved(true);
+                                  setShowSaveBanner('success');
+                                  setTimeout(() => setShowSaveBanner(null), 3000);
+                                } else {
+                                  setShowSaveBanner('error');
+                                  setTimeout(() => setShowSaveBanner(null), 3000);
+                                }
+                              } catch (error) {
+                                setShowSaveBanner('error');
+                                setTimeout(() => setShowSaveBanner(null), 3000);
+                              }
+                            }
+                          }}
+                          disabled={!localSettings.groqApiKey || isGroqApiKeySaved}
+                        >
+                          {isGroqApiKeySaved ? '✓ Groq Key Saved' : 'Save Groq Key'}
+                        </Button>
+                      </div>
                     </div>
                   </div>
                 </div>

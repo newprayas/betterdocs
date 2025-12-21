@@ -3853,304 +3853,7 @@ export class EmbeddingService {
 }
 
 // Singleton instance
-export const embeddingService = new EmbeddingService();</file><file path="src/services/gemini/geminiService.ts">import { GoogleGenAI } from &apos;@google/genai&apos;;
-import type { AppSettings, ApiKeyValidationResult } from &apos;@/types/settings&apos;;
-
-export class GeminiService {
-  private genAI: GoogleGenAI | null = null;
-  private modelName: string = &apos;gemini-2.5-flash-lite&apos;;
-  private embeddingModelName: string = &apos;text-embedding-004&apos;;
-
-  initialize(apiKey: string, modelName: string = &apos;gemini-2.5-flash-lite&apos;, embeddingModelName: string = &apos;text-embedding-004&apos;) {
-    try {
-      console.log(&apos;[GEMINI INIT]&apos;, &apos;Starting Gemini service initialization with new SDK&apos;);
-      console.log(&apos;[GEMINI INIT]&apos;, `API Key provided: ${apiKey ? &apos;YES&apos; : &apos;NO&apos;}`);
-      console.log(&apos;[GEMINI INIT]&apos;, `Requested model name: ${modelName}`);
-      console.log(&apos;[GEMINI INIT]&apos;, `Embedding model name: ${embeddingModelName}`);
-      console.log(&apos;[GEMINI INIT]&apos;, `SDK Version: ${this.getSDKVersion()}`);
-      
-      this.genAI = new GoogleGenAI({ apiKey });
-      this.modelName = modelName;
-      this.embeddingModelName = embeddingModelName;
-      
-      console.log(&apos;[GEMINI INIT]&apos;, `GoogleGenAI instance created for model: ${modelName}`);
-      console.log(&apos;[GEMINI INIT]&apos;, `Embedding model configured: ${embeddingModelName}`);
-      console.log(&apos;[GEMINI INIT]&apos;, &apos;Gemini service initialization completed successfully&apos;);
-    } catch (error) {
-      console.error(&apos;[GEMINI INIT ERROR]&apos;, &apos;Failed to initialize Gemini:&apos;, error);
-      console.error(&apos;[GEMINI INIT ERROR]&apos;, &apos;Error details:&apos;, {
-        message: error instanceof Error ? error.message : String(error),
-        status: (error as any)?.status,
-        statusText: (error as any)?.statusText,
-        stack: error instanceof Error ? error.stack : undefined
-      });
-      throw new Error(&apos;Failed to initialize Gemini API&apos;);
-    }
-  }
-
-  private getSDKVersion(): string {
-    try {
-      // Try to get version from package.json or other sources
-      return &apos;0.2.0&apos;; // From package.json
-    } catch {
-      return &apos;unknown&apos;;
-    }
-  }
-
-  private ensureInitialized() {
-    if (!this.genAI) {
-      throw new Error(&apos;Gemini service not initialized. Call initialize() first.&apos;);
-    }
-  }
-
-  async generateResponse(
-    prompt: string,
-    context?: string,
-    systemPrompt?: string,
-    options?: {
-      temperature?: number;
-      maxTokens?: number;
-    }
-  ): Promise&lt;string&gt; {
-    this.ensureInitialized();
-
-    try {
-      let fullPrompt = &apos;&apos;;
-      
-      if (systemPrompt) {
-        fullPrompt += `System: ${systemPrompt}\n\n`;
-      }
-      
-      if (context) {
-        fullPrompt += `Context:\n${context}\n\n`;
-      }
-      
-      fullPrompt += `User: ${prompt}`;
-
-      const generationConfig = {
-        temperature: options?.temperature || 0.7,
-        maxOutputTokens: options?.maxTokens || 4096,
-      };
-
-      const result = await this.genAI!.models.generateContent({
-        model: this.modelName,
-        contents: fullPrompt,
-        config: generationConfig
-      });
-      return result.candidates?.[0]?.content?.parts?.[0]?.text || &apos;&apos;;
-    } catch (error) {
-      console.error(&apos;Error generating response:&apos;, error);
-      throw new Error(&apos;Failed to generate response from Gemini&apos;);
-    }
-  }
-
-  async generateStreamingResponse(
-    prompt: string,
-    context?: string,
-    systemPrompt?: string,
-    options?: {
-      temperature?: number;
-      maxTokens?: number;
-      onChunk?: (chunk: string) =&gt; void;
-    }
-  ): Promise&lt;AsyncIterable&lt;string&gt;&gt; {
-    this.ensureInitialized();
-
-    try {
-      let fullPrompt = &apos;&apos;;
-      
-      if (systemPrompt) {
-        fullPrompt += `System: ${systemPrompt}\n\n`;
-      }
-      
-      if (context) {
-        fullPrompt += `Context:\n${context}\n\n`;
-      }
-      
-      fullPrompt += `User: ${prompt}`;
-
-      const generationConfig = {
-        temperature: options?.temperature || 0.7,
-        maxOutputTokens: options?.maxTokens || 4096,
-      };
-
-      console.log(&apos;[GEMINI STREAM]&apos;, &apos;Starting streaming response generation&apos;);
-      console.log(&apos;[GEMINI STREAM]&apos;, `Prompt length: ${fullPrompt.length} characters`);
-      console.log(&apos;[GEMINI STREAM]&apos;, `Model being used: ${this.modelName || &apos;unknown&apos;}`);
-      console.log(&apos;[GEMINI STREAM]&apos;, `Temperature: ${generationConfig.temperature}`);
-      console.log(&apos;[GEMINI STREAM]&apos;, `Max tokens: ${generationConfig.maxOutputTokens}`);
-      
-      const result = await this.genAI!.models.generateContentStream({
-        model: this.modelName,
-        contents: fullPrompt,
-        config: generationConfig
-      });
-      
-      console.log(&apos;[GEMINI STREAM]&apos;, &apos;Stream created successfully&apos;);
-      return this.createStreamingIterable(result, options?.onChunk);
-    } catch (error) {
-      console.error(&apos;[GEMINI STREAM ERROR]&apos;, &apos;Error generating streaming response:&apos;, error);
-      console.error(&apos;[GEMINI STREAM ERROR]&apos;, &apos;Error details:&apos;, {
-        message: error instanceof Error ? error.message : String(error),
-        status: (error as any)?.status,
-        statusText: (error as any)?.statusText,
-        stack: error instanceof Error ? error.stack : undefined
-      });
-      throw new Error(&apos;Failed to generate streaming response from Gemini&apos;);
-    }
-  }
-
-  private async *createStreamingIterable(
-    result: AsyncIterable&lt;any&gt;,
-    onChunk?: (chunk: string) =&gt; void
-  ): AsyncIterable&lt;string&gt; {
-    for await (const chunk of result) {
-      const chunkText = chunk.candidates?.[0]?.content?.parts?.[0]?.text || &apos;&apos;;
-      if (chunkText) {
-        onChunk?.(chunkText);
-        yield chunkText;
-      }
-    }
-  }
-
-  async embedText(text: string): Promise&lt;Float32Array&gt; {
-    this.ensureInitialized();
-
-    try {
-      const result = await this.genAI!.models.embedContent({
-        model: this.embeddingModelName,
-        contents: text
-      });
-      const embedding = result.embeddings?.[0];
-      const values = embedding?.values || [];
-      return new Float32Array(values);
-    } catch (error) {
-      console.error(&apos;Error embedding text:&apos;, error);
-      throw new Error(&apos;Failed to embed text with Gemini&apos;);
-    }
-  }
-
-  async embedBatch(texts: string[]): Promise&lt;Float32Array[]&gt; {
-    this.ensureInitialized();
-
-    try {
-      const embeddings = await Promise.all(
-        texts.map(text =&gt; this.embedText(text))
-      );
-      return embeddings;
-    } catch (error) {
-      console.error(&apos;Error embedding batch:&apos;, error);
-      throw new Error(&apos;Failed to embed batch with Gemini&apos;);
-    }
-  }
-
-  async validateApiKey(apiKey: string): Promise&lt;ApiKeyValidationResult&gt; {
-    const startTime = Date.now();
-    
-    try {
-      // Check if API key format is valid (basic validation)
-      if (!apiKey || typeof apiKey !== &apos;string&apos; || apiKey.trim().length === 0) {
-        return {
-          isValid: false,
-          error: {
-            type: &apos;INVALID_KEY&apos;,
-            message: &apos;API key is required and must be a valid string&apos;
-          },
-          responseTime: Date.now() - startTime
-        };
-      }
-
-      // Check for basic Gemini API key format (starts with &apos;AIza&apos;)
-      if (!apiKey.startsWith(&apos;AIza&apos;)) {
-        return {
-          isValid: false,
-          error: {
-            type: &apos;INVALID_KEY&apos;,
-            message: &apos;Invalid API key format. Gemini API keys typically start with &quot;AIza&quot;&apos;
-          },
-          responseTime: Date.now() - startTime
-        };
-      }
-
-      const tempGenAI = new GoogleGenAI({ apiKey });
-      
-      // Try a simple generation to validate the key
-      const result = await tempGenAI.models.generateContent({
-        model: &apos;gemini-2.5-flash-lite&apos;,
-        contents: &apos;Hello&apos;
-      });
-      
-      return {
-        isValid: true,
-        responseTime: Date.now() - startTime
-      };
-    } catch (error: any) {
-      const responseTime = Date.now() - startTime;
-      console.error(&apos;API key validation failed:&apos;, error);
-      
-      // Parse different types of errors
-      if (error.status === 400) {
-        return {
-          isValid: false,
-          error: {
-            type: &apos;INVALID_KEY&apos;,
-            message: &apos;Invalid API key. Please check your key and try again.&apos;,
-            details: error.message
-          },
-          responseTime
-        };
-      } else if (error.status === 403) {
-        return {
-          isValid: false,
-          error: {
-            type: &apos;PERMISSION_DENIED&apos;,
-            message: &apos;Permission denied. The API key might not have access to the Gemini API.&apos;,
-            details: error.message
-          },
-          responseTime
-        };
-      } else if (error.status === 429) {
-        return {
-          isValid: false,
-          error: {
-            type: &apos;QUOTA_EXCEEDED&apos;,
-            message: &apos;API quota exceeded. Please check your usage limits and try again later.&apos;,
-            details: error.message
-          },
-          responseTime
-        };
-      } else if (error.code === &apos;ECONNRESET&apos; || error.code === &apos;ENOTFOUND&apos; || error.code === &apos;ETIMEDOUT&apos;) {
-        return {
-          isValid: false,
-          error: {
-            type: &apos;NETWORK_ERROR&apos;,
-            message: &apos;Network error. Please check your internet connection and try again.&apos;,
-            details: error.message
-          },
-          responseTime
-        };
-      } else {
-        return {
-          isValid: false,
-          error: {
-            type: &apos;UNKNOWN_ERROR&apos;,
-            message: &apos;An unexpected error occurred while validating the API key.&apos;,
-            details: error.message || String(error)
-          },
-          responseTime
-        };
-      }
-    }
-  }
-
-
-  isInitialized(): boolean {
-    return this.genAI !== null;
-  }
-}
-
-// Singleton instance
-export const geminiService = new GeminiService();</file><file path="src/services/gemini/index.ts">// Gemini API services
+export const embeddingService = new EmbeddingService();</file><file path="src/services/gemini/index.ts">// Gemini API services
 export { geminiService } from &apos;./geminiService&apos;;
 export { embeddingService } from &apos;./embeddingService&apos;;
 export { chatService, type ChatStreamEvent } from &apos;./chatService&apos;;
@@ -8774,742 +8477,304 @@ export const DocumentCardCompact: React.FC&lt;{
       &lt;/div&gt;
     &lt;/div&gt;
   );
-};</file><file path="src/services/indexedDB/settingsService.ts">import { db } from &apos;./db&apos;;
-import type { AppSettings, SettingsUpdate } from &apos;@/types&apos;;
-import { userIdLogger } from &apos;@/utils/userIdDebugLogger&apos;;
+};</file><file path="src/services/gemini/geminiService.ts">import { GoogleGenAI } from &apos;@google/genai&apos;;
+import type { AppSettings, ApiKeyValidationResult } from &apos;@/types/settings&apos;;
 
-export class SettingsService {
-  private getSettingsId(userId: string): string {
-    return `app-settings-${userId}`;
-  }
+export class GeminiService {
+  private genAI: GoogleGenAI | null = null;
+  private modelName: string = &apos;gemma-3-27b-it&apos;;
+  private embeddingModelName: string = &apos;text-embedding-004&apos;;
 
-  /**
-   * Get app settings for a user
-   */
-  async getSettings(userId: string): Promise&lt;AppSettings | undefined&gt; {
-    userIdLogger.logServiceCall(&apos;settingsService&apos;, &apos;getSettings&apos;, &apos;read&apos;, userId);
-    
-    if (!db) return undefined;
-    
-    // Validate userId
-    if (!userId) {
-      userIdLogger.logError(&apos;settingsService.getSettings&apos;, new Error(&apos;Attempt to get settings without userId&apos;), userId);
-      return undefined;
-    }
-    
-    const id = this.getSettingsId(userId);
-    const settings = await db.settings.get(id);
-    console.log(&apos;[SETTINGS GET]&apos;, `Retrieved settings for user: ${userId}`);
-    return settings;
-  }
-
-  /**
-   * Get default settings
-   */
-  getDefaultSettings(userId: string): AppSettings {
-    const defaultSettings: AppSettings = {
-      id: this.getSettingsId(userId),
-      userId,
-      geminiApiKey: &apos;&apos;,
-      model: &apos;gemini-2.5-flash-lite&apos;,
-      temperature: 0.7,
-      maxTokens: 4096,
-      similarityThreshold: 0.7,
-      chunkSize: 1000,
-      chunkOverlap: 200,
-      theme: &apos;dark&apos; as const,
-      fontSize: &apos;medium&apos; as const,
-      showSources: true,
-      autoSave: true,
-      dataRetention: &apos;never&apos; as const,
-      enableAnalytics: false,
-      crashReporting: false,
-      debugMode: false,
-      logLevel: &apos;error&apos; as const,
-    };
-
-    return defaultSettings;
-  }
-
-  /**
-   * Create or update settings
-   */
-  async updateSettings(updates: SettingsUpdate, userId: string): Promise&lt;AppSettings&gt; {
-    userIdLogger.logServiceCall(&apos;settingsService&apos;, &apos;updateSettings&apos;, &apos;update&apos;, userId);
-    
-    // Validate userId
-    if (!userId) {
-      userIdLogger.logError(&apos;settingsService.updateSettings&apos;, new Error(&apos;Attempt to update settings without userId&apos;), userId);
-      throw new Error(&apos;userId is required to update settings&apos;);
-    }
-    
-    const existing = await this.getSettings(userId);
-    const settings = existing ? { ...existing, ...updates } : { ...this.getDefaultSettings(userId), ...updates };
-
-    // Ensure IDs match
-    settings.id = this.getSettingsId(userId);
-    settings.userId = userId;
-
-    if (!db) throw new Error(&apos;Database not available&apos;);
-    await db.settings.put(settings);
-    return settings;
-  }
-
-  /**
-   * Update API key
-   */
-  /**
-   * Update API key
-   */
-  async updateApiKey(geminiApiKey: string, userId: string): Promise&lt;AppSettings&gt; {
-    userIdLogger.logServiceCall(&apos;settingsService&apos;, &apos;updateApiKey&apos;, &apos;update&apos;, userId);
-    
-    // Validate userId
-    if (!userId) {
-      userIdLogger.logError(&apos;settingsService.updateApiKey&apos;, new Error(&apos;Attempt to update API key without userId&apos;), userId);
-      throw new Error(&apos;userId is required to update API key&apos;);
-    }
-    
-    return await this.updateSettings({ geminiApiKey }, userId);
-  }
-
-
-
-  /**
-   * Update generation settings
-   */
-  /**
-   * Update generation settings
-   */
-  async updateGenerationSettings(
-    maxTokens: number,
-    temperature: number,
-    userId: string
-  ): Promise&lt;AppSettings&gt; {
-    userIdLogger.logServiceCall(&apos;settingsService&apos;, &apos;updateGenerationSettings&apos;, &apos;update&apos;, userId);
-    
-    // Validate userId
-    if (!userId) {
-      userIdLogger.logError(&apos;settingsService.updateGenerationSettings&apos;, new Error(&apos;Attempt to update generation settings without userId&apos;), userId);
-      throw new Error(&apos;userId is required to update generation settings&apos;);
-    }
-    
-    return await this.updateSettings({ maxTokens, temperature }, userId);
-  }
-
-  /**
-   * Update UI settings
-   */
-  /**
-   * Update UI settings
-   */
-  async updateUISettings(theme: &apos;dark&apos; | &apos;light&apos;, fontSize: &apos;small&apos; | &apos;medium&apos; | &apos;large&apos;, userId: string): Promise&lt;AppSettings&gt; {
-    userIdLogger.logServiceCall(&apos;settingsService&apos;, &apos;updateUISettings&apos;, &apos;update&apos;, userId);
-    
-    // Validate userId
-    if (!userId) {
-      userIdLogger.logError(&apos;settingsService.updateUISettings&apos;, new Error(&apos;Attempt to update UI settings without userId&apos;), userId);
-      throw new Error(&apos;userId is required to update UI settings&apos;);
-    }
-    
-    return await this.updateSettings({ theme, fontSize }, userId);
-  }
-
-  /**
-   * Toggle sources display
-   */
-  /**
-   * Toggle sources display
-   */
-  async toggleShowSources(userId: string): Promise&lt;AppSettings&gt; {
-    userIdLogger.logServiceCall(&apos;settingsService&apos;, &apos;toggleShowSources&apos;, &apos;update&apos;, userId);
-    
-    // Validate userId
-    if (!userId) {
-      userIdLogger.logError(&apos;settingsService.toggleShowSources&apos;, new Error(&apos;Attempt to toggle show sources without userId&apos;), userId);
-      throw new Error(&apos;userId is required to toggle show sources&apos;);
-    }
-    
-    const existing = await this.getSettings(userId);
-    const showSources = existing ? !existing.showSources : true;
-    return await this.updateSettings({ showSources }, userId);
-  }
-
-  /**
-   * Reset settings to defaults
-   */
-  /**
-   * Reset settings to defaults
-   */
-  async resetSettings(userId: string): Promise&lt;AppSettings&gt; {
-    userIdLogger.logServiceCall(&apos;settingsService&apos;, &apos;resetSettings&apos;, &apos;update&apos;, userId);
-    
-    // Validate userId
-    if (!userId) {
-      userIdLogger.logError(&apos;settingsService.resetSettings&apos;, new Error(&apos;Attempt to reset settings without userId&apos;), userId);
-      throw new Error(&apos;userId is required to reset settings&apos;);
-    }
-    
-    if (!db) throw new Error(&apos;Database not available&apos;);
-    const defaultSettings = this.getDefaultSettings(userId);
-    await db.settings.put(defaultSettings);
-    return defaultSettings;
-  }
-
-  /**
-   * Check if API key is configured
-   */
-  /**
-   * Check if API key is configured
-   */
-  async hasApiKey(userId: string): Promise&lt;boolean&gt; {
-    userIdLogger.logServiceCall(&apos;settingsService&apos;, &apos;hasApiKey&apos;, &apos;read&apos;, userId);
-    
-    // Validate userId
-    if (!userId) {
-      userIdLogger.logError(&apos;settingsService.hasApiKey&apos;, new Error(&apos;Attempt to check API key without userId&apos;), userId);
-      return false;
-    }
-    
-    const settings = await this.getSettings(userId);
-    return !!(settings?.geminiApiKey &amp;&amp; settings.geminiApiKey.trim().length &gt; 0);
-  }
-
-  /**
-   * Get API key (masked for display)
-   */
-  /**
-   * Get API key (masked for display)
-   */
-  async getMaskedApiKey(userId: string): Promise&lt;string&gt; {
-    userIdLogger.logServiceCall(&apos;settingsService&apos;, &apos;getMaskedApiKey&apos;, &apos;read&apos;, userId);
-    
-    // Validate userId
-    if (!userId) {
-      userIdLogger.logError(&apos;settingsService.getMaskedApiKey&apos;, new Error(&apos;Attempt to get masked API key without userId&apos;), userId);
-      return &apos;&apos;;
-    }
-    
-    const settings = await this.getSettings(userId);
-    if (!settings?.geminiApiKey) return &apos;&apos;;
-
-    const key = settings.geminiApiKey;
-    if (key.length &lt;= 10) return key;
-
-    return key.substring(0, 7) + &apos;...&apos; + key.substring(key.length - 3);
-  }
-
-  /**
-   * Validate API key format
-   */
-  validateApiKey(geminiApiKey: string): boolean {
-    // Basic Gemini API key validation
-    const geminiKeyPattern = /^AIza[0-9A-Za-z_-]{35}$/;
-    return geminiKeyPattern.test(geminiApiKey);
-  }
-
-  /**
-   * Export settings
-   */
-  /**
-   * Export settings
-   */
-  async exportSettings(userId: string): Promise&lt;string&gt; {
-    userIdLogger.logServiceCall(&apos;settingsService&apos;, &apos;exportSettings&apos;, &apos;read&apos;, userId);
-    
-    // Validate userId
-    if (!userId) {
-      userIdLogger.logError(&apos;settingsService.exportSettings&apos;, new Error(&apos;Attempt to export settings without userId&apos;), userId);
-      throw new Error(&apos;userId is required to export settings&apos;);
-    }
-    
-    const settings = await this.getSettings(userId);
-    if (!settings) throw new Error(&apos;No settings to export&apos;);
-
-    // Create exportable settings (without sensitive data)
-    const exportable = {
-      temperature: settings.temperature,
-      maxTokens: settings.maxTokens,
-      similarityThreshold: settings.similarityThreshold,
-      chunkSize: settings.chunkSize,
-      chunkOverlap: settings.chunkOverlap,
-      theme: settings.theme,
-      fontSize: settings.fontSize,
-      showSources: settings.showSources,
-      autoSave: settings.autoSave,
-      dataRetention: settings.dataRetention,
-      enableAnalytics: settings.enableAnalytics,
-      crashReporting: settings.crashReporting,
-      debugMode: settings.debugMode,
-      logLevel: settings.logLevel,
-    };
-
-    return JSON.stringify(exportable, null, 2);
-  }
-
-  /**
-   * Import settings
-   */
-  async importSettings(settingsJson: string, userId: string): Promise&lt;AppSettings&gt; {
-    userIdLogger.logServiceCall(&apos;settingsService&apos;, &apos;importSettings&apos;, &apos;update&apos;, userId);
-    
-    // Validate userId
-    if (!userId) {
-      userIdLogger.logError(&apos;settingsService.importSettings&apos;, new Error(&apos;Attempt to import settings without userId&apos;), userId);
-      throw new Error(&apos;userId is required to import settings&apos;);
-    }
-    
+  initialize(apiKey: string, modelName: string = &apos;gemma-3-12b-it&apos;, embeddingModelName: string = &apos;text-embedding-004&apos;) {
     try {
-      const imported = JSON.parse(settingsJson);
+      console.log(&apos;[GEMINI INIT]&apos;, &apos;Starting Gemini service initialization with new SDK&apos;);
+      console.log(&apos;[GEMINI INIT]&apos;, `API Key provided: ${apiKey ? &apos;YES&apos; : &apos;NO&apos;}`);
+      console.log(&apos;[GEMINI INIT]&apos;, `Requested model name: ${modelName}`);
+      console.log(&apos;[GEMINI INIT]&apos;, `Embedding model name: ${embeddingModelName}`);
+      console.log(&apos;[GEMINI INIT]&apos;, `SDK Version: ${this.getSDKVersion()}`);
 
-      // Validate imported settings
-      const validUpdates: SettingsUpdate = {};
+      this.genAI = new GoogleGenAI({ apiKey });
+      this.modelName = modelName;
+      this.embeddingModelName = embeddingModelName;
 
-      if (typeof imported.similarityThreshold === &apos;number&apos; &amp;&amp; imported.similarityThreshold &gt;= 0 &amp;&amp; imported.similarityThreshold &lt;= 1) {
-        validUpdates.similarityThreshold = imported.similarityThreshold;
-      }
-      if (typeof imported.chunkSize === &apos;number&apos; &amp;&amp; imported.chunkSize &gt; 0) {
-        validUpdates.chunkSize = imported.chunkSize;
-      }
-      if (typeof imported.chunkOverlap === &apos;number&apos; &amp;&amp; imported.chunkOverlap &gt;= 0) {
-        validUpdates.chunkOverlap = imported.chunkOverlap;
-      }
-      if (typeof imported.maxTokens === &apos;number&apos; &amp;&amp; imported.maxTokens &gt; 0) {
-        validUpdates.maxTokens = imported.maxTokens;
-      }
-      if (typeof imported.temperature === &apos;number&apos; &amp;&amp; imported.temperature &gt;= 0 &amp;&amp; imported.temperature &lt;= 2) {
-        validUpdates.temperature = imported.temperature;
-      }
-      if (typeof imported.showSources === &apos;boolean&apos;) {
-        validUpdates.showSources = imported.showSources;
-      }
-      if (typeof imported.autoSave === &apos;boolean&apos;) {
-        validUpdates.autoSave = imported.autoSave;
-      }
-      if (typeof imported.dataRetention === &apos;string&apos;) {
-        validUpdates.dataRetention = imported.dataRetention;
-      }
-      if (typeof imported.enableAnalytics === &apos;boolean&apos;) {
-        validUpdates.enableAnalytics = imported.enableAnalytics;
-      }
-      if (typeof imported.crashReporting === &apos;boolean&apos;) {
-        validUpdates.crashReporting = imported.crashReporting;
-      }
-      if (typeof imported.debugMode === &apos;boolean&apos;) {
-        validUpdates.debugMode = imported.debugMode;
-      }
-      if (typeof imported.logLevel === &apos;string&apos;) {
-        validUpdates.logLevel = imported.logLevel;
-      }
-
-      return await this.updateSettings(validUpdates, userId);
+      console.log(&apos;[GEMINI INIT]&apos;, `GoogleGenAI instance created for model: ${modelName}`);
+      console.log(&apos;[GEMINI INIT]&apos;, `Embedding model configured: ${embeddingModelName}`);
+      console.log(&apos;[GEMINI INIT]&apos;, &apos;Gemini service initialization completed successfully&apos;);
     } catch (error) {
-      throw new Error(&apos;Invalid settings format&apos;);
+      console.error(&apos;[GEMINI INIT ERROR]&apos;, &apos;Failed to initialize Gemini:&apos;, error);
+      console.error(&apos;[GEMINI INIT ERROR]&apos;, &apos;Error details:&apos;, {
+        message: error instanceof Error ? error.message : String(error),
+        status: (error as any)?.status,
+        statusText: (error as any)?.statusText,
+        stack: error instanceof Error ? error.stack : undefined
+      });
+      throw new Error(&apos;Failed to initialize Gemini API&apos;);
     }
   }
-}
 
-export const settingsService = new SettingsService();</file><file path="src/services/rag/responseFormatter.ts">/**
- * Response Formatter Service
- * Uses LLM to convert paragraph-style responses to bullet point format while preserving citations
- */
+  private getSDKVersion(): string {
+    try {
+      // Try to get version from package.json or other sources
+      return &apos;0.2.0&apos;; // From package.json
+    } catch {
+      return &apos;unknown&apos;;
+    }
+  }
 
-import { GeminiService } from &apos;../gemini/geminiService&apos;;
-import type { AppSettings } from &apos;@/types/settings&apos;;
-import { IndentationAnalyzer } from &apos;@/utils/indentationAnalyzer&apos;;
+  private ensureInitialized() {
+    if (!this.genAI) {
+      throw new Error(&apos;Gemini service not initialized. Call initialize() first.&apos;);
+    }
+  }
 
-export interface FormattedSection {
-  title: string;
-  bulletPoints: string[];
-  citations: number[];
-}
-
-export class ResponseFormatter {
-  /**
-   * Convert paragraph response to bullet point format using LLM
-   * Preserves citations and moves them to end of bullet points
-   */
-  static async formatToBulletPoints(
-    response: string,
-    settings: AppSettings
+  async generateResponse(
+    prompt: string,
+    context?: string,
+    systemPrompt?: string,
+    options?: {
+      temperature?: number;
+      maxTokens?: number;
+    }
   ): Promise&lt;string&gt; {
-    const timestamp = new Date().toISOString();
-    console.log(`\n=== [${timestamp}] [INDENTATION DEBUG] LLM RESPONSE FORMATTER START ===`);
-    console.log(`[${timestamp}] [INDENTATION DEBUG] ORIGINAL RESPONSE:`, response.substring(0, 200) + (response.length &gt; 200 ? &apos;...&apos; : &apos;&apos;));
-    console.log(`[${timestamp}] [INDENTATION DEBUG] ORIGINAL LENGTH:`, `${response.length} characters`);
-    
-    // Analyze original response for indentation patterns
-    console.log(`[${timestamp}] [INDENTATION DEBUG] ANALYZING ORIGINAL RESPONSE STRUCTURE:`);
-    IndentationAnalyzer.logMarkdownStructure(response);
-    const originalAnalysis = IndentationAnalyzer.analyzeIndentation(response);
-    console.log(`[${timestamp}] [INDENTATION DEBUG] ORIGINAL RESPONSE HAS NESTED STRUCTURES:`, originalAnalysis.hasNestedStructures);
-    
-    if (!response || response.trim().length === 0) {
-      console.log(`[${timestamp}] [INDENTATION DEBUG] FORMATTING SKIPPED:`, &apos;Empty response, returning as-is&apos;);
-      console.log(`=== [${timestamp}] [INDENTATION DEBUG] LLM RESPONSE FORMATTER END ===\n`);
-      return response;
-    }
-
-    // Use main API key for formatting
-    const formattingApiKey = settings.geminiApiKey;
-    
-    console.log(`[${timestamp}] [INDENTATION DEBUG] LLM FORMATTER:`, &apos;Using main API key for formatting:&apos;, settings.geminiApiKey ? `YES (${settings.geminiApiKey.substring(0, 10)}...)` : &apos;NO&apos;);
-    
-    if (!formattingApiKey) {
-      console.log(`[${timestamp}] [INDENTATION DEBUG] FORMATTING SKIPPED:`, &apos;No API key available, returning original response&apos;);
-      console.log(`=== [${timestamp}] [INDENTATION DEBUG] LLM RESPONSE FORMATTER END ===\n`);
-      return response;
-    }
+    this.ensureInitialized();
 
     try {
-      console.log(`[${timestamp}] [INDENTATION DEBUG] LLM FORMATTING:`, &apos;Using LLM to convert to bullet points...&apos;);
-      console.log(`[${timestamp}] [INDENTATION DEBUG] LLM FORMATTING:`, `Calling Gemini service with main API key`);
-      
-      const formattingPrompt = this.buildFormattingPrompt(response);
-      console.log(`[${timestamp}] [INDENTATION DEBUG] FORMATTING PROMPT:`, formattingPrompt.substring(0, 300) + &apos;...&apos;);
-      console.log(`[${timestamp}] [INDENTATION DEBUG] PROMPT ANALYSIS:`, {
-        promptLength: formattingPrompt.length,
-        containsNestedInstructions: formattingPrompt.includes(&apos;NESTED&apos;),
-        containsIndentInstructions: formattingPrompt.includes(&apos;indent&apos;),
-        containsBulletInstructions: formattingPrompt.includes(&apos;*&apos;),
-        containsExampleFormatting: formattingPrompt.includes(&apos;EXAMPLE TRANSFORMATION&apos;)
+      let fullPrompt = &apos;&apos;;
+
+      if (systemPrompt) {
+        fullPrompt += `System: ${systemPrompt}\n\n`;
+      }
+
+      if (context) {
+        fullPrompt += `Context:\n${context}\n\n`;
+      }
+
+      fullPrompt += `User: ${prompt}`;
+
+      const generationConfig = {
+        temperature: options?.temperature || 0.7,
+        maxOutputTokens: options?.maxTokens || 4096,
+      };
+
+      const result = await this.genAI!.models.generateContent({
+        model: this.modelName,
+        contents: fullPrompt,
+        config: generationConfig
       });
-      
-      // Create a separate instance for formatting to avoid conflicts
-      const formattingGeminiService = new GeminiService();
-      formattingGeminiService.initialize(formattingApiKey, &apos;gemini-2.5-flash-lite&apos;);
-      
-      const formattedResponse = await formattingGeminiService.generateResponse(
-        formattingPrompt,
-        &apos;&apos;, // No context needed for formatting
-        &apos;&apos;, // No system prompt needed for formatting
-        {
-          temperature: 0.3, // Lower temperature for consistent formatting
-          maxTokens: Math.min(response.length * 2, 4000), // Allow for expansion but cap it
-        }
-      );
-      
-      console.log(`[${timestamp}] [INDENTATION DEBUG] LLM FORMATTING:`, &apos;Gemini service response received, length:&apos;, formattedResponse.length);
-      
-      // Comprehensive analysis of formatted response
-      console.log(`[${timestamp}] [INDENTATION DEBUG] ANALYZING FORMATTED RESPONSE STRUCTURE:`);
-      IndentationAnalyzer.logMarkdownStructure(formattedResponse);
-      const formattedAnalysis = IndentationAnalyzer.analyzeIndentation(formattedResponse);
-      
-      // Check for nested structures detection
-      const hasNestedStructures = IndentationAnalyzer.detectNestedLists(formattedResponse);
-      console.log(`[${timestamp}] [INDENTATION DEBUG] NESTED STRUCTURES DETECTED IN FORMATTED RESPONSE:`, hasNestedStructures);
-      
-      // Create visualization of indentation
-      console.log(`[${timestamp}] [INDENTATION DEBUG] FORMATTED RESPONSE INDENTATION VISUALIZATION:`);
-      IndentationAnalyzer.visualizeIndentation(formattedResponse);
-      
-      // Additional detailed analysis
-      const hasNewlines = formattedResponse.includes(&apos;\n&apos;);
-      const bulletCount = (formattedResponse.match(/^\* /gm) || []).length;
-      const newlineCount = (formattedResponse.match(/\n/g) || []).length;
-      const nestedBulletCount = (formattedResponse.match(/^[ \t]+\* /gm) || []).length;
-      
-      console.log(`[${timestamp}] [INDENTATION DEBUG] FORMATTING ANALYSIS:`, {
-        hasNewlines,
-        bulletCount,
-        newlineCount,
-        nestedBulletCount,
-        firstBulletIndex: formattedResponse.indexOf(&apos;* &apos;),
-        containsListMarkers: formattedResponse.includes(&apos;* &apos;),
-        startsWithBullet: formattedResponse.trim().startsWith(&apos;* &apos;),
-        hasIndentation: formattedAnalysis.indentedLines &gt; 0,
-        maxIndentLevel: formattedAnalysis.maxIndentLevel,
-        responsePreview: formattedResponse.substring(0, 300) + (formattedResponse.length &gt; 300 ? &apos;...&apos; : &apos;&apos;),
-        rawCharCodes: Array.from(formattedResponse.substring(0, 100)).map(c =&gt; `${c}(${c.charCodeAt(0)})`).join(&apos; &apos;)
-      });
-      
-      // Compare original vs formatted
-      console.log(`[${timestamp}] [INDENTATION DEBUG] ORIGINAL vs FORMATTED COMPARISON:`, {
-        originalHadNested: originalAnalysis.hasNestedStructures,
-        formattedHasNested: formattedAnalysis.hasNestedStructures,
-        originalIndentedLines: originalAnalysis.indentedLines,
-        formattedIndentedLines: formattedAnalysis.indentedLines,
-        originalMaxIndent: originalAnalysis.maxIndentLevel,
-        formattedMaxIndent: formattedAnalysis.maxIndentLevel,
-        improvement: formattedAnalysis.maxIndentLevel &gt; originalAnalysis.maxIndentLevel ? &apos;YES - Added nesting&apos; : &apos;NO - No improvement&apos;
-      });
-      
-      console.log(`[${timestamp}] [INDENTATION DEBUG] LLM FORMATTING COMPLETE:`, `Formatted response: ${formattedResponse.length} characters`);
-      console.log(`[${timestamp}] [INDENTATION DEBUG] FORMATTED PREVIEW:`, formattedResponse.substring(0, 200) + (formattedResponse.length &gt; 200 ? &apos;...&apos; : &apos;&apos;));
-      console.log(`=== [${timestamp}] [INDENTATION DEBUG] LLM RESPONSE FORMATTER END ===\n`);
-      
-      return formattedResponse;
-      
+      return result.candidates?.[0]?.content?.parts?.[0]?.text || &apos;&apos;;
     } catch (error) {
-      console.error(`[${timestamp}] [INDENTATION DEBUG] LLM FORMATTING ERROR:`, &apos;Failed to format with LLM:&apos;, error);
-      console.log(`[${timestamp}] [INDENTATION DEBUG] FALLBACK:`, &apos;Returning original response due to formatting error&apos;);
-      console.log(`=== [${timestamp}] [INDENTATION DEBUG] LLM RESPONSE FORMATTER END ===\n`);
-      return response;
+      console.error(&apos;Error generating response:&apos;, error);
+      throw new Error(&apos;Failed to generate response from Gemini&apos;);
     }
   }
 
-  /**
-   * Build the formatting prompt for the LLM
-   */
-  private static buildFormattingPrompt(response: string): string {
-    return `You are a response formatting specialist. Your task is to convert paragraph-style responses to clear, structured, NESTED bullet point lists while preserving all citations.
-
-CRITICAL FORMATTING RULES:
-1. Use standard Markdown bullet points: * for top level, and indent 2-4 spaces with * for sub-levels.
-2. DETECT HIERARCHY: If a sentence acts as a header (e.g., &quot;Early Surgery:&quot;, &quot;Treatments include:&quot;), the items following it MUST be indented.
-3. Format:
-   * Main Category or Timeframe
-     * Sub-point with citation [1]
-     * Another sub-point [2]
-4. Preserve ALL citations in their original positions.
-5. Move citations to the END of the specific bullet point they support.
-6. Create logical section headers using bold format with checkmark emoji: ✅ **[Section Title]:**
-7. Do not add, remove, or change any factual information.
-
-EXAMPLE TRANSFORMATION:
-
-INPUT:
-&quot;Surgical management includes early surgery within 2 weeks involving limbal stem cell transplantation [1] and amniotic membrane grafts [2]. Late surgery after 6 months involves symblepharon release [3] and keratoplasty [1].&quot;
-
-OUTPUT:
-✅ **Surgical Management:**
-* Early Surgery (within 2 weeks):
-    * Limbal stem cell transplantation [1]
-    * Amniotic membrane grafts [2]
-* Late Surgery (after 6 months):
-    * Release of conjunctival bands (symblepharon release) [3]
-    * Keratoplasty [1]
-
-YOUR TASK:
-Convert the following response to a nested bullet point format following the rules above:
-
-${response}`;
-  }
-
-  /**
-   * Legacy rule-based method (kept as fallback)
-   */
-  static async formatToBulletPointsLegacy(response: string): Promise&lt;string&gt; {
-    console.log(&apos;[LEGACY FORMATTING]&apos;, &apos;Using rule-based formatting as fallback&apos;);
-    
-    if (!response || response.trim().length === 0) {
-      return response;
+  async generateStreamingResponse(
+    prompt: string,
+    context?: string,
+    systemPrompt?: string,
+    options?: {
+      temperature?: number;
+      maxTokens?: number;
+      onChunk?: (chunk: string) =&gt; void;
     }
+  ): Promise&lt;AsyncIterable&lt;string&gt;&gt; {
+    this.ensureInitialized();
 
-    // Extract all citations first to preserve them
-    const citations = this.extractCitations(response);
-    const responseWithoutCitations = this.removeCitations(response);
-    
-    // Split response into logical sections
-    const sections = this.identifySections(responseWithoutCitations);
-    
-    // Format each section with bullet points
-    const formattedSections = sections.map(section =&gt; 
-      this.formatSection(section, citations)
-    );
-    
-    // Combine all sections
-    return formattedSections.join(&apos;\n\n&apos;);
-  }
+    try {
+      let fullPrompt = &apos;&apos;;
 
-  /**
-   * Extract citation references from text
-   */
-  private static extractCitations(text: string): Array&lt;{index: number, position: number}&gt; {
-    const citationPattern = /\[(\d+)\]/g;
-    const citations: Array&lt;{index: number, position: number}&gt; = [];
-    let match;
+      if (systemPrompt) {
+        fullPrompt += `System: ${systemPrompt}\n\n`;
+      }
 
-    while ((match = citationPattern.exec(text)) !== null) {
-      citations.push({
-        index: parseInt(match[1], 10),
-        position: match.index
+      if (context) {
+        fullPrompt += `Context:\n${context}\n\n`;
+      }
+
+      fullPrompt += `User: ${prompt}`;
+
+      const generationConfig = {
+        temperature: options?.temperature || 0.7,
+        maxOutputTokens: options?.maxTokens || 4096,
+      };
+
+      console.log(&apos;[GEMINI STREAM]&apos;, &apos;Starting streaming response generation&apos;);
+      console.log(&apos;[GEMINI STREAM]&apos;, `Prompt length: ${fullPrompt.length} characters`);
+      console.log(&apos;[GEMINI STREAM]&apos;, `Model being used: ${this.modelName || &apos;unknown&apos;}`);
+      console.log(&apos;[GEMINI STREAM]&apos;, `Temperature: ${generationConfig.temperature}`);
+      console.log(&apos;[GEMINI STREAM]&apos;, `Max tokens: ${generationConfig.maxOutputTokens}`);
+
+      const result = await this.genAI!.models.generateContentStream({
+        model: this.modelName,
+        contents: fullPrompt,
+        config: generationConfig
       });
+
+      console.log(&apos;[GEMINI STREAM]&apos;, &apos;Stream created successfully&apos;);
+      return this.createStreamingIterable(result, options?.onChunk);
+    } catch (error) {
+      console.error(&apos;[GEMINI STREAM ERROR]&apos;, &apos;Error generating streaming response:&apos;, error);
+      console.error(&apos;[GEMINI STREAM ERROR]&apos;, &apos;Error details:&apos;, {
+        message: error instanceof Error ? error.message : String(error),
+        status: (error as any)?.status,
+        statusText: (error as any)?.statusText,
+        stack: error instanceof Error ? error.stack : undefined
+      });
+      throw new Error(&apos;Failed to generate streaming response from Gemini&apos;);
     }
-
-    return citations;
   }
 
-  /**
-   * Remove citations from text for processing
-   */
-  private static removeCitations(text: string): string {
-    return text.replace(/\[\d+\]/g, &apos;&apos;);
-  }
-
-  /**
-   * Identify logical sections in the response
-   */
-  private static identifySections(text: string): Array&lt;{title: string, content: string}&gt; {
-    console.log(&apos;[SECTION ANALYSIS]&apos;, `Analyzing text of ${text.length} characters`);
-    const sections: Array&lt;{title: string, content: string}&gt; = [];
-    
-    // Split by double newlines or major sentence breaks
-    const paragraphs = text.split(/\n\s*\n/);
-    console.log(&apos;[PARAGRAPH SPLIT]&apos;, `Found ${paragraphs.length} paragraphs`);
-    
-    for (let i = 0; i &lt; paragraphs.length; i++) {
-      const paragraph = paragraphs[i];
-      const trimmed = paragraph.trim();
-      if (trimmed.length === 0) {
-        console.log(`[PARAGRAPH ${i}]`, &apos;Empty paragraph, skipping&apos;);
-        continue;
+  private async *createStreamingIterable(
+    result: AsyncIterable&lt;any&gt;,
+    onChunk?: (chunk: string) =&gt; void
+  ): AsyncIterable&lt;string&gt; {
+    for await (const chunk of result) {
+      const chunkText = chunk.candidates?.[0]?.content?.parts?.[0]?.text || &apos;&apos;;
+      if (chunkText) {
+        onChunk?.(chunkText);
+        yield chunkText;
       }
-      
-      console.log(`[PARAGRAPH ${i}]`, `Content: &quot;${trimmed.substring(0, 80)}${trimmed.length &gt; 80 ? &apos;...&apos; : &apos;&apos;}&quot;`);
-      
-      // Check if this looks like a header or main topic
-      const isHeader = this.isHeader(trimmed);
-      console.log(`[PARAGRAPH ${i}]`, `Is header: ${isHeader}`);
-      
-      if (isHeader || sections.length === 0) {
-        const title = isHeader ? this.cleanHeader(trimmed) : &apos;Main Points&apos;;
-        const content = isHeader ? &apos;&apos; : trimmed;
-        sections.push({ title, content });
-        console.log(`[SECTION CREATED]`, `Title: &quot;${title}&quot;, Content length: ${content.length}`);
+    }
+  }
+
+  async embedText(text: string): Promise&lt;Float32Array&gt; {
+    this.ensureInitialized();
+
+    try {
+      const result = await this.genAI!.models.embedContent({
+        model: this.embeddingModelName,
+        contents: text
+      });
+      const embedding = result.embeddings?.[0];
+      const values = embedding?.values || [];
+      return new Float32Array(values);
+    } catch (error) {
+      console.error(&apos;Error embedding text:&apos;, error);
+      throw new Error(&apos;Failed to embed text with Gemini&apos;);
+    }
+  }
+
+  async embedBatch(texts: string[]): Promise&lt;Float32Array[]&gt; {
+    this.ensureInitialized();
+
+    try {
+      const embeddings = await Promise.all(
+        texts.map(text =&gt; this.embedText(text))
+      );
+      return embeddings;
+    } catch (error) {
+      console.error(&apos;Error embedding batch:&apos;, error);
+      throw new Error(&apos;Failed to embed batch with Gemini&apos;);
+    }
+  }
+
+  async validateApiKey(apiKey: string): Promise&lt;ApiKeyValidationResult&gt; {
+    const startTime = Date.now();
+
+    try {
+      // Check if API key format is valid (basic validation)
+      if (!apiKey || typeof apiKey !== &apos;string&apos; || apiKey.trim().length === 0) {
+        return {
+          isValid: false,
+          error: {
+            type: &apos;INVALID_KEY&apos;,
+            message: &apos;API key is required and must be a valid string&apos;
+          },
+          responseTime: Date.now() - startTime
+        };
+      }
+
+      // Check for basic Gemini API key format (starts with &apos;AIza&apos;)
+      if (!apiKey.startsWith(&apos;AIza&apos;)) {
+        return {
+          isValid: false,
+          error: {
+            type: &apos;INVALID_KEY&apos;,
+            message: &apos;Invalid API key format. Gemini API keys typically start with &quot;AIza&quot;&apos;
+          },
+          responseTime: Date.now() - startTime
+        };
+      }
+
+      const tempGenAI = new GoogleGenAI({ apiKey });
+
+      // Try a simple generation to validate the key
+      const result = await tempGenAI.models.generateContent({
+        model: &apos;gemini-2.5-flash-lite&apos;,
+        contents: &apos;Hello&apos;
+      });
+
+      return {
+        isValid: true,
+        responseTime: Date.now() - startTime
+      };
+    } catch (error: any) {
+      const responseTime = Date.now() - startTime;
+      console.error(&apos;API key validation failed:&apos;, error);
+
+      // Parse different types of errors
+      if (error.status === 400) {
+        return {
+          isValid: false,
+          error: {
+            type: &apos;INVALID_KEY&apos;,
+            message: &apos;Invalid API key. Please check your key and try again.&apos;,
+            details: error.message
+          },
+          responseTime
+        };
+      } else if (error.status === 403) {
+        return {
+          isValid: false,
+          error: {
+            type: &apos;PERMISSION_DENIED&apos;,
+            message: &apos;Permission denied. The API key might not have access to the Gemini API.&apos;,
+            details: error.message
+          },
+          responseTime
+        };
+      } else if (error.status === 429) {
+        return {
+          isValid: false,
+          error: {
+            type: &apos;QUOTA_EXCEEDED&apos;,
+            message: &apos;API quota exceeded. Please check your usage limits and try again later.&apos;,
+            details: error.message
+          },
+          responseTime
+        };
+      } else if (error.code === &apos;ECONNRESET&apos; || error.code === &apos;ENOTFOUND&apos; || error.code === &apos;ETIMEDOUT&apos;) {
+        return {
+          isValid: false,
+          error: {
+            type: &apos;NETWORK_ERROR&apos;,
+            message: &apos;Network error. Please check your internet connection and try again.&apos;,
+            details: error.message
+          },
+          responseTime
+        };
       } else {
-        // Add to last section
-        const lastSection = sections[sections.length - 1];
-        lastSection.content += (lastSection.content ? &apos; &apos; : &apos;&apos;) + trimmed;
-        console.log(`[SECTION UPDATED]`, `Added to &quot;${lastSection.title}&quot;, new length: ${lastSection.content.length}`);
+        return {
+          isValid: false,
+          error: {
+            type: &apos;UNKNOWN_ERROR&apos;,
+            message: &apos;An unexpected error occurred while validating the API key.&apos;,
+            details: error.message || String(error)
+          },
+          responseTime
+        };
       }
     }
-    
-    console.log(&apos;[SECTION ANALYSIS COMPLETE]&apos;, `Created ${sections.length} sections`);
-    return sections;
   }
 
-  /**
-   * Check if text looks like a header
-   */
-  private static isHeader(text: string): boolean {
-    // Headers are typically shorter, may end with colon, or contain keywords
-    const headerKeywords = [
-      &apos;criteria&apos;, &apos;factors&apos;, &apos;features&apos;, &apos;symptoms&apos;, &apos;treatment&apos;, 
-      &apos;diagnosis&apos;, &apos;management&apos;, &apos;assessment&apos;, &apos;findings&apos;, &apos;results&apos;
-    ];
-    
-    const isShort = text.length &lt; 100;
-    const endsWithColon = text.trim().endsWith(&apos;:&apos;);
-    const hasKeyword = headerKeywords.some(keyword =&gt; 
-      text.toLowerCase().includes(keyword)
-    );
-    
-    return isShort &amp;&amp; (endsWithColon || hasKeyword);
-  }
 
-  /**
-   * Clean header text
-   */
-  private static cleanHeader(header: string): string {
-    return header
-      .replace(/[:：]$/, &apos;&apos;) // Remove trailing colons
-      .replace(/^\*\s*/, &apos;&apos;) // Remove leading bullets
-      .trim();
+  isInitialized(): boolean {
+    return this.genAI !== null;
   }
+}
 
-  /**
-   * Format a section into bullet points with citations
-   */
-  private static formatSection(
-    section: {title: string, content: string}, 
-    citations: Array&lt;{index: number, position: number}&gt;
-  ): string {
-    console.log(`[SECTION FORMATTING]`, `Formatting section: &quot;${section.title}&quot; with ${section.content.length} chars`);
-    
-    const bulletPoints = this.createBulletPoints(section.content);
-    console.log(`[SECTION FORMATTING]`, `Created ${bulletPoints.length} bullet points for section`);
-    
-    // Add citations to bullet points
-    const bulletPointsWithCitations = bulletPoints.map((point, index) =&gt; {
-      const pointCitations = this.getCitationsForPoint(point, section.content, citations);
-      console.log(`[BULLET ${index + 1}]`, `Point: &quot;${point.substring(0, 60)}${point.length &gt; 60 ? &apos;...&apos; : &apos;&apos;}&quot;`);
-      console.log(`[BULLET ${index + 1}]`, `Citations found: ${pointCitations.length &gt; 0 ? pointCitations.map(c =&gt; `[${c}]`).join(&apos;, &apos;) : &apos;None&apos;}`);
-      
-      const citationText = pointCitations.length &gt; 0 
-        ? &apos; &apos; + pointCitations.map(c =&gt; `[${c}]`).join(&apos;, &apos;)
-        : &apos;&apos;;
-      return `* ${point}${citationText}`;
-    });
-
-    // Format section
-    let formatted = `✅ **${section.title}:**\n`;
-    formatted += bulletPointsWithCitations.join(&apos;\n&apos;);
-    
-    console.log(`[SECTION FORMATTED]`, `Section formatted with ${bulletPointsWithCitations.length} bullet points`);
-    return formatted;
-  }
-
-  /**
-   * Create bullet points from content
-   */
-  private static createBulletPoints(content: string): string[] {
-    console.log(&apos;[BULLET CREATION]&apos;, `Creating bullet points from ${content.length} characters of content`);
-    
-    // Split by sentences or logical clauses
-    const sentences = this.splitIntoSentences(content);
-    console.log(&apos;[SENTENCE SPLIT]&apos;, `Found ${sentences.length} sentences:`, sentences.map((s, i) =&gt; `${i + 1}. &quot;${s.substring(0, 50)}${s.length &gt; 50 ? &apos;...&apos; : &apos;&apos;}&quot;`));
-    
-    const bulletPoints: string[] = [];
-    let currentPoint = &apos;&apos;;
-    
-    for (let i = 0; i &lt; sentences.length; i++) {
-      const sentence = sentences[i];
-      const trimmed = sentence.trim();
-      if (trimmed.length === 0) {
-        console.log(`[SENTENCE ${i}]`, &apos;Empty sentence, skipping&apos;);
-        continue;
-      }
-      
-      console.log(`[SENTENCE ${i}]`, `Processing: &quot;${trimmed}&quot;`);
-      
-      // If adding this sentence makes the point too long, start a new point
-      if (currentPoint &amp;&amp; currentPoint.length + trimmed.length &gt; 200) {
-        bulletPoints.push(currentPoint.trim());
-        console.log(`[BULLET CREATED]`, `Bullet ${bulletPoints.length}: &quot;${currentPoint.trim()}&quot;`);
-        currentPoint = trimmed;
-      } else {
-        currentPoint += (currentPoint ? &apos; &apos; : &apos;&apos;) + trimmed;
-        console.log(`[BULLET BUILDING]`, `Current point length: ${currentPoint.length}`);
-      }
-    }
-    
-    if (currentPoint.trim()) {
-      bulletPoints.push(currentPoint.trim());
-      console.log(`[FINAL BULLET]`, `Final bullet: &quot;${currentPoint.trim()}&quot;`);
-    }
-    
-    console.log(&apos;[BULLET CREATION COMPLETE]&apos;, `Created ${bulletPoints.length} bullet points`);
-    return bulletPoints;
-  }
-
-  /**
-   * Split text into sentences
-   */
-  private static splitIntoSentences(text: string): string[] {
-    // Split by sentence-ending punctuation but preserve newlines for list formatting
-    return text.split(/(?&lt;=[.!?])\s+/).filter(s =&gt; s.trim().length &gt; 0);
-  }
-
-  /**
-   * Get citations that belong to a specific bullet point
-   */
-  private static getCitationsForPoint(
-    point: string, 
-    originalContent: string, 
-    citations: Array&lt;{index: number, position: number}&gt;
-  ): number[] {
-    // Find citations that appear within the range of this point in original content
-    const pointStart = originalContent.indexOf(point);
-    const pointEnd = pointStart + point.length;
-    
-    return citations
-      .filter(cit =&gt; cit.position &gt;= pointStart &amp;&amp; cit.position &lt; pointEnd)
-      .map(cit =&gt; cit.index)
-      .filter((index, pos, arr) =&gt; arr.indexOf(index) === pos); // Remove duplicates
-  }
-}</file><file path="src/types/document.ts">// Document types for RAG chat application
+// Singleton instance
+export const geminiService = new GeminiService();</file><file path="src/types/document.ts">// Document types for RAG chat application
 
 export interface Document {
   id: string;
@@ -9634,131 +8899,7 @@ export interface ApiKeyValidationResult {
     details?: any;
   };
   responseTime?: number;
-}</file><file path="src/utils/constants.ts">export const APP_CONFIG = {
-  name: process.env.NEXT_PUBLIC_APP_NAME || &apos;Meddy&apos;,
-  version: process.env.NEXT_PUBLIC_APP_VERSION || &apos;1.0.0&apos;,
-  description: &apos;Chat with your documents privately&apos;,
-};
-
-export const API_CONFIG = {
-  gemini: {
-    embeddingModel: &apos;text-embedding-004&apos;,
-    defaultModel: &apos;gemini-2.0-flash-exp&apos;,
-    maxTokens: 8192,
-    temperature: 0.7,
-    maxRetries: 3,
-    retryDelay: 1000,
-  },
-  rateLimits: {
-    requestsPerMinute: 60,
-    rateLimitWindow: 60000, // 1 minute in ms
-  },
-};
-
-export const DB_CONFIG = {
-  name: &apos;RAGDatabase&apos;,
-  version: 1,
-  stores: {
-    sessions: &apos;sessions&apos;,
-    messages: &apos;messages&apos;,
-    documents: &apos;documents&apos;,
-    embeddings: &apos;embeddings&apos;,
-    settings: &apos;settings&apos;,
-  },
-};
-
-export const UI_CONFIG = {
-  messages: {
-    maxHistoryLength: 6,
-    maxInputLength: 10000,
-    streamingDelay: 100,
-  },
-  documents: {
-    maxFileSize: 50 * 1024 * 1024, // 50MB
-    supportedFormats: [&apos;.json&apos;],
-    batchSize: 10,
-  },
-  search: {
-    defaultTopK: 4,
-    minSimilarity: 0.1,
-    maxResults: 8,
-  },
-};
-
-export const STORAGE_KEYS = {
-  apiKey: &apos;gemini_api_key&apos;,
-  settings: &apos;app_settings&apos;,
-  currentSession: &apos;current_session_id&apos;,
-};
-
-export const ROUTES = {
-  home: &apos;/&apos;,
-  onboarding: &apos;/onboarding&apos;,
-  session: (id: string) =&gt; `/session/${id}`,
-  settings: &apos;/settings&apos;,
-};
-
-export const ERROR_MESSAGES = {
-  apiKeyMissing: &apos;API key is missing. Please add it in settings.&apos;,
-  apiKeyInvalid: &apos;Invalid API key. Please check your settings.&apos;,
-  networkError: &apos;Network error. Please check your connection.&apos;,
-  documentUploadFailed: &apos;Failed to upload document. Please try again.&apos;,
-  chatFailed: &apos;Failed to send message. Please try again.&apos;,
-  noDocuments: &apos;No documents found. Please import documents first.&apos;,
-  noRelevantChunks: &apos;No relevant information found in your documents.&apos;,
-  quotaExceeded: &apos;Storage quota exceeded. Please delete some documents.&apos;,
-};
-
-export const SUCCESS_MESSAGES = {
-  sessionCreated: &apos;Session created successfully.&apos;,
-  sessionUpdated: &apos;Session updated successfully.&apos;,
-  sessionDeleted: &apos;Session deleted successfully.&apos;,
-  documentUploaded: &apos;Document uploaded successfully.&apos;,
-  documentDeleted: &apos;Document deleted successfully.&apos;,
-  settingsSaved: &apos;Settings saved successfully.&apos;,
-  apiKeyValidated: &apos;API key validated successfully.&apos;,
-};
-
-export const DATE_FORMATS = {
-  short: &apos;MMM d, yyyy&apos;,
-  long: &apos;MMMM d, yyyy \&apos;at\&apos; h:mm a&apos;,
-  timeOnly: &apos;h:mm a&apos;,
-  relative: {
-    justNow: &apos;Just now&apos;,
-    minutesAgo: (m: number) =&gt; `${m}m ago`,
-    hoursAgo: (h: number) =&gt; `${h}h ago`,
-    daysAgo: (d: number) =&gt; `${d}d ago`,
-  },
-};
-
-export const THEME_COLORS = {
-  slate: {
-    950: &apos;#020617&apos;,
-    900: &apos;#0F172A&apos;,
-    800: &apos;#1E293B&apos;,
-    700: &apos;#334155&apos;,
-    600: &apos;#475569&apos;,
-    500: &apos;#64748B&apos;,
-    400: &apos;#94A3B8&apos;,
-    300: &apos;#CBD5E1&apos;,
-    200: &apos;#E2E8F0&apos;,
-    100: &apos;#F1F5F9&apos;,
-  },
-  blue: {
-    500: &apos;#3B82F6&apos;,
-    600: &apos;#2563EB&apos;,
-    400: &apos;#60A5FA&apos;,
-  },
-  red: {
-    500: &apos;#EF4444&apos;,
-  },
-  green: {
-    500: &apos;#10B981&apos;,
-  },
-  yellow: {
-    500: &apos;#F59E0B&apos;,
-  },
-};</file><file path="src/utils/userIdDebugLogger.ts">/**
+}</file><file path="src/utils/userIdDebugLogger.ts">/**
  * Debug logger for tracking userId edge cases and potential security issues
  * This helps identify race conditions, data leakage, and unauthorized access
  */
@@ -11340,120 +10481,7 @@ export const ModalFooter: React.FC&lt;ModalFooterProps&gt; = ({
       &lt;/div&gt;
     &lt;/div&gt;
   );
-};</file><file path="src/services/indexedDB/db.ts">import Dexie, { Table } from &apos;dexie&apos;;
-
-// Define EntityTable type locally if not exported from dexie
-type EntityTable&lt;T&gt; = Table&lt;T&gt;;
-import type {
-  Session,
-  Message,
-  Document,
-  EmbeddingChunk,
-  AppSettings,
-} from &apos;@/types&apos;;
-
-export class RAGDatabase extends Dexie {
-  // Tables
-  sessions!: EntityTable&lt;Session&gt;;
-  messages!: EntityTable&lt;Message&gt;;
-  documents!: EntityTable&lt;Document&gt;;
-  embeddings!: EntityTable&lt;EmbeddingChunk&gt;;
-  settings!: EntityTable&lt;AppSettings&gt;;
-
-  constructor() {
-    super(&apos;RAGDatabase&apos;);
-
-    this.version(1).stores({
-      sessions: &apos;&amp;id, name, description, systemPrompt, createdAt, updatedAt, documentCount&apos;,
-      messages: &apos;&amp;id, sessionId, role, content, timestamp, citationsJson&apos;,
-      documents: &apos;&amp;id, sessionId, filename, fileSize, status, pageCount, processedAt, createdAt, enabled, originalPath, storedPath, mimeType, checksum, title, author, language, ingestError&apos;,
-      embeddings: &apos;&amp;id, documentId, sessionId, chunkIndex, content, source, page, embedding, tokenCount, embeddingNorm, createdAt&apos;,
-      settings: &apos;&amp;id, geminiModel, topK, apiKey&apos;,
-    });
-
-    this.version(2).stores({
-      sessions: &apos;&amp;id, name, description, systemPrompt, createdAt, updatedAt, documentCount&apos;,
-      messages: &apos;&amp;id, sessionId, role, content, timestamp, citationsJson&apos;,
-      documents: &apos;&amp;id, sessionId, filename, fileSize, status, pageCount, processedAt, createdAt, enabled, originalPath, storedPath, mimeType, checksum, title, author, language, ingestError&apos;,
-      embeddings: &apos;&amp;id, documentId, sessionId, chunkIndex, content, source, page, embedding, tokenCount, embeddingNorm, createdAt&apos;,
-      settings: &apos;&amp;id, geminiApiKey, temperature, maxTokens, similarityThreshold, chunkSize, chunkOverlap, theme, fontSize, showSources, autoSave, dataRetention, enableAnalytics, crashReporting, debugMode, logLevel&apos;,
-    });
-
-    // Version 3: Add support for pageNumbers in embeddings metadata
-    this.version(3).stores({
-      sessions: &apos;&amp;id, name, description, systemPrompt, createdAt, updatedAt, documentCount&apos;,
-      messages: &apos;&amp;id, sessionId, role, content, timestamp, citationsJson&apos;,
-      documents: &apos;&amp;id, sessionId, filename, fileSize, status, pageCount, processedAt, createdAt, enabled, originalPath, storedPath, mimeType, checksum, title, author, language, ingestError&apos;,
-      embeddings: &apos;&amp;id, documentId, sessionId, chunkIndex, content, source, page, embedding, tokenCount, embeddingNorm, createdAt&apos;,
-      settings: &apos;&amp;id, geminiApiKey, temperature, maxTokens, similarityThreshold, chunkSize, chunkOverlap, theme, fontSize, showSources, autoSave, dataRetention, enableAnalytics, crashReporting, debugMode, logLevel&apos;,
-    }).upgrade(tx =&gt; {
-      // Migration for existing embeddings to ensure backward compatibility
-      return tx.table(&apos;embeddings&apos;).toCollection().modify((embedding: any) =&gt; {
-        // Ensure metadata exists and has proper structure
-        if (!embedding.metadata) {
-          embedding.metadata = {};
-        }
-
-        // If pageNumbers doesn&apos;t exist but pageNumber does, create pageNumbers array
-        if (!embedding.metadata.pageNumbers &amp;&amp; embedding.metadata.pageNumber) {
-          embedding.metadata.pageNumbers = [embedding.metadata.pageNumber];
-        }
-      });
-    });
-
-    // Version 4: Add userId to all tables
-    this.version(4).stores({
-      sessions: &apos;&amp;id, userId, name, description, systemPrompt, createdAt, updatedAt, documentCount&apos;,
-      messages: &apos;&amp;id, sessionId, role, content, timestamp, citationsJson&apos;, // Messages are linked to session, which has userId
-      documents: &apos;&amp;id, userId, sessionId, filename, fileSize, status, pageCount, processedAt, createdAt, enabled, originalPath, storedPath, mimeType, checksum, title, author, language, ingestError&apos;,
-      embeddings: &apos;&amp;id, documentId, sessionId, chunkIndex, content, source, page, embedding, tokenCount, embeddingNorm, createdAt&apos;, // Embeddings linked to document/session
-      settings: &apos;&amp;id, userId, geminiApiKey, temperature, maxTokens, similarityThreshold, chunkSize, chunkOverlap, theme, fontSize, showSources, autoSave, dataRetention, enableAnalytics, crashReporting, debugMode, logLevel&apos;,
-    });
-
-    // NEW: Version 5 to add &apos;model&apos; to settings
-    this.version(5).stores({
-      sessions: &apos;&amp;id, userId, name, description, systemPrompt, createdAt, updatedAt, documentCount&apos;,
-      messages: &apos;&amp;id, sessionId, role, content, timestamp, citationsJson&apos;,
-      documents: &apos;&amp;id, userId, sessionId, filename, fileSize, status, pageCount, processedAt, createdAt, enabled, originalPath, storedPath, mimeType, checksum, title, author, language, ingestError&apos;,
-      embeddings: &apos;&amp;id, documentId, sessionId, chunkIndex, content, source, page, embedding, tokenCount, embeddingNorm, createdAt&apos;,
-      settings: &apos;&amp;id, userId, geminiApiKey, model, temperature, maxTokens, similarityThreshold, chunkSize, chunkOverlap, theme, fontSize, showSources, autoSave, dataRetention, enableAnalytics, crashReporting, debugMode, logLevel&apos;,
-    }).upgrade(tx =&gt; {
-      // Upgrade existing settings to have a default model
-      return tx.table(&apos;settings&apos;).toCollection().modify(setting =&gt; {
-        if (!setting.model) {
-          setting.model = &apos;gemini-2.5-flash-lite&apos;;
-        }
-      });
-    });
-
-    // Version 6: Add compound index for messages to optimize queries
-    this.version(6).stores({
-      sessions: &apos;&amp;id, userId, name, description, systemPrompt, createdAt, updatedAt, documentCount&apos;,
-      messages: &apos;&amp;id, sessionId, role, content, timestamp, citationsJson, [sessionId+timestamp]&apos;,
-      documents: &apos;&amp;id, userId, sessionId, filename, fileSize, status, pageCount, processedAt, createdAt, enabled, originalPath, storedPath, mimeType, checksum, title, author, language, ingestError&apos;,
-      embeddings: &apos;&amp;id, documentId, sessionId, chunkIndex, content, source, page, embedding, tokenCount, embeddingNorm, createdAt&apos;,
-      settings: &apos;&amp;id, userId, geminiApiKey, model, temperature, maxTokens, similarityThreshold, chunkSize, chunkOverlap, theme, fontSize, showSources, autoSave, dataRetention, enableAnalytics, crashReporting, debugMode, logLevel&apos;,
-    });
-  }
-}
-
-// Only create database instance on client side
-export const db = typeof window !== &apos;undefined&apos; ? new RAGDatabase() : null;
-
-// Helper functions for database operations
-export const initDB = async (): Promise&lt;void&gt; =&gt; {
-  if (!db) return;
-  try {
-    await db.open();
-    console.log(&apos;Database opened successfully&apos;);
-  } catch (error) {
-    console.error(&apos;Failed to open database:&apos;, error);
-    throw error;
-  }
-};
-
-// Export database instance for use throughout the app
-export default db;</file><file path="src/services/indexedDB/documentService.ts">import { db } from &apos;./db&apos;;
+};</file><file path="src/services/indexedDB/documentService.ts">import { db } from &apos;./db&apos;;
 import type { Document, DocumentCreate, DocumentUpdate } from &apos;@/types&apos;;
 import { ensureDate } from &apos;@/utils/date&apos;;
 import { userIdLogger } from &apos;@/utils/userIdDebugLogger&apos;;
@@ -12465,7 +11493,866 @@ export class MessageService {
   }
 }
 
-export const messageService = new MessageService();</file><file path="src/components/chat/ChatList.tsx">import React, { useEffect, useRef } from &apos;react&apos;;
+export const messageService = new MessageService();</file><file path="src/services/indexedDB/settingsService.ts">import { db } from &apos;./db&apos;;
+import type { AppSettings, SettingsUpdate } from &apos;@/types&apos;;
+import { userIdLogger } from &apos;@/utils/userIdDebugLogger&apos;;
+
+export class SettingsService {
+  private getSettingsId(userId: string): string {
+    return `app-settings-${userId}`;
+  }
+
+  /**
+   * Get app settings for a user
+   */
+  async getSettings(userId: string): Promise&lt;AppSettings | undefined&gt; {
+    userIdLogger.logServiceCall(&apos;settingsService&apos;, &apos;getSettings&apos;, &apos;read&apos;, userId);
+
+    if (!db) return undefined;
+
+    // Validate userId
+    if (!userId) {
+      userIdLogger.logError(&apos;settingsService.getSettings&apos;, new Error(&apos;Attempt to get settings without userId&apos;), userId);
+      return undefined;
+    }
+
+    const id = this.getSettingsId(userId);
+    const settings = await db.settings.get(id);
+    console.log(&apos;[SETTINGS GET]&apos;, `Retrieved settings for user: ${userId}`);
+    return settings;
+  }
+
+  /**
+   * Get default settings
+   */
+  getDefaultSettings(userId: string): AppSettings {
+    const defaultSettings: AppSettings = {
+      id: this.getSettingsId(userId),
+      userId,
+      geminiApiKey: &apos;&apos;,
+      model: &apos;gemma-3-27b-it&apos;,
+      temperature: 0.7,
+      maxTokens: 4096,
+      similarityThreshold: 0.7,
+      chunkSize: 1000,
+      chunkOverlap: 200,
+      theme: &apos;dark&apos; as const,
+      fontSize: &apos;medium&apos; as const,
+      showSources: true,
+      autoSave: true,
+      dataRetention: &apos;never&apos; as const,
+      enableAnalytics: false,
+      crashReporting: false,
+      debugMode: false,
+      logLevel: &apos;error&apos; as const,
+    };
+
+    return defaultSettings;
+  }
+
+  /**
+   * Create or update settings
+   */
+  async updateSettings(updates: SettingsUpdate, userId: string): Promise&lt;AppSettings&gt; {
+    userIdLogger.logServiceCall(&apos;settingsService&apos;, &apos;updateSettings&apos;, &apos;update&apos;, userId);
+
+    // Validate userId
+    if (!userId) {
+      userIdLogger.logError(&apos;settingsService.updateSettings&apos;, new Error(&apos;Attempt to update settings without userId&apos;), userId);
+      throw new Error(&apos;userId is required to update settings&apos;);
+    }
+
+    const existing = await this.getSettings(userId);
+    const settings = existing ? { ...existing, ...updates } : { ...this.getDefaultSettings(userId), ...updates };
+
+    // Ensure IDs match
+    settings.id = this.getSettingsId(userId);
+    settings.userId = userId;
+
+    if (!db) throw new Error(&apos;Database not available&apos;);
+    await db.settings.put(settings);
+    return settings;
+  }
+
+  /**
+   * Update API key
+   */
+  /**
+   * Update API key
+   */
+  async updateApiKey(geminiApiKey: string, userId: string): Promise&lt;AppSettings&gt; {
+    userIdLogger.logServiceCall(&apos;settingsService&apos;, &apos;updateApiKey&apos;, &apos;update&apos;, userId);
+
+    // Validate userId
+    if (!userId) {
+      userIdLogger.logError(&apos;settingsService.updateApiKey&apos;, new Error(&apos;Attempt to update API key without userId&apos;), userId);
+      throw new Error(&apos;userId is required to update API key&apos;);
+    }
+
+    return await this.updateSettings({ geminiApiKey }, userId);
+  }
+
+
+
+  /**
+   * Update generation settings
+   */
+  /**
+   * Update generation settings
+   */
+  async updateGenerationSettings(
+    maxTokens: number,
+    temperature: number,
+    userId: string
+  ): Promise&lt;AppSettings&gt; {
+    userIdLogger.logServiceCall(&apos;settingsService&apos;, &apos;updateGenerationSettings&apos;, &apos;update&apos;, userId);
+
+    // Validate userId
+    if (!userId) {
+      userIdLogger.logError(&apos;settingsService.updateGenerationSettings&apos;, new Error(&apos;Attempt to update generation settings without userId&apos;), userId);
+      throw new Error(&apos;userId is required to update generation settings&apos;);
+    }
+
+    return await this.updateSettings({ maxTokens, temperature }, userId);
+  }
+
+  /**
+   * Update UI settings
+   */
+  /**
+   * Update UI settings
+   */
+  async updateUISettings(theme: &apos;dark&apos; | &apos;light&apos;, fontSize: &apos;small&apos; | &apos;medium&apos; | &apos;large&apos;, userId: string): Promise&lt;AppSettings&gt; {
+    userIdLogger.logServiceCall(&apos;settingsService&apos;, &apos;updateUISettings&apos;, &apos;update&apos;, userId);
+
+    // Validate userId
+    if (!userId) {
+      userIdLogger.logError(&apos;settingsService.updateUISettings&apos;, new Error(&apos;Attempt to update UI settings without userId&apos;), userId);
+      throw new Error(&apos;userId is required to update UI settings&apos;);
+    }
+
+    return await this.updateSettings({ theme, fontSize }, userId);
+  }
+
+  /**
+   * Toggle sources display
+   */
+  /**
+   * Toggle sources display
+   */
+  async toggleShowSources(userId: string): Promise&lt;AppSettings&gt; {
+    userIdLogger.logServiceCall(&apos;settingsService&apos;, &apos;toggleShowSources&apos;, &apos;update&apos;, userId);
+
+    // Validate userId
+    if (!userId) {
+      userIdLogger.logError(&apos;settingsService.toggleShowSources&apos;, new Error(&apos;Attempt to toggle show sources without userId&apos;), userId);
+      throw new Error(&apos;userId is required to toggle show sources&apos;);
+    }
+
+    const existing = await this.getSettings(userId);
+    const showSources = existing ? !existing.showSources : true;
+    return await this.updateSettings({ showSources }, userId);
+  }
+
+  /**
+   * Reset settings to defaults
+   */
+  /**
+   * Reset settings to defaults
+   */
+  async resetSettings(userId: string): Promise&lt;AppSettings&gt; {
+    userIdLogger.logServiceCall(&apos;settingsService&apos;, &apos;resetSettings&apos;, &apos;update&apos;, userId);
+
+    // Validate userId
+    if (!userId) {
+      userIdLogger.logError(&apos;settingsService.resetSettings&apos;, new Error(&apos;Attempt to reset settings without userId&apos;), userId);
+      throw new Error(&apos;userId is required to reset settings&apos;);
+    }
+
+    if (!db) throw new Error(&apos;Database not available&apos;);
+    const defaultSettings = this.getDefaultSettings(userId);
+    await db.settings.put(defaultSettings);
+    return defaultSettings;
+  }
+
+  /**
+   * Check if API key is configured
+   */
+  /**
+   * Check if API key is configured
+   */
+  async hasApiKey(userId: string): Promise&lt;boolean&gt; {
+    userIdLogger.logServiceCall(&apos;settingsService&apos;, &apos;hasApiKey&apos;, &apos;read&apos;, userId);
+
+    // Validate userId
+    if (!userId) {
+      userIdLogger.logError(&apos;settingsService.hasApiKey&apos;, new Error(&apos;Attempt to check API key without userId&apos;), userId);
+      return false;
+    }
+
+    const settings = await this.getSettings(userId);
+    return !!(settings?.geminiApiKey &amp;&amp; settings.geminiApiKey.trim().length &gt; 0);
+  }
+
+  /**
+   * Get API key (masked for display)
+   */
+  /**
+   * Get API key (masked for display)
+   */
+  async getMaskedApiKey(userId: string): Promise&lt;string&gt; {
+    userIdLogger.logServiceCall(&apos;settingsService&apos;, &apos;getMaskedApiKey&apos;, &apos;read&apos;, userId);
+
+    // Validate userId
+    if (!userId) {
+      userIdLogger.logError(&apos;settingsService.getMaskedApiKey&apos;, new Error(&apos;Attempt to get masked API key without userId&apos;), userId);
+      return &apos;&apos;;
+    }
+
+    const settings = await this.getSettings(userId);
+    if (!settings?.geminiApiKey) return &apos;&apos;;
+
+    const key = settings.geminiApiKey;
+    if (key.length &lt;= 10) return key;
+
+    return key.substring(0, 7) + &apos;...&apos; + key.substring(key.length - 3);
+  }
+
+  /**
+   * Validate API key format
+   */
+  validateApiKey(geminiApiKey: string): boolean {
+    // Basic Gemini API key validation
+    const geminiKeyPattern = /^AIza[0-9A-Za-z_-]{35}$/;
+    return geminiKeyPattern.test(geminiApiKey);
+  }
+
+  /**
+   * Export settings
+   */
+  /**
+   * Export settings
+   */
+  async exportSettings(userId: string): Promise&lt;string&gt; {
+    userIdLogger.logServiceCall(&apos;settingsService&apos;, &apos;exportSettings&apos;, &apos;read&apos;, userId);
+
+    // Validate userId
+    if (!userId) {
+      userIdLogger.logError(&apos;settingsService.exportSettings&apos;, new Error(&apos;Attempt to export settings without userId&apos;), userId);
+      throw new Error(&apos;userId is required to export settings&apos;);
+    }
+
+    const settings = await this.getSettings(userId);
+    if (!settings) throw new Error(&apos;No settings to export&apos;);
+
+    // Create exportable settings (without sensitive data)
+    const exportable = {
+      temperature: settings.temperature,
+      maxTokens: settings.maxTokens,
+      similarityThreshold: settings.similarityThreshold,
+      chunkSize: settings.chunkSize,
+      chunkOverlap: settings.chunkOverlap,
+      theme: settings.theme,
+      fontSize: settings.fontSize,
+      showSources: settings.showSources,
+      autoSave: settings.autoSave,
+      dataRetention: settings.dataRetention,
+      enableAnalytics: settings.enableAnalytics,
+      crashReporting: settings.crashReporting,
+      debugMode: settings.debugMode,
+      logLevel: settings.logLevel,
+    };
+
+    return JSON.stringify(exportable, null, 2);
+  }
+
+  /**
+   * Import settings
+   */
+  async importSettings(settingsJson: string, userId: string): Promise&lt;AppSettings&gt; {
+    userIdLogger.logServiceCall(&apos;settingsService&apos;, &apos;importSettings&apos;, &apos;update&apos;, userId);
+
+    // Validate userId
+    if (!userId) {
+      userIdLogger.logError(&apos;settingsService.importSettings&apos;, new Error(&apos;Attempt to import settings without userId&apos;), userId);
+      throw new Error(&apos;userId is required to import settings&apos;);
+    }
+
+    try {
+      const imported = JSON.parse(settingsJson);
+
+      // Validate imported settings
+      const validUpdates: SettingsUpdate = {};
+
+      if (typeof imported.similarityThreshold === &apos;number&apos; &amp;&amp; imported.similarityThreshold &gt;= 0 &amp;&amp; imported.similarityThreshold &lt;= 1) {
+        validUpdates.similarityThreshold = imported.similarityThreshold;
+      }
+      if (typeof imported.chunkSize === &apos;number&apos; &amp;&amp; imported.chunkSize &gt; 0) {
+        validUpdates.chunkSize = imported.chunkSize;
+      }
+      if (typeof imported.chunkOverlap === &apos;number&apos; &amp;&amp; imported.chunkOverlap &gt;= 0) {
+        validUpdates.chunkOverlap = imported.chunkOverlap;
+      }
+      if (typeof imported.maxTokens === &apos;number&apos; &amp;&amp; imported.maxTokens &gt; 0) {
+        validUpdates.maxTokens = imported.maxTokens;
+      }
+      if (typeof imported.temperature === &apos;number&apos; &amp;&amp; imported.temperature &gt;= 0 &amp;&amp; imported.temperature &lt;= 2) {
+        validUpdates.temperature = imported.temperature;
+      }
+      if (typeof imported.showSources === &apos;boolean&apos;) {
+        validUpdates.showSources = imported.showSources;
+      }
+      if (typeof imported.autoSave === &apos;boolean&apos;) {
+        validUpdates.autoSave = imported.autoSave;
+      }
+      if (typeof imported.dataRetention === &apos;string&apos;) {
+        validUpdates.dataRetention = imported.dataRetention;
+      }
+      if (typeof imported.enableAnalytics === &apos;boolean&apos;) {
+        validUpdates.enableAnalytics = imported.enableAnalytics;
+      }
+      if (typeof imported.crashReporting === &apos;boolean&apos;) {
+        validUpdates.crashReporting = imported.crashReporting;
+      }
+      if (typeof imported.debugMode === &apos;boolean&apos;) {
+        validUpdates.debugMode = imported.debugMode;
+      }
+      if (typeof imported.logLevel === &apos;string&apos;) {
+        validUpdates.logLevel = imported.logLevel;
+      }
+
+      return await this.updateSettings(validUpdates, userId);
+    } catch (error) {
+      throw new Error(&apos;Invalid settings format&apos;);
+    }
+  }
+}
+
+export const settingsService = new SettingsService();</file><file path="src/services/rag/responseFormatter.ts">/**
+ * Response Formatter Service
+ * Uses LLM to convert paragraph-style responses to bullet point format while preserving citations
+ */
+
+import { GeminiService } from &apos;../gemini/geminiService&apos;;
+import type { AppSettings } from &apos;@/types/settings&apos;;
+import { IndentationAnalyzer } from &apos;@/utils/indentationAnalyzer&apos;;
+
+export interface FormattedSection {
+  title: string;
+  bulletPoints: string[];
+  citations: number[];
+}
+
+export class ResponseFormatter {
+  /**
+   * Convert paragraph response to bullet point format using LLM
+   * Preserves citations and moves them to end of bullet points
+   */
+  static async formatToBulletPoints(
+    response: string,
+    settings: AppSettings
+  ): Promise&lt;string&gt; {
+    const timestamp = new Date().toISOString();
+    console.log(`\n=== [${timestamp}] [INDENTATION DEBUG] LLM RESPONSE FORMATTER START ===`);
+    console.log(`[${timestamp}] [INDENTATION DEBUG] ORIGINAL RESPONSE:`, response.substring(0, 200) + (response.length &gt; 200 ? &apos;...&apos; : &apos;&apos;));
+    console.log(`[${timestamp}] [INDENTATION DEBUG] ORIGINAL LENGTH:`, `${response.length} characters`);
+
+    // Analyze original response for indentation patterns
+    console.log(`[${timestamp}] [INDENTATION DEBUG] ANALYZING ORIGINAL RESPONSE STRUCTURE:`);
+    IndentationAnalyzer.logMarkdownStructure(response);
+    const originalAnalysis = IndentationAnalyzer.analyzeIndentation(response);
+    console.log(`[${timestamp}] [INDENTATION DEBUG] ORIGINAL RESPONSE HAS NESTED STRUCTURES:`, originalAnalysis.hasNestedStructures);
+
+    if (!response || response.trim().length === 0) {
+      console.log(`[${timestamp}] [INDENTATION DEBUG] FORMATTING SKIPPED:`, &apos;Empty response, returning as-is&apos;);
+      console.log(`=== [${timestamp}] [INDENTATION DEBUG] LLM RESPONSE FORMATTER END ===\n`);
+      return response;
+    }
+
+    // Use main API key for formatting
+    const formattingApiKey = settings.geminiApiKey;
+
+    console.log(`[${timestamp}] [INDENTATION DEBUG] LLM FORMATTER:`, &apos;Using main API key for formatting:&apos;, settings.geminiApiKey ? `YES (${settings.geminiApiKey.substring(0, 10)}...)` : &apos;NO&apos;);
+
+    if (!formattingApiKey) {
+      console.log(`[${timestamp}] [INDENTATION DEBUG] FORMATTING SKIPPED:`, &apos;No API key available, returning original response&apos;);
+      console.log(`=== [${timestamp}] [INDENTATION DEBUG] LLM RESPONSE FORMATTER END ===\n`);
+      return response;
+    }
+
+    try {
+      console.log(`[${timestamp}] [INDENTATION DEBUG] LLM FORMATTING:`, &apos;Using LLM to convert to bullet points...&apos;);
+      console.log(`[${timestamp}] [INDENTATION DEBUG] LLM FORMATTING:`, `Calling Gemini service with main API key`);
+
+      const formattingPrompt = this.buildFormattingPrompt(response);
+      console.log(`[${timestamp}] [INDENTATION DEBUG] FORMATTING PROMPT:`, formattingPrompt.substring(0, 300) + &apos;...&apos;);
+      console.log(`[${timestamp}] [INDENTATION DEBUG] PROMPT ANALYSIS:`, {
+        promptLength: formattingPrompt.length,
+        containsNestedInstructions: formattingPrompt.includes(&apos;NESTED&apos;),
+        containsIndentInstructions: formattingPrompt.includes(&apos;indent&apos;),
+        containsBulletInstructions: formattingPrompt.includes(&apos;*&apos;),
+        containsExampleFormatting: formattingPrompt.includes(&apos;EXAMPLE TRANSFORMATION&apos;)
+      });
+
+      // Create a separate instance for formatting to avoid conflicts
+      const formattingGeminiService = new GeminiService();
+      formattingGeminiService.initialize(formattingApiKey, &apos;gemma-3-27b-it&apos;);
+
+      const formattedResponse = await formattingGeminiService.generateResponse(
+        formattingPrompt,
+        &apos;&apos;, // No context needed for formatting
+        &apos;&apos;, // No system prompt needed for formatting
+        {
+          temperature: 0.3, // Lower temperature for consistent formatting
+          maxTokens: Math.min(response.length * 2, 4000), // Allow for expansion but cap it
+        }
+      );
+
+      console.log(`[${timestamp}] [INDENTATION DEBUG] LLM FORMATTING:`, &apos;Gemini service response received, length:&apos;, formattedResponse.length);
+
+      // Comprehensive analysis of formatted response
+      console.log(`[${timestamp}] [INDENTATION DEBUG] ANALYZING FORMATTED RESPONSE STRUCTURE:`);
+      IndentationAnalyzer.logMarkdownStructure(formattedResponse);
+      const formattedAnalysis = IndentationAnalyzer.analyzeIndentation(formattedResponse);
+
+      // Check for nested structures detection
+      const hasNestedStructures = IndentationAnalyzer.detectNestedLists(formattedResponse);
+      console.log(`[${timestamp}] [INDENTATION DEBUG] NESTED STRUCTURES DETECTED IN FORMATTED RESPONSE:`, hasNestedStructures);
+
+      // Create visualization of indentation
+      console.log(`[${timestamp}] [INDENTATION DEBUG] FORMATTED RESPONSE INDENTATION VISUALIZATION:`);
+      IndentationAnalyzer.visualizeIndentation(formattedResponse);
+
+      // Additional detailed analysis
+      const hasNewlines = formattedResponse.includes(&apos;\n&apos;);
+      const bulletCount = (formattedResponse.match(/^\* /gm) || []).length;
+      const newlineCount = (formattedResponse.match(/\n/g) || []).length;
+      const nestedBulletCount = (formattedResponse.match(/^[ \t]+\* /gm) || []).length;
+
+      console.log(`[${timestamp}] [INDENTATION DEBUG] FORMATTING ANALYSIS:`, {
+        hasNewlines,
+        bulletCount,
+        newlineCount,
+        nestedBulletCount,
+        firstBulletIndex: formattedResponse.indexOf(&apos;* &apos;),
+        containsListMarkers: formattedResponse.includes(&apos;* &apos;),
+        startsWithBullet: formattedResponse.trim().startsWith(&apos;* &apos;),
+        hasIndentation: formattedAnalysis.indentedLines &gt; 0,
+        maxIndentLevel: formattedAnalysis.maxIndentLevel,
+        responsePreview: formattedResponse.substring(0, 300) + (formattedResponse.length &gt; 300 ? &apos;...&apos; : &apos;&apos;),
+        rawCharCodes: Array.from(formattedResponse.substring(0, 100)).map(c =&gt; `${c}(${c.charCodeAt(0)})`).join(&apos; &apos;)
+      });
+
+      // Compare original vs formatted
+      console.log(`[${timestamp}] [INDENTATION DEBUG] ORIGINAL vs FORMATTED COMPARISON:`, {
+        originalHadNested: originalAnalysis.hasNestedStructures,
+        formattedHasNested: formattedAnalysis.hasNestedStructures,
+        originalIndentedLines: originalAnalysis.indentedLines,
+        formattedIndentedLines: formattedAnalysis.indentedLines,
+        originalMaxIndent: originalAnalysis.maxIndentLevel,
+        formattedMaxIndent: formattedAnalysis.maxIndentLevel,
+        improvement: formattedAnalysis.maxIndentLevel &gt; originalAnalysis.maxIndentLevel ? &apos;YES - Added nesting&apos; : &apos;NO - No improvement&apos;
+      });
+
+      console.log(`[${timestamp}] [INDENTATION DEBUG] LLM FORMATTING COMPLETE:`, `Formatted response: ${formattedResponse.length} characters`);
+      console.log(`[${timestamp}] [INDENTATION DEBUG] FORMATTED PREVIEW:`, formattedResponse.substring(0, 200) + (formattedResponse.length &gt; 200 ? &apos;...&apos; : &apos;&apos;));
+      console.log(`=== [${timestamp}] [INDENTATION DEBUG] LLM RESPONSE FORMATTER END ===\n`);
+
+      return formattedResponse;
+
+    } catch (error) {
+      console.error(`[${timestamp}] [INDENTATION DEBUG] LLM FORMATTING ERROR:`, &apos;Failed to format with LLM:&apos;, error);
+      console.log(`[${timestamp}] [INDENTATION DEBUG] FALLBACK:`, &apos;Returning original response due to formatting error&apos;);
+      console.log(`=== [${timestamp}] [INDENTATION DEBUG] LLM RESPONSE FORMATTER END ===\n`);
+      return response;
+    }
+  }
+
+  /**
+   * Build the formatting prompt for the LLM
+   */
+  private static buildFormattingPrompt(response: string): string {
+    return `You are a response formatting specialist. Your task is to convert paragraph-style responses to clear, structured, NESTED bullet point lists while preserving all citations.
+
+CRITICAL FORMATTING RULES:
+1. Use standard Markdown bullet points: * for top level, and indent 2-4 spaces with * for sub-levels.
+2. DETECT HIERARCHY: If a sentence acts as a header (e.g., &quot;Early Surgery:&quot;, &quot;Treatments include:&quot;), the items following it MUST be indented.
+3. Format:
+   * Main Category or Timeframe
+     * Sub-point with citation [1]
+     * Another sub-point [2]
+4. Preserve ALL citations in their original positions.
+5. Move citations to the END of the specific bullet point they support.
+6. Create logical section headers using bold format with checkmark emoji: ✅ **[Section Title]:**
+7. Do not add, remove, or change any factual information.
+
+EXAMPLE TRANSFORMATION:
+
+INPUT:
+&quot;Surgical management includes early surgery within 2 weeks involving limbal stem cell transplantation [1] and amniotic membrane grafts [2]. Late surgery after 6 months involves symblepharon release [3] and keratoplasty [1].&quot;
+
+OUTPUT:
+✅ **Surgical Management:**
+* Early Surgery (within 2 weeks):
+    * Limbal stem cell transplantation [1]
+    * Amniotic membrane grafts [2]
+* Late Surgery (after 6 months):
+    * Release of conjunctival bands (symblepharon release) [3]
+    * Keratoplasty [1]
+
+YOUR TASK:
+Convert the following response to a nested bullet point format following the rules above:
+
+${response}`;
+  }
+
+  /**
+   * Legacy rule-based method (kept as fallback)
+   */
+  static async formatToBulletPointsLegacy(response: string): Promise&lt;string&gt; {
+    console.log(&apos;[LEGACY FORMATTING]&apos;, &apos;Using rule-based formatting as fallback&apos;);
+
+    if (!response || response.trim().length === 0) {
+      return response;
+    }
+
+    // Extract all citations first to preserve them
+    const citations = this.extractCitations(response);
+    const responseWithoutCitations = this.removeCitations(response);
+
+    // Split response into logical sections
+    const sections = this.identifySections(responseWithoutCitations);
+
+    // Format each section with bullet points
+    const formattedSections = sections.map(section =&gt;
+      this.formatSection(section, citations)
+    );
+
+    // Combine all sections
+    return formattedSections.join(&apos;\n\n&apos;);
+  }
+
+  /**
+   * Extract citation references from text
+   */
+  private static extractCitations(text: string): Array&lt;{ index: number, position: number }&gt; {
+    const citationPattern = /\[(\d+)\]/g;
+    const citations: Array&lt;{ index: number, position: number }&gt; = [];
+    let match;
+
+    while ((match = citationPattern.exec(text)) !== null) {
+      citations.push({
+        index: parseInt(match[1], 10),
+        position: match.index
+      });
+    }
+
+    return citations;
+  }
+
+  /**
+   * Remove citations from text for processing
+   */
+  private static removeCitations(text: string): string {
+    return text.replace(/\[\d+\]/g, &apos;&apos;);
+  }
+
+  /**
+   * Identify logical sections in the response
+   */
+  private static identifySections(text: string): Array&lt;{ title: string, content: string }&gt; {
+    console.log(&apos;[SECTION ANALYSIS]&apos;, `Analyzing text of ${text.length} characters`);
+    const sections: Array&lt;{ title: string, content: string }&gt; = [];
+
+    // Split by double newlines or major sentence breaks
+    const paragraphs = text.split(/\n\s*\n/);
+    console.log(&apos;[PARAGRAPH SPLIT]&apos;, `Found ${paragraphs.length} paragraphs`);
+
+    for (let i = 0; i &lt; paragraphs.length; i++) {
+      const paragraph = paragraphs[i];
+      const trimmed = paragraph.trim();
+      if (trimmed.length === 0) {
+        console.log(`[PARAGRAPH ${i}]`, &apos;Empty paragraph, skipping&apos;);
+        continue;
+      }
+
+      console.log(`[PARAGRAPH ${i}]`, `Content: &quot;${trimmed.substring(0, 80)}${trimmed.length &gt; 80 ? &apos;...&apos; : &apos;&apos;}&quot;`);
+
+      // Check if this looks like a header or main topic
+      const isHeader = this.isHeader(trimmed);
+      console.log(`[PARAGRAPH ${i}]`, `Is header: ${isHeader}`);
+
+      if (isHeader || sections.length === 0) {
+        const title = isHeader ? this.cleanHeader(trimmed) : &apos;Main Points&apos;;
+        const content = isHeader ? &apos;&apos; : trimmed;
+        sections.push({ title, content });
+        console.log(`[SECTION CREATED]`, `Title: &quot;${title}&quot;, Content length: ${content.length}`);
+      } else {
+        // Add to last section
+        const lastSection = sections[sections.length - 1];
+        lastSection.content += (lastSection.content ? &apos; &apos; : &apos;&apos;) + trimmed;
+        console.log(`[SECTION UPDATED]`, `Added to &quot;${lastSection.title}&quot;, new length: ${lastSection.content.length}`);
+      }
+    }
+
+    console.log(&apos;[SECTION ANALYSIS COMPLETE]&apos;, `Created ${sections.length} sections`);
+    return sections;
+  }
+
+  /**
+   * Check if text looks like a header
+   */
+  private static isHeader(text: string): boolean {
+    // Headers are typically shorter, may end with colon, or contain keywords
+    const headerKeywords = [
+      &apos;criteria&apos;, &apos;factors&apos;, &apos;features&apos;, &apos;symptoms&apos;, &apos;treatment&apos;,
+      &apos;diagnosis&apos;, &apos;management&apos;, &apos;assessment&apos;, &apos;findings&apos;, &apos;results&apos;
+    ];
+
+    const isShort = text.length &lt; 100;
+    const endsWithColon = text.trim().endsWith(&apos;:&apos;);
+    const hasKeyword = headerKeywords.some(keyword =&gt;
+      text.toLowerCase().includes(keyword)
+    );
+
+    return isShort &amp;&amp; (endsWithColon || hasKeyword);
+  }
+
+  /**
+   * Clean header text
+   */
+  private static cleanHeader(header: string): string {
+    return header
+      .replace(/[:：]$/, &apos;&apos;) // Remove trailing colons
+      .replace(/^\*\s*/, &apos;&apos;) // Remove leading bullets
+      .trim();
+  }
+
+  /**
+   * Format a section into bullet points with citations
+   */
+  private static formatSection(
+    section: { title: string, content: string },
+    citations: Array&lt;{ index: number, position: number }&gt;
+  ): string {
+    console.log(`[SECTION FORMATTING]`, `Formatting section: &quot;${section.title}&quot; with ${section.content.length} chars`);
+
+    const bulletPoints = this.createBulletPoints(section.content);
+    console.log(`[SECTION FORMATTING]`, `Created ${bulletPoints.length} bullet points for section`);
+
+    // Add citations to bullet points
+    const bulletPointsWithCitations = bulletPoints.map((point, index) =&gt; {
+      const pointCitations = this.getCitationsForPoint(point, section.content, citations);
+      console.log(`[BULLET ${index + 1}]`, `Point: &quot;${point.substring(0, 60)}${point.length &gt; 60 ? &apos;...&apos; : &apos;&apos;}&quot;`);
+      console.log(`[BULLET ${index + 1}]`, `Citations found: ${pointCitations.length &gt; 0 ? pointCitations.map(c =&gt; `[${c}]`).join(&apos;, &apos;) : &apos;None&apos;}`);
+
+      const citationText = pointCitations.length &gt; 0
+        ? &apos; &apos; + pointCitations.map(c =&gt; `[${c}]`).join(&apos;, &apos;)
+        : &apos;&apos;;
+      return `* ${point}${citationText}`;
+    });
+
+    // Format section
+    let formatted = `✅ **${section.title}:**\n`;
+    formatted += bulletPointsWithCitations.join(&apos;\n&apos;);
+
+    console.log(`[SECTION FORMATTED]`, `Section formatted with ${bulletPointsWithCitations.length} bullet points`);
+    return formatted;
+  }
+
+  /**
+   * Create bullet points from content
+   */
+  private static createBulletPoints(content: string): string[] {
+    console.log(&apos;[BULLET CREATION]&apos;, `Creating bullet points from ${content.length} characters of content`);
+
+    // Split by sentences or logical clauses
+    const sentences = this.splitIntoSentences(content);
+    console.log(&apos;[SENTENCE SPLIT]&apos;, `Found ${sentences.length} sentences:`, sentences.map((s, i) =&gt; `${i + 1}. &quot;${s.substring(0, 50)}${s.length &gt; 50 ? &apos;...&apos; : &apos;&apos;}&quot;`));
+
+    const bulletPoints: string[] = [];
+    let currentPoint = &apos;&apos;;
+
+    for (let i = 0; i &lt; sentences.length; i++) {
+      const sentence = sentences[i];
+      const trimmed = sentence.trim();
+      if (trimmed.length === 0) {
+        console.log(`[SENTENCE ${i}]`, &apos;Empty sentence, skipping&apos;);
+        continue;
+      }
+
+      console.log(`[SENTENCE ${i}]`, `Processing: &quot;${trimmed}&quot;`);
+
+      // If adding this sentence makes the point too long, start a new point
+      if (currentPoint &amp;&amp; currentPoint.length + trimmed.length &gt; 200) {
+        bulletPoints.push(currentPoint.trim());
+        console.log(`[BULLET CREATED]`, `Bullet ${bulletPoints.length}: &quot;${currentPoint.trim()}&quot;`);
+        currentPoint = trimmed;
+      } else {
+        currentPoint += (currentPoint ? &apos; &apos; : &apos;&apos;) + trimmed;
+        console.log(`[BULLET BUILDING]`, `Current point length: ${currentPoint.length}`);
+      }
+    }
+
+    if (currentPoint.trim()) {
+      bulletPoints.push(currentPoint.trim());
+      console.log(`[FINAL BULLET]`, `Final bullet: &quot;${currentPoint.trim()}&quot;`);
+    }
+
+    console.log(&apos;[BULLET CREATION COMPLETE]&apos;, `Created ${bulletPoints.length} bullet points`);
+    return bulletPoints;
+  }
+
+  /**
+   * Split text into sentences
+   */
+  private static splitIntoSentences(text: string): string[] {
+    // Split by sentence-ending punctuation but preserve newlines for list formatting
+    return text.split(/(?&lt;=[.!?])\s+/).filter(s =&gt; s.trim().length &gt; 0);
+  }
+
+  /**
+   * Get citations that belong to a specific bullet point
+   */
+  private static getCitationsForPoint(
+    point: string,
+    originalContent: string,
+    citations: Array&lt;{ index: number, position: number }&gt;
+  ): number[] {
+    // Find citations that appear within the range of this point in original content
+    const pointStart = originalContent.indexOf(point);
+    const pointEnd = pointStart + point.length;
+
+    return citations
+      .filter(cit =&gt; cit.position &gt;= pointStart &amp;&amp; cit.position &lt; pointEnd)
+      .map(cit =&gt; cit.index)
+      .filter((index, pos, arr) =&gt; arr.indexOf(index) === pos); // Remove duplicates
+  }
+}</file><file path="src/utils/constants.ts">export const APP_CONFIG = {
+  name: process.env.NEXT_PUBLIC_APP_NAME || &apos;Meddy&apos;,
+  version: process.env.NEXT_PUBLIC_APP_VERSION || &apos;1.0.0&apos;,
+  description: &apos;Chat with your documents privately&apos;,
+};
+
+export const API_CONFIG = {
+  gemini: {
+    embeddingModel: &apos;text-embedding-004&apos;,
+    defaultModel: &apos;gemma-3-27b-it&apos;,
+    maxTokens: 8192,
+    temperature: 0.7,
+    maxRetries: 3,
+    retryDelay: 1000,
+  },
+  rateLimits: {
+    requestsPerMinute: 60,
+    rateLimitWindow: 60000, // 1 minute in ms
+  },
+};
+
+export const DB_CONFIG = {
+  name: &apos;RAGDatabase&apos;,
+  version: 1,
+  stores: {
+    sessions: &apos;sessions&apos;,
+    messages: &apos;messages&apos;,
+    documents: &apos;documents&apos;,
+    embeddings: &apos;embeddings&apos;,
+    settings: &apos;settings&apos;,
+  },
+};
+
+export const UI_CONFIG = {
+  messages: {
+    maxHistoryLength: 6,
+    maxInputLength: 10000,
+    streamingDelay: 100,
+  },
+  documents: {
+    maxFileSize: 50 * 1024 * 1024, // 50MB
+    supportedFormats: [&apos;.json&apos;],
+    batchSize: 10,
+  },
+  search: {
+    defaultTopK: 4,
+    minSimilarity: 0.1,
+    maxResults: 8,
+  },
+};
+
+export const STORAGE_KEYS = {
+  apiKey: &apos;gemini_api_key&apos;,
+  settings: &apos;app_settings&apos;,
+  currentSession: &apos;current_session_id&apos;,
+};
+
+export const ROUTES = {
+  home: &apos;/&apos;,
+  onboarding: &apos;/onboarding&apos;,
+  session: (id: string) =&gt; `/session/${id}`,
+  settings: &apos;/settings&apos;,
+};
+
+export const ERROR_MESSAGES = {
+  apiKeyMissing: &apos;API key is missing. Please add it in settings.&apos;,
+  apiKeyInvalid: &apos;Invalid API key. Please check your settings.&apos;,
+  networkError: &apos;Network error. Please check your connection.&apos;,
+  documentUploadFailed: &apos;Failed to upload document. Please try again.&apos;,
+  chatFailed: &apos;Failed to send message. Please try again.&apos;,
+  noDocuments: &apos;No documents found. Please import documents first.&apos;,
+  noRelevantChunks: &apos;No relevant information found in your documents.&apos;,
+  quotaExceeded: &apos;Storage quota exceeded. Please delete some documents.&apos;,
+};
+
+export const SUCCESS_MESSAGES = {
+  sessionCreated: &apos;Session created successfully.&apos;,
+  sessionUpdated: &apos;Session updated successfully.&apos;,
+  sessionDeleted: &apos;Session deleted successfully.&apos;,
+  documentUploaded: &apos;Document uploaded successfully.&apos;,
+  documentDeleted: &apos;Document deleted successfully.&apos;,
+  settingsSaved: &apos;Settings saved successfully.&apos;,
+  apiKeyValidated: &apos;API key validated successfully.&apos;,
+};
+
+export const DATE_FORMATS = {
+  short: &apos;MMM d, yyyy&apos;,
+  long: &apos;MMMM d, yyyy \&apos;at\&apos; h:mm a&apos;,
+  timeOnly: &apos;h:mm a&apos;,
+  relative: {
+    justNow: &apos;Just now&apos;,
+    minutesAgo: (m: number) =&gt; `${m}m ago`,
+    hoursAgo: (h: number) =&gt; `${h}h ago`,
+    daysAgo: (d: number) =&gt; `${d}d ago`,
+  },
+};
+
+export const THEME_COLORS = {
+  slate: {
+    950: &apos;#020617&apos;,
+    900: &apos;#0F172A&apos;,
+    800: &apos;#1E293B&apos;,
+    700: &apos;#334155&apos;,
+    600: &apos;#475569&apos;,
+    500: &apos;#64748B&apos;,
+    400: &apos;#94A3B8&apos;,
+    300: &apos;#CBD5E1&apos;,
+    200: &apos;#E2E8F0&apos;,
+    100: &apos;#F1F5F9&apos;,
+  },
+  blue: {
+    500: &apos;#3B82F6&apos;,
+    600: &apos;#2563EB&apos;,
+    400: &apos;#60A5FA&apos;,
+  },
+  red: {
+    500: &apos;#EF4444&apos;,
+  },
+  green: {
+    500: &apos;#10B981&apos;,
+  },
+  yellow: {
+    500: &apos;#F59E0B&apos;,
+  },
+};</file><file path="src/components/chat/ChatList.tsx">import React, { useEffect, useRef } from &apos;react&apos;;
 import dynamic from &apos;next/dynamic&apos;;
 import { Loading } from &apos;../ui/Loading&apos;;
 import { ResponseProgressBar } from &apos;../ui/ResponseProgressBar&apos;;
@@ -13680,7 +13567,131 @@ export const SessionListSidebar: React.FC&lt;{
       &lt;/div&gt;
     &lt;/div&gt;
   );
-};</file><file path="src/services/rag/citationService.ts">import type { VectorSearchResult } from &apos;@/types/embedding&apos;;
+};</file><file path="src/services/indexedDB/db.ts">import Dexie, { Table } from &apos;dexie&apos;;
+
+// Define EntityTable type locally if not exported from dexie
+type EntityTable&lt;T&gt; = Table&lt;T&gt;;
+import type {
+  Session,
+  Message,
+  Document,
+  EmbeddingChunk,
+  AppSettings,
+} from &apos;@/types&apos;;
+
+export class RAGDatabase extends Dexie {
+  // Tables
+  sessions!: EntityTable&lt;Session&gt;;
+  messages!: EntityTable&lt;Message&gt;;
+  documents!: EntityTable&lt;Document&gt;;
+  embeddings!: EntityTable&lt;EmbeddingChunk&gt;;
+  settings!: EntityTable&lt;AppSettings&gt;;
+
+  constructor() {
+    super(&apos;RAGDatabase&apos;);
+
+    this.version(1).stores({
+      sessions: &apos;&amp;id, name, description, systemPrompt, createdAt, updatedAt, documentCount&apos;,
+      messages: &apos;&amp;id, sessionId, role, content, timestamp, citationsJson&apos;,
+      documents: &apos;&amp;id, sessionId, filename, fileSize, status, pageCount, processedAt, createdAt, enabled, originalPath, storedPath, mimeType, checksum, title, author, language, ingestError&apos;,
+      embeddings: &apos;&amp;id, documentId, sessionId, chunkIndex, content, source, page, embedding, tokenCount, embeddingNorm, createdAt&apos;,
+      settings: &apos;&amp;id, geminiModel, topK, apiKey&apos;,
+    });
+
+    this.version(2).stores({
+      sessions: &apos;&amp;id, name, description, systemPrompt, createdAt, updatedAt, documentCount&apos;,
+      messages: &apos;&amp;id, sessionId, role, content, timestamp, citationsJson&apos;,
+      documents: &apos;&amp;id, sessionId, filename, fileSize, status, pageCount, processedAt, createdAt, enabled, originalPath, storedPath, mimeType, checksum, title, author, language, ingestError&apos;,
+      embeddings: &apos;&amp;id, documentId, sessionId, chunkIndex, content, source, page, embedding, tokenCount, embeddingNorm, createdAt&apos;,
+      settings: &apos;&amp;id, geminiApiKey, temperature, maxTokens, similarityThreshold, chunkSize, chunkOverlap, theme, fontSize, showSources, autoSave, dataRetention, enableAnalytics, crashReporting, debugMode, logLevel&apos;,
+    });
+
+    // Version 3: Add support for pageNumbers in embeddings metadata
+    this.version(3).stores({
+      sessions: &apos;&amp;id, name, description, systemPrompt, createdAt, updatedAt, documentCount&apos;,
+      messages: &apos;&amp;id, sessionId, role, content, timestamp, citationsJson&apos;,
+      documents: &apos;&amp;id, sessionId, filename, fileSize, status, pageCount, processedAt, createdAt, enabled, originalPath, storedPath, mimeType, checksum, title, author, language, ingestError&apos;,
+      embeddings: &apos;&amp;id, documentId, sessionId, chunkIndex, content, source, page, embedding, tokenCount, embeddingNorm, createdAt&apos;,
+      settings: &apos;&amp;id, geminiApiKey, temperature, maxTokens, similarityThreshold, chunkSize, chunkOverlap, theme, fontSize, showSources, autoSave, dataRetention, enableAnalytics, crashReporting, debugMode, logLevel&apos;,
+    }).upgrade(tx =&gt; {
+      // Migration for existing embeddings to ensure backward compatibility
+      return tx.table(&apos;embeddings&apos;).toCollection().modify((embedding: any) =&gt; {
+        // Ensure metadata exists and has proper structure
+        if (!embedding.metadata) {
+          embedding.metadata = {};
+        }
+
+        // If pageNumbers doesn&apos;t exist but pageNumber does, create pageNumbers array
+        if (!embedding.metadata.pageNumbers &amp;&amp; embedding.metadata.pageNumber) {
+          embedding.metadata.pageNumbers = [embedding.metadata.pageNumber];
+        }
+      });
+    });
+
+    // Version 4: Add userId to all tables
+    this.version(4).stores({
+      sessions: &apos;&amp;id, userId, name, description, systemPrompt, createdAt, updatedAt, documentCount&apos;,
+      messages: &apos;&amp;id, sessionId, role, content, timestamp, citationsJson&apos;, // Messages are linked to session, which has userId
+      documents: &apos;&amp;id, userId, sessionId, filename, fileSize, status, pageCount, processedAt, createdAt, enabled, originalPath, storedPath, mimeType, checksum, title, author, language, ingestError&apos;,
+      embeddings: &apos;&amp;id, documentId, sessionId, chunkIndex, content, source, page, embedding, tokenCount, embeddingNorm, createdAt&apos;, // Embeddings linked to document/session
+      settings: &apos;&amp;id, userId, geminiApiKey, temperature, maxTokens, similarityThreshold, chunkSize, chunkOverlap, theme, fontSize, showSources, autoSave, dataRetention, enableAnalytics, crashReporting, debugMode, logLevel&apos;,
+    });
+
+    // NEW: Version 5 to add &apos;model&apos; to settings
+    this.version(5).stores({
+      sessions: &apos;&amp;id, userId, name, description, systemPrompt, createdAt, updatedAt, documentCount&apos;,
+      messages: &apos;&amp;id, sessionId, role, content, timestamp, citationsJson&apos;,
+      documents: &apos;&amp;id, userId, sessionId, filename, fileSize, status, pageCount, processedAt, createdAt, enabled, originalPath, storedPath, mimeType, checksum, title, author, language, ingestError&apos;,
+      embeddings: &apos;&amp;id, documentId, sessionId, chunkIndex, content, source, page, embedding, tokenCount, embeddingNorm, createdAt&apos;,
+      settings: &apos;&amp;id, userId, geminiApiKey, model, temperature, maxTokens, similarityThreshold, chunkSize, chunkOverlap, theme, fontSize, showSources, autoSave, dataRetention, enableAnalytics, crashReporting, debugMode, logLevel&apos;,
+    }).upgrade(tx =&gt; {
+      // Upgrade existing settings to have a default model
+      return tx.table(&apos;settings&apos;).toCollection().modify(setting =&gt; {
+        if (!setting.model) {
+          setting.model = &apos;gemini-2.5-flash-lite&apos;;
+        }
+      });
+    });
+
+    // Version 6: Add compound index for messages to optimize queries
+    this.version(6).stores({
+      sessions: &apos;&amp;id, userId, name, description, systemPrompt, createdAt, updatedAt, documentCount&apos;,
+      messages: &apos;&amp;id, sessionId, role, content, timestamp, citationsJson, [sessionId+timestamp]&apos;,
+      documents: &apos;&amp;id, userId, sessionId, filename, fileSize, status, pageCount, processedAt, createdAt, enabled, originalPath, storedPath, mimeType, checksum, title, author, language, ingestError&apos;,
+      embeddings: &apos;&amp;id, documentId, sessionId, chunkIndex, content, source, page, embedding, tokenCount, embeddingNorm, createdAt&apos;,
+      settings: &apos;&amp;id, userId, geminiApiKey, model, temperature, maxTokens, similarityThreshold, chunkSize, chunkOverlap, theme, fontSize, showSources, autoSave, dataRetention, enableAnalytics, crashReporting, debugMode, logLevel&apos;,
+    });
+
+    // Version 80: Bump version to fix &quot;VersionError&quot; (local DB was at v70)
+    // No schema changes needed, just a version bump to override the mismatch.
+    this.version(80).stores({
+      sessions: &apos;&amp;id, userId, name, description, systemPrompt, createdAt, updatedAt, documentCount&apos;,
+      messages: &apos;&amp;id, sessionId, role, content, timestamp, citationsJson, [sessionId+timestamp]&apos;,
+      documents: &apos;&amp;id, userId, sessionId, filename, fileSize, status, pageCount, processedAt, createdAt, enabled, originalPath, storedPath, mimeType, checksum, title, author, language, ingestError&apos;,
+      embeddings: &apos;&amp;id, documentId, sessionId, chunkIndex, content, source, page, embedding, tokenCount, embeddingNorm, createdAt&apos;,
+      settings: &apos;&amp;id, userId, geminiApiKey, model, temperature, maxTokens, similarityThreshold, chunkSize, chunkOverlap, theme, fontSize, showSources, autoSave, dataRetention, enableAnalytics, crashReporting, debugMode, logLevel&apos;,
+    });
+  }
+}
+
+
+// Only create database instance on client side
+export const db = typeof window !== &apos;undefined&apos; ? new RAGDatabase() : null;
+
+// Helper functions for database operations
+export const initDB = async (): Promise&lt;void&gt; =&gt; {
+  if (!db) return;
+  try {
+    await db.open();
+    console.log(&apos;Database opened successfully&apos;);
+  } catch (error) {
+    console.error(&apos;Failed to open database:&apos;, error);
+    throw error;
+  }
+};
+
+// Export database instance for use throughout the app
+export default db;</file><file path="src/services/rag/citationService.ts">import type { VectorSearchResult } from &apos;@/types/embedding&apos;;
 import type { Citation as MessageCitation } from &apos;@/types/message&apos;;
 import type { SimplifiedCitation, SimplifiedCitationGroup, PageGroup } from &apos;@/types/citation&apos;;
 
@@ -17559,358 +17570,6 @@ export default function LoginPage() {
       &lt;LoginContent /&gt;
     &lt;/Suspense&gt;
   );
-}</file><file path="src/app/onboarding/page.tsx">&apos;use client&apos;;
-
-import React, { useState, useEffect } from &apos;react&apos;;
-import { useRouter } from &apos;next/navigation&apos;;
-import { useSettingsStore } from &apos;../../store&apos;;
-import { Button } from &apos;../../components/ui/Button&apos;;
-import { Card } from &apos;../../components/ui/Card&apos;;
-import { Input } from &apos;../../components/ui/Input&apos;;
-import clsx from &apos;clsx&apos;;
-
-// Define carousel slides data
-const carouselSlides = [
-  {
-    id: 1,
-    title: &apos;Chat with Medical Books&apos;,
-    subtitle: &apos;Entire books, no limits!&apos;,
-    description: &apos;Can read whole textbooks and ask questions directly. Get answers from your own trusted resources.&apos;,
-    image: &apos;/onboarding/Screenshot_2025-12-08-00-53-21-734_com.android.chrome.jpg&apos;,
-    gradient: &apos;from-blue-600 to-indigo-700&apos;,
-    iconBg: &apos;bg-blue-500&apos;,
-    icon: (
-      &lt;svg className=&quot;w-8 h-8 text-white&quot; fill=&quot;none&quot; viewBox=&quot;0 0 24 24&quot; stroke=&quot;currentColor&quot;&gt;
-        &lt;path strokeLinecap=&quot;round&quot; strokeLinejoin=&quot;round&quot; strokeWidth={2} d=&quot;M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253&quot; /&gt;
-      &lt;/svg&gt;
-    ),
-  },
-  {
-    id: 2,
-    title: &apos;Get Verified Answers with Sources&apos;,
-    subtitle: &apos;Answers you can trust&apos;,
-    description: &apos;Every response includes citations - book name, page number and even the exact paragraph - so you can verify information and trace it back to the source.&apos;,
-    image: &apos;/onboarding/Screenshot_2025-12-08-00-56-09-186_com.android.chrome.jpg&apos;,
-    gradient: &apos;from-emerald-500 to-teal-600&apos;,
-    iconBg: &apos;bg-emerald-500&apos;,
-    icon: (
-      &lt;svg className=&quot;w-8 h-8 text-white&quot; fill=&quot;none&quot; viewBox=&quot;0 0 24 24&quot; stroke=&quot;currentColor&quot;&gt;
-        &lt;path strokeLinecap=&quot;round&quot; strokeLinejoin=&quot;round&quot; strokeWidth={2} d=&quot;M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z&quot; /&gt;
-      &lt;/svg&gt;
-    ),
-  },
-  {
-    id: 3,
-    title: &apos;Only TRUSTED answers&apos;,
-    subtitle: &apos;From only the books you choose&apos;,
-    description: &apos;Only answers from the books given to it - Answers you can fully trust. Say it with confidence if someone asks - you have all the sources!&apos;,
-    image: &apos;/onboarding/Screenshot_2025-12-08-00-59-03-643_com.android.chrome.jpg&apos;,
-    gradient: &apos;from-pink-500 to-rose-600&apos;,
-    iconBg: &apos;bg-pink-500&apos;,
-    icon: (
-      &lt;svg className=&quot;w-8 h-8 text-white&quot; fill=&quot;none&quot; viewBox=&quot;0 0 24 24&quot; stroke=&quot;currentColor&quot;&gt;
-        &lt;path strokeLinecap=&quot;round&quot; strokeLinejoin=&quot;round&quot; strokeWidth={2} d=&quot;M13 10V3L4 14h7v7l9-11h-7z&quot; /&gt;
-      &lt;/svg&gt;
-    ),
-  },
-  {
-    id: 4,
-    title: &apos;You Are in Control&apos;,
-    subtitle: &apos;You choose the books&apos;,
-    description: &apos;Decide where your information comes from. No more blindly trusting the internet - doctors demand accuracy, not guesswork!&apos;,
-    image: &apos;/onboarding/Screenshot_2025-12-08-01-06-06-329_com.android.chrome.jpg&apos;,
-    gradient: &apos;from-purple-500 to-violet-600&apos;,
-    iconBg: &apos;bg-purple-500&apos;,
-    icon: (
-      &lt;svg className=&quot;w-8 h-8 text-white&quot; fill=&quot;none&quot; viewBox=&quot;0 0 24 24&quot; stroke=&quot;currentColor&quot;&gt;
-        &lt;path strokeLinecap=&quot;round&quot; strokeLinejoin=&quot;round&quot; strokeWidth={2} d=&quot;M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z&quot; /&gt;
-      &lt;/svg&gt;
-    ),
-  },
-];
-
-type OnboardingStep = &apos;carousel&apos; | &apos;apiSetup&apos;;
-
-export default function OnboardingPage() {
-  const router = useRouter();
-  const { updateSettings, validateApiKey } = useSettingsStore();
-
-  const [currentStep, setCurrentStep] = useState&lt;OnboardingStep&gt;(&apos;carousel&apos;);
-  const [currentSlide, setCurrentSlide] = useState(0);
-  const [apiKey, setApiKey] = useState(&apos;&apos;);
-  const [model, setModel] = useState(&apos;gemini-2.5-flash-lite&apos;);
-  const [isValidating, setIsValidating] = useState(false);
-  const [validationError, setValidationError] = useState(&apos;&apos;);
-  const [isCompleting, setIsCompleting] = useState(false);
-
-  // Check if already onboarded
-  useEffect(() =&gt; {
-    const onboarded = localStorage.getItem(&apos;onboarding_completed&apos;);
-    if (onboarded === &apos;true&apos;) {
-      router.replace(&apos;/&apos;);
-    }
-  }, [router]);
-
-  const handleNextSlide = () =&gt; {
-    window.scrollTo(0, 0);
-    if (currentSlide &lt; carouselSlides.length - 1) {
-      setCurrentSlide(currentSlide + 1);
-    } else {
-      // Move to API setup
-      setCurrentStep(&apos;apiSetup&apos;);
-    }
-  };
-
-  const handlePrevSlide = () =&gt; {
-    window.scrollTo(0, 0);
-    if (currentSlide &gt; 0) {
-      setCurrentSlide(currentSlide - 1);
-    }
-  };
-
-
-
-  const handleBackToCarousel = () =&gt; {
-    window.scrollTo(0, 0);
-    setCurrentStep(&apos;carousel&apos;);
-    setCurrentSlide(carouselSlides.length - 1);
-  };
-
-  const handleComplete = async () =&gt; {
-    if (!apiKey.trim()) {
-      setValidationError(&apos;Please enter an API key to continue&apos;);
-      return;
-    }
-
-    setIsValidating(true);
-    setValidationError(&apos;&apos;);
-
-    try {
-      const error = await validateApiKey(apiKey);
-      if (error) {
-        setValidationError(error);
-        setIsValidating(false);
-        return;
-      }
-
-      setIsCompleting(true);
-      await updateSettings({
-        geminiApiKey: apiKey,
-        model: model,
-      });
-
-      // Mark onboarding as complete
-      localStorage.setItem(&apos;onboarding_completed&apos;, &apos;true&apos;);
-
-      router.push(&apos;/&apos;);
-    } catch (error) {
-      setValidationError(&apos;Failed to validate API key. Please check your connection and try again.&apos;);
-    } finally {
-      setIsValidating(false);
-      setIsCompleting(false);
-    }
-  };
-
-  const currentSlideData = carouselSlides[currentSlide];
-
-  return (
-    &lt;div className=&quot;min-h-screen bg-gray-900 flex flex-col overflow-hidden&quot;&gt;
-      {currentStep === &apos;carousel&apos; ? (
-        // --- CAROUSEL VIEW ---
-        &lt;div className=&quot;flex-1 flex flex-col relative&quot;&gt;
-          {/* Background Gradient */}
-          &lt;div className={`absolute inset-0 bg-gradient-to-br ${currentSlideData.gradient} opacity-20 transition-all duration-700`} /&gt;
-
-          {/* Content */}
-          &lt;div className=&quot;relative flex-1 flex flex-col px-6 py-8 max-w-lg mx-auto w-full&quot;&gt;
-            {/* Header with progress indicators */}
-            &lt;div className=&quot;flex items-center justify-between mb-6&quot;&gt;
-              &lt;div className=&quot;flex gap-2&quot;&gt;
-                {carouselSlides.map((_, index) =&gt; (
-                  &lt;div
-                    key={index}
-                    className={clsx(
-                      &apos;h-1.5 rounded-full transition-all duration-300&apos;,
-                      index === currentSlide
-                        ? &apos;w-8 bg-white&apos;
-                        : index &lt; currentSlide
-                          ? &apos;w-4 bg-white/60&apos;
-                          : &apos;w-4 bg-white/30&apos;
-                    )}
-                  /&gt;
-                ))}
-              &lt;/div&gt;
-
-            &lt;/div&gt;
-
-            {/* Icon Badge */}
-            &lt;div className={`w-16 h-16 ${currentSlideData.iconBg} rounded-2xl flex items-center justify-center mb-6 shadow-lg`}&gt;
-              {currentSlideData.icon}
-            &lt;/div&gt;
-
-            {/* Title &amp; Subtitle */}
-            &lt;h1 className=&quot;text-3xl font-bold text-white mb-2&quot;&gt;
-              {currentSlideData.title}
-            &lt;/h1&gt;
-            &lt;p className=&quot;text-lg text-white/80 font-medium mb-3&quot;&gt;
-              {currentSlideData.subtitle}
-            &lt;/p&gt;
-            &lt;p className=&quot;text-base text-white/60 mb-6&quot;&gt;
-              {currentSlideData.description}
-            &lt;/p&gt;
-
-            {/* Image Mockup */}
-            &lt;div className=&quot;flex-1 relative rounded-2xl overflow-hidden shadow-2xl border border-white/10 bg-gray-800 mb-6&quot;&gt;
-              &lt;img
-                src={currentSlideData.image}
-                alt={currentSlideData.title}
-                className=&quot;w-full h-full object-cover object-top&quot;
-              /&gt;
-              {/* Gradient overlay at bottom */}
-              &lt;div className=&quot;absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-gray-900/80 to-transparent&quot; /&gt;
-            &lt;/div&gt;
-
-            {/* Navigation Buttons */}
-            &lt;div className=&quot;flex gap-4&quot;&gt;
-              {currentSlide &gt; 0 &amp;&amp; (
-                &lt;button
-                  className=&quot;flex-1 py-3 px-6 rounded-xl border-2 border-white/50 text-white font-semibold hover:bg-white/20 transition-all&quot;
-                  onClick={handlePrevSlide}
-                &gt;
-                  Back
-                &lt;/button&gt;
-              )}
-              &lt;button
-                className={clsx(
-                  &apos;flex-1 py-3 px-6 rounded-xl bg-white text-gray-900 font-semibold hover:bg-gray-100 transition-all shadow-lg&apos;,
-                  currentSlide === 0 &amp;&amp; &apos;w-full&apos;
-                )}
-                onClick={handleNextSlide}
-              &gt;
-                {currentSlide &lt; carouselSlides.length - 1 ? &apos;Next&apos; : &apos;Get Started&apos;}
-              &lt;/button&gt;
-            &lt;/div&gt;
-          &lt;/div&gt;
-        &lt;/div&gt;
-      ) : (
-        // --- API SETUP VIEW ---
-        &lt;div className=&quot;flex-1 flex flex-col px-6 py-8 max-w-lg mx-auto w-full overflow-y-auto&quot;&gt;
-          {/* Header */}
-          &lt;button
-            onClick={handleBackToCarousel}
-            className=&quot;flex items-center gap-2 text-white/70 hover:text-white mb-6 transition-colors&quot;
-          &gt;
-            &lt;svg className=&quot;w-5 h-5&quot; fill=&quot;none&quot; viewBox=&quot;0 0 24 24&quot; stroke=&quot;currentColor&quot;&gt;
-              &lt;path strokeLinecap=&quot;round&quot; strokeLinejoin=&quot;round&quot; strokeWidth={2} d=&quot;M15 19l-7-7 7-7&quot; /&gt;
-            &lt;/svg&gt;
-            Back
-          &lt;/button&gt;
-
-          {/* Icon */}
-          &lt;div className=&quot;w-16 h-16 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl flex items-center justify-center mb-6 shadow-lg&quot;&gt;
-            &lt;svg className=&quot;w-8 h-8 text-white&quot; fill=&quot;none&quot; viewBox=&quot;0 0 24 24&quot; stroke=&quot;currentColor&quot;&gt;
-              &lt;path strokeLinecap=&quot;round&quot; strokeLinejoin=&quot;round&quot; strokeWidth={2} d=&quot;M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z&quot; /&gt;
-            &lt;/svg&gt;
-          &lt;/div&gt;
-
-          {/* Title */}
-          &lt;h1 className=&quot;text-2xl font-bold text-white mb-2&quot;&gt;
-            One Quick Setup
-          &lt;/h1&gt;
-          &lt;p className=&quot;text-white/60 mb-6&quot;&gt;
-            Before we start, we need to set up your AI key. It takes less than 30 seconds!
-          &lt;/p&gt;
-
-          {/* Explanation Card */}
-          &lt;Card className=&quot;p-4 bg-blue-500/10 border-blue-500/30 mb-6&quot;&gt;
-            &lt;h3 className=&quot;font-semibold text-blue-300 mb-2 flex items-center gap-2&quot;&gt;
-              &lt;svg className=&quot;w-5 h-5&quot; fill=&quot;none&quot; viewBox=&quot;0 0 24 24&quot; stroke=&quot;currentColor&quot;&gt;
-                &lt;path strokeLinecap=&quot;round&quot; strokeLinejoin=&quot;round&quot; strokeWidth={2} d=&quot;M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z&quot; /&gt;
-              &lt;/svg&gt;
-              What&apos;s an API Key?
-            &lt;/h3&gt;
-            &lt;p className=&quot;text-sm text-blue-200/80&quot;&gt;
-              Think of it as a password that lets Meddy talk to the books. It&apos;s free, takes seconds to get, and you only need to do this once. Your key is stored safely on your device.
-            &lt;/p&gt;
-          &lt;/Card&gt;
-
-          {/* Video Tutorial */}
-          &lt;div className=&quot;mb-6&quot;&gt;
-            &lt;h3 className=&quot;font-semibold text-white mb-3&quot;&gt;Watch how to get your key:&lt;/h3&gt;
-            &lt;div className=&quot;aspect-[9/16] mx-auto rounded-xl overflow-hidden bg-gray-800 border border-white/10&quot;&gt;
-              &lt;iframe
-                src=&quot;https://youtube.com/embed/S99m2suega0?rel=0&amp;modestbranding=1&amp;playsinline=1&amp;controls=1&quot;
-                title=&quot;API Key Tutorial&quot;
-                className=&quot;w-full h-full&quot;
-                allow=&quot;accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture&quot;
-                allowFullScreen
-              /&gt;
-            &lt;/div&gt;
-          &lt;/div&gt;
-
-          {/* Get API Key Link */}
-          &lt;a
-            href=&quot;https://aistudio.google.com/app/apikey&quot;
-            target=&quot;_blank&quot;
-            rel=&quot;noopener noreferrer&quot;
-            className=&quot;flex items-center justify-center gap-2 w-full py-3 px-4 mb-6 rounded-xl bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-semibold hover:from-blue-600 hover:to-indigo-700 transition-all shadow-lg&quot;
-          &gt;
-            Get Your Free API Key
-            &lt;svg className=&quot;w-5 h-5&quot; fill=&quot;none&quot; viewBox=&quot;0 0 24 24&quot; stroke=&quot;currentColor&quot;&gt;
-              &lt;path strokeLinecap=&quot;round&quot; strokeLinejoin=&quot;round&quot; strokeWidth={2} d=&quot;M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14&quot; /&gt;
-            &lt;/svg&gt;
-          &lt;/a&gt;
-
-          {/* API Key Input */}
-          &lt;div className=&quot;space-y-4&quot;&gt;
-            &lt;div&gt;
-              &lt;label className=&quot;block text-sm font-medium text-white/80 mb-2&quot;&gt;
-                Paste your API Key here
-              &lt;/label&gt;
-              &lt;Input
-                type=&quot;password&quot;
-                value={apiKey}
-                onChange={(e) =&gt; {
-                  setApiKey(e.target.value);
-                  setValidationError(&apos;&apos;);
-                }}
-                placeholder=&quot;AIza...&quot;
-                className={clsx(
-                  &apos;bg-gray-800 border-gray-700 text-white placeholder-gray-500&apos;,
-                  validationError &amp;&amp; &apos;border-red-500 focus:border-red-500 focus:ring-red-500&apos;
-                )}
-              /&gt;
-              {validationError &amp;&amp; (
-                &lt;p className=&quot;text-sm text-red-400 mt-2 flex items-center gap-1&quot;&gt;
-                  &lt;svg className=&quot;w-4 h-4&quot; fill=&quot;none&quot; viewBox=&quot;0 0 24 24&quot; stroke=&quot;currentColor&quot;&gt;
-                    &lt;path strokeLinecap=&quot;round&quot; strokeLinejoin=&quot;round&quot; strokeWidth={2} d=&quot;M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z&quot; /&gt;
-                  &lt;/svg&gt;
-                  {validationError}
-                &lt;/p&gt;
-              )}
-            &lt;/div&gt;
-          &lt;/div&gt;
-
-          {/* Complete Button */}
-          &lt;div className=&quot;mt-8&quot;&gt;
-            &lt;Button
-              onClick={handleComplete}
-              disabled={isValidating || isCompleting || !apiKey.trim()}
-              loading={isValidating || isCompleting}
-              className=&quot;w-full py-3 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white font-semibold text-lg shadow-lg disabled:opacity-50&quot;
-            &gt;
-              {isValidating ? &apos;Validating...&apos; : isCompleting ? &apos;Setting up...&apos; : &apos;Complete Setup&apos;}
-            &lt;/Button&gt;
-          &lt;/div&gt;
-
-          {/* Footer note */}
-          &lt;p className=&quot;text-center text-white/40 text-xs mt-6&quot;&gt;
-            This is a one-time setup. You can change your API key later in Settings.
-          &lt;/p&gt;
-        &lt;/div&gt;
-      )}
-    &lt;/div&gt;
-  );
 }</file><file path="src/components/SubscriptionModal.tsx">&apos;use client&apos;
 
 import { Fragment, useState, useEffect, useRef } from &apos;react&apos;
@@ -18352,7 +18011,359 @@ export const useDocumentStore = create&lt;DocumentStore&gt;()(
       }
     )
   )
-);</file><file path="src/components/chat/MessageBubble.tsx">import React, { useMemo } from &apos;react&apos;; // Added useMemo
+);</file><file path="src/app/onboarding/page.tsx">&apos;use client&apos;;
+
+import React, { useState, useEffect } from &apos;react&apos;;
+import { useRouter } from &apos;next/navigation&apos;;
+import { useSettingsStore } from &apos;../../store&apos;;
+import { Button } from &apos;../../components/ui/Button&apos;;
+import { Card } from &apos;../../components/ui/Card&apos;;
+import { Input } from &apos;../../components/ui/Input&apos;;
+import clsx from &apos;clsx&apos;;
+
+// Define carousel slides data
+const carouselSlides = [
+  {
+    id: 1,
+    title: &apos;Chat with Medical Books&apos;,
+    subtitle: &apos;Entire books, no limits!&apos;,
+    description: &apos;Can read whole textbooks and ask questions directly. Get answers from your own trusted resources.&apos;,
+    image: &apos;/onboarding/Screenshot_2025-12-08-00-53-21-734_com.android.chrome.jpg&apos;,
+    gradient: &apos;from-blue-600 to-indigo-700&apos;,
+    iconBg: &apos;bg-blue-500&apos;,
+    icon: (
+      &lt;svg className=&quot;w-8 h-8 text-white&quot; fill=&quot;none&quot; viewBox=&quot;0 0 24 24&quot; stroke=&quot;currentColor&quot;&gt;
+        &lt;path strokeLinecap=&quot;round&quot; strokeLinejoin=&quot;round&quot; strokeWidth={2} d=&quot;M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253&quot; /&gt;
+      &lt;/svg&gt;
+    ),
+  },
+  {
+    id: 2,
+    title: &apos;Get Verified Answers with Sources&apos;,
+    subtitle: &apos;Answers you can trust&apos;,
+    description: &apos;Every response includes citations - book name, page number and even the exact paragraph - so you can verify information and trace it back to the source.&apos;,
+    image: &apos;/onboarding/Screenshot_2025-12-08-00-56-09-186_com.android.chrome.jpg&apos;,
+    gradient: &apos;from-emerald-500 to-teal-600&apos;,
+    iconBg: &apos;bg-emerald-500&apos;,
+    icon: (
+      &lt;svg className=&quot;w-8 h-8 text-white&quot; fill=&quot;none&quot; viewBox=&quot;0 0 24 24&quot; stroke=&quot;currentColor&quot;&gt;
+        &lt;path strokeLinecap=&quot;round&quot; strokeLinejoin=&quot;round&quot; strokeWidth={2} d=&quot;M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z&quot; /&gt;
+      &lt;/svg&gt;
+    ),
+  },
+  {
+    id: 3,
+    title: &apos;Only TRUSTED answers&apos;,
+    subtitle: &apos;From only the books you choose&apos;,
+    description: &apos;Only answers from the books given to it - Answers you can fully trust. Say it with confidence if someone asks - you have all the sources!&apos;,
+    image: &apos;/onboarding/Screenshot_2025-12-08-00-59-03-643_com.android.chrome.jpg&apos;,
+    gradient: &apos;from-pink-500 to-rose-600&apos;,
+    iconBg: &apos;bg-pink-500&apos;,
+    icon: (
+      &lt;svg className=&quot;w-8 h-8 text-white&quot; fill=&quot;none&quot; viewBox=&quot;0 0 24 24&quot; stroke=&quot;currentColor&quot;&gt;
+        &lt;path strokeLinecap=&quot;round&quot; strokeLinejoin=&quot;round&quot; strokeWidth={2} d=&quot;M13 10V3L4 14h7v7l9-11h-7z&quot; /&gt;
+      &lt;/svg&gt;
+    ),
+  },
+  {
+    id: 4,
+    title: &apos;You Are in Control&apos;,
+    subtitle: &apos;You choose the books&apos;,
+    description: &apos;Decide where your information comes from. No more blindly trusting the internet - doctors demand accuracy, not guesswork!&apos;,
+    image: &apos;/onboarding/Screenshot_2025-12-08-01-06-06-329_com.android.chrome.jpg&apos;,
+    gradient: &apos;from-purple-500 to-violet-600&apos;,
+    iconBg: &apos;bg-purple-500&apos;,
+    icon: (
+      &lt;svg className=&quot;w-8 h-8 text-white&quot; fill=&quot;none&quot; viewBox=&quot;0 0 24 24&quot; stroke=&quot;currentColor&quot;&gt;
+        &lt;path strokeLinecap=&quot;round&quot; strokeLinejoin=&quot;round&quot; strokeWidth={2} d=&quot;M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z&quot; /&gt;
+      &lt;/svg&gt;
+    ),
+  },
+];
+
+type OnboardingStep = &apos;carousel&apos; | &apos;apiSetup&apos;;
+
+export default function OnboardingPage() {
+  const router = useRouter();
+  const { updateSettings, validateApiKey } = useSettingsStore();
+
+  const [currentStep, setCurrentStep] = useState&lt;OnboardingStep&gt;(&apos;carousel&apos;);
+  const [currentSlide, setCurrentSlide] = useState(0);
+  const [apiKey, setApiKey] = useState(&apos;&apos;);
+  const [model, setModel] = useState(&apos;gemma-3-27b-it&apos;);
+  const [isValidating, setIsValidating] = useState(false);
+  const [validationError, setValidationError] = useState(&apos;&apos;);
+  const [isCompleting, setIsCompleting] = useState(false);
+
+  // Check if already onboarded
+  useEffect(() =&gt; {
+    const onboarded = localStorage.getItem(&apos;onboarding_completed&apos;);
+    if (onboarded === &apos;true&apos;) {
+      router.replace(&apos;/&apos;);
+    }
+  }, [router]);
+
+  const handleNextSlide = () =&gt; {
+    window.scrollTo(0, 0);
+    if (currentSlide &lt; carouselSlides.length - 1) {
+      setCurrentSlide(currentSlide + 1);
+    } else {
+      // Move to API setup
+      setCurrentStep(&apos;apiSetup&apos;);
+    }
+  };
+
+  const handlePrevSlide = () =&gt; {
+    window.scrollTo(0, 0);
+    if (currentSlide &gt; 0) {
+      setCurrentSlide(currentSlide - 1);
+    }
+  };
+
+
+
+  const handleBackToCarousel = () =&gt; {
+    window.scrollTo(0, 0);
+    setCurrentStep(&apos;carousel&apos;);
+    setCurrentSlide(carouselSlides.length - 1);
+  };
+
+  const handleComplete = async () =&gt; {
+    if (!apiKey.trim()) {
+      setValidationError(&apos;Please enter an API key to continue&apos;);
+      return;
+    }
+
+    setIsValidating(true);
+    setValidationError(&apos;&apos;);
+
+    try {
+      const error = await validateApiKey(apiKey);
+      if (error) {
+        setValidationError(error);
+        setIsValidating(false);
+        return;
+      }
+
+      setIsCompleting(true);
+      await updateSettings({
+        geminiApiKey: apiKey,
+        model: model,
+      });
+
+      // Mark onboarding as complete
+      localStorage.setItem(&apos;onboarding_completed&apos;, &apos;true&apos;);
+
+      router.push(&apos;/&apos;);
+    } catch (error) {
+      setValidationError(&apos;Failed to validate API key. Please check your connection and try again.&apos;);
+    } finally {
+      setIsValidating(false);
+      setIsCompleting(false);
+    }
+  };
+
+  const currentSlideData = carouselSlides[currentSlide];
+
+  return (
+    &lt;div className=&quot;min-h-screen bg-gray-900 flex flex-col overflow-hidden&quot;&gt;
+      {currentStep === &apos;carousel&apos; ? (
+        // --- CAROUSEL VIEW ---
+        &lt;div className=&quot;flex-1 flex flex-col relative&quot;&gt;
+          {/* Background Gradient */}
+          &lt;div className={`absolute inset-0 bg-gradient-to-br ${currentSlideData.gradient} opacity-20 transition-all duration-700`} /&gt;
+
+          {/* Content */}
+          &lt;div className=&quot;relative flex-1 flex flex-col px-6 py-8 max-w-lg mx-auto w-full&quot;&gt;
+            {/* Header with progress indicators */}
+            &lt;div className=&quot;flex items-center justify-between mb-6&quot;&gt;
+              &lt;div className=&quot;flex gap-2&quot;&gt;
+                {carouselSlides.map((_, index) =&gt; (
+                  &lt;div
+                    key={index}
+                    className={clsx(
+                      &apos;h-1.5 rounded-full transition-all duration-300&apos;,
+                      index === currentSlide
+                        ? &apos;w-8 bg-white&apos;
+                        : index &lt; currentSlide
+                          ? &apos;w-4 bg-white/60&apos;
+                          : &apos;w-4 bg-white/30&apos;
+                    )}
+                  /&gt;
+                ))}
+              &lt;/div&gt;
+
+            &lt;/div&gt;
+
+            {/* Icon Badge */}
+            &lt;div className={`w-16 h-16 ${currentSlideData.iconBg} rounded-2xl flex items-center justify-center mb-6 shadow-lg`}&gt;
+              {currentSlideData.icon}
+            &lt;/div&gt;
+
+            {/* Title &amp; Subtitle */}
+            &lt;h1 className=&quot;text-3xl font-bold text-white mb-2&quot;&gt;
+              {currentSlideData.title}
+            &lt;/h1&gt;
+            &lt;p className=&quot;text-lg text-white/80 font-medium mb-3&quot;&gt;
+              {currentSlideData.subtitle}
+            &lt;/p&gt;
+            &lt;p className=&quot;text-base text-white/60 mb-6&quot;&gt;
+              {currentSlideData.description}
+            &lt;/p&gt;
+
+            {/* Image Mockup */}
+            &lt;div className=&quot;flex-1 relative rounded-2xl overflow-hidden shadow-2xl border border-white/10 bg-gray-800 mb-6&quot;&gt;
+              &lt;img
+                src={currentSlideData.image}
+                alt={currentSlideData.title}
+                className=&quot;w-full h-full object-cover object-top&quot;
+              /&gt;
+              {/* Gradient overlay at bottom */}
+              &lt;div className=&quot;absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-gray-900/80 to-transparent&quot; /&gt;
+            &lt;/div&gt;
+
+            {/* Navigation Buttons */}
+            &lt;div className=&quot;flex gap-4&quot;&gt;
+              {currentSlide &gt; 0 &amp;&amp; (
+                &lt;button
+                  className=&quot;flex-1 py-3 px-6 rounded-xl border-2 border-white/50 text-white font-semibold hover:bg-white/20 transition-all&quot;
+                  onClick={handlePrevSlide}
+                &gt;
+                  Back
+                &lt;/button&gt;
+              )}
+              &lt;button
+                className={clsx(
+                  &apos;flex-1 py-3 px-6 rounded-xl bg-white text-gray-900 font-semibold hover:bg-gray-100 transition-all shadow-lg&apos;,
+                  currentSlide === 0 &amp;&amp; &apos;w-full&apos;
+                )}
+                onClick={handleNextSlide}
+              &gt;
+                {currentSlide &lt; carouselSlides.length - 1 ? &apos;Next&apos; : &apos;Get Started&apos;}
+              &lt;/button&gt;
+            &lt;/div&gt;
+          &lt;/div&gt;
+        &lt;/div&gt;
+      ) : (
+        // --- API SETUP VIEW ---
+        &lt;div className=&quot;flex-1 flex flex-col px-6 py-8 max-w-lg mx-auto w-full overflow-y-auto&quot;&gt;
+          {/* Header */}
+          &lt;button
+            onClick={handleBackToCarousel}
+            className=&quot;flex items-center gap-2 text-white/70 hover:text-white mb-6 transition-colors&quot;
+          &gt;
+            &lt;svg className=&quot;w-5 h-5&quot; fill=&quot;none&quot; viewBox=&quot;0 0 24 24&quot; stroke=&quot;currentColor&quot;&gt;
+              &lt;path strokeLinecap=&quot;round&quot; strokeLinejoin=&quot;round&quot; strokeWidth={2} d=&quot;M15 19l-7-7 7-7&quot; /&gt;
+            &lt;/svg&gt;
+            Back
+          &lt;/button&gt;
+
+          {/* Icon */}
+          &lt;div className=&quot;w-16 h-16 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl flex items-center justify-center mb-6 shadow-lg&quot;&gt;
+            &lt;svg className=&quot;w-8 h-8 text-white&quot; fill=&quot;none&quot; viewBox=&quot;0 0 24 24&quot; stroke=&quot;currentColor&quot;&gt;
+              &lt;path strokeLinecap=&quot;round&quot; strokeLinejoin=&quot;round&quot; strokeWidth={2} d=&quot;M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z&quot; /&gt;
+            &lt;/svg&gt;
+          &lt;/div&gt;
+
+          {/* Title */}
+          &lt;h1 className=&quot;text-2xl font-bold text-white mb-2&quot;&gt;
+            One Quick Setup
+          &lt;/h1&gt;
+          &lt;p className=&quot;text-white/60 mb-6&quot;&gt;
+            Before we start, we need to set up your AI key. It takes less than 30 seconds!
+          &lt;/p&gt;
+
+          {/* Explanation Card */}
+          &lt;Card className=&quot;p-4 bg-blue-500/10 border-blue-500/30 mb-6&quot;&gt;
+            &lt;h3 className=&quot;font-semibold text-blue-300 mb-2 flex items-center gap-2&quot;&gt;
+              &lt;svg className=&quot;w-5 h-5&quot; fill=&quot;none&quot; viewBox=&quot;0 0 24 24&quot; stroke=&quot;currentColor&quot;&gt;
+                &lt;path strokeLinecap=&quot;round&quot; strokeLinejoin=&quot;round&quot; strokeWidth={2} d=&quot;M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z&quot; /&gt;
+              &lt;/svg&gt;
+              What&apos;s an API Key?
+            &lt;/h3&gt;
+            &lt;p className=&quot;text-sm text-blue-200/80&quot;&gt;
+              Think of it as a password that lets Meddy talk to the books. It&apos;s free, takes seconds to get, and you only need to do this once. Your key is stored safely on your device.
+            &lt;/p&gt;
+          &lt;/Card&gt;
+
+          {/* Video Tutorial */}
+          &lt;div className=&quot;mb-6&quot;&gt;
+            &lt;h3 className=&quot;font-semibold text-white mb-3&quot;&gt;Watch how to get your key:&lt;/h3&gt;
+            &lt;div className=&quot;aspect-[9/16] mx-auto rounded-xl overflow-hidden bg-gray-800 border border-white/10&quot;&gt;
+              &lt;iframe
+                src=&quot;https://youtube.com/embed/S99m2suega0?rel=0&amp;modestbranding=1&amp;playsinline=1&amp;controls=1&quot;
+                title=&quot;API Key Tutorial&quot;
+                className=&quot;w-full h-full&quot;
+                allow=&quot;accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture&quot;
+                allowFullScreen
+              /&gt;
+            &lt;/div&gt;
+          &lt;/div&gt;
+
+          {/* Get API Key Link */}
+          &lt;a
+            href=&quot;https://aistudio.google.com/app/apikey&quot;
+            target=&quot;_blank&quot;
+            rel=&quot;noopener noreferrer&quot;
+            className=&quot;flex items-center justify-center gap-2 w-full py-3 px-4 mb-6 rounded-xl bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-semibold hover:from-blue-600 hover:to-indigo-700 transition-all shadow-lg&quot;
+          &gt;
+            Get Your Free API Key
+            &lt;svg className=&quot;w-5 h-5&quot; fill=&quot;none&quot; viewBox=&quot;0 0 24 24&quot; stroke=&quot;currentColor&quot;&gt;
+              &lt;path strokeLinecap=&quot;round&quot; strokeLinejoin=&quot;round&quot; strokeWidth={2} d=&quot;M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14&quot; /&gt;
+            &lt;/svg&gt;
+          &lt;/a&gt;
+
+          {/* API Key Input */}
+          &lt;div className=&quot;space-y-4&quot;&gt;
+            &lt;div&gt;
+              &lt;label className=&quot;block text-sm font-medium text-white/80 mb-2&quot;&gt;
+                Paste your API Key here
+              &lt;/label&gt;
+              &lt;Input
+                type=&quot;password&quot;
+                value={apiKey}
+                onChange={(e) =&gt; {
+                  setApiKey(e.target.value);
+                  setValidationError(&apos;&apos;);
+                }}
+                placeholder=&quot;AIza...&quot;
+                className={clsx(
+                  &apos;bg-gray-800 border-gray-700 text-white placeholder-gray-500&apos;,
+                  validationError &amp;&amp; &apos;border-red-500 focus:border-red-500 focus:ring-red-500&apos;
+                )}
+              /&gt;
+              {validationError &amp;&amp; (
+                &lt;p className=&quot;text-sm text-red-400 mt-2 flex items-center gap-1&quot;&gt;
+                  &lt;svg className=&quot;w-4 h-4&quot; fill=&quot;none&quot; viewBox=&quot;0 0 24 24&quot; stroke=&quot;currentColor&quot;&gt;
+                    &lt;path strokeLinecap=&quot;round&quot; strokeLinejoin=&quot;round&quot; strokeWidth={2} d=&quot;M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z&quot; /&gt;
+                  &lt;/svg&gt;
+                  {validationError}
+                &lt;/p&gt;
+              )}
+            &lt;/div&gt;
+          &lt;/div&gt;
+
+          {/* Complete Button */}
+          &lt;div className=&quot;mt-8&quot;&gt;
+            &lt;Button
+              onClick={handleComplete}
+              disabled={isValidating || isCompleting || !apiKey.trim()}
+              loading={isValidating || isCompleting}
+              className=&quot;w-full py-3 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white font-semibold text-lg shadow-lg disabled:opacity-50&quot;
+            &gt;
+              {isValidating ? &apos;Validating...&apos; : isCompleting ? &apos;Setting up...&apos; : &apos;Complete Setup&apos;}
+            &lt;/Button&gt;
+          &lt;/div&gt;
+
+          {/* Footer note */}
+          &lt;p className=&quot;text-center text-white/40 text-xs mt-6&quot;&gt;
+            This is a one-time setup. You can change your API key later in Settings.
+          &lt;/p&gt;
+        &lt;/div&gt;
+      )}
+    &lt;/div&gt;
+  );
+}</file><file path="src/components/chat/MessageBubble.tsx">import React, { useMemo } from &apos;react&apos;; // Added useMemo
 import ReactMarkdown from &apos;react-markdown&apos;;
 import remarkGfm from &apos;remark-gfm&apos;;
 import rehypeHighlight from &apos;rehype-highlight&apos;;
@@ -18625,7 +18636,7 @@ export function AppInitializer() {
   useEffect(() =&gt; {
     setIsClient(true);
   }, []);
-  const { settings, loadSettings, setUserId: setSettingsUserId, clearSettings } = useSettingsStore();
+  const { settings, loadSettings, setUserId: setSettingsUserId, clearSettings, updateSettings } = useSettingsStore();
   const { loadSessions, setUserId: setSessionUserId, clearSessions } = useSessionStore();
   const { setUserId: setDocumentUserId, clearDocuments } = useDocumentStore();
   const supabase = createClient();
@@ -18743,6 +18754,22 @@ export function AppInitializer() {
     };
   }, [loadSettings, loadSessions, setSettingsUserId, setSessionUserId, setDocumentUserId, clearSettings, clearSessions, clearDocuments, isClient, supabase]);
 
+  // Special Migration: Force update legacy models to Gemma 3 27B
+  useEffect(() =&gt; {
+    if (!isClient || !settings || !settings.userId) return;
+
+    // Treat 4B and 12B as legacy now too
+    const legacyModels = [&apos;gemini-2.5-flash-lite&apos;, &apos;gemini-2.0-flash-exp&apos;, &apos;gemini-1.5-flash&apos;, &apos;gemma-3-12b-it&apos;, &apos;gemma-3-4b-it&apos;];
+
+    // Check if current model is in legacy list
+    if (settings.model &amp;&amp; legacyModels.includes(settings.model)) {
+      console.log(&apos;[APP INIT] 🔄 MIGRATION: Upgrading legacy model&apos;, settings.model, &apos;to gemma-3-27b-it&apos;);
+
+      // Force update settings
+      updateSettings({ model: &apos;gemma-3-27b-it&apos; });
+    }
+  }, [isClient, settings?.model, settings?.userId, updateSettings]);
+
   // Initialize Gemini service when settings change (and API key is available)
   useEffect(() =&gt; {
     if (!isClient) return;
@@ -18752,7 +18779,14 @@ export function AppInitializer() {
         try {
           console.log(&apos;[APP INIT]&apos;, &apos;Initializing Gemini service...&apos;);
           // Use fallback model if settings.model is undefined (for backward compatibility)
-          const model = settings.model || &apos;gemini-2.5-flash-lite&apos;;
+          // Also explicitly check if it&apos;s a legacy model here to use the new default immediately even before the migration effect runs
+          let model = settings.model || &apos;gemma-3-27b-it&apos;;
+
+          if (model === &apos;gemini-2.5-flash-lite&apos; || model === &apos;gemini-2.0-flash-exp&apos; || model === &apos;gemini-1.5-flash&apos; || model === &apos;gemma-3-12b-it&apos; || model === &apos;gemma-3-4b-it&apos;) {
+            console.log(&apos;[APP INIT] Temporarily overriding legacy model for init:&apos;, model);
+            model = &apos;gemma-3-27b-it&apos;;
+          }
+
           await geminiService.initialize(settings.geminiApiKey, model, &apos;text-embedding-004&apos;);
           console.log(&apos;[APP INIT]&apos;, &apos;Gemini service initialized successfully&apos;);
         } catch (error) {
@@ -18793,6 +18827,75 @@ export function AppInitializer() {
 
   // This component doesn&apos;t render anything
   return null;
+}</file><file path="src/app/layout.tsx">import type { Metadata, Viewport } from &apos;next&apos;;
+import { Inter } from &apos;next/font/google&apos;;
+import Script from &apos;next/script&apos;;
+import &apos;../styles/globals.css&apos;;
+import &apos;../styles/mobile-touch.css&apos;;
+import { AppInitializer } from &apos;./AppInitializer&apos;;
+import SubscriptionModal from &apos;@/components/SubscriptionModal&apos;;
+import { RouteErrorBoundary } from &apos;@/components/common/RouteErrorBoundary&apos;;
+import { InstallPrompt } from &apos;@/components/common/InstallPrompt&apos;;
+import { ThemeProvider } from &apos;@/components/common/ThemeProvider&apos;;
+
+const inter = Inter({ subsets: [&apos;latin&apos;] });
+
+export const metadata: Metadata = {
+  title: &apos;Meddy - Chat with Documents Privately&apos;,
+  description: &apos;Private RAG chat application for documents&apos;,
+  manifest: &apos;/manifest.json&apos;,
+  icons: {
+    icon: [
+      { url: &apos;/favicon-32.png&apos;, sizes: &apos;32x32&apos;, type: &apos;image/png&apos; },
+      { url: &apos;/icon-192x192.png&apos;, sizes: &apos;192x192&apos;, type: &apos;image/png&apos; },
+      { url: &apos;/icon-512x512.png&apos;, sizes: &apos;512x512&apos;, type: &apos;image/png&apos; },
+    ],
+    apple: [
+      { url: &apos;/icon-192x192.png&apos;, sizes: &apos;192x192&apos;, type: &apos;image/png&apos; },
+    ],
+  },
+};
+
+export const viewport: Viewport = {
+  width: &apos;device-width&apos;,
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  themeColor: &apos;#020617&apos;,
+  viewportFit: &apos;cover&apos;,
+  interactiveWidget: &apos;resizes-content&apos;,
+};
+
+import { GlobalLoadingScreen } from &apos;@/components/ui/GlobalLoadingScreen&apos;;
+import { ServiceWorkerRegister } from &apos;./register-sw&apos;;
+
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    &lt;html lang=&quot;en&quot;&gt;
+      &lt;body className={`${inter.className} bg-gray-50 dark:bg-slate-950 text-slate-900 dark:text-slate-200 antialiased`}&gt;
+        &lt;Script
+          id=&quot;error-suppression&quot;
+          strategy=&quot;beforeInteractive&quot;
+          src=&quot;/error-suppression.js&quot;
+        /&gt;
+        &lt;ThemeProvider /&gt;
+        &lt;RouteErrorBoundary&gt;
+          &lt;div id=&quot;root&quot; className=&quot;min-h-screen flex flex-col&quot;&gt;
+            &lt;AppInitializer /&gt;
+            &lt;GlobalLoadingScreen minDisplayTime={2000} /&gt;
+            &lt;ServiceWorkerRegister /&gt;
+            &lt;SubscriptionModal /&gt;
+            &lt;InstallPrompt /&gt;
+            {children}
+          &lt;/div&gt;
+        &lt;/RouteErrorBoundary&gt;
+      &lt;/body&gt;
+    &lt;/html&gt;
+  );
 }</file><file path="src/services/rag/chatPipeline.ts">import { getIndexedDBServices } from &apos;../indexedDB&apos;;
 import { chatService, embeddingService } from &apos;../gemini&apos;;
 import { vectorSearchService } from &apos;./vectorSearch&apos;;
@@ -19127,7 +19230,7 @@ export class ChatPipeline {
       settings || {
         userId: session.userId,
         geminiApiKey: &apos;&apos;,
-        model: &apos;gemini-2.5-flash-lite&apos;,
+        model: &apos;gemma-3-27b-it&apos;,
         temperature: 0.7,
         maxTokens: 2048,
         similarityThreshold: 0.7,
@@ -19225,7 +19328,7 @@ export class ChatPipeline {
       settings || {
         userId: session.userId,
         geminiApiKey: &apos;&apos;,
-        model: &apos;gemini-2.5-flash-lite&apos;,
+        model: &apos;gemma-3-27b-it&apos;,
         temperature: 0.7,
         maxTokens: 2048,
         similarityThreshold: 0.7,
@@ -19816,76 +19919,7 @@ Remember: Your goal is to provide accurate, well-cited responses based SOLELY on
 }
 
 // Singleton instance
-export const chatPipeline = new ChatPipeline();</file><file path="src/app/layout.tsx">import type { Metadata, Viewport } from &apos;next&apos;;
-import { Inter } from &apos;next/font/google&apos;;
-import Script from &apos;next/script&apos;;
-import &apos;../styles/globals.css&apos;;
-import &apos;../styles/mobile-touch.css&apos;;
-import { AppInitializer } from &apos;./AppInitializer&apos;;
-import SubscriptionModal from &apos;@/components/SubscriptionModal&apos;;
-import { RouteErrorBoundary } from &apos;@/components/common/RouteErrorBoundary&apos;;
-import { InstallPrompt } from &apos;@/components/common/InstallPrompt&apos;;
-import { ThemeProvider } from &apos;@/components/common/ThemeProvider&apos;;
-
-const inter = Inter({ subsets: [&apos;latin&apos;] });
-
-export const metadata: Metadata = {
-  title: &apos;Meddy - Chat with Documents Privately&apos;,
-  description: &apos;Private RAG chat application for documents&apos;,
-  manifest: &apos;/manifest.json&apos;,
-  icons: {
-    icon: [
-      { url: &apos;/favicon-32.png&apos;, sizes: &apos;32x32&apos;, type: &apos;image/png&apos; },
-      { url: &apos;/icon-192x192.png&apos;, sizes: &apos;192x192&apos;, type: &apos;image/png&apos; },
-      { url: &apos;/icon-512x512.png&apos;, sizes: &apos;512x512&apos;, type: &apos;image/png&apos; },
-    ],
-    apple: [
-      { url: &apos;/icon-192x192.png&apos;, sizes: &apos;192x192&apos;, type: &apos;image/png&apos; },
-    ],
-  },
-};
-
-export const viewport: Viewport = {
-  width: &apos;device-width&apos;,
-  initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
-  themeColor: &apos;#020617&apos;,
-  viewportFit: &apos;cover&apos;,
-  interactiveWidget: &apos;resizes-content&apos;,
-};
-
-import { GlobalLoadingScreen } from &apos;@/components/ui/GlobalLoadingScreen&apos;;
-import { ServiceWorkerRegister } from &apos;./register-sw&apos;;
-
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  return (
-    &lt;html lang=&quot;en&quot;&gt;
-      &lt;body className={`${inter.className} bg-gray-50 dark:bg-slate-950 text-slate-900 dark:text-slate-200 antialiased`}&gt;
-        &lt;Script
-          id=&quot;error-suppression&quot;
-          strategy=&quot;beforeInteractive&quot;
-          src=&quot;/error-suppression.js&quot;
-        /&gt;
-        &lt;ThemeProvider /&gt;
-        &lt;RouteErrorBoundary&gt;
-          &lt;div id=&quot;root&quot; className=&quot;min-h-screen flex flex-col&quot;&gt;
-            &lt;AppInitializer /&gt;
-            &lt;GlobalLoadingScreen minDisplayTime={2000} /&gt;
-            &lt;ServiceWorkerRegister /&gt;
-            &lt;SubscriptionModal /&gt;
-            &lt;InstallPrompt /&gt;
-            {children}
-          &lt;/div&gt;
-        &lt;/RouteErrorBoundary&gt;
-      &lt;/body&gt;
-    &lt;/html&gt;
-  );
-}</file><file path="next.config.js">/** @type {import(&apos;next&apos;).NextConfig} */
+export const chatPipeline = new ChatPipeline();</file><file path="next.config.js">/** @type {import(&apos;next&apos;).NextConfig} */
 const webpack = require(&apos;webpack&apos;);
 
 const nextConfig = {

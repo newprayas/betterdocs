@@ -3,7 +3,7 @@
  * Uses LLM to convert paragraph-style responses to bullet point format while preserving citations
  */
 
-import { GeminiService } from '../gemini/geminiService';
+import { groqService } from '../groq/groqService';
 import type { AppSettings } from '@/types/settings';
 import { IndentationAnalyzer } from '@/utils/indentationAnalyzer';
 
@@ -64,14 +64,10 @@ export class ResponseFormatter {
         containsExampleFormatting: formattingPrompt.includes('EXAMPLE TRANSFORMATION')
       });
 
-      // Create a separate instance for formatting to avoid conflicts
-      const formattingGeminiService = new GeminiService();
-      formattingGeminiService.initialize(formattingApiKey, 'gemma-3-27b-it');
-
-      const formattedResponse = await formattingGeminiService.generateResponse(
+      const formattedResponse = await groqService.generateResponse(
         formattingPrompt,
-        '', // No context needed for formatting
-        '', // No system prompt needed for formatting
+        "You are a response formatting specialist.",
+        settings.groqModel || 'llama-3.3-70b-versatile',
         {
           temperature: 0.3, // Lower temperature for consistent formatting
           maxTokens: Math.min(response.length * 2, 4000), // Allow for expansion but cap it

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { geminiService } from '../services/gemini';
+import { groqService } from '../services/groq/groqService';
 import { useSettingsStore, useSessionStore, useDocumentStore, useChatStore } from '../store';
 import { createClient } from '../utils/supabase/client';
 import { userIdLogger } from '../utils/userIdDebugLogger';
@@ -174,6 +175,17 @@ export function AppInitializer() {
       initializeGemini();
     }
   }, [isClient, settings?.geminiApiKey, settings?.model]);
+
+  // Initialize Groq service when settings change (and Groq API key is available)
+  useEffect(() => {
+    if (!isClient) return;
+
+    if (settings?.groqApiKey) {
+      console.log('[APP INIT]', 'Initializing Groq service...');
+      groqService.initialize(settings.groqApiKey);
+      console.log('[APP INIT]', 'Groq service initialized successfully');
+    }
+  }, [isClient, settings?.groqApiKey]);
 
   // Global Storage Check
   useEffect(() => {

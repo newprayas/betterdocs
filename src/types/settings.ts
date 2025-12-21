@@ -8,6 +8,11 @@ export interface AppSettings {
   geminiApiKey: string;
   apiEndpoint?: string;
   model: string;
+  geminiModel?: string; // Explicit Gemini model if needed
+
+  // Groq Configuration
+  groqApiKey: string;
+  groqModel: string;
 
   // Chat Settings
   temperature: number;
@@ -38,6 +43,9 @@ export interface SettingsUpdate {
   geminiApiKey?: string;
   apiEndpoint?: string;
   model?: string;
+  geminiModel?: string;
+  groqApiKey?: string;
+  groqModel?: string;
   temperature?: number;
   maxTokens?: number;
   similarityThreshold?: number;

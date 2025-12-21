@@ -1,5 +1,6 @@
 import { getIndexedDBServices } from '../indexedDB';
 import { chatService, embeddingService } from '../gemini';
+import { groqService } from '../groq/groqService';
 import { vectorSearchService } from './vectorSearch';
 import { documentProcessor } from './documentProcessor';
 import { citationService } from './citationService';
@@ -102,16 +103,11 @@ export class ChatPipeline {
     `;
 
     try {
-      // Use a specialized instance for rewriting to avoid interfering with main chat state
-      // We reuse the existing Gemini service structure but make a quick generation call
-      const { geminiService } = await import('../gemini/geminiService');
-
-      // Note: We rely on the service already being initialized in AppInitializer,
-      // but we pass options to ensure we use a fast/cheap configuration.
-      const rewrittenQuery = await geminiService.generateResponse(
+      // Use Groq for rewriting (Fast inference)
+      const rewrittenQuery = await groqService.generateResponse(
         prompt,
-        undefined,
-        undefined,
+        "You are a helpful assistant that rewrites queries.",
+        'llama-3.3-70b-versatile',
         {
           temperature: 0.1, // Low temperature for deterministic rewriting
           maxTokens: 100,   // Very low output tokens (saves limits)
@@ -325,62 +321,48 @@ export class ChatPipeline {
 
     let fullResponse = '';
     let citations: any[] = [];
+    const groqModel = settings?.groqModel || 'llama-3.3-70b-versatile';
+    const temperature = settings?.temperature || 0.7;
+    const maxTokens = settings?.maxTokens || 2048;
 
-    await chatService.generateStreamingResponse(
-      [...messages, { id: 'temp', sessionId, content, role: MessageSender.USER, timestamp: new Date() }],
-      [],
-      settings || {
-        userId: session.userId,
-        geminiApiKey: '',
-        model: 'gemma-3-27b-it',
-        temperature: 0.7,
-        maxTokens: 2048,
-        similarityThreshold: 0.7,
-        chunkSize: 1000,
-        chunkOverlap: 200,
-        theme: 'dark',
-        fontSize: 'medium',
-        showSources: true,
-        autoSave: true,
-        dataRetention: 'never',
-        enableAnalytics: false,
-        crashReporting: false,
-        debugMode: false,
-        logLevel: 'error'
-      },
-      (event) => {
-        if (event.type === 'chunk') {
-          fullResponse += event.content || '';
-          // Don't send chunks to UI for direct response either
-        } else if (event.type === 'citation') {
-          citations.push(event.citation);
-          // Don't send citations to UI during streaming
-        } else if (event.type === 'end') {
-          console.log('[DIRECT RESPONSE]', `Generated ${fullResponse.length} characters`);
+    // Build conversation history for Groq
+    const groqPrompt = messages.map(msg =>
+      `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}`
+    ).join('\n') + `\nUser: ${content}`;
 
-          // Save assistant message
-          const assistantMessage: MessageCreate = {
-            sessionId,
-            content: fullResponse,
-            role: MessageSender.ASSISTANT,
-            citations: citations.length > 0 ? citations : undefined,
-          };
-
-          this.indexedDBServices.messageService.createMessage(assistantMessage);
-          console.log('[RESPONSE SAVED]', 'Direct response stored in database');
-          if (onStreamEvent) {
-            onStreamEvent({
-              type: 'done',
-              content: fullResponse,
-              citations: citations.length > 0 ? citations : undefined
-            });
-          }
-        } else if (event.type === 'error') {
-          console.error('[DIRECT MODE ERROR]', 'Streaming error:', event.error);
-          if (onStreamEvent) onStreamEvent(event);
+    await groqService.generateStreamingResponse(
+      groqPrompt,
+      "You are a helpful medical AI assistant.",
+      groqModel,
+      {
+        temperature,
+        maxTokens,
+        onChunk: (chunk: string) => {
+          fullResponse += chunk;
         }
       }
     );
+
+    console.log('[DIRECT RESPONSE]', `Generated ${fullResponse.length} characters`);
+
+    // Save assistant message
+    const assistantMessage: MessageCreate = {
+      sessionId,
+      content: fullResponse,
+      role: MessageSender.ASSISTANT,
+      citations: citations.length > 0 ? citations : undefined,
+    };
+
+    await this.indexedDBServices.messageService.createMessage(assistantMessage);
+    console.log('[RESPONSE SAVED]', 'Direct response stored in database');
+
+    if (onStreamEvent) {
+      onStreamEvent({
+        type: 'done',
+        content: fullResponse,
+        citations: citations.length > 0 ? citations : undefined
+      });
+    }
 
     console.log('=== DIRECT RESPONSE MODE END ===\n');
   }
@@ -418,107 +400,18 @@ export class ChatPipeline {
     console.log('[CHAT HISTORY]', `Found ${messages.length} previous messages`);
 
     let fullResponse = '';
-    let citations: any[] = [];
 
-    await chatService.generateStreamingResponse(
-      [...messages, { id: 'temp', sessionId, content, role: MessageSender.USER, timestamp: new Date() }],
-      searchResults.map(result => ({
-        chunk: result.chunk,
-        similarity: result.similarity,
-        document: result.document
-      })),
-      settings || {
-        userId: session.userId,
-        geminiApiKey: '',
-        model: 'gemma-3-27b-it',
-        temperature: 0.7,
-        maxTokens: 2048,
-        similarityThreshold: 0.7,
-        chunkSize: 1000,
-        chunkOverlap: 200,
-        theme: 'dark',
-        fontSize: 'medium',
-        showSources: true,
-        autoSave: true,
-        dataRetention: 'never',
-        enableAnalytics: false,
-        crashReporting: false,
-        debugMode: false,
-        logLevel: 'error'
-      },
-      (event) => {
-        if (event.type === 'start') {
-          console.log('[RESPONSE START]', 'Beginning streaming response generation');
-          if (onStreamEvent) onStreamEvent({ type: 'status', message: 'Starting response generation...' });
-        } else if (event.type === 'thinking') {
-          if (onStreamEvent) onStreamEvent({ type: 'status', message: event.content || 'Thinking...' });
-        } else if (event.type === 'progress') {
-          if (onStreamEvent) onStreamEvent({
-            type: 'status',
-            message: `${event.progress?.message || 'Processing...'} ${event.progress?.percentage || 0}%`
-          });
-        } else if (event.type === 'chunk') {
-          if (event.content) {
-            fullResponse += event.content;
+    const groqModel = settings?.groqModel || 'llama-3.3-70b-versatile';
 
-            // Validate chunk in real-time
-            const validation = this.validateStreamingChunk(event.content, fullResponse);
-            if (!validation.isValid) {
-              console.warn('[VALIDATION WARNING]', 'Streaming validation warning:', validation.warnings);
-            }
-            // Don't send text chunks to UI - we want to hide the unformatted response
-          }
-        } else if (event.type === 'citation') {
-          citations.push(event.citation);
-          // Don't send citations to UI during streaming
-        } else if (event.type === 'end') {
-          console.log('[RESPONSE COMPLETE]', `Generated ${fullResponse.length} characters with ${citations.length} citations`);
-
-          // Process citations with enhanced validation and renumbering
-          const citationResult = citationService.processCitations(fullResponse, searchResults);
-
-          // Log validation warnings if any
-          if (citationResult.validationWarnings && citationResult.validationWarnings.length > 0) {
-            console.warn('[CITATION WARNINGS]', 'Citation validation warnings:', citationResult.validationWarnings);
-            // Optionally send warnings to UI for debugging
-            if (onStreamEvent) {
-              onStreamEvent({
-                type: 'status',
-                message: `Citation warnings: ${citationResult.validationWarnings.length} issues found`
-              });
-            }
-          }
-
-          // Create metadata for storage with full content
-          const citationMetadata = citationService.extractCitationMetadata(
-            citationResult.citations,
-            searchResults
-          );
-
-          // Save assistant message
-          const assistantMessage: MessageCreate = {
-            sessionId,
-            content: citationResult.renumberedResponse,
-            role: MessageSender.ASSISTANT,
-            citations: citationMetadata,
-          };
-
-          this.indexedDBServices.messageService.createMessage(assistantMessage);
-          console.log('[RESPONSE SAVED]', 'Contextual response with citations stored in database');
-          console.log('[RESPONSE SAVED]', 'Contextual response with citations stored in database');
-          if (onStreamEvent) {
-            onStreamEvent({
-              type: 'done',
-              content: citationResult.renumberedResponse,
-              citations: citationMetadata
-            });
-          }
-        } else if (event.type === 'error') {
-          console.error('[RAG MODE ERROR]', 'Streaming error:', event.error);
-          if (onStreamEvent) onStreamEvent({
-            type: 'error',
-            message: event.error || 'Failed to generate response'
-          });
+    await groqService.generateStreamingResponse(
+      `Context:\n${context}\n\nQuestion: ${content}`,
+      systemPrompt,
+      groqModel,
+      {
+        temperature: settings?.temperature || 0.7,
+        maxTokens: settings?.maxTokens || 2048,
+        onChunk: (chunk: string) => {
+          fullResponse += chunk;
         }
       }
     );
@@ -556,168 +449,106 @@ export class ChatPipeline {
     console.log('[SIMPLIFIED CHAT HISTORY]', `Found ${messages.length} previous messages`);
 
     let fullResponse = '';
-    let citations: any[] = [];
 
-    await chatService.generateStreamingResponse(
-      [...messages, { id: 'temp', sessionId, content, role: MessageSender.USER, timestamp: new Date() }],
-      searchResults.map(result => ({
-        chunk: result.chunk,
-        similarity: result.similarity,
-        document: result.document
-      })),
-      settings || {
+    // Build context-aware prompt for Groq
+    const groqModel = settings?.groqModel || 'llama-3.3-70b-versatile';
+
+    // Construct simplified history and context
+    const recentMessages = messages.slice(-5).map(m =>
+      `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`
+    ).join('\n');
+
+    const groqPrompt = `
+      Context from documents:
+      ---
+      ${context}
+      ---
+      
+      Conversation History:
+      ${recentMessages}
+      
+      New Question: ${content}
+    `;
+
+    try {
+      await groqService.generateStreamingResponse(
+        groqPrompt,
+        systemPrompt,
+        groqModel,
+        {
+          temperature: settings?.temperature || 0.7,
+          maxTokens: settings?.maxTokens || 2048,
+          onChunk: (chunk: string) => {
+            fullResponse += chunk;
+          }
+        }
+      );
+
+      console.log('[SIMPLIFIED RESPONSE COMPLETE]', `Generated ${fullResponse.length} characters`);
+
+      // Format response to bullet points before processing citations
+      const settingsForFormatting = settings || {
         userId: session.userId,
         geminiApiKey: '',
-        model: 'gemini-2.5-flash-lite',
+        groqApiKey: '',
+        groqModel: 'llama-3.3-70b-versatile',
+        model: 'gemma-3-27b-it',
+        geminiModel: 'gemma-3-27b-it',
         temperature: 0.7,
         maxTokens: 2048,
         similarityThreshold: 0.7,
         chunkSize: 1000,
         chunkOverlap: 200,
-        theme: 'dark',
-        fontSize: 'medium',
+        theme: 'dark' as const,
+        fontSize: 'medium' as const,
         showSources: true,
         autoSave: true,
-        dataRetention: 'never',
+        dataRetention: 'never' as const,
         enableAnalytics: false,
         crashReporting: false,
         debugMode: false,
-        logLevel: 'error'
-      },
-      async (event) => {
-        if (event.type === 'start') {
-          console.log('[SIMPLIFIED RESPONSE START]', 'Beginning streaming response generation');
-          if (onStreamEvent) onStreamEvent({ type: 'status', message: 'Starting response generation...' });
-        } else if (event.type === 'thinking') {
-          if (onStreamEvent) onStreamEvent({ type: 'status', message: event.content || 'Thinking...' });
-        } else if (event.type === 'progress') {
-          if (onStreamEvent) onStreamEvent({
-            type: 'status',
-            message: `${event.progress?.message || 'Processing...'} ${event.progress?.percentage || 0}%`
-          });
-        } else if (event.type === 'chunk') {
-          if (event.content) {
-            fullResponse += event.content;
-            // Don't send text chunks to UI - we want to hide the unformatted response
-          }
-        } else if (event.type === 'citation') {
-          citations.push(event.citation);
-          // Don't send citations to UI during streaming
-        } else if (event.type === 'end') {
-          console.log('[SIMPLIFIED RESPONSE COMPLETE]', `Generated ${fullResponse.length} characters with ${citations.length} citations`);
+        logLevel: 'error' as const
+      };
 
-          // Format response to bullet points before processing citations
-          // Use default settings if settings is undefined
-          const settingsForFormatting = settings || {
-            userId: session.userId,
-            geminiApiKey: '',
-            model: 'gemini-2.5-flash-lite',
-            temperature: 0.7,
-            maxTokens: 2048,
-            similarityThreshold: 0.7,
-            chunkSize: 1000,
-            chunkOverlap: 200,
-            theme: 'dark',
-            fontSize: 'medium',
-            showSources: true,
-            autoSave: true,
-            dataRetention: 'never',
-            enableAnalytics: false,
-            crashReporting: false,
-            debugMode: false,
-            logLevel: 'error'
-          };
-
-          console.log('[DEBUG FORMATTING]', 'About to call ResponseFormatter.formatToBulletPoints');
-          console.log('[DEBUG FORMATTING]', `Settings available: ${!!settingsForFormatting}`);
-          console.log('[DEBUG FORMATTING]', `Formatting API key: ${settingsForFormatting.geminiApiKey ? 'YES' : 'NO'}`);
-          console.log('[DEBUG FORMATTING]', `Main API key: ${settingsForFormatting.geminiApiKey ? 'YES' : 'NO'}`);
-          console.log('[DEBUG FORMATTING]', `Response length: ${fullResponse.length}`);
-
-          // Update progress: Response Formatting (95%)
-          if (onStreamEvent) {
-            onStreamEvent({ type: 'status', message: 'Response Formatting' });
-          }
-
-          const formattedResponse = await ResponseFormatter.formatToBulletPoints(fullResponse, settingsForFormatting);
-          console.log('[BULLET FORMATTING]', `Converted to bullet points: ${formattedResponse.length} characters`);
-
-          // DEBUG: Log formatted response before citation processing
-          console.log('[PRE-CITATION DEBUG]', {
-            formattedResponseLength: formattedResponse.length,
-            hasNewlines: formattedResponse.includes('\n'),
-            newlineCount: (formattedResponse.match(/\n/g) || []).length,
-            bulletCount: (formattedResponse.match(/^\* /gm) || []).length,
-            firstFewLines: formattedResponse.split('\n').slice(0, 5),
-            rawCharCodes: Array.from(formattedResponse.substring(0, 100)).map(c => `${c}(${c.charCodeAt(0)})`).join(' ')
-          });
-
-          // Process citations using simplified system
-          const citationResult: SimplifiedCitationGroup = citationService.processSimplifiedCitations(formattedResponse, searchResults);
-
-          // DEBUG: Log response after citation processing
-          console.log('[POST-CITATION DEBUG]', {
-            renumberedResponseLength: citationResult.renumberedResponse.length,
-            hasNewlines: citationResult.renumberedResponse.includes('\n'),
-            newlineCount: (citationResult.renumberedResponse.match(/\n/g) || []).length,
-            bulletCount: (citationResult.renumberedResponse.match(/^\* /gm) || []).length,
-            firstFewLines: citationResult.renumberedResponse.split('\n').slice(0, 5),
-            rawCharCodes: Array.from(citationResult.renumberedResponse.substring(0, 100)).map(c => `${c}(${c.charCodeAt(0)})`).join(' ')
-          });
-
-          // DEBUG: Log before storing in database
-          console.log('[PRE-STORAGE DEBUG]', {
-            contentToStore: citationResult.renumberedResponse,
-            hasNewlines: citationResult.renumberedResponse.includes('\n'),
-            newlineCount: (citationResult.renumberedResponse.match(/\n/g) || []).length,
-            bulletCount: (citationResult.renumberedResponse.match(/^\* /gm) || []).length,
-            firstFewLines: citationResult.renumberedResponse.split('\n').slice(0, 5)
-          });
-
-          console.log('[SIMPLIFIED CITATION RESULT]', {
-            originalCitations: citations.length,
-            processedCitations: citationResult.citations.length,
-            pageGroups: citationResult.citations.map(c => ({ document: c.document, page: c.page }))
-          });
-
-          // Convert simplified citations to message citation format for storage
-          const citationMetadata = citationService.convertSimplifiedToMessageCitations(citationResult.citations);
-
-          // Save assistant message with formatted response
-          const assistantMessage: MessageCreate = {
-            sessionId,
-            content: citationResult.renumberedResponse,
-            role: MessageSender.ASSISTANT,
-            citations: citationMetadata,
-          };
-
-          console.log('[MESSAGE STORAGE DEBUG]', 'About to store message with content:', {
-            content: citationResult.renumberedResponse,
-            hasNewlines: citationResult.renumberedResponse.includes('\n'),
-            newlineCount: (citationResult.renumberedResponse.match(/\n/g) || []).length,
-            bulletCount: (citationResult.renumberedResponse.match(/^\* /gm) || []).length,
-            firstFewLines: citationResult.renumberedResponse.split('\n').slice(0, 5)
-          });
-
-          this.indexedDBServices.messageService.createMessage(assistantMessage);
-          console.log('[SIMPLIFIED RESPONSE SAVED]', 'Simplified contextual response with citations stored in database');
-          console.log('[SIMPLIFIED RESPONSE SAVED]', 'Simplified contextual response with citations stored in database');
-          if (onStreamEvent) {
-            onStreamEvent({
-              type: 'done',
-              content: citationResult.renumberedResponse,
-              citations: citationMetadata
-            });
-          }
-        } else if (event.type === 'error') {
-          console.error('[SIMPLIFIED RAG MODE ERROR]', 'Streaming error:', event.error);
-          if (onStreamEvent) onStreamEvent({
-            type: 'error',
-            message: event.error || 'Failed to generate response'
-          });
-        }
+      if (onStreamEvent) {
+        onStreamEvent({ type: 'status', message: 'Response Formatting' });
       }
-    );
+
+      const formattedResponse = await ResponseFormatter.formatToBulletPoints(fullResponse, settingsForFormatting);
+      console.log('[BULLET FORMATTING]', `Converted to bullet points: ${formattedResponse.length} characters`);
+
+      // Process citations using simplified system
+      const citationResult: SimplifiedCitationGroup = citationService.processSimplifiedCitations(formattedResponse, searchResults);
+
+      // Convert simplified citations to message citation format for storage
+      const citationMetadata = citationService.convertSimplifiedToMessageCitations(citationResult.citations);
+
+      // Save assistant message with formatted response
+      const assistantMessage: MessageCreate = {
+        sessionId,
+        content: citationResult.renumberedResponse,
+        role: MessageSender.ASSISTANT,
+        citations: citationMetadata,
+      };
+
+      await this.indexedDBServices.messageService.createMessage(assistantMessage);
+
+      if (onStreamEvent) {
+        onStreamEvent({
+          type: 'done',
+          content: citationResult.renumberedResponse,
+          citations: citationMetadata
+        });
+      }
+    } catch (error) {
+      console.error('[SIMPLIFIED RAG MODE ERROR]', 'Groq error:', error);
+      if (onStreamEvent) {
+        onStreamEvent({
+          type: 'error',
+          message: error instanceof Error ? error.message : 'Failed to generate response via Groq'
+        });
+      }
+    }
 
     console.log('=== SIMPLIFIED CONTEXTUAL RESPONSE MODE END ===\n');
   }
