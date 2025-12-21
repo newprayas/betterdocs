@@ -332,7 +332,7 @@ export class ChatPipeline {
       settings || {
         userId: session.userId,
         geminiApiKey: '',
-        model: 'gemini-2.5-flash-lite',
+        model: 'gemma-3-27b-it',
         temperature: 0.7,
         maxTokens: 2048,
         similarityThreshold: 0.7,
@@ -430,7 +430,7 @@ export class ChatPipeline {
       settings || {
         userId: session.userId,
         geminiApiKey: '',
-        model: 'gemini-2.5-flash-lite',
+        model: 'gemma-3-27b-it',
         temperature: 0.7,
         maxTokens: 2048,
         similarityThreshold: 0.7,

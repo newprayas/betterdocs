@@ -3,21 +3,21 @@ import type { AppSettings, ApiKeyValidationResult } from '@/types/settings';
 
 export class GeminiService {
   private genAI: GoogleGenAI | null = null;
-  private modelName: string = 'gemini-2.5-flash-lite';
+  private modelName: string = 'gemma-3-27b-it';
   private embeddingModelName: string = 'text-embedding-004';
 
-  initialize(apiKey: string, modelName: string = 'gemini-2.5-flash-lite', embeddingModelName: string = 'text-embedding-004') {
+  initialize(apiKey: string, modelName: string = 'gemma-3-12b-it', embeddingModelName: string = 'text-embedding-004') {
     try {
       console.log('[GEMINI INIT]', 'Starting Gemini service initialization with new SDK');
       console.log('[GEMINI INIT]', `API Key provided: ${apiKey ? 'YES' : 'NO'}`);
       console.log('[GEMINI INIT]', `Requested model name: ${modelName}`);
       console.log('[GEMINI INIT]', `Embedding model name: ${embeddingModelName}`);
       console.log('[GEMINI INIT]', `SDK Version: ${this.getSDKVersion()}`);
-      
+
       this.genAI = new GoogleGenAI({ apiKey });
       this.modelName = modelName;
       this.embeddingModelName = embeddingModelName;
-      
+
       console.log('[GEMINI INIT]', `GoogleGenAI instance created for model: ${modelName}`);
       console.log('[GEMINI INIT]', `Embedding model configured: ${embeddingModelName}`);
       console.log('[GEMINI INIT]', 'Gemini service initialization completed successfully');
@@ -61,15 +61,15 @@ export class GeminiService {
 
     try {
       let fullPrompt = '';
-      
+
       if (systemPrompt) {
         fullPrompt += `System: ${systemPrompt}\n\n`;
       }
-      
+
       if (context) {
         fullPrompt += `Context:\n${context}\n\n`;
       }
-      
+
       fullPrompt += `User: ${prompt}`;
 
       const generationConfig = {
@@ -103,15 +103,15 @@ export class GeminiService {
 
     try {
       let fullPrompt = '';
-      
+
       if (systemPrompt) {
         fullPrompt += `System: ${systemPrompt}\n\n`;
       }
-      
+
       if (context) {
         fullPrompt += `Context:\n${context}\n\n`;
       }
-      
+
       fullPrompt += `User: ${prompt}`;
 
       const generationConfig = {
@@ -124,13 +124,13 @@ export class GeminiService {
       console.log('[GEMINI STREAM]', `Model being used: ${this.modelName || 'unknown'}`);
       console.log('[GEMINI STREAM]', `Temperature: ${generationConfig.temperature}`);
       console.log('[GEMINI STREAM]', `Max tokens: ${generationConfig.maxOutputTokens}`);
-      
+
       const result = await this.genAI!.models.generateContentStream({
         model: this.modelName,
         contents: fullPrompt,
         config: generationConfig
       });
-      
+
       console.log('[GEMINI STREAM]', 'Stream created successfully');
       return this.createStreamingIterable(result, options?.onChunk);
     } catch (error) {
@@ -191,7 +191,7 @@ export class GeminiService {
 
   async validateApiKey(apiKey: string): Promise<ApiKeyValidationResult> {
     const startTime = Date.now();
-    
+
     try {
       // Check if API key format is valid (basic validation)
       if (!apiKey || typeof apiKey !== 'string' || apiKey.trim().length === 0) {
@@ -218,13 +218,13 @@ export class GeminiService {
       }
 
       const tempGenAI = new GoogleGenAI({ apiKey });
-      
+
       // Try a simple generation to validate the key
       const result = await tempGenAI.models.generateContent({
         model: 'gemini-2.5-flash-lite',
         contents: 'Hello'
       });
-      
+
       return {
         isValid: true,
         responseTime: Date.now() - startTime
@@ -232,7 +232,7 @@ export class GeminiService {
     } catch (error: any) {
       const responseTime = Date.now() - startTime;
       console.error('API key validation failed:', error);
-      
+
       // Parse different types of errors
       if (error.status === 400) {
         return {

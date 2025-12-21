@@ -92,8 +92,19 @@ export class RAGDatabase extends Dexie {
       embeddings: '&id, documentId, sessionId, chunkIndex, content, source, page, embedding, tokenCount, embeddingNorm, createdAt',
       settings: '&id, userId, geminiApiKey, model, temperature, maxTokens, similarityThreshold, chunkSize, chunkOverlap, theme, fontSize, showSources, autoSave, dataRetention, enableAnalytics, crashReporting, debugMode, logLevel',
     });
+
+    // Version 80: Bump version to fix "VersionError" (local DB was at v70)
+    // No schema changes needed, just a version bump to override the mismatch.
+    this.version(80).stores({
+      sessions: '&id, userId, name, description, systemPrompt, createdAt, updatedAt, documentCount',
+      messages: '&id, sessionId, role, content, timestamp, citationsJson, [sessionId+timestamp]',
+      documents: '&id, userId, sessionId, filename, fileSize, status, pageCount, processedAt, createdAt, enabled, originalPath, storedPath, mimeType, checksum, title, author, language, ingestError',
+      embeddings: '&id, documentId, sessionId, chunkIndex, content, source, page, embedding, tokenCount, embeddingNorm, createdAt',
+      settings: '&id, userId, geminiApiKey, model, temperature, maxTokens, similarityThreshold, chunkSize, chunkOverlap, theme, fontSize, showSources, autoSave, dataRetention, enableAnalytics, crashReporting, debugMode, logLevel',
+    });
   }
 }
+
 
 // Only create database instance on client side
 export const db = typeof window !== 'undefined' ? new RAGDatabase() : null;

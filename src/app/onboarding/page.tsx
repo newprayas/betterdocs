@@ -77,7 +77,7 @@ export default function OnboardingPage() {
   const [currentStep, setCurrentStep] = useState<OnboardingStep>('carousel');
   const [currentSlide, setCurrentSlide] = useState(0);
   const [apiKey, setApiKey] = useState('');
-  const [model, setModel] = useState('gemini-2.5-flash-lite');
+  const [model, setModel] = useState('gemma-3-27b-it');
   const [isValidating, setIsValidating] = useState(false);
   const [validationError, setValidationError] = useState('');
   const [isCompleting, setIsCompleting] = useState(false);

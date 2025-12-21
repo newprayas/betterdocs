@@ -7,7 +7,7 @@ export const APP_CONFIG = {
 export const API_CONFIG = {
   gemini: {
     embeddingModel: 'text-embedding-004',
-    defaultModel: 'gemini-2.0-flash-exp',
+    defaultModel: 'gemma-3-27b-it',
     maxTokens: 8192,
     temperature: 0.7,
     maxRetries: 3,

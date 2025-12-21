@@ -12,15 +12,15 @@ export class SettingsService {
    */
   async getSettings(userId: string): Promise<AppSettings | undefined> {
     userIdLogger.logServiceCall('settingsService', 'getSettings', 'read', userId);
-    
+
     if (!db) return undefined;
-    
+
     // Validate userId
     if (!userId) {
       userIdLogger.logError('settingsService.getSettings', new Error('Attempt to get settings without userId'), userId);
       return undefined;
     }
-    
+
     const id = this.getSettingsId(userId);
     const settings = await db.settings.get(id);
     console.log('[SETTINGS GET]', `Retrieved settings for user: ${userId}`);
@@ -35,7 +35,7 @@ export class SettingsService {
       id: this.getSettingsId(userId),
       userId,
       geminiApiKey: '',
-      model: 'gemini-2.5-flash-lite',
+      model: 'gemma-3-27b-it',
       temperature: 0.7,
       maxTokens: 4096,
       similarityThreshold: 0.7,
@@ -60,13 +60,13 @@ export class SettingsService {
    */
   async updateSettings(updates: SettingsUpdate, userId: string): Promise<AppSettings> {
     userIdLogger.logServiceCall('settingsService', 'updateSettings', 'update', userId);
-    
+
     // Validate userId
     if (!userId) {
       userIdLogger.logError('settingsService.updateSettings', new Error('Attempt to update settings without userId'), userId);
       throw new Error('userId is required to update settings');
     }
-    
+
     const existing = await this.getSettings(userId);
     const settings = existing ? { ...existing, ...updates } : { ...this.getDefaultSettings(userId), ...updates };
 
@@ -87,13 +87,13 @@ export class SettingsService {
    */
   async updateApiKey(geminiApiKey: string, userId: string): Promise<AppSettings> {
     userIdLogger.logServiceCall('settingsService', 'updateApiKey', 'update', userId);
-    
+
     // Validate userId
     if (!userId) {
       userIdLogger.logError('settingsService.updateApiKey', new Error('Attempt to update API key without userId'), userId);
       throw new Error('userId is required to update API key');
     }
-    
+
     return await this.updateSettings({ geminiApiKey }, userId);
   }
 
@@ -111,13 +111,13 @@ export class SettingsService {
     userId: string
   ): Promise<AppSettings> {
     userIdLogger.logServiceCall('settingsService', 'updateGenerationSettings', 'update', userId);
-    
+
     // Validate userId
     if (!userId) {
       userIdLogger.logError('settingsService.updateGenerationSettings', new Error('Attempt to update generation settings without userId'), userId);
       throw new Error('userId is required to update generation settings');
     }
-    
+
     return await this.updateSettings({ maxTokens, temperature }, userId);
   }
 
@@ -129,13 +129,13 @@ export class SettingsService {
    */
   async updateUISettings(theme: 'dark' | 'light', fontSize: 'small' | 'medium' | 'large', userId: string): Promise<AppSettings> {
     userIdLogger.logServiceCall('settingsService', 'updateUISettings', 'update', userId);
-    
+
     // Validate userId
     if (!userId) {
       userIdLogger.logError('settingsService.updateUISettings', new Error('Attempt to update UI settings without userId'), userId);
       throw new Error('userId is required to update UI settings');
     }
-    
+
     return await this.updateSettings({ theme, fontSize }, userId);
   }
 
@@ -147,13 +147,13 @@ export class SettingsService {
    */
   async toggleShowSources(userId: string): Promise<AppSettings> {
     userIdLogger.logServiceCall('settingsService', 'toggleShowSources', 'update', userId);
-    
+
     // Validate userId
     if (!userId) {
       userIdLogger.logError('settingsService.toggleShowSources', new Error('Attempt to toggle show sources without userId'), userId);
       throw new Error('userId is required to toggle show sources');
     }
-    
+
     const existing = await this.getSettings(userId);
     const showSources = existing ? !existing.showSources : true;
     return await this.updateSettings({ showSources }, userId);
@@ -167,13 +167,13 @@ export class SettingsService {
    */
   async resetSettings(userId: string): Promise<AppSettings> {
     userIdLogger.logServiceCall('settingsService', 'resetSettings', 'update', userId);
-    
+
     // Validate userId
     if (!userId) {
       userIdLogger.logError('settingsService.resetSettings', new Error('Attempt to reset settings without userId'), userId);
       throw new Error('userId is required to reset settings');
     }
-    
+
     if (!db) throw new Error('Database not available');
     const defaultSettings = this.getDefaultSettings(userId);
     await db.settings.put(defaultSettings);
@@ -188,13 +188,13 @@ export class SettingsService {
    */
   async hasApiKey(userId: string): Promise<boolean> {
     userIdLogger.logServiceCall('settingsService', 'hasApiKey', 'read', userId);
-    
+
     // Validate userId
     if (!userId) {
       userIdLogger.logError('settingsService.hasApiKey', new Error('Attempt to check API key without userId'), userId);
       return false;
     }
-    
+
     const settings = await this.getSettings(userId);
     return !!(settings?.geminiApiKey && settings.geminiApiKey.trim().length > 0);
   }
@@ -207,13 +207,13 @@ export class SettingsService {
    */
   async getMaskedApiKey(userId: string): Promise<string> {
     userIdLogger.logServiceCall('settingsService', 'getMaskedApiKey', 'read', userId);
-    
+
     // Validate userId
     if (!userId) {
       userIdLogger.logError('settingsService.getMaskedApiKey', new Error('Attempt to get masked API key without userId'), userId);
       return '';
     }
-    
+
     const settings = await this.getSettings(userId);
     if (!settings?.geminiApiKey) return '';
 
@@ -240,13 +240,13 @@ export class SettingsService {
    */
   async exportSettings(userId: string): Promise<string> {
     userIdLogger.logServiceCall('settingsService', 'exportSettings', 'read', userId);
-    
+
     // Validate userId
     if (!userId) {
       userIdLogger.logError('settingsService.exportSettings', new Error('Attempt to export settings without userId'), userId);
       throw new Error('userId is required to export settings');
     }
-    
+
     const settings = await this.getSettings(userId);
     if (!settings) throw new Error('No settings to export');
 
@@ -276,13 +276,13 @@ export class SettingsService {
    */
   async importSettings(settingsJson: string, userId: string): Promise<AppSettings> {
     userIdLogger.logServiceCall('settingsService', 'importSettings', 'update', userId);
-    
+
     // Validate userId
     if (!userId) {
       userIdLogger.logError('settingsService.importSettings', new Error('Attempt to import settings without userId'), userId);
       throw new Error('userId is required to import settings');
     }
-    
+
     try {
       const imported = JSON.parse(settingsJson);
 

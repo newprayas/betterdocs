@@ -26,13 +26,13 @@ export class ResponseFormatter {
     console.log(`\n=== [${timestamp}] [INDENTATION DEBUG] LLM RESPONSE FORMATTER START ===`);
     console.log(`[${timestamp}] [INDENTATION DEBUG] ORIGINAL RESPONSE:`, response.substring(0, 200) + (response.length > 200 ? '...' : ''));
     console.log(`[${timestamp}] [INDENTATION DEBUG] ORIGINAL LENGTH:`, `${response.length} characters`);
-    
+
     // Analyze original response for indentation patterns
     console.log(`[${timestamp}] [INDENTATION DEBUG] ANALYZING ORIGINAL RESPONSE STRUCTURE:`);
     IndentationAnalyzer.logMarkdownStructure(response);
     const originalAnalysis = IndentationAnalyzer.analyzeIndentation(response);
     console.log(`[${timestamp}] [INDENTATION DEBUG] ORIGINAL RESPONSE HAS NESTED STRUCTURES:`, originalAnalysis.hasNestedStructures);
-    
+
     if (!response || response.trim().length === 0) {
       console.log(`[${timestamp}] [INDENTATION DEBUG] FORMATTING SKIPPED:`, 'Empty response, returning as-is');
       console.log(`=== [${timestamp}] [INDENTATION DEBUG] LLM RESPONSE FORMATTER END ===\n`);
@@ -41,9 +41,9 @@ export class ResponseFormatter {
 
     // Use main API key for formatting
     const formattingApiKey = settings.geminiApiKey;
-    
+
     console.log(`[${timestamp}] [INDENTATION DEBUG] LLM FORMATTER:`, 'Using main API key for formatting:', settings.geminiApiKey ? `YES (${settings.geminiApiKey.substring(0, 10)}...)` : 'NO');
-    
+
     if (!formattingApiKey) {
       console.log(`[${timestamp}] [INDENTATION DEBUG] FORMATTING SKIPPED:`, 'No API key available, returning original response');
       console.log(`=== [${timestamp}] [INDENTATION DEBUG] LLM RESPONSE FORMATTER END ===\n`);
@@ -53,7 +53,7 @@ export class ResponseFormatter {
     try {
       console.log(`[${timestamp}] [INDENTATION DEBUG] LLM FORMATTING:`, 'Using LLM to convert to bullet points...');
       console.log(`[${timestamp}] [INDENTATION DEBUG] LLM FORMATTING:`, `Calling Gemini service with main API key`);
-      
+
       const formattingPrompt = this.buildFormattingPrompt(response);
       console.log(`[${timestamp}] [INDENTATION DEBUG] FORMATTING PROMPT:`, formattingPrompt.substring(0, 300) + '...');
       console.log(`[${timestamp}] [INDENTATION DEBUG] PROMPT ANALYSIS:`, {
@@ -63,11 +63,11 @@ export class ResponseFormatter {
         containsBulletInstructions: formattingPrompt.includes('*'),
         containsExampleFormatting: formattingPrompt.includes('EXAMPLE TRANSFORMATION')
       });
-      
+
       // Create a separate instance for formatting to avoid conflicts
       const formattingGeminiService = new GeminiService();
-      formattingGeminiService.initialize(formattingApiKey, 'gemini-2.5-flash-lite');
-      
+      formattingGeminiService.initialize(formattingApiKey, 'gemma-3-27b-it');
+
       const formattedResponse = await formattingGeminiService.generateResponse(
         formattingPrompt,
         '', // No context needed for formatting
@@ -77,28 +77,28 @@ export class ResponseFormatter {
           maxTokens: Math.min(response.length * 2, 4000), // Allow for expansion but cap it
         }
       );
-      
+
       console.log(`[${timestamp}] [INDENTATION DEBUG] LLM FORMATTING:`, 'Gemini service response received, length:', formattedResponse.length);
-      
+
       // Comprehensive analysis of formatted response
       console.log(`[${timestamp}] [INDENTATION DEBUG] ANALYZING FORMATTED RESPONSE STRUCTURE:`);
       IndentationAnalyzer.logMarkdownStructure(formattedResponse);
       const formattedAnalysis = IndentationAnalyzer.analyzeIndentation(formattedResponse);
-      
+
       // Check for nested structures detection
       const hasNestedStructures = IndentationAnalyzer.detectNestedLists(formattedResponse);
       console.log(`[${timestamp}] [INDENTATION DEBUG] NESTED STRUCTURES DETECTED IN FORMATTED RESPONSE:`, hasNestedStructures);
-      
+
       // Create visualization of indentation
       console.log(`[${timestamp}] [INDENTATION DEBUG] FORMATTED RESPONSE INDENTATION VISUALIZATION:`);
       IndentationAnalyzer.visualizeIndentation(formattedResponse);
-      
+
       // Additional detailed analysis
       const hasNewlines = formattedResponse.includes('\n');
       const bulletCount = (formattedResponse.match(/^\* /gm) || []).length;
       const newlineCount = (formattedResponse.match(/\n/g) || []).length;
       const nestedBulletCount = (formattedResponse.match(/^[ \t]+\* /gm) || []).length;
-      
+
       console.log(`[${timestamp}] [INDENTATION DEBUG] FORMATTING ANALYSIS:`, {
         hasNewlines,
         bulletCount,
@@ -112,7 +112,7 @@ export class ResponseFormatter {
         responsePreview: formattedResponse.substring(0, 300) + (formattedResponse.length > 300 ? '...' : ''),
         rawCharCodes: Array.from(formattedResponse.substring(0, 100)).map(c => `${c}(${c.charCodeAt(0)})`).join(' ')
       });
-      
+
       // Compare original vs formatted
       console.log(`[${timestamp}] [INDENTATION DEBUG] ORIGINAL vs FORMATTED COMPARISON:`, {
         originalHadNested: originalAnalysis.hasNestedStructures,
@@ -123,13 +123,13 @@ export class ResponseFormatter {
         formattedMaxIndent: formattedAnalysis.maxIndentLevel,
         improvement: formattedAnalysis.maxIndentLevel > originalAnalysis.maxIndentLevel ? 'YES - Added nesting' : 'NO - No improvement'
       });
-      
+
       console.log(`[${timestamp}] [INDENTATION DEBUG] LLM FORMATTING COMPLETE:`, `Formatted response: ${formattedResponse.length} characters`);
       console.log(`[${timestamp}] [INDENTATION DEBUG] FORMATTED PREVIEW:`, formattedResponse.substring(0, 200) + (formattedResponse.length > 200 ? '...' : ''));
       console.log(`=== [${timestamp}] [INDENTATION DEBUG] LLM RESPONSE FORMATTER END ===\n`);
-      
+
       return formattedResponse;
-      
+
     } catch (error) {
       console.error(`[${timestamp}] [INDENTATION DEBUG] LLM FORMATTING ERROR:`, 'Failed to format with LLM:', error);
       console.log(`[${timestamp}] [INDENTATION DEBUG] FALLBACK:`, 'Returning original response due to formatting error');
@@ -181,7 +181,7 @@ ${response}`;
    */
   static async formatToBulletPointsLegacy(response: string): Promise<string> {
     console.log('[LEGACY FORMATTING]', 'Using rule-based formatting as fallback');
-    
+
     if (!response || response.trim().length === 0) {
       return response;
     }
@@ -189,15 +189,15 @@ ${response}`;
     // Extract all citations first to preserve them
     const citations = this.extractCitations(response);
     const responseWithoutCitations = this.removeCitations(response);
-    
+
     // Split response into logical sections
     const sections = this.identifySections(responseWithoutCitations);
-    
+
     // Format each section with bullet points
-    const formattedSections = sections.map(section => 
+    const formattedSections = sections.map(section =>
       this.formatSection(section, citations)
     );
-    
+
     // Combine all sections
     return formattedSections.join('\n\n');
   }
@@ -205,9 +205,9 @@ ${response}`;
   /**
    * Extract citation references from text
    */
-  private static extractCitations(text: string): Array<{index: number, position: number}> {
+  private static extractCitations(text: string): Array<{ index: number, position: number }> {
     const citationPattern = /\[(\d+)\]/g;
-    const citations: Array<{index: number, position: number}> = [];
+    const citations: Array<{ index: number, position: number }> = [];
     let match;
 
     while ((match = citationPattern.exec(text)) !== null) {
@@ -230,14 +230,14 @@ ${response}`;
   /**
    * Identify logical sections in the response
    */
-  private static identifySections(text: string): Array<{title: string, content: string}> {
+  private static identifySections(text: string): Array<{ title: string, content: string }> {
     console.log('[SECTION ANALYSIS]', `Analyzing text of ${text.length} characters`);
-    const sections: Array<{title: string, content: string}> = [];
-    
+    const sections: Array<{ title: string, content: string }> = [];
+
     // Split by double newlines or major sentence breaks
     const paragraphs = text.split(/\n\s*\n/);
     console.log('[PARAGRAPH SPLIT]', `Found ${paragraphs.length} paragraphs`);
-    
+
     for (let i = 0; i < paragraphs.length; i++) {
       const paragraph = paragraphs[i];
       const trimmed = paragraph.trim();
@@ -245,13 +245,13 @@ ${response}`;
         console.log(`[PARAGRAPH ${i}]`, 'Empty paragraph, skipping');
         continue;
       }
-      
+
       console.log(`[PARAGRAPH ${i}]`, `Content: "${trimmed.substring(0, 80)}${trimmed.length > 80 ? '...' : ''}"`);
-      
+
       // Check if this looks like a header or main topic
       const isHeader = this.isHeader(trimmed);
       console.log(`[PARAGRAPH ${i}]`, `Is header: ${isHeader}`);
-      
+
       if (isHeader || sections.length === 0) {
         const title = isHeader ? this.cleanHeader(trimmed) : 'Main Points';
         const content = isHeader ? '' : trimmed;
@@ -264,7 +264,7 @@ ${response}`;
         console.log(`[SECTION UPDATED]`, `Added to "${lastSection.title}", new length: ${lastSection.content.length}`);
       }
     }
-    
+
     console.log('[SECTION ANALYSIS COMPLETE]', `Created ${sections.length} sections`);
     return sections;
   }
@@ -275,16 +275,16 @@ ${response}`;
   private static isHeader(text: string): boolean {
     // Headers are typically shorter, may end with colon, or contain keywords
     const headerKeywords = [
-      'criteria', 'factors', 'features', 'symptoms', 'treatment', 
+      'criteria', 'factors', 'features', 'symptoms', 'treatment',
       'diagnosis', 'management', 'assessment', 'findings', 'results'
     ];
-    
+
     const isShort = text.length < 100;
     const endsWithColon = text.trim().endsWith(':');
-    const hasKeyword = headerKeywords.some(keyword => 
+    const hasKeyword = headerKeywords.some(keyword =>
       text.toLowerCase().includes(keyword)
     );
-    
+
     return isShort && (endsWithColon || hasKeyword);
   }
 
@@ -302,21 +302,21 @@ ${response}`;
    * Format a section into bullet points with citations
    */
   private static formatSection(
-    section: {title: string, content: string}, 
-    citations: Array<{index: number, position: number}>
+    section: { title: string, content: string },
+    citations: Array<{ index: number, position: number }>
   ): string {
     console.log(`[SECTION FORMATTING]`, `Formatting section: "${section.title}" with ${section.content.length} chars`);
-    
+
     const bulletPoints = this.createBulletPoints(section.content);
     console.log(`[SECTION FORMATTING]`, `Created ${bulletPoints.length} bullet points for section`);
-    
+
     // Add citations to bullet points
     const bulletPointsWithCitations = bulletPoints.map((point, index) => {
       const pointCitations = this.getCitationsForPoint(point, section.content, citations);
       console.log(`[BULLET ${index + 1}]`, `Point: "${point.substring(0, 60)}${point.length > 60 ? '...' : ''}"`);
       console.log(`[BULLET ${index + 1}]`, `Citations found: ${pointCitations.length > 0 ? pointCitations.map(c => `[${c}]`).join(', ') : 'None'}`);
-      
-      const citationText = pointCitations.length > 0 
+
+      const citationText = pointCitations.length > 0
         ? ' ' + pointCitations.map(c => `[${c}]`).join(', ')
         : '';
       return `* ${point}${citationText}`;
@@ -325,7 +325,7 @@ ${response}`;
     // Format section
     let formatted = `✅ **${section.title}:**\n`;
     formatted += bulletPointsWithCitations.join('\n');
-    
+
     console.log(`[SECTION FORMATTED]`, `Section formatted with ${bulletPointsWithCitations.length} bullet points`);
     return formatted;
   }
@@ -335,14 +335,14 @@ ${response}`;
    */
   private static createBulletPoints(content: string): string[] {
     console.log('[BULLET CREATION]', `Creating bullet points from ${content.length} characters of content`);
-    
+
     // Split by sentences or logical clauses
     const sentences = this.splitIntoSentences(content);
     console.log('[SENTENCE SPLIT]', `Found ${sentences.length} sentences:`, sentences.map((s, i) => `${i + 1}. "${s.substring(0, 50)}${s.length > 50 ? '...' : ''}"`));
-    
+
     const bulletPoints: string[] = [];
     let currentPoint = '';
-    
+
     for (let i = 0; i < sentences.length; i++) {
       const sentence = sentences[i];
       const trimmed = sentence.trim();
@@ -350,9 +350,9 @@ ${response}`;
         console.log(`[SENTENCE ${i}]`, 'Empty sentence, skipping');
         continue;
       }
-      
+
       console.log(`[SENTENCE ${i}]`, `Processing: "${trimmed}"`);
-      
+
       // If adding this sentence makes the point too long, start a new point
       if (currentPoint && currentPoint.length + trimmed.length > 200) {
         bulletPoints.push(currentPoint.trim());
@@ -363,12 +363,12 @@ ${response}`;
         console.log(`[BULLET BUILDING]`, `Current point length: ${currentPoint.length}`);
       }
     }
-    
+
     if (currentPoint.trim()) {
       bulletPoints.push(currentPoint.trim());
       console.log(`[FINAL BULLET]`, `Final bullet: "${currentPoint.trim()}"`);
     }
-    
+
     console.log('[BULLET CREATION COMPLETE]', `Created ${bulletPoints.length} bullet points`);
     return bulletPoints;
   }
@@ -385,14 +385,14 @@ ${response}`;
    * Get citations that belong to a specific bullet point
    */
   private static getCitationsForPoint(
-    point: string, 
-    originalContent: string, 
-    citations: Array<{index: number, position: number}>
+    point: string,
+    originalContent: string,
+    citations: Array<{ index: number, position: number }>
   ): number[] {
     // Find citations that appear within the range of this point in original content
     const pointStart = originalContent.indexOf(point);
     const pointEnd = pointStart + point.length;
-    
+
     return citations
       .filter(cit => cit.position >= pointStart && cit.position < pointEnd)
       .map(cit => cit.index)

@@ -13,7 +13,7 @@ export function AppInitializer() {
   useEffect(() => {
     setIsClient(true);
   }, []);
-  const { settings, loadSettings, setUserId: setSettingsUserId, clearSettings } = useSettingsStore();
+  const { settings, loadSettings, setUserId: setSettingsUserId, clearSettings, updateSettings } = useSettingsStore();
   const { loadSessions, setUserId: setSessionUserId, clearSessions } = useSessionStore();
   const { setUserId: setDocumentUserId, clearDocuments } = useDocumentStore();
   const supabase = createClient();
@@ -131,6 +131,22 @@ export function AppInitializer() {
     };
   }, [loadSettings, loadSessions, setSettingsUserId, setSessionUserId, setDocumentUserId, clearSettings, clearSessions, clearDocuments, isClient, supabase]);
 
+  // Special Migration: Force update legacy models to Gemma 3 27B
+  useEffect(() => {
+    if (!isClient || !settings || !settings.userId) return;
+
+    // Treat 4B and 12B as legacy now too
+    const legacyModels = ['gemini-2.5-flash-lite', 'gemini-2.0-flash-exp', 'gemini-1.5-flash', 'gemma-3-12b-it', 'gemma-3-4b-it'];
+
+    // Check if current model is in legacy list
+    if (settings.model && legacyModels.includes(settings.model)) {
+      console.log('[APP INIT] 🔄 MIGRATION: Upgrading legacy model', settings.model, 'to gemma-3-27b-it');
+
+      // Force update settings
+      updateSettings({ model: 'gemma-3-27b-it' });
+    }
+  }, [isClient, settings?.model, settings?.userId, updateSettings]);
+
   // Initialize Gemini service when settings change (and API key is available)
   useEffect(() => {
     if (!isClient) return;
@@ -140,7 +156,14 @@ export function AppInitializer() {
         try {
           console.log('[APP INIT]', 'Initializing Gemini service...');
           // Use fallback model if settings.model is undefined (for backward compatibility)
-          const model = settings.model || 'gemini-2.5-flash-lite';
+          // Also explicitly check if it's a legacy model here to use the new default immediately even before the migration effect runs
+          let model = settings.model || 'gemma-3-27b-it';
+
+          if (model === 'gemini-2.5-flash-lite' || model === 'gemini-2.0-flash-exp' || model === 'gemini-1.5-flash' || model === 'gemma-3-12b-it' || model === 'gemma-3-4b-it') {
+            console.log('[APP INIT] Temporarily overriding legacy model for init:', model);
+            model = 'gemma-3-27b-it';
+          }
+
           await geminiService.initialize(settings.geminiApiKey, model, 'text-embedding-004');
           console.log('[APP INIT]', 'Gemini service initialized successfully');
         } catch (error) {
