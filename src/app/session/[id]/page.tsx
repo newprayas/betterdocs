@@ -345,7 +345,7 @@ export default function SessionPage() {
                 </div>
 
                 {/* API Key Configuration Button */}
-                {!settings?.geminiApiKey && (
+                {!settings?.groqApiKey && (
                   <div className="flex-shrink-0 mt-4 max-w-4xl mx-auto w-full">
                     <Button
                       onClick={() => router.push('/settings')}
@@ -369,9 +369,9 @@ export default function SessionPage() {
                 <div className="flex-shrink-0 mt-4 max-w-4xl mx-auto w-full">
                   <MessageInput
                     sessionId={sessionId}
-                    disabled={isStreaming || !settings?.geminiApiKey || !hasDocuments}
+                    disabled={isStreaming || !settings?.groqApiKey || !hasDocuments}
                     placeholder={
-                      !settings?.geminiApiKey
+                      !settings?.groqApiKey
                         ? 'Please configure your API key in settings'
                         : !hasDocuments
                           ? 'Please add a book FIRST to chat'
@@ -393,7 +393,7 @@ export default function SessionPage() {
                 </div>
 
                 {/* API Key Configuration Button */}
-                {!settings?.geminiApiKey && (
+                {!settings?.groqApiKey && (
                   <div className="flex-shrink-0 mt-4 max-w-4xl mx-auto w-full">
                     <Button
                       onClick={() => router.push('/settings')}
@@ -429,9 +429,9 @@ export default function SessionPage() {
                   )}
                   <MessageInput
                     sessionId={sessionId}
-                    disabled={isStreaming || !settings?.geminiApiKey || !hasDocuments}
+                    disabled={isStreaming || !settings?.groqApiKey || !hasDocuments}
                     placeholder={
-                      !settings?.geminiApiKey
+                      !settings?.groqApiKey
                         ? 'Please configure your API key in settings'
                         : !hasDocuments
                           ? 'Please add a book FIRST to chat'
