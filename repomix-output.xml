@@ -95,6 +95,8 @@ or other automated processes.</purpose><file_format>The content is organized as 
       embeddingService.ts
       geminiService.ts
       index.ts
+    groq/
+      groqService.ts
     indexedDB/
       db.ts
       documentService.ts
@@ -3889,7 +3891,116 @@ export class GeminiServiceFactory {
 // Export convenience functions
 export const initializeGeminiServices = GeminiServiceFactory.initialize;
 export const isGeminiInitialized = GeminiServiceFactory.isInitialized;
-export const resetGeminiServices = GeminiServiceFactory.reset;</file><file path="src/services/indexedDB/index.ts">// IndexedDB services export
+export const resetGeminiServices = GeminiServiceFactory.reset;</file><file path="src/services/groq/groqService.ts">import Groq from &apos;groq-sdk&apos;;
+
+export class GroqService {
+    private groq: Groq | null = null;
+    private apiKey: string = &apos;&apos;;
+
+    initialize(apiKey: string) {
+        if (!apiKey || apiKey === this.apiKey) return;
+
+        console.log(&apos;[GROQ SERVICE]&apos;, &apos;Initializing with key:&apos;, apiKey.substring(0, 7) + &apos;...&apos;);
+        this.apiKey = apiKey;
+        this.groq = new Groq({
+            apiKey: apiKey,
+            dangerouslyAllowBrowser: true // Required for client-side usage in Next.js
+        });
+    }
+
+    isInitialized(): boolean {
+        return this.groq !== null;
+    }
+
+    async validateApiKey(apiKey: string): Promise&lt;boolean&gt; {
+        try {
+            const tempGroq = new Groq({ apiKey, dangerouslyAllowBrowser: true });
+            await tempGroq.chat.completions.create({
+                messages: [{ role: &apos;user&apos;, content: &apos;Ping&apos; }],
+                model: &apos;llama-3.3-70b-versatile&apos;,
+                max_tokens: 1
+            });
+            return true;
+        } catch (error) {
+            console.error(&apos;[GROQ SERVICE]&apos;, &apos;API validation failed:&apos;, error);
+            return false;
+        }
+    }
+
+    async generateResponse(
+        prompt: string,
+        systemPrompt?: string,
+        model: string = &apos;llama-3.3-70b-versatile&apos;,
+        options?: { temperature?: number; maxTokens?: number }
+    ): Promise&lt;string&gt; {
+        if (!this.groq) throw new Error(&apos;Groq not initialized&apos;);
+
+        console.log(&apos;[GROQ SERVICE]&apos;, &apos;Generating response with model:&apos;, model);
+
+        const messages: any[] = [];
+        if (systemPrompt) {
+            messages.push({ role: &apos;system&apos;, content: systemPrompt });
+        }
+        messages.push({ role: &apos;user&apos;, content: prompt });
+
+        try {
+            const completion = await this.groq.chat.completions.create({
+                messages,
+                model,
+                temperature: options?.temperature ?? 0.7,
+                max_completion_tokens: options?.maxTokens ?? 4096,
+            });
+
+            return completion.choices[0]?.message?.content || &apos;&apos;;
+        } catch (error) {
+            console.error(&apos;[GROQ SERVICE ERROR]&apos;, error);
+            throw error;
+        }
+    }
+
+    async generateStreamingResponse(
+        prompt: string,
+        systemPrompt?: string,
+        model: string = &apos;llama-3.3-70b-versatile&apos;,
+        options?: {
+            temperature?: number;
+            maxTokens?: number;
+            onChunk?: (chunk: string) =&gt; void;
+        }
+    ): Promise&lt;void&gt; {
+        if (!this.groq) throw new Error(&apos;Groq not initialized&apos;);
+
+        console.log(&apos;[GROQ SERVICE]&apos;, &apos;Generating streaming response with model:&apos;, model);
+
+        const messages: any[] = [];
+        if (systemPrompt) {
+            messages.push({ role: &apos;system&apos;, content: systemPrompt });
+        }
+        messages.push({ role: &apos;user&apos;, content: prompt });
+
+        try {
+            const stream = await this.groq.chat.completions.create({
+                messages,
+                model,
+                temperature: options?.temperature ?? 0.7,
+                max_completion_tokens: options?.maxTokens ?? 4096,
+                stream: true,
+            });
+
+            for await (const chunk of stream) {
+                const content = chunk.choices[0]?.delta?.content || &apos;&apos;;
+                if (content &amp;&amp; options?.onChunk) {
+                    options.onChunk(content);
+                }
+            }
+        } catch (error) {
+            console.error(&apos;[GROQ SERVICE STREAM ERROR]&apos;, error);
+            throw error;
+        }
+    }
+}
+
+export const groqService = new GroqService();</file><file path="src/services/indexedDB/index.ts">// IndexedDB services export
 import { RAGDatabase } from &apos;./db&apos;;
 import { SessionService } from &apos;./sessionService&apos;;
 import { MessageService } from &apos;./messageService&apos;;
@@ -8835,70 +8946,6 @@ export interface DocumentProgress {
   progress: number; // 0-100
   message?: string;
   error?: string;
-}</file><file path="src/types/settings.ts">// Settings types for RAG chat application
-
-export interface AppSettings {
-  id?: string; // Primary key for IndexedDB
-  userId: string;
-
-  // API Configuration
-  geminiApiKey: string;
-  apiEndpoint?: string;
-  model: string;
-
-  // Chat Settings
-  temperature: number;
-  maxTokens: number;
-
-  // RAG Settings
-  similarityThreshold: number;
-  chunkSize: number;
-  chunkOverlap: number;
-
-  // UI Settings
-  theme: &apos;dark&apos; | &apos;light&apos;;
-  fontSize: &apos;small&apos; | &apos;medium&apos; | &apos;large&apos;;
-  showSources: boolean;
-  autoSave: boolean;
-
-  // Privacy Settings
-  dataRetention: &apos;1week&apos; | &apos;1month&apos; | &apos;3months&apos; | &apos;never&apos;;
-  enableAnalytics: boolean;
-  crashReporting: boolean;
-
-  // Advanced Settings
-  debugMode: boolean;
-  logLevel: &apos;error&apos; | &apos;warn&apos; | &apos;info&apos; | &apos;debug&apos;;
-}
-
-export interface SettingsUpdate {
-  geminiApiKey?: string;
-  apiEndpoint?: string;
-  model?: string;
-  temperature?: number;
-  maxTokens?: number;
-  similarityThreshold?: number;
-  chunkSize?: number;
-  chunkOverlap?: number;
-  theme?: &apos;dark&apos; | &apos;light&apos;;
-  fontSize?: &apos;small&apos; | &apos;medium&apos; | &apos;large&apos;;
-  showSources?: boolean;
-  autoSave?: boolean;
-  dataRetention?: &apos;1week&apos; | &apos;1month&apos; | &apos;3months&apos; | &apos;never&apos;;
-  enableAnalytics?: boolean;
-  crashReporting?: boolean;
-  debugMode?: boolean;
-  logLevel?: &apos;error&apos; | &apos;warn&apos; | &apos;info&apos; | &apos;debug&apos;;
-}
-
-export interface ApiKeyValidationResult {
-  isValid: boolean;
-  error?: {
-    type: &apos;INVALID_KEY&apos; | &apos;NETWORK_ERROR&apos; | &apos;QUOTA_EXCEEDED&apos; | &apos;PERMISSION_DENIED&apos; | &apos;UNKNOWN_ERROR&apos;;
-    message: string;
-    details?: any;
-  };
-  responseTime?: number;
 }</file><file path="src/utils/userIdDebugLogger.ts">/**
  * Debug logger for tracking userId edge cases and potential security issues
  * This helps identify race conditions, data leakage, and unauthorized access
@@ -9440,65 +9487,6 @@ export function searchVectorIndex(
   return results
     .sort((a, b) =&gt; b.similarity - a.similarity)
     .slice(0, maxResults);
-}</file><file path="package.json">{
-  &quot;name&quot;: &quot;rag-web&quot;,
-  &quot;version&quot;: &quot;1.0.0&quot;,
-  &quot;description&quot;: &quot;Meddy - Chat with your documents privately on Web&quot;,
-  &quot;private&quot;: true,
-  &quot;scripts&quot;: {
-    &quot;dev&quot;: &quot;next dev&quot;,
-    &quot;build&quot;: &quot;next build&quot;,
-    &quot;start&quot;: &quot;next start&quot;,
-    &quot;lint&quot;: &quot;next lint&quot;,
-    &quot;type-check&quot;: &quot;tsc --noEmit&quot;,
-    &quot;format&quot;: &quot;prettier --write .&quot;,
-    &quot;test-modal&quot;: &quot;node test-modal-terminal.js&quot;
-  },
-  &quot;dependencies&quot;: {
-    &quot;@google/genai&quot;: &quot;^0.2.0&quot;,
-    &quot;@headlessui/react&quot;: &quot;^1.7.0&quot;,
-    &quot;@heroicons/react&quot;: &quot;^2.0.0&quot;,
-    &quot;@hookform/resolvers&quot;: &quot;^3.3.0&quot;,
-    &quot;@supabase/ssr&quot;: &quot;^0.7.0&quot;,
-    &quot;@supabase/supabase-js&quot;: &quot;^2.83.0&quot;,
-    &quot;@tailwindcss/aspect-ratio&quot;: &quot;^0.4.2&quot;,
-    &quot;@tailwindcss/forms&quot;: &quot;^0.5.10&quot;,
-    &quot;@tailwindcss/typography&quot;: &quot;^0.5.19&quot;,
-    &quot;clsx&quot;: &quot;^2.0.0&quot;,
-    &quot;date-fns&quot;: &quot;^2.30.0&quot;,
-    &quot;dexie&quot;: &quot;^3.2.0&quot;,
-    &quot;dexie-react-hooks&quot;: &quot;^1.1.0&quot;,
-    &quot;file-saver&quot;: &quot;^2.0.0&quot;,
-    &quot;lodash-es&quot;: &quot;^4.17.0&quot;,
-    &quot;next&quot;: &quot;^14.0.0&quot;,
-    &quot;process&quot;: &quot;^0.11.10&quot;,
-    &quot;react&quot;: &quot;^18.0.0&quot;,
-    &quot;react-dom&quot;: &quot;^18.0.0&quot;,
-    &quot;react-hook-form&quot;: &quot;^7.47.0&quot;,
-    &quot;react-markdown&quot;: &quot;^9.0.0&quot;,
-    &quot;rehype-highlight&quot;: &quot;^7.0.0&quot;,
-    &quot;remark-gfm&quot;: &quot;^4.0.0&quot;,
-    &quot;tailwindcss&quot;: &quot;^3.3.0&quot;,
-    &quot;typescript&quot;: &quot;^5.0.0&quot;,
-    &quot;uuid&quot;: &quot;^9.0.0&quot;,
-    &quot;zod&quot;: &quot;^3.22.0&quot;,
-    &quot;zustand&quot;: &quot;^4.4.0&quot;
-  },
-  &quot;devDependencies&quot;: {
-    &quot;@types/file-saver&quot;: &quot;^2.0.0&quot;,
-    &quot;@types/lodash-es&quot;: &quot;^4.17.0&quot;,
-    &quot;@types/node&quot;: &quot;^20.0.0&quot;,
-    &quot;@types/react&quot;: &quot;^18.0.0&quot;,
-    &quot;@types/react-dom&quot;: &quot;^18.0.0&quot;,
-    &quot;@types/uuid&quot;: &quot;^9.0.0&quot;,
-    &quot;autoprefixer&quot;: &quot;^10.0.0&quot;,
-    &quot;eslint&quot;: &quot;^8.0.0&quot;,
-    &quot;eslint-config-next&quot;: &quot;^14.0.0&quot;,
-    &quot;postcss&quot;: &quot;^8.0.0&quot;,
-    &quot;prettier&quot;: &quot;^3.0.0&quot;,
-    &quot;prettier-plugin-tailwindcss&quot;: &quot;^0.5.0&quot;,
-    &quot;puppeteer&quot;: &quot;^24.30.0&quot;
-  }
 }</file><file path="src/components/layout/Sidebar.tsx">import React from &apos;react&apos;;
 import Link from &apos;next/link&apos;;
 import { useRouter } from &apos;next/router&apos;;
@@ -11493,741 +11481,78 @@ export class MessageService {
   }
 }
 
-export const messageService = new MessageService();</file><file path="src/services/indexedDB/settingsService.ts">import { db } from &apos;./db&apos;;
-import type { AppSettings, SettingsUpdate } from &apos;@/types&apos;;
-import { userIdLogger } from &apos;@/utils/userIdDebugLogger&apos;;
+export const messageService = new MessageService();</file><file path="src/types/settings.ts">// Settings types for RAG chat application
 
-export class SettingsService {
-  private getSettingsId(userId: string): string {
-    return `app-settings-${userId}`;
-  }
+export interface AppSettings {
+  id?: string; // Primary key for IndexedDB
+  userId: string;
 
-  /**
-   * Get app settings for a user
-   */
-  async getSettings(userId: string): Promise&lt;AppSettings | undefined&gt; {
-    userIdLogger.logServiceCall(&apos;settingsService&apos;, &apos;getSettings&apos;, &apos;read&apos;, userId);
+  // API Configuration
+  geminiApiKey: string;
+  apiEndpoint?: string;
+  model: string;
+  geminiModel?: string; // Explicit Gemini model if needed
 
-    if (!db) return undefined;
+  // Groq Configuration
+  groqApiKey: string;
+  groqModel: string;
 
-    // Validate userId
-    if (!userId) {
-      userIdLogger.logError(&apos;settingsService.getSettings&apos;, new Error(&apos;Attempt to get settings without userId&apos;), userId);
-      return undefined;
-    }
+  // Chat Settings
+  temperature: number;
+  maxTokens: number;
 
-    const id = this.getSettingsId(userId);
-    const settings = await db.settings.get(id);
-    console.log(&apos;[SETTINGS GET]&apos;, `Retrieved settings for user: ${userId}`);
-    return settings;
-  }
+  // RAG Settings
+  similarityThreshold: number;
+  chunkSize: number;
+  chunkOverlap: number;
 
-  /**
-   * Get default settings
-   */
-  getDefaultSettings(userId: string): AppSettings {
-    const defaultSettings: AppSettings = {
-      id: this.getSettingsId(userId),
-      userId,
-      geminiApiKey: &apos;&apos;,
-      model: &apos;gemma-3-27b-it&apos;,
-      temperature: 0.7,
-      maxTokens: 4096,
-      similarityThreshold: 0.7,
-      chunkSize: 1000,
-      chunkOverlap: 200,
-      theme: &apos;dark&apos; as const,
-      fontSize: &apos;medium&apos; as const,
-      showSources: true,
-      autoSave: true,
-      dataRetention: &apos;never&apos; as const,
-      enableAnalytics: false,
-      crashReporting: false,
-      debugMode: false,
-      logLevel: &apos;error&apos; as const,
-    };
+  // UI Settings
+  theme: &apos;dark&apos; | &apos;light&apos;;
+  fontSize: &apos;small&apos; | &apos;medium&apos; | &apos;large&apos;;
+  showSources: boolean;
+  autoSave: boolean;
 
-    return defaultSettings;
-  }
+  // Privacy Settings
+  dataRetention: &apos;1week&apos; | &apos;1month&apos; | &apos;3months&apos; | &apos;never&apos;;
+  enableAnalytics: boolean;
+  crashReporting: boolean;
 
-  /**
-   * Create or update settings
-   */
-  async updateSettings(updates: SettingsUpdate, userId: string): Promise&lt;AppSettings&gt; {
-    userIdLogger.logServiceCall(&apos;settingsService&apos;, &apos;updateSettings&apos;, &apos;update&apos;, userId);
-
-    // Validate userId
-    if (!userId) {
-      userIdLogger.logError(&apos;settingsService.updateSettings&apos;, new Error(&apos;Attempt to update settings without userId&apos;), userId);
-      throw new Error(&apos;userId is required to update settings&apos;);
-    }
-
-    const existing = await this.getSettings(userId);
-    const settings = existing ? { ...existing, ...updates } : { ...this.getDefaultSettings(userId), ...updates };
-
-    // Ensure IDs match
-    settings.id = this.getSettingsId(userId);
-    settings.userId = userId;
-
-    if (!db) throw new Error(&apos;Database not available&apos;);
-    await db.settings.put(settings);
-    return settings;
-  }
-
-  /**
-   * Update API key
-   */
-  /**
-   * Update API key
-   */
-  async updateApiKey(geminiApiKey: string, userId: string): Promise&lt;AppSettings&gt; {
-    userIdLogger.logServiceCall(&apos;settingsService&apos;, &apos;updateApiKey&apos;, &apos;update&apos;, userId);
-
-    // Validate userId
-    if (!userId) {
-      userIdLogger.logError(&apos;settingsService.updateApiKey&apos;, new Error(&apos;Attempt to update API key without userId&apos;), userId);
-      throw new Error(&apos;userId is required to update API key&apos;);
-    }
-
-    return await this.updateSettings({ geminiApiKey }, userId);
-  }
-
-
-
-  /**
-   * Update generation settings
-   */
-  /**
-   * Update generation settings
-   */
-  async updateGenerationSettings(
-    maxTokens: number,
-    temperature: number,
-    userId: string
-  ): Promise&lt;AppSettings&gt; {
-    userIdLogger.logServiceCall(&apos;settingsService&apos;, &apos;updateGenerationSettings&apos;, &apos;update&apos;, userId);
-
-    // Validate userId
-    if (!userId) {
-      userIdLogger.logError(&apos;settingsService.updateGenerationSettings&apos;, new Error(&apos;Attempt to update generation settings without userId&apos;), userId);
-      throw new Error(&apos;userId is required to update generation settings&apos;);
-    }
-
-    return await this.updateSettings({ maxTokens, temperature }, userId);
-  }
-
-  /**
-   * Update UI settings
-   */
-  /**
-   * Update UI settings
-   */
-  async updateUISettings(theme: &apos;dark&apos; | &apos;light&apos;, fontSize: &apos;small&apos; | &apos;medium&apos; | &apos;large&apos;, userId: string): Promise&lt;AppSettings&gt; {
-    userIdLogger.logServiceCall(&apos;settingsService&apos;, &apos;updateUISettings&apos;, &apos;update&apos;, userId);
-
-    // Validate userId
-    if (!userId) {
-      userIdLogger.logError(&apos;settingsService.updateUISettings&apos;, new Error(&apos;Attempt to update UI settings without userId&apos;), userId);
-      throw new Error(&apos;userId is required to update UI settings&apos;);
-    }
-
-    return await this.updateSettings({ theme, fontSize }, userId);
-  }
-
-  /**
-   * Toggle sources display
-   */
-  /**
-   * Toggle sources display
-   */
-  async toggleShowSources(userId: string): Promise&lt;AppSettings&gt; {
-    userIdLogger.logServiceCall(&apos;settingsService&apos;, &apos;toggleShowSources&apos;, &apos;update&apos;, userId);
-
-    // Validate userId
-    if (!userId) {
-      userIdLogger.logError(&apos;settingsService.toggleShowSources&apos;, new Error(&apos;Attempt to toggle show sources without userId&apos;), userId);
-      throw new Error(&apos;userId is required to toggle show sources&apos;);
-    }
-
-    const existing = await this.getSettings(userId);
-    const showSources = existing ? !existing.showSources : true;
-    return await this.updateSettings({ showSources }, userId);
-  }
-
-  /**
-   * Reset settings to defaults
-   */
-  /**
-   * Reset settings to defaults
-   */
-  async resetSettings(userId: string): Promise&lt;AppSettings&gt; {
-    userIdLogger.logServiceCall(&apos;settingsService&apos;, &apos;resetSettings&apos;, &apos;update&apos;, userId);
-
-    // Validate userId
-    if (!userId) {
-      userIdLogger.logError(&apos;settingsService.resetSettings&apos;, new Error(&apos;Attempt to reset settings without userId&apos;), userId);
-      throw new Error(&apos;userId is required to reset settings&apos;);
-    }
-
-    if (!db) throw new Error(&apos;Database not available&apos;);
-    const defaultSettings = this.getDefaultSettings(userId);
-    await db.settings.put(defaultSettings);
-    return defaultSettings;
-  }
-
-  /**
-   * Check if API key is configured
-   */
-  /**
-   * Check if API key is configured
-   */
-  async hasApiKey(userId: string): Promise&lt;boolean&gt; {
-    userIdLogger.logServiceCall(&apos;settingsService&apos;, &apos;hasApiKey&apos;, &apos;read&apos;, userId);
-
-    // Validate userId
-    if (!userId) {
-      userIdLogger.logError(&apos;settingsService.hasApiKey&apos;, new Error(&apos;Attempt to check API key without userId&apos;), userId);
-      return false;
-    }
-
-    const settings = await this.getSettings(userId);
-    return !!(settings?.geminiApiKey &amp;&amp; settings.geminiApiKey.trim().length &gt; 0);
-  }
-
-  /**
-   * Get API key (masked for display)
-   */
-  /**
-   * Get API key (masked for display)
-   */
-  async getMaskedApiKey(userId: string): Promise&lt;string&gt; {
-    userIdLogger.logServiceCall(&apos;settingsService&apos;, &apos;getMaskedApiKey&apos;, &apos;read&apos;, userId);
-
-    // Validate userId
-    if (!userId) {
-      userIdLogger.logError(&apos;settingsService.getMaskedApiKey&apos;, new Error(&apos;Attempt to get masked API key without userId&apos;), userId);
-      return &apos;&apos;;
-    }
-
-    const settings = await this.getSettings(userId);
-    if (!settings?.geminiApiKey) return &apos;&apos;;
-
-    const key = settings.geminiApiKey;
-    if (key.length &lt;= 10) return key;
-
-    return key.substring(0, 7) + &apos;...&apos; + key.substring(key.length - 3);
-  }
-
-  /**
-   * Validate API key format
-   */
-  validateApiKey(geminiApiKey: string): boolean {
-    // Basic Gemini API key validation
-    const geminiKeyPattern = /^AIza[0-9A-Za-z_-]{35}$/;
-    return geminiKeyPattern.test(geminiApiKey);
-  }
-
-  /**
-   * Export settings
-   */
-  /**
-   * Export settings
-   */
-  async exportSettings(userId: string): Promise&lt;string&gt; {
-    userIdLogger.logServiceCall(&apos;settingsService&apos;, &apos;exportSettings&apos;, &apos;read&apos;, userId);
-
-    // Validate userId
-    if (!userId) {
-      userIdLogger.logError(&apos;settingsService.exportSettings&apos;, new Error(&apos;Attempt to export settings without userId&apos;), userId);
-      throw new Error(&apos;userId is required to export settings&apos;);
-    }
-
-    const settings = await this.getSettings(userId);
-    if (!settings) throw new Error(&apos;No settings to export&apos;);
-
-    // Create exportable settings (without sensitive data)
-    const exportable = {
-      temperature: settings.temperature,
-      maxTokens: settings.maxTokens,
-      similarityThreshold: settings.similarityThreshold,
-      chunkSize: settings.chunkSize,
-      chunkOverlap: settings.chunkOverlap,
-      theme: settings.theme,
-      fontSize: settings.fontSize,
-      showSources: settings.showSources,
-      autoSave: settings.autoSave,
-      dataRetention: settings.dataRetention,
-      enableAnalytics: settings.enableAnalytics,
-      crashReporting: settings.crashReporting,
-      debugMode: settings.debugMode,
-      logLevel: settings.logLevel,
-    };
-
-    return JSON.stringify(exportable, null, 2);
-  }
-
-  /**
-   * Import settings
-   */
-  async importSettings(settingsJson: string, userId: string): Promise&lt;AppSettings&gt; {
-    userIdLogger.logServiceCall(&apos;settingsService&apos;, &apos;importSettings&apos;, &apos;update&apos;, userId);
-
-    // Validate userId
-    if (!userId) {
-      userIdLogger.logError(&apos;settingsService.importSettings&apos;, new Error(&apos;Attempt to import settings without userId&apos;), userId);
-      throw new Error(&apos;userId is required to import settings&apos;);
-    }
-
-    try {
-      const imported = JSON.parse(settingsJson);
-
-      // Validate imported settings
-      const validUpdates: SettingsUpdate = {};
-
-      if (typeof imported.similarityThreshold === &apos;number&apos; &amp;&amp; imported.similarityThreshold &gt;= 0 &amp;&amp; imported.similarityThreshold &lt;= 1) {
-        validUpdates.similarityThreshold = imported.similarityThreshold;
-      }
-      if (typeof imported.chunkSize === &apos;number&apos; &amp;&amp; imported.chunkSize &gt; 0) {
-        validUpdates.chunkSize = imported.chunkSize;
-      }
-      if (typeof imported.chunkOverlap === &apos;number&apos; &amp;&amp; imported.chunkOverlap &gt;= 0) {
-        validUpdates.chunkOverlap = imported.chunkOverlap;
-      }
-      if (typeof imported.maxTokens === &apos;number&apos; &amp;&amp; imported.maxTokens &gt; 0) {
-        validUpdates.maxTokens = imported.maxTokens;
-      }
-      if (typeof imported.temperature === &apos;number&apos; &amp;&amp; imported.temperature &gt;= 0 &amp;&amp; imported.temperature &lt;= 2) {
-        validUpdates.temperature = imported.temperature;
-      }
-      if (typeof imported.showSources === &apos;boolean&apos;) {
-        validUpdates.showSources = imported.showSources;
-      }
-      if (typeof imported.autoSave === &apos;boolean&apos;) {
-        validUpdates.autoSave = imported.autoSave;
-      }
-      if (typeof imported.dataRetention === &apos;string&apos;) {
-        validUpdates.dataRetention = imported.dataRetention;
-      }
-      if (typeof imported.enableAnalytics === &apos;boolean&apos;) {
-        validUpdates.enableAnalytics = imported.enableAnalytics;
-      }
-      if (typeof imported.crashReporting === &apos;boolean&apos;) {
-        validUpdates.crashReporting = imported.crashReporting;
-      }
-      if (typeof imported.debugMode === &apos;boolean&apos;) {
-        validUpdates.debugMode = imported.debugMode;
-      }
-      if (typeof imported.logLevel === &apos;string&apos;) {
-        validUpdates.logLevel = imported.logLevel;
-      }
-
-      return await this.updateSettings(validUpdates, userId);
-    } catch (error) {
-      throw new Error(&apos;Invalid settings format&apos;);
-    }
-  }
+  // Advanced Settings
+  debugMode: boolean;
+  logLevel: &apos;error&apos; | &apos;warn&apos; | &apos;info&apos; | &apos;debug&apos;;
 }
 
-export const settingsService = new SettingsService();</file><file path="src/services/rag/responseFormatter.ts">/**
- * Response Formatter Service
- * Uses LLM to convert paragraph-style responses to bullet point format while preserving citations
- */
-
-import { GeminiService } from &apos;../gemini/geminiService&apos;;
-import type { AppSettings } from &apos;@/types/settings&apos;;
-import { IndentationAnalyzer } from &apos;@/utils/indentationAnalyzer&apos;;
-
-export interface FormattedSection {
-  title: string;
-  bulletPoints: string[];
-  citations: number[];
+export interface SettingsUpdate {
+  geminiApiKey?: string;
+  apiEndpoint?: string;
+  model?: string;
+  geminiModel?: string;
+  groqApiKey?: string;
+  groqModel?: string;
+  temperature?: number;
+  maxTokens?: number;
+  similarityThreshold?: number;
+  chunkSize?: number;
+  chunkOverlap?: number;
+  theme?: &apos;dark&apos; | &apos;light&apos;;
+  fontSize?: &apos;small&apos; | &apos;medium&apos; | &apos;large&apos;;
+  showSources?: boolean;
+  autoSave?: boolean;
+  dataRetention?: &apos;1week&apos; | &apos;1month&apos; | &apos;3months&apos; | &apos;never&apos;;
+  enableAnalytics?: boolean;
+  crashReporting?: boolean;
+  debugMode?: boolean;
+  logLevel?: &apos;error&apos; | &apos;warn&apos; | &apos;info&apos; | &apos;debug&apos;;
 }
 
-export class ResponseFormatter {
-  /**
-   * Convert paragraph response to bullet point format using LLM
-   * Preserves citations and moves them to end of bullet points
-   */
-  static async formatToBulletPoints(
-    response: string,
-    settings: AppSettings
-  ): Promise&lt;string&gt; {
-    const timestamp = new Date().toISOString();
-    console.log(`\n=== [${timestamp}] [INDENTATION DEBUG] LLM RESPONSE FORMATTER START ===`);
-    console.log(`[${timestamp}] [INDENTATION DEBUG] ORIGINAL RESPONSE:`, response.substring(0, 200) + (response.length &gt; 200 ? &apos;...&apos; : &apos;&apos;));
-    console.log(`[${timestamp}] [INDENTATION DEBUG] ORIGINAL LENGTH:`, `${response.length} characters`);
-
-    // Analyze original response for indentation patterns
-    console.log(`[${timestamp}] [INDENTATION DEBUG] ANALYZING ORIGINAL RESPONSE STRUCTURE:`);
-    IndentationAnalyzer.logMarkdownStructure(response);
-    const originalAnalysis = IndentationAnalyzer.analyzeIndentation(response);
-    console.log(`[${timestamp}] [INDENTATION DEBUG] ORIGINAL RESPONSE HAS NESTED STRUCTURES:`, originalAnalysis.hasNestedStructures);
-
-    if (!response || response.trim().length === 0) {
-      console.log(`[${timestamp}] [INDENTATION DEBUG] FORMATTING SKIPPED:`, &apos;Empty response, returning as-is&apos;);
-      console.log(`=== [${timestamp}] [INDENTATION DEBUG] LLM RESPONSE FORMATTER END ===\n`);
-      return response;
-    }
-
-    // Use main API key for formatting
-    const formattingApiKey = settings.geminiApiKey;
-
-    console.log(`[${timestamp}] [INDENTATION DEBUG] LLM FORMATTER:`, &apos;Using main API key for formatting:&apos;, settings.geminiApiKey ? `YES (${settings.geminiApiKey.substring(0, 10)}...)` : &apos;NO&apos;);
-
-    if (!formattingApiKey) {
-      console.log(`[${timestamp}] [INDENTATION DEBUG] FORMATTING SKIPPED:`, &apos;No API key available, returning original response&apos;);
-      console.log(`=== [${timestamp}] [INDENTATION DEBUG] LLM RESPONSE FORMATTER END ===\n`);
-      return response;
-    }
-
-    try {
-      console.log(`[${timestamp}] [INDENTATION DEBUG] LLM FORMATTING:`, &apos;Using LLM to convert to bullet points...&apos;);
-      console.log(`[${timestamp}] [INDENTATION DEBUG] LLM FORMATTING:`, `Calling Gemini service with main API key`);
-
-      const formattingPrompt = this.buildFormattingPrompt(response);
-      console.log(`[${timestamp}] [INDENTATION DEBUG] FORMATTING PROMPT:`, formattingPrompt.substring(0, 300) + &apos;...&apos;);
-      console.log(`[${timestamp}] [INDENTATION DEBUG] PROMPT ANALYSIS:`, {
-        promptLength: formattingPrompt.length,
-        containsNestedInstructions: formattingPrompt.includes(&apos;NESTED&apos;),
-        containsIndentInstructions: formattingPrompt.includes(&apos;indent&apos;),
-        containsBulletInstructions: formattingPrompt.includes(&apos;*&apos;),
-        containsExampleFormatting: formattingPrompt.includes(&apos;EXAMPLE TRANSFORMATION&apos;)
-      });
-
-      // Create a separate instance for formatting to avoid conflicts
-      const formattingGeminiService = new GeminiService();
-      formattingGeminiService.initialize(formattingApiKey, &apos;gemma-3-27b-it&apos;);
-
-      const formattedResponse = await formattingGeminiService.generateResponse(
-        formattingPrompt,
-        &apos;&apos;, // No context needed for formatting
-        &apos;&apos;, // No system prompt needed for formatting
-        {
-          temperature: 0.3, // Lower temperature for consistent formatting
-          maxTokens: Math.min(response.length * 2, 4000), // Allow for expansion but cap it
-        }
-      );
-
-      console.log(`[${timestamp}] [INDENTATION DEBUG] LLM FORMATTING:`, &apos;Gemini service response received, length:&apos;, formattedResponse.length);
-
-      // Comprehensive analysis of formatted response
-      console.log(`[${timestamp}] [INDENTATION DEBUG] ANALYZING FORMATTED RESPONSE STRUCTURE:`);
-      IndentationAnalyzer.logMarkdownStructure(formattedResponse);
-      const formattedAnalysis = IndentationAnalyzer.analyzeIndentation(formattedResponse);
-
-      // Check for nested structures detection
-      const hasNestedStructures = IndentationAnalyzer.detectNestedLists(formattedResponse);
-      console.log(`[${timestamp}] [INDENTATION DEBUG] NESTED STRUCTURES DETECTED IN FORMATTED RESPONSE:`, hasNestedStructures);
-
-      // Create visualization of indentation
-      console.log(`[${timestamp}] [INDENTATION DEBUG] FORMATTED RESPONSE INDENTATION VISUALIZATION:`);
-      IndentationAnalyzer.visualizeIndentation(formattedResponse);
-
-      // Additional detailed analysis
-      const hasNewlines = formattedResponse.includes(&apos;\n&apos;);
-      const bulletCount = (formattedResponse.match(/^\* /gm) || []).length;
-      const newlineCount = (formattedResponse.match(/\n/g) || []).length;
-      const nestedBulletCount = (formattedResponse.match(/^[ \t]+\* /gm) || []).length;
-
-      console.log(`[${timestamp}] [INDENTATION DEBUG] FORMATTING ANALYSIS:`, {
-        hasNewlines,
-        bulletCount,
-        newlineCount,
-        nestedBulletCount,
-        firstBulletIndex: formattedResponse.indexOf(&apos;* &apos;),
-        containsListMarkers: formattedResponse.includes(&apos;* &apos;),
-        startsWithBullet: formattedResponse.trim().startsWith(&apos;* &apos;),
-        hasIndentation: formattedAnalysis.indentedLines &gt; 0,
-        maxIndentLevel: formattedAnalysis.maxIndentLevel,
-        responsePreview: formattedResponse.substring(0, 300) + (formattedResponse.length &gt; 300 ? &apos;...&apos; : &apos;&apos;),
-        rawCharCodes: Array.from(formattedResponse.substring(0, 100)).map(c =&gt; `${c}(${c.charCodeAt(0)})`).join(&apos; &apos;)
-      });
-
-      // Compare original vs formatted
-      console.log(`[${timestamp}] [INDENTATION DEBUG] ORIGINAL vs FORMATTED COMPARISON:`, {
-        originalHadNested: originalAnalysis.hasNestedStructures,
-        formattedHasNested: formattedAnalysis.hasNestedStructures,
-        originalIndentedLines: originalAnalysis.indentedLines,
-        formattedIndentedLines: formattedAnalysis.indentedLines,
-        originalMaxIndent: originalAnalysis.maxIndentLevel,
-        formattedMaxIndent: formattedAnalysis.maxIndentLevel,
-        improvement: formattedAnalysis.maxIndentLevel &gt; originalAnalysis.maxIndentLevel ? &apos;YES - Added nesting&apos; : &apos;NO - No improvement&apos;
-      });
-
-      console.log(`[${timestamp}] [INDENTATION DEBUG] LLM FORMATTING COMPLETE:`, `Formatted response: ${formattedResponse.length} characters`);
-      console.log(`[${timestamp}] [INDENTATION DEBUG] FORMATTED PREVIEW:`, formattedResponse.substring(0, 200) + (formattedResponse.length &gt; 200 ? &apos;...&apos; : &apos;&apos;));
-      console.log(`=== [${timestamp}] [INDENTATION DEBUG] LLM RESPONSE FORMATTER END ===\n`);
-
-      return formattedResponse;
-
-    } catch (error) {
-      console.error(`[${timestamp}] [INDENTATION DEBUG] LLM FORMATTING ERROR:`, &apos;Failed to format with LLM:&apos;, error);
-      console.log(`[${timestamp}] [INDENTATION DEBUG] FALLBACK:`, &apos;Returning original response due to formatting error&apos;);
-      console.log(`=== [${timestamp}] [INDENTATION DEBUG] LLM RESPONSE FORMATTER END ===\n`);
-      return response;
-    }
-  }
-
-  /**
-   * Build the formatting prompt for the LLM
-   */
-  private static buildFormattingPrompt(response: string): string {
-    return `You are a response formatting specialist. Your task is to convert paragraph-style responses to clear, structured, NESTED bullet point lists while preserving all citations.
-
-CRITICAL FORMATTING RULES:
-1. Use standard Markdown bullet points: * for top level, and indent 2-4 spaces with * for sub-levels.
-2. DETECT HIERARCHY: If a sentence acts as a header (e.g., &quot;Early Surgery:&quot;, &quot;Treatments include:&quot;), the items following it MUST be indented.
-3. Format:
-   * Main Category or Timeframe
-     * Sub-point with citation [1]
-     * Another sub-point [2]
-4. Preserve ALL citations in their original positions.
-5. Move citations to the END of the specific bullet point they support.
-6. Create logical section headers using bold format with checkmark emoji: ✅ **[Section Title]:**
-7. Do not add, remove, or change any factual information.
-
-EXAMPLE TRANSFORMATION:
-
-INPUT:
-&quot;Surgical management includes early surgery within 2 weeks involving limbal stem cell transplantation [1] and amniotic membrane grafts [2]. Late surgery after 6 months involves symblepharon release [3] and keratoplasty [1].&quot;
-
-OUTPUT:
-✅ **Surgical Management:**
-* Early Surgery (within 2 weeks):
-    * Limbal stem cell transplantation [1]
-    * Amniotic membrane grafts [2]
-* Late Surgery (after 6 months):
-    * Release of conjunctival bands (symblepharon release) [3]
-    * Keratoplasty [1]
-
-YOUR TASK:
-Convert the following response to a nested bullet point format following the rules above:
-
-${response}`;
-  }
-
-  /**
-   * Legacy rule-based method (kept as fallback)
-   */
-  static async formatToBulletPointsLegacy(response: string): Promise&lt;string&gt; {
-    console.log(&apos;[LEGACY FORMATTING]&apos;, &apos;Using rule-based formatting as fallback&apos;);
-
-    if (!response || response.trim().length === 0) {
-      return response;
-    }
-
-    // Extract all citations first to preserve them
-    const citations = this.extractCitations(response);
-    const responseWithoutCitations = this.removeCitations(response);
-
-    // Split response into logical sections
-    const sections = this.identifySections(responseWithoutCitations);
-
-    // Format each section with bullet points
-    const formattedSections = sections.map(section =&gt;
-      this.formatSection(section, citations)
-    );
-
-    // Combine all sections
-    return formattedSections.join(&apos;\n\n&apos;);
-  }
-
-  /**
-   * Extract citation references from text
-   */
-  private static extractCitations(text: string): Array&lt;{ index: number, position: number }&gt; {
-    const citationPattern = /\[(\d+)\]/g;
-    const citations: Array&lt;{ index: number, position: number }&gt; = [];
-    let match;
-
-    while ((match = citationPattern.exec(text)) !== null) {
-      citations.push({
-        index: parseInt(match[1], 10),
-        position: match.index
-      });
-    }
-
-    return citations;
-  }
-
-  /**
-   * Remove citations from text for processing
-   */
-  private static removeCitations(text: string): string {
-    return text.replace(/\[\d+\]/g, &apos;&apos;);
-  }
-
-  /**
-   * Identify logical sections in the response
-   */
-  private static identifySections(text: string): Array&lt;{ title: string, content: string }&gt; {
-    console.log(&apos;[SECTION ANALYSIS]&apos;, `Analyzing text of ${text.length} characters`);
-    const sections: Array&lt;{ title: string, content: string }&gt; = [];
-
-    // Split by double newlines or major sentence breaks
-    const paragraphs = text.split(/\n\s*\n/);
-    console.log(&apos;[PARAGRAPH SPLIT]&apos;, `Found ${paragraphs.length} paragraphs`);
-
-    for (let i = 0; i &lt; paragraphs.length; i++) {
-      const paragraph = paragraphs[i];
-      const trimmed = paragraph.trim();
-      if (trimmed.length === 0) {
-        console.log(`[PARAGRAPH ${i}]`, &apos;Empty paragraph, skipping&apos;);
-        continue;
-      }
-
-      console.log(`[PARAGRAPH ${i}]`, `Content: &quot;${trimmed.substring(0, 80)}${trimmed.length &gt; 80 ? &apos;...&apos; : &apos;&apos;}&quot;`);
-
-      // Check if this looks like a header or main topic
-      const isHeader = this.isHeader(trimmed);
-      console.log(`[PARAGRAPH ${i}]`, `Is header: ${isHeader}`);
-
-      if (isHeader || sections.length === 0) {
-        const title = isHeader ? this.cleanHeader(trimmed) : &apos;Main Points&apos;;
-        const content = isHeader ? &apos;&apos; : trimmed;
-        sections.push({ title, content });
-        console.log(`[SECTION CREATED]`, `Title: &quot;${title}&quot;, Content length: ${content.length}`);
-      } else {
-        // Add to last section
-        const lastSection = sections[sections.length - 1];
-        lastSection.content += (lastSection.content ? &apos; &apos; : &apos;&apos;) + trimmed;
-        console.log(`[SECTION UPDATED]`, `Added to &quot;${lastSection.title}&quot;, new length: ${lastSection.content.length}`);
-      }
-    }
-
-    console.log(&apos;[SECTION ANALYSIS COMPLETE]&apos;, `Created ${sections.length} sections`);
-    return sections;
-  }
-
-  /**
-   * Check if text looks like a header
-   */
-  private static isHeader(text: string): boolean {
-    // Headers are typically shorter, may end with colon, or contain keywords
-    const headerKeywords = [
-      &apos;criteria&apos;, &apos;factors&apos;, &apos;features&apos;, &apos;symptoms&apos;, &apos;treatment&apos;,
-      &apos;diagnosis&apos;, &apos;management&apos;, &apos;assessment&apos;, &apos;findings&apos;, &apos;results&apos;
-    ];
-
-    const isShort = text.length &lt; 100;
-    const endsWithColon = text.trim().endsWith(&apos;:&apos;);
-    const hasKeyword = headerKeywords.some(keyword =&gt;
-      text.toLowerCase().includes(keyword)
-    );
-
-    return isShort &amp;&amp; (endsWithColon || hasKeyword);
-  }
-
-  /**
-   * Clean header text
-   */
-  private static cleanHeader(header: string): string {
-    return header
-      .replace(/[:：]$/, &apos;&apos;) // Remove trailing colons
-      .replace(/^\*\s*/, &apos;&apos;) // Remove leading bullets
-      .trim();
-  }
-
-  /**
-   * Format a section into bullet points with citations
-   */
-  private static formatSection(
-    section: { title: string, content: string },
-    citations: Array&lt;{ index: number, position: number }&gt;
-  ): string {
-    console.log(`[SECTION FORMATTING]`, `Formatting section: &quot;${section.title}&quot; with ${section.content.length} chars`);
-
-    const bulletPoints = this.createBulletPoints(section.content);
-    console.log(`[SECTION FORMATTING]`, `Created ${bulletPoints.length} bullet points for section`);
-
-    // Add citations to bullet points
-    const bulletPointsWithCitations = bulletPoints.map((point, index) =&gt; {
-      const pointCitations = this.getCitationsForPoint(point, section.content, citations);
-      console.log(`[BULLET ${index + 1}]`, `Point: &quot;${point.substring(0, 60)}${point.length &gt; 60 ? &apos;...&apos; : &apos;&apos;}&quot;`);
-      console.log(`[BULLET ${index + 1}]`, `Citations found: ${pointCitations.length &gt; 0 ? pointCitations.map(c =&gt; `[${c}]`).join(&apos;, &apos;) : &apos;None&apos;}`);
-
-      const citationText = pointCitations.length &gt; 0
-        ? &apos; &apos; + pointCitations.map(c =&gt; `[${c}]`).join(&apos;, &apos;)
-        : &apos;&apos;;
-      return `* ${point}${citationText}`;
-    });
-
-    // Format section
-    let formatted = `✅ **${section.title}:**\n`;
-    formatted += bulletPointsWithCitations.join(&apos;\n&apos;);
-
-    console.log(`[SECTION FORMATTED]`, `Section formatted with ${bulletPointsWithCitations.length} bullet points`);
-    return formatted;
-  }
-
-  /**
-   * Create bullet points from content
-   */
-  private static createBulletPoints(content: string): string[] {
-    console.log(&apos;[BULLET CREATION]&apos;, `Creating bullet points from ${content.length} characters of content`);
-
-    // Split by sentences or logical clauses
-    const sentences = this.splitIntoSentences(content);
-    console.log(&apos;[SENTENCE SPLIT]&apos;, `Found ${sentences.length} sentences:`, sentences.map((s, i) =&gt; `${i + 1}. &quot;${s.substring(0, 50)}${s.length &gt; 50 ? &apos;...&apos; : &apos;&apos;}&quot;`));
-
-    const bulletPoints: string[] = [];
-    let currentPoint = &apos;&apos;;
-
-    for (let i = 0; i &lt; sentences.length; i++) {
-      const sentence = sentences[i];
-      const trimmed = sentence.trim();
-      if (trimmed.length === 0) {
-        console.log(`[SENTENCE ${i}]`, &apos;Empty sentence, skipping&apos;);
-        continue;
-      }
-
-      console.log(`[SENTENCE ${i}]`, `Processing: &quot;${trimmed}&quot;`);
-
-      // If adding this sentence makes the point too long, start a new point
-      if (currentPoint &amp;&amp; currentPoint.length + trimmed.length &gt; 200) {
-        bulletPoints.push(currentPoint.trim());
-        console.log(`[BULLET CREATED]`, `Bullet ${bulletPoints.length}: &quot;${currentPoint.trim()}&quot;`);
-        currentPoint = trimmed;
-      } else {
-        currentPoint += (currentPoint ? &apos; &apos; : &apos;&apos;) + trimmed;
-        console.log(`[BULLET BUILDING]`, `Current point length: ${currentPoint.length}`);
-      }
-    }
-
-    if (currentPoint.trim()) {
-      bulletPoints.push(currentPoint.trim());
-      console.log(`[FINAL BULLET]`, `Final bullet: &quot;${currentPoint.trim()}&quot;`);
-    }
-
-    console.log(&apos;[BULLET CREATION COMPLETE]&apos;, `Created ${bulletPoints.length} bullet points`);
-    return bulletPoints;
-  }
-
-  /**
-   * Split text into sentences
-   */
-  private static splitIntoSentences(text: string): string[] {
-    // Split by sentence-ending punctuation but preserve newlines for list formatting
-    return text.split(/(?&lt;=[.!?])\s+/).filter(s =&gt; s.trim().length &gt; 0);
-  }
-
-  /**
-   * Get citations that belong to a specific bullet point
-   */
-  private static getCitationsForPoint(
-    point: string,
-    originalContent: string,
-    citations: Array&lt;{ index: number, position: number }&gt;
-  ): number[] {
-    // Find citations that appear within the range of this point in original content
-    const pointStart = originalContent.indexOf(point);
-    const pointEnd = pointStart + point.length;
-
-    return citations
-      .filter(cit =&gt; cit.position &gt;= pointStart &amp;&amp; cit.position &lt; pointEnd)
-      .map(cit =&gt; cit.index)
-      .filter((index, pos, arr) =&gt; arr.indexOf(index) === pos); // Remove duplicates
-  }
+export interface ApiKeyValidationResult {
+  isValid: boolean;
+  error?: {
+    type: &apos;INVALID_KEY&apos; | &apos;NETWORK_ERROR&apos; | &apos;QUOTA_EXCEEDED&apos; | &apos;PERMISSION_DENIED&apos; | &apos;UNKNOWN_ERROR&apos;;
+    message: string;
+    details?: any;
+  };
+  responseTime?: number;
 }</file><file path="src/utils/constants.ts">export const APP_CONFIG = {
   name: process.env.NEXT_PUBLIC_APP_NAME || &apos;Meddy&apos;,
   version: process.env.NEXT_PUBLIC_APP_VERSION || &apos;1.0.0&apos;,
@@ -12352,7 +11677,67 @@ export const THEME_COLORS = {
   yellow: {
     500: &apos;#F59E0B&apos;,
   },
-};</file><file path="src/components/chat/ChatList.tsx">import React, { useEffect, useRef } from &apos;react&apos;;
+};</file><file path="package.json">{
+  &quot;name&quot;: &quot;rag-web&quot;,
+  &quot;version&quot;: &quot;1.0.0&quot;,
+  &quot;description&quot;: &quot;Meddy - Chat with your documents privately on Web&quot;,
+  &quot;private&quot;: true,
+  &quot;scripts&quot;: {
+    &quot;dev&quot;: &quot;next dev&quot;,
+    &quot;build&quot;: &quot;next build&quot;,
+    &quot;start&quot;: &quot;next start&quot;,
+    &quot;lint&quot;: &quot;next lint&quot;,
+    &quot;type-check&quot;: &quot;tsc --noEmit&quot;,
+    &quot;format&quot;: &quot;prettier --write .&quot;,
+    &quot;test-modal&quot;: &quot;node test-modal-terminal.js&quot;
+  },
+  &quot;dependencies&quot;: {
+    &quot;@google/genai&quot;: &quot;^0.2.0&quot;,
+    &quot;@headlessui/react&quot;: &quot;^1.7.0&quot;,
+    &quot;@heroicons/react&quot;: &quot;^2.0.0&quot;,
+    &quot;@hookform/resolvers&quot;: &quot;^3.3.0&quot;,
+    &quot;@supabase/ssr&quot;: &quot;^0.7.0&quot;,
+    &quot;@supabase/supabase-js&quot;: &quot;^2.83.0&quot;,
+    &quot;@tailwindcss/aspect-ratio&quot;: &quot;^0.4.2&quot;,
+    &quot;@tailwindcss/forms&quot;: &quot;^0.5.10&quot;,
+    &quot;@tailwindcss/typography&quot;: &quot;^0.5.19&quot;,
+    &quot;clsx&quot;: &quot;^2.0.0&quot;,
+    &quot;date-fns&quot;: &quot;^2.30.0&quot;,
+    &quot;dexie&quot;: &quot;^3.2.0&quot;,
+    &quot;dexie-react-hooks&quot;: &quot;^1.1.0&quot;,
+    &quot;file-saver&quot;: &quot;^2.0.0&quot;,
+    &quot;groq-sdk&quot;: &quot;^0.37.0&quot;,
+    &quot;lodash-es&quot;: &quot;^4.17.0&quot;,
+    &quot;next&quot;: &quot;^14.0.0&quot;,
+    &quot;process&quot;: &quot;^0.11.10&quot;,
+    &quot;react&quot;: &quot;^18.0.0&quot;,
+    &quot;react-dom&quot;: &quot;^18.0.0&quot;,
+    &quot;react-hook-form&quot;: &quot;^7.47.0&quot;,
+    &quot;react-markdown&quot;: &quot;^9.0.0&quot;,
+    &quot;rehype-highlight&quot;: &quot;^7.0.0&quot;,
+    &quot;remark-gfm&quot;: &quot;^4.0.0&quot;,
+    &quot;tailwindcss&quot;: &quot;^3.3.0&quot;,
+    &quot;typescript&quot;: &quot;^5.0.0&quot;,
+    &quot;uuid&quot;: &quot;^9.0.0&quot;,
+    &quot;zod&quot;: &quot;^3.22.0&quot;,
+    &quot;zustand&quot;: &quot;^4.4.0&quot;
+  },
+  &quot;devDependencies&quot;: {
+    &quot;@types/file-saver&quot;: &quot;^2.0.0&quot;,
+    &quot;@types/lodash-es&quot;: &quot;^4.17.0&quot;,
+    &quot;@types/node&quot;: &quot;^20.0.0&quot;,
+    &quot;@types/react&quot;: &quot;^18.0.0&quot;,
+    &quot;@types/react-dom&quot;: &quot;^18.0.0&quot;,
+    &quot;@types/uuid&quot;: &quot;^9.0.0&quot;,
+    &quot;autoprefixer&quot;: &quot;^10.0.0&quot;,
+    &quot;eslint&quot;: &quot;^8.0.0&quot;,
+    &quot;eslint-config-next&quot;: &quot;^14.0.0&quot;,
+    &quot;postcss&quot;: &quot;^8.0.0&quot;,
+    &quot;prettier&quot;: &quot;^3.0.0&quot;,
+    &quot;prettier-plugin-tailwindcss&quot;: &quot;^0.5.0&quot;,
+    &quot;puppeteer&quot;: &quot;^24.30.0&quot;
+  }
+}</file><file path="src/components/chat/ChatList.tsx">import React, { useEffect, useRef } from &apos;react&apos;;
 import dynamic from &apos;next/dynamic&apos;;
 import { Loading } from &apos;../ui/Loading&apos;;
 import { ResponseProgressBar } from &apos;../ui/ResponseProgressBar&apos;;
@@ -13691,7 +13076,345 @@ export const initDB = async (): Promise&lt;void&gt; =&gt; {
 };
 
 // Export database instance for use throughout the app
-export default db;</file><file path="src/services/rag/citationService.ts">import type { VectorSearchResult } from &apos;@/types/embedding&apos;;
+export default db;</file><file path="src/services/indexedDB/settingsService.ts">import { db } from &apos;./db&apos;;
+import type { AppSettings, SettingsUpdate } from &apos;@/types&apos;;
+import { userIdLogger } from &apos;@/utils/userIdDebugLogger&apos;;
+
+export class SettingsService {
+  private getSettingsId(userId: string): string {
+    return `app-settings-${userId}`;
+  }
+
+  /**
+   * Get app settings for a user
+   */
+  async getSettings(userId: string): Promise&lt;AppSettings | undefined&gt; {
+    userIdLogger.logServiceCall(&apos;settingsService&apos;, &apos;getSettings&apos;, &apos;read&apos;, userId);
+
+    if (!db) return undefined;
+
+    // Validate userId
+    if (!userId) {
+      userIdLogger.logError(&apos;settingsService.getSettings&apos;, new Error(&apos;Attempt to get settings without userId&apos;), userId);
+      return undefined;
+    }
+
+    const id = this.getSettingsId(userId);
+    const settings = await db.settings.get(id);
+    console.log(&apos;[SETTINGS GET]&apos;, `Retrieved settings for user: ${userId}`);
+    return settings;
+  }
+
+  /**
+   * Get default settings
+   */
+  getDefaultSettings(userId: string): AppSettings {
+    const defaultSettings: AppSettings = {
+      id: this.getSettingsId(userId),
+      userId,
+      geminiApiKey: &apos;&apos;,
+      model: &apos;gemma-3-27b-it&apos;,
+      geminiModel: &apos;gemma-3-27b-it&apos;,
+      groqApiKey: &apos;&apos;,
+      groqModel: &apos;llama-3.3-70b-versatile&apos;,
+      temperature: 0.7,
+      maxTokens: 4096,
+      similarityThreshold: 0.7,
+      chunkSize: 1000,
+      chunkOverlap: 200,
+      theme: &apos;dark&apos; as const,
+      fontSize: &apos;medium&apos; as const,
+      showSources: true,
+      autoSave: true,
+      dataRetention: &apos;never&apos; as const,
+      enableAnalytics: false,
+      crashReporting: false,
+      debugMode: false,
+      logLevel: &apos;error&apos; as const,
+    };
+
+    return defaultSettings;
+  }
+
+  /**
+   * Create or update settings
+   */
+  async updateSettings(updates: SettingsUpdate, userId: string): Promise&lt;AppSettings&gt; {
+    userIdLogger.logServiceCall(&apos;settingsService&apos;, &apos;updateSettings&apos;, &apos;update&apos;, userId);
+
+    // Validate userId
+    if (!userId) {
+      userIdLogger.logError(&apos;settingsService.updateSettings&apos;, new Error(&apos;Attempt to update settings without userId&apos;), userId);
+      throw new Error(&apos;userId is required to update settings&apos;);
+    }
+
+    const existing = await this.getSettings(userId);
+    const settings = existing ? { ...existing, ...updates } : { ...this.getDefaultSettings(userId), ...updates };
+
+    // Ensure IDs match
+    settings.id = this.getSettingsId(userId);
+    settings.userId = userId;
+
+    if (!db) throw new Error(&apos;Database not available&apos;);
+    await db.settings.put(settings);
+    return settings;
+  }
+
+  /**
+   * Update API key
+   */
+  /**
+   * Update API key
+   */
+  async updateApiKey(geminiApiKey: string, userId: string): Promise&lt;AppSettings&gt; {
+    userIdLogger.logServiceCall(&apos;settingsService&apos;, &apos;updateApiKey&apos;, &apos;update&apos;, userId);
+
+    // Validate userId
+    if (!userId) {
+      userIdLogger.logError(&apos;settingsService.updateApiKey&apos;, new Error(&apos;Attempt to update API key without userId&apos;), userId);
+      throw new Error(&apos;userId is required to update API key&apos;);
+    }
+
+    return await this.updateSettings({ geminiApiKey }, userId);
+  }
+
+
+
+  /**
+   * Update generation settings
+   */
+  /**
+   * Update generation settings
+   */
+  async updateGenerationSettings(
+    maxTokens: number,
+    temperature: number,
+    userId: string
+  ): Promise&lt;AppSettings&gt; {
+    userIdLogger.logServiceCall(&apos;settingsService&apos;, &apos;updateGenerationSettings&apos;, &apos;update&apos;, userId);
+
+    // Validate userId
+    if (!userId) {
+      userIdLogger.logError(&apos;settingsService.updateGenerationSettings&apos;, new Error(&apos;Attempt to update generation settings without userId&apos;), userId);
+      throw new Error(&apos;userId is required to update generation settings&apos;);
+    }
+
+    return await this.updateSettings({ maxTokens, temperature }, userId);
+  }
+
+  /**
+   * Update UI settings
+   */
+  /**
+   * Update UI settings
+   */
+  async updateUISettings(theme: &apos;dark&apos; | &apos;light&apos;, fontSize: &apos;small&apos; | &apos;medium&apos; | &apos;large&apos;, userId: string): Promise&lt;AppSettings&gt; {
+    userIdLogger.logServiceCall(&apos;settingsService&apos;, &apos;updateUISettings&apos;, &apos;update&apos;, userId);
+
+    // Validate userId
+    if (!userId) {
+      userIdLogger.logError(&apos;settingsService.updateUISettings&apos;, new Error(&apos;Attempt to update UI settings without userId&apos;), userId);
+      throw new Error(&apos;userId is required to update UI settings&apos;);
+    }
+
+    return await this.updateSettings({ theme, fontSize }, userId);
+  }
+
+  /**
+   * Toggle sources display
+   */
+  /**
+   * Toggle sources display
+   */
+  async toggleShowSources(userId: string): Promise&lt;AppSettings&gt; {
+    userIdLogger.logServiceCall(&apos;settingsService&apos;, &apos;toggleShowSources&apos;, &apos;update&apos;, userId);
+
+    // Validate userId
+    if (!userId) {
+      userIdLogger.logError(&apos;settingsService.toggleShowSources&apos;, new Error(&apos;Attempt to toggle show sources without userId&apos;), userId);
+      throw new Error(&apos;userId is required to toggle show sources&apos;);
+    }
+
+    const existing = await this.getSettings(userId);
+    const showSources = existing ? !existing.showSources : true;
+    return await this.updateSettings({ showSources }, userId);
+  }
+
+  /**
+   * Reset settings to defaults
+   */
+  /**
+   * Reset settings to defaults
+   */
+  async resetSettings(userId: string): Promise&lt;AppSettings&gt; {
+    userIdLogger.logServiceCall(&apos;settingsService&apos;, &apos;resetSettings&apos;, &apos;update&apos;, userId);
+
+    // Validate userId
+    if (!userId) {
+      userIdLogger.logError(&apos;settingsService.resetSettings&apos;, new Error(&apos;Attempt to reset settings without userId&apos;), userId);
+      throw new Error(&apos;userId is required to reset settings&apos;);
+    }
+
+    if (!db) throw new Error(&apos;Database not available&apos;);
+    const defaultSettings = this.getDefaultSettings(userId);
+    await db.settings.put(defaultSettings);
+    return defaultSettings;
+  }
+
+  /**
+   * Check if API key is configured
+   */
+  /**
+   * Check if API key is configured
+   */
+  async hasApiKey(userId: string): Promise&lt;boolean&gt; {
+    userIdLogger.logServiceCall(&apos;settingsService&apos;, &apos;hasApiKey&apos;, &apos;read&apos;, userId);
+
+    // Validate userId
+    if (!userId) {
+      userIdLogger.logError(&apos;settingsService.hasApiKey&apos;, new Error(&apos;Attempt to check API key without userId&apos;), userId);
+      return false;
+    }
+
+    const settings = await this.getSettings(userId);
+    return !!(settings?.geminiApiKey &amp;&amp; settings.geminiApiKey.trim().length &gt; 0);
+  }
+
+  /**
+   * Get API key (masked for display)
+   */
+  /**
+   * Get API key (masked for display)
+   */
+  async getMaskedApiKey(userId: string): Promise&lt;string&gt; {
+    userIdLogger.logServiceCall(&apos;settingsService&apos;, &apos;getMaskedApiKey&apos;, &apos;read&apos;, userId);
+
+    // Validate userId
+    if (!userId) {
+      userIdLogger.logError(&apos;settingsService.getMaskedApiKey&apos;, new Error(&apos;Attempt to get masked API key without userId&apos;), userId);
+      return &apos;&apos;;
+    }
+
+    const settings = await this.getSettings(userId);
+    if (!settings?.geminiApiKey) return &apos;&apos;;
+
+    const key = settings.geminiApiKey;
+    if (key.length &lt;= 10) return key;
+
+    return key.substring(0, 7) + &apos;...&apos; + key.substring(key.length - 3);
+  }
+
+  /**
+   * Validate API key format
+   */
+  validateApiKey(geminiApiKey: string): boolean {
+    // Basic Gemini API key validation
+    const geminiKeyPattern = /^AIza[0-9A-Za-z_-]{35}$/;
+    return geminiKeyPattern.test(geminiApiKey);
+  }
+
+  /**
+   * Export settings
+   */
+  /**
+   * Export settings
+   */
+  async exportSettings(userId: string): Promise&lt;string&gt; {
+    userIdLogger.logServiceCall(&apos;settingsService&apos;, &apos;exportSettings&apos;, &apos;read&apos;, userId);
+
+    // Validate userId
+    if (!userId) {
+      userIdLogger.logError(&apos;settingsService.exportSettings&apos;, new Error(&apos;Attempt to export settings without userId&apos;), userId);
+      throw new Error(&apos;userId is required to export settings&apos;);
+    }
+
+    const settings = await this.getSettings(userId);
+    if (!settings) throw new Error(&apos;No settings to export&apos;);
+
+    // Create exportable settings (without sensitive data)
+    const exportable = {
+      temperature: settings.temperature,
+      maxTokens: settings.maxTokens,
+      similarityThreshold: settings.similarityThreshold,
+      chunkSize: settings.chunkSize,
+      chunkOverlap: settings.chunkOverlap,
+      theme: settings.theme,
+      fontSize: settings.fontSize,
+      showSources: settings.showSources,
+      autoSave: settings.autoSave,
+      dataRetention: settings.dataRetention,
+      enableAnalytics: settings.enableAnalytics,
+      crashReporting: settings.crashReporting,
+      debugMode: settings.debugMode,
+      logLevel: settings.logLevel,
+    };
+
+    return JSON.stringify(exportable, null, 2);
+  }
+
+  /**
+   * Import settings
+   */
+  async importSettings(settingsJson: string, userId: string): Promise&lt;AppSettings&gt; {
+    userIdLogger.logServiceCall(&apos;settingsService&apos;, &apos;importSettings&apos;, &apos;update&apos;, userId);
+
+    // Validate userId
+    if (!userId) {
+      userIdLogger.logError(&apos;settingsService.importSettings&apos;, new Error(&apos;Attempt to import settings without userId&apos;), userId);
+      throw new Error(&apos;userId is required to import settings&apos;);
+    }
+
+    try {
+      const imported = JSON.parse(settingsJson);
+
+      // Validate imported settings
+      const validUpdates: SettingsUpdate = {};
+
+      if (typeof imported.similarityThreshold === &apos;number&apos; &amp;&amp; imported.similarityThreshold &gt;= 0 &amp;&amp; imported.similarityThreshold &lt;= 1) {
+        validUpdates.similarityThreshold = imported.similarityThreshold;
+      }
+      if (typeof imported.chunkSize === &apos;number&apos; &amp;&amp; imported.chunkSize &gt; 0) {
+        validUpdates.chunkSize = imported.chunkSize;
+      }
+      if (typeof imported.chunkOverlap === &apos;number&apos; &amp;&amp; imported.chunkOverlap &gt;= 0) {
+        validUpdates.chunkOverlap = imported.chunkOverlap;
+      }
+      if (typeof imported.maxTokens === &apos;number&apos; &amp;&amp; imported.maxTokens &gt; 0) {
+        validUpdates.maxTokens = imported.maxTokens;
+      }
+      if (typeof imported.temperature === &apos;number&apos; &amp;&amp; imported.temperature &gt;= 0 &amp;&amp; imported.temperature &lt;= 2) {
+        validUpdates.temperature = imported.temperature;
+      }
+      if (typeof imported.showSources === &apos;boolean&apos;) {
+        validUpdates.showSources = imported.showSources;
+      }
+      if (typeof imported.autoSave === &apos;boolean&apos;) {
+        validUpdates.autoSave = imported.autoSave;
+      }
+      if (typeof imported.dataRetention === &apos;string&apos;) {
+        validUpdates.dataRetention = imported.dataRetention;
+      }
+      if (typeof imported.enableAnalytics === &apos;boolean&apos;) {
+        validUpdates.enableAnalytics = imported.enableAnalytics;
+      }
+      if (typeof imported.crashReporting === &apos;boolean&apos;) {
+        validUpdates.crashReporting = imported.crashReporting;
+      }
+      if (typeof imported.debugMode === &apos;boolean&apos;) {
+        validUpdates.debugMode = imported.debugMode;
+      }
+      if (typeof imported.logLevel === &apos;string&apos;) {
+        validUpdates.logLevel = imported.logLevel;
+      }
+
+      return await this.updateSettings(validUpdates, userId);
+    } catch (error) {
+      throw new Error(&apos;Invalid settings format&apos;);
+    }
+  }
+}
+
+export const settingsService = new SettingsService();</file><file path="src/services/rag/citationService.ts">import type { VectorSearchResult } from &apos;@/types/embedding&apos;;
 import type { Citation as MessageCitation } from &apos;@/types/message&apos;;
 import type { SimplifiedCitation, SimplifiedCitationGroup, PageGroup } from &apos;@/types/citation&apos;;
 
@@ -16127,7 +15850,403 @@ export class DocumentProcessor {
 }
 
 // Singleton instance
-export const documentProcessor = new DocumentProcessor();</file><file path="src/services/rag/vectorSearch.ts">import type { EmbeddingChunk, VectorSearchResult } from &apos;@/types/embedding&apos;;
+export const documentProcessor = new DocumentProcessor();</file><file path="src/services/rag/responseFormatter.ts">/**
+ * Response Formatter Service
+ * Uses LLM to convert paragraph-style responses to bullet point format while preserving citations
+ */
+
+import { groqService } from &apos;../groq/groqService&apos;;
+import type { AppSettings } from &apos;@/types/settings&apos;;
+import { IndentationAnalyzer } from &apos;@/utils/indentationAnalyzer&apos;;
+
+export interface FormattedSection {
+  title: string;
+  bulletPoints: string[];
+  citations: number[];
+}
+
+export class ResponseFormatter {
+  /**
+   * Convert paragraph response to bullet point format using LLM
+   * Preserves citations and moves them to end of bullet points
+   */
+  static async formatToBulletPoints(
+    response: string,
+    settings: AppSettings
+  ): Promise&lt;string&gt; {
+    const timestamp = new Date().toISOString();
+    console.log(`\n=== [${timestamp}] [INDENTATION DEBUG] LLM RESPONSE FORMATTER START ===`);
+    console.log(`[${timestamp}] [INDENTATION DEBUG] ORIGINAL RESPONSE:`, response.substring(0, 200) + (response.length &gt; 200 ? &apos;...&apos; : &apos;&apos;));
+    console.log(`[${timestamp}] [INDENTATION DEBUG] ORIGINAL LENGTH:`, `${response.length} characters`);
+
+    // Analyze original response for indentation patterns
+    console.log(`[${timestamp}] [INDENTATION DEBUG] ANALYZING ORIGINAL RESPONSE STRUCTURE:`);
+    IndentationAnalyzer.logMarkdownStructure(response);
+    const originalAnalysis = IndentationAnalyzer.analyzeIndentation(response);
+    console.log(`[${timestamp}] [INDENTATION DEBUG] ORIGINAL RESPONSE HAS NESTED STRUCTURES:`, originalAnalysis.hasNestedStructures);
+
+    if (!response || response.trim().length === 0) {
+      console.log(`[${timestamp}] [INDENTATION DEBUG] FORMATTING SKIPPED:`, &apos;Empty response, returning as-is&apos;);
+      console.log(`=== [${timestamp}] [INDENTATION DEBUG] LLM RESPONSE FORMATTER END ===\n`);
+      return response;
+    }
+
+    // Use main API key for formatting
+    const formattingApiKey = settings.geminiApiKey;
+
+    console.log(`[${timestamp}] [INDENTATION DEBUG] LLM FORMATTER:`, &apos;Using main API key for formatting:&apos;, settings.geminiApiKey ? `YES (${settings.geminiApiKey.substring(0, 10)}...)` : &apos;NO&apos;);
+
+    if (!formattingApiKey) {
+      console.log(`[${timestamp}] [INDENTATION DEBUG] FORMATTING SKIPPED:`, &apos;No API key available, returning original response&apos;);
+      console.log(`=== [${timestamp}] [INDENTATION DEBUG] LLM RESPONSE FORMATTER END ===\n`);
+      return response;
+    }
+
+    try {
+      console.log(`[${timestamp}] [INDENTATION DEBUG] LLM FORMATTING:`, &apos;Using LLM to convert to bullet points...&apos;);
+      console.log(`[${timestamp}] [INDENTATION DEBUG] LLM FORMATTING:`, `Calling Gemini service with main API key`);
+
+      const formattingPrompt = this.buildFormattingPrompt(response);
+      console.log(`[${timestamp}] [INDENTATION DEBUG] FORMATTING PROMPT:`, formattingPrompt.substring(0, 300) + &apos;...&apos;);
+      console.log(`[${timestamp}] [INDENTATION DEBUG] PROMPT ANALYSIS:`, {
+        promptLength: formattingPrompt.length,
+        containsNestedInstructions: formattingPrompt.includes(&apos;NESTED&apos;),
+        containsIndentInstructions: formattingPrompt.includes(&apos;indent&apos;),
+        containsBulletInstructions: formattingPrompt.includes(&apos;*&apos;),
+        containsExampleFormatting: formattingPrompt.includes(&apos;EXAMPLE TRANSFORMATION&apos;)
+      });
+
+      const formattedResponse = await groqService.generateResponse(
+        formattingPrompt,
+        &quot;You are a response formatting specialist.&quot;,
+        settings.groqModel || &apos;llama-3.3-70b-versatile&apos;,
+        {
+          temperature: 0.3, // Lower temperature for consistent formatting
+          maxTokens: Math.min(response.length * 2, 4000), // Allow for expansion but cap it
+        }
+      );
+
+      console.log(`[${timestamp}] [INDENTATION DEBUG] LLM FORMATTING:`, &apos;Gemini service response received, length:&apos;, formattedResponse.length);
+
+      // Comprehensive analysis of formatted response
+      console.log(`[${timestamp}] [INDENTATION DEBUG] ANALYZING FORMATTED RESPONSE STRUCTURE:`);
+      IndentationAnalyzer.logMarkdownStructure(formattedResponse);
+      const formattedAnalysis = IndentationAnalyzer.analyzeIndentation(formattedResponse);
+
+      // Check for nested structures detection
+      const hasNestedStructures = IndentationAnalyzer.detectNestedLists(formattedResponse);
+      console.log(`[${timestamp}] [INDENTATION DEBUG] NESTED STRUCTURES DETECTED IN FORMATTED RESPONSE:`, hasNestedStructures);
+
+      // Create visualization of indentation
+      console.log(`[${timestamp}] [INDENTATION DEBUG] FORMATTED RESPONSE INDENTATION VISUALIZATION:`);
+      IndentationAnalyzer.visualizeIndentation(formattedResponse);
+
+      // Additional detailed analysis
+      const hasNewlines = formattedResponse.includes(&apos;\n&apos;);
+      const bulletCount = (formattedResponse.match(/^\* /gm) || []).length;
+      const newlineCount = (formattedResponse.match(/\n/g) || []).length;
+      const nestedBulletCount = (formattedResponse.match(/^[ \t]+\* /gm) || []).length;
+
+      console.log(`[${timestamp}] [INDENTATION DEBUG] FORMATTING ANALYSIS:`, {
+        hasNewlines,
+        bulletCount,
+        newlineCount,
+        nestedBulletCount,
+        firstBulletIndex: formattedResponse.indexOf(&apos;* &apos;),
+        containsListMarkers: formattedResponse.includes(&apos;* &apos;),
+        startsWithBullet: formattedResponse.trim().startsWith(&apos;* &apos;),
+        hasIndentation: formattedAnalysis.indentedLines &gt; 0,
+        maxIndentLevel: formattedAnalysis.maxIndentLevel,
+        responsePreview: formattedResponse.substring(0, 300) + (formattedResponse.length &gt; 300 ? &apos;...&apos; : &apos;&apos;),
+        rawCharCodes: Array.from(formattedResponse.substring(0, 100)).map(c =&gt; `${c}(${c.charCodeAt(0)})`).join(&apos; &apos;)
+      });
+
+      // Compare original vs formatted
+      console.log(`[${timestamp}] [INDENTATION DEBUG] ORIGINAL vs FORMATTED COMPARISON:`, {
+        originalHadNested: originalAnalysis.hasNestedStructures,
+        formattedHasNested: formattedAnalysis.hasNestedStructures,
+        originalIndentedLines: originalAnalysis.indentedLines,
+        formattedIndentedLines: formattedAnalysis.indentedLines,
+        originalMaxIndent: originalAnalysis.maxIndentLevel,
+        formattedMaxIndent: formattedAnalysis.maxIndentLevel,
+        improvement: formattedAnalysis.maxIndentLevel &gt; originalAnalysis.maxIndentLevel ? &apos;YES - Added nesting&apos; : &apos;NO - No improvement&apos;
+      });
+
+      console.log(`[${timestamp}] [INDENTATION DEBUG] LLM FORMATTING COMPLETE:`, `Formatted response: ${formattedResponse.length} characters`);
+      console.log(`[${timestamp}] [INDENTATION DEBUG] FORMATTED PREVIEW:`, formattedResponse.substring(0, 200) + (formattedResponse.length &gt; 200 ? &apos;...&apos; : &apos;&apos;));
+      console.log(`=== [${timestamp}] [INDENTATION DEBUG] LLM RESPONSE FORMATTER END ===\n`);
+
+      return formattedResponse;
+
+    } catch (error) {
+      console.error(`[${timestamp}] [INDENTATION DEBUG] LLM FORMATTING ERROR:`, &apos;Failed to format with LLM:&apos;, error);
+      console.log(`[${timestamp}] [INDENTATION DEBUG] FALLBACK:`, &apos;Returning original response due to formatting error&apos;);
+      console.log(`=== [${timestamp}] [INDENTATION DEBUG] LLM RESPONSE FORMATTER END ===\n`);
+      return response;
+    }
+  }
+
+  /**
+   * Build the formatting prompt for the LLM
+   */
+  private static buildFormattingPrompt(response: string): string {
+    return `You are a response formatting specialist. Your task is to convert paragraph-style responses to clear, structured, NESTED bullet point lists while preserving all citations.
+
+CRITICAL FORMATTING RULES:
+1. Use standard Markdown bullet points: * for top level, and indent 2-4 spaces with * for sub-levels.
+2. DETECT HIERARCHY: If a sentence acts as a header (e.g., &quot;Early Surgery:&quot;, &quot;Treatments include:&quot;), the items following it MUST be indented.
+3. Format:
+   * Main Category or Timeframe
+     * Sub-point with citation [1]
+     * Another sub-point [2]
+4. Preserve ALL citations in their original positions.
+5. Move citations to the END of the specific bullet point they support.
+6. Create logical section headers using bold format with checkmark emoji: ✅ **[Section Title]:**
+7. Do not add, remove, or change any factual information.
+
+EXAMPLE TRANSFORMATION:
+
+INPUT:
+&quot;Surgical management includes early surgery within 2 weeks involving limbal stem cell transplantation [1] and amniotic membrane grafts [2]. Late surgery after 6 months involves symblepharon release [3] and keratoplasty [1].&quot;
+
+OUTPUT:
+✅ **Surgical Management:**
+* Early Surgery (within 2 weeks):
+    * Limbal stem cell transplantation [1]
+    * Amniotic membrane grafts [2]
+* Late Surgery (after 6 months):
+    * Release of conjunctival bands (symblepharon release) [3]
+    * Keratoplasty [1]
+
+YOUR TASK:
+Convert the following response to a nested bullet point format following the rules above:
+
+${response}`;
+  }
+
+  /**
+   * Legacy rule-based method (kept as fallback)
+   */
+  static async formatToBulletPointsLegacy(response: string): Promise&lt;string&gt; {
+    console.log(&apos;[LEGACY FORMATTING]&apos;, &apos;Using rule-based formatting as fallback&apos;);
+
+    if (!response || response.trim().length === 0) {
+      return response;
+    }
+
+    // Extract all citations first to preserve them
+    const citations = this.extractCitations(response);
+    const responseWithoutCitations = this.removeCitations(response);
+
+    // Split response into logical sections
+    const sections = this.identifySections(responseWithoutCitations);
+
+    // Format each section with bullet points
+    const formattedSections = sections.map(section =&gt;
+      this.formatSection(section, citations)
+    );
+
+    // Combine all sections
+    return formattedSections.join(&apos;\n\n&apos;);
+  }
+
+  /**
+   * Extract citation references from text
+   */
+  private static extractCitations(text: string): Array&lt;{ index: number, position: number }&gt; {
+    const citationPattern = /\[(\d+)\]/g;
+    const citations: Array&lt;{ index: number, position: number }&gt; = [];
+    let match;
+
+    while ((match = citationPattern.exec(text)) !== null) {
+      citations.push({
+        index: parseInt(match[1], 10),
+        position: match.index
+      });
+    }
+
+    return citations;
+  }
+
+  /**
+   * Remove citations from text for processing
+   */
+  private static removeCitations(text: string): string {
+    return text.replace(/\[\d+\]/g, &apos;&apos;);
+  }
+
+  /**
+   * Identify logical sections in the response
+   */
+  private static identifySections(text: string): Array&lt;{ title: string, content: string }&gt; {
+    console.log(&apos;[SECTION ANALYSIS]&apos;, `Analyzing text of ${text.length} characters`);
+    const sections: Array&lt;{ title: string, content: string }&gt; = [];
+
+    // Split by double newlines or major sentence breaks
+    const paragraphs = text.split(/\n\s*\n/);
+    console.log(&apos;[PARAGRAPH SPLIT]&apos;, `Found ${paragraphs.length} paragraphs`);
+
+    for (let i = 0; i &lt; paragraphs.length; i++) {
+      const paragraph = paragraphs[i];
+      const trimmed = paragraph.trim();
+      if (trimmed.length === 0) {
+        console.log(`[PARAGRAPH ${i}]`, &apos;Empty paragraph, skipping&apos;);
+        continue;
+      }
+
+      console.log(`[PARAGRAPH ${i}]`, `Content: &quot;${trimmed.substring(0, 80)}${trimmed.length &gt; 80 ? &apos;...&apos; : &apos;&apos;}&quot;`);
+
+      // Check if this looks like a header or main topic
+      const isHeader = this.isHeader(trimmed);
+      console.log(`[PARAGRAPH ${i}]`, `Is header: ${isHeader}`);
+
+      if (isHeader || sections.length === 0) {
+        const title = isHeader ? this.cleanHeader(trimmed) : &apos;Main Points&apos;;
+        const content = isHeader ? &apos;&apos; : trimmed;
+        sections.push({ title, content });
+        console.log(`[SECTION CREATED]`, `Title: &quot;${title}&quot;, Content length: ${content.length}`);
+      } else {
+        // Add to last section
+        const lastSection = sections[sections.length - 1];
+        lastSection.content += (lastSection.content ? &apos; &apos; : &apos;&apos;) + trimmed;
+        console.log(`[SECTION UPDATED]`, `Added to &quot;${lastSection.title}&quot;, new length: ${lastSection.content.length}`);
+      }
+    }
+
+    console.log(&apos;[SECTION ANALYSIS COMPLETE]&apos;, `Created ${sections.length} sections`);
+    return sections;
+  }
+
+  /**
+   * Check if text looks like a header
+   */
+  private static isHeader(text: string): boolean {
+    // Headers are typically shorter, may end with colon, or contain keywords
+    const headerKeywords = [
+      &apos;criteria&apos;, &apos;factors&apos;, &apos;features&apos;, &apos;symptoms&apos;, &apos;treatment&apos;,
+      &apos;diagnosis&apos;, &apos;management&apos;, &apos;assessment&apos;, &apos;findings&apos;, &apos;results&apos;
+    ];
+
+    const isShort = text.length &lt; 100;
+    const endsWithColon = text.trim().endsWith(&apos;:&apos;);
+    const hasKeyword = headerKeywords.some(keyword =&gt;
+      text.toLowerCase().includes(keyword)
+    );
+
+    return isShort &amp;&amp; (endsWithColon || hasKeyword);
+  }
+
+  /**
+   * Clean header text
+   */
+  private static cleanHeader(header: string): string {
+    return header
+      .replace(/[:：]$/, &apos;&apos;) // Remove trailing colons
+      .replace(/^\*\s*/, &apos;&apos;) // Remove leading bullets
+      .trim();
+  }
+
+  /**
+   * Format a section into bullet points with citations
+   */
+  private static formatSection(
+    section: { title: string, content: string },
+    citations: Array&lt;{ index: number, position: number }&gt;
+  ): string {
+    console.log(`[SECTION FORMATTING]`, `Formatting section: &quot;${section.title}&quot; with ${section.content.length} chars`);
+
+    const bulletPoints = this.createBulletPoints(section.content);
+    console.log(`[SECTION FORMATTING]`, `Created ${bulletPoints.length} bullet points for section`);
+
+    // Add citations to bullet points
+    const bulletPointsWithCitations = bulletPoints.map((point, index) =&gt; {
+      const pointCitations = this.getCitationsForPoint(point, section.content, citations);
+      console.log(`[BULLET ${index + 1}]`, `Point: &quot;${point.substring(0, 60)}${point.length &gt; 60 ? &apos;...&apos; : &apos;&apos;}&quot;`);
+      console.log(`[BULLET ${index + 1}]`, `Citations found: ${pointCitations.length &gt; 0 ? pointCitations.map(c =&gt; `[${c}]`).join(&apos;, &apos;) : &apos;None&apos;}`);
+
+      const citationText = pointCitations.length &gt; 0
+        ? &apos; &apos; + pointCitations.map(c =&gt; `[${c}]`).join(&apos;, &apos;)
+        : &apos;&apos;;
+      return `* ${point}${citationText}`;
+    });
+
+    // Format section
+    let formatted = `✅ **${section.title}:**\n`;
+    formatted += bulletPointsWithCitations.join(&apos;\n&apos;);
+
+    console.log(`[SECTION FORMATTED]`, `Section formatted with ${bulletPointsWithCitations.length} bullet points`);
+    return formatted;
+  }
+
+  /**
+   * Create bullet points from content
+   */
+  private static createBulletPoints(content: string): string[] {
+    console.log(&apos;[BULLET CREATION]&apos;, `Creating bullet points from ${content.length} characters of content`);
+
+    // Split by sentences or logical clauses
+    const sentences = this.splitIntoSentences(content);
+    console.log(&apos;[SENTENCE SPLIT]&apos;, `Found ${sentences.length} sentences:`, sentences.map((s, i) =&gt; `${i + 1}. &quot;${s.substring(0, 50)}${s.length &gt; 50 ? &apos;...&apos; : &apos;&apos;}&quot;`));
+
+    const bulletPoints: string[] = [];
+    let currentPoint = &apos;&apos;;
+
+    for (let i = 0; i &lt; sentences.length; i++) {
+      const sentence = sentences[i];
+      const trimmed = sentence.trim();
+      if (trimmed.length === 0) {
+        console.log(`[SENTENCE ${i}]`, &apos;Empty sentence, skipping&apos;);
+        continue;
+      }
+
+      console.log(`[SENTENCE ${i}]`, `Processing: &quot;${trimmed}&quot;`);
+
+      // If adding this sentence makes the point too long, start a new point
+      if (currentPoint &amp;&amp; currentPoint.length + trimmed.length &gt; 200) {
+        bulletPoints.push(currentPoint.trim());
+        console.log(`[BULLET CREATED]`, `Bullet ${bulletPoints.length}: &quot;${currentPoint.trim()}&quot;`);
+        currentPoint = trimmed;
+      } else {
+        currentPoint += (currentPoint ? &apos; &apos; : &apos;&apos;) + trimmed;
+        console.log(`[BULLET BUILDING]`, `Current point length: ${currentPoint.length}`);
+      }
+    }
+
+    if (currentPoint.trim()) {
+      bulletPoints.push(currentPoint.trim());
+      console.log(`[FINAL BULLET]`, `Final bullet: &quot;${currentPoint.trim()}&quot;`);
+    }
+
+    console.log(&apos;[BULLET CREATION COMPLETE]&apos;, `Created ${bulletPoints.length} bullet points`);
+    return bulletPoints;
+  }
+
+  /**
+   * Split text into sentences
+   */
+  private static splitIntoSentences(text: string): string[] {
+    // Split by sentence-ending punctuation but preserve newlines for list formatting
+    return text.split(/(?&lt;=[.!?])\s+/).filter(s =&gt; s.trim().length &gt; 0);
+  }
+
+  /**
+   * Get citations that belong to a specific bullet point
+   */
+  private static getCitationsForPoint(
+    point: string,
+    originalContent: string,
+    citations: Array&lt;{ index: number, position: number }&gt;
+  ): number[] {
+    // Find citations that appear within the range of this point in original content
+    const pointStart = originalContent.indexOf(point);
+    const pointEnd = pointStart + point.length;
+
+    return citations
+      .filter(cit =&gt; cit.position &gt;= pointStart &amp;&amp; cit.position &lt; pointEnd)
+      .map(cit =&gt; cit.index)
+      .filter((index, pos, arr) =&gt; arr.indexOf(index) === pos); // Remove duplicates
+  }
+}</file><file path="src/services/rag/vectorSearch.ts">import type { EmbeddingChunk, VectorSearchResult } from &apos;@/types/embedding&apos;;
 import type { PageGroup } from &apos;@/types/citation&apos;;
 import { getIndexedDBServices } from &apos;../indexedDB&apos;;
 import { cosineSimilarity, calculateVectorNorm } from &apos;@/utils/vectorUtils&apos;;
@@ -18621,10 +18740,148 @@ export const StreamingMessageBubble: React.FC&lt;{
       className={className}
     /&gt;
   );
-};</file><file path="src/app/AppInitializer.tsx">&apos;use client&apos;;
+};</file><file path="src/app/layout.tsx">import type { Metadata, Viewport } from &apos;next&apos;;
+import { Inter } from &apos;next/font/google&apos;;
+import Script from &apos;next/script&apos;;
+import &apos;../styles/globals.css&apos;;
+import &apos;../styles/mobile-touch.css&apos;;
+import { AppInitializer } from &apos;./AppInitializer&apos;;
+import SubscriptionModal from &apos;@/components/SubscriptionModal&apos;;
+import { RouteErrorBoundary } from &apos;@/components/common/RouteErrorBoundary&apos;;
+import { InstallPrompt } from &apos;@/components/common/InstallPrompt&apos;;
+import { ThemeProvider } from &apos;@/components/common/ThemeProvider&apos;;
+
+const inter = Inter({ subsets: [&apos;latin&apos;] });
+
+export const metadata: Metadata = {
+  title: &apos;Meddy - Chat with Documents Privately&apos;,
+  description: &apos;Private RAG chat application for documents&apos;,
+  manifest: &apos;/manifest.json&apos;,
+  icons: {
+    icon: [
+      { url: &apos;/favicon-32.png&apos;, sizes: &apos;32x32&apos;, type: &apos;image/png&apos; },
+      { url: &apos;/icon-192x192.png&apos;, sizes: &apos;192x192&apos;, type: &apos;image/png&apos; },
+      { url: &apos;/icon-512x512.png&apos;, sizes: &apos;512x512&apos;, type: &apos;image/png&apos; },
+    ],
+    apple: [
+      { url: &apos;/icon-192x192.png&apos;, sizes: &apos;192x192&apos;, type: &apos;image/png&apos; },
+    ],
+  },
+};
+
+export const viewport: Viewport = {
+  width: &apos;device-width&apos;,
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  themeColor: &apos;#020617&apos;,
+  viewportFit: &apos;cover&apos;,
+  interactiveWidget: &apos;resizes-content&apos;,
+};
+
+import { GlobalLoadingScreen } from &apos;@/components/ui/GlobalLoadingScreen&apos;;
+import { ServiceWorkerRegister } from &apos;./register-sw&apos;;
+
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    &lt;html lang=&quot;en&quot;&gt;
+      &lt;body className={`${inter.className} bg-gray-50 dark:bg-slate-950 text-slate-900 dark:text-slate-200 antialiased`}&gt;
+        &lt;Script
+          id=&quot;error-suppression&quot;
+          strategy=&quot;beforeInteractive&quot;
+          src=&quot;/error-suppression.js&quot;
+        /&gt;
+        &lt;ThemeProvider /&gt;
+        &lt;RouteErrorBoundary&gt;
+          &lt;div id=&quot;root&quot; className=&quot;min-h-screen flex flex-col&quot;&gt;
+            &lt;AppInitializer /&gt;
+            &lt;GlobalLoadingScreen minDisplayTime={2000} /&gt;
+            &lt;ServiceWorkerRegister /&gt;
+            &lt;SubscriptionModal /&gt;
+            &lt;InstallPrompt /&gt;
+            {children}
+          &lt;/div&gt;
+        &lt;/RouteErrorBoundary&gt;
+      &lt;/body&gt;
+    &lt;/html&gt;
+  );
+}</file><file path="next.config.js">/** @type {import(&apos;next&apos;).NextConfig} */
+const webpack = require(&apos;webpack&apos;);
+
+const nextConfig = {
+  typescript: {
+    ignoreBuildErrors: false,
+  },
+  eslint: {
+    ignoreDuringBuilds: false,
+  },
+  // START NEW CODE
+  compiler: {
+    // Removes console.log in production, keeps console.error and console.warn
+    removeConsole: process.env.NODE_ENV === &quot;production&quot; ? { exclude: [&apos;error&apos;, &apos;warn&apos;] } : false,
+  },
+  // END NEW CODE
+
+  webpack: (config, { dev, isServer }) =&gt; {
+    // Enable WebAssembly support
+    config.experiments = {
+      ...config.experiments,
+      asyncWebAssembly: true,
+      layers: true,
+    };
+
+    // Add support for WebAssembly files
+    config.module.rules.push({
+      test: /\.wasm$/,
+      type: &apos;webassembly/async&apos;,
+    });
+
+    // FIX: Enhanced polyfills for Supabase compatibility in Edge Runtime
+    config.plugins.push(
+      new webpack.DefinePlugin({
+        &apos;process.version&apos;: JSON.stringify(&apos;v20.0.0&apos;),
+        &apos;process.versions&apos;: JSON.stringify({
+          node: &apos;20.0.0&apos;,
+          v8: &apos;10.0.0&apos;
+        }),
+      })
+    );
+
+    return config;
+  },
+  // Headers for security
+  async headers() {
+    return [
+      {
+        source: &apos;/(.*)&apos;,
+        headers: [
+          {
+            key: &apos;X-Content-Type-Options&apos;,
+            value: &apos;nosniff&apos;,
+          },
+          {
+            key: &apos;X-Frame-Options&apos;,
+            value: &apos;DENY&apos;,
+          },
+          {
+            key: &apos;X-XSS-Protection&apos;,
+            value: &apos;1; mode=block&apos;,
+          },
+        ],
+      },
+    ];
+  },
+};
+
+module.exports = nextConfig;</file><file path="src/app/AppInitializer.tsx">&apos;use client&apos;;
 
 import { useEffect, useState } from &apos;react&apos;;
 import { geminiService } from &apos;../services/gemini&apos;;
+import { groqService } from &apos;../services/groq/groqService&apos;;
 import { useSettingsStore, useSessionStore, useDocumentStore, useChatStore } from &apos;../store&apos;;
 import { createClient } from &apos;../utils/supabase/client&apos;;
 import { userIdLogger } from &apos;../utils/userIdDebugLogger&apos;;
@@ -18798,6 +19055,17 @@ export function AppInitializer() {
     }
   }, [isClient, settings?.geminiApiKey, settings?.model]);
 
+  // Initialize Groq service when settings change (and Groq API key is available)
+  useEffect(() =&gt; {
+    if (!isClient) return;
+
+    if (settings?.groqApiKey) {
+      console.log(&apos;[APP INIT]&apos;, &apos;Initializing Groq service...&apos;);
+      groqService.initialize(settings.groqApiKey);
+      console.log(&apos;[APP INIT]&apos;, &apos;Groq service initialized successfully&apos;);
+    }
+  }, [isClient, settings?.groqApiKey]);
+
   // Global Storage Check
   useEffect(() =&gt; {
     if (!isClient) return;
@@ -18827,1167 +19095,7 @@ export function AppInitializer() {
 
   // This component doesn&apos;t render anything
   return null;
-}</file><file path="src/app/layout.tsx">import type { Metadata, Viewport } from &apos;next&apos;;
-import { Inter } from &apos;next/font/google&apos;;
-import Script from &apos;next/script&apos;;
-import &apos;../styles/globals.css&apos;;
-import &apos;../styles/mobile-touch.css&apos;;
-import { AppInitializer } from &apos;./AppInitializer&apos;;
-import SubscriptionModal from &apos;@/components/SubscriptionModal&apos;;
-import { RouteErrorBoundary } from &apos;@/components/common/RouteErrorBoundary&apos;;
-import { InstallPrompt } from &apos;@/components/common/InstallPrompt&apos;;
-import { ThemeProvider } from &apos;@/components/common/ThemeProvider&apos;;
-
-const inter = Inter({ subsets: [&apos;latin&apos;] });
-
-export const metadata: Metadata = {
-  title: &apos;Meddy - Chat with Documents Privately&apos;,
-  description: &apos;Private RAG chat application for documents&apos;,
-  manifest: &apos;/manifest.json&apos;,
-  icons: {
-    icon: [
-      { url: &apos;/favicon-32.png&apos;, sizes: &apos;32x32&apos;, type: &apos;image/png&apos; },
-      { url: &apos;/icon-192x192.png&apos;, sizes: &apos;192x192&apos;, type: &apos;image/png&apos; },
-      { url: &apos;/icon-512x512.png&apos;, sizes: &apos;512x512&apos;, type: &apos;image/png&apos; },
-    ],
-    apple: [
-      { url: &apos;/icon-192x192.png&apos;, sizes: &apos;192x192&apos;, type: &apos;image/png&apos; },
-    ],
-  },
-};
-
-export const viewport: Viewport = {
-  width: &apos;device-width&apos;,
-  initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
-  themeColor: &apos;#020617&apos;,
-  viewportFit: &apos;cover&apos;,
-  interactiveWidget: &apos;resizes-content&apos;,
-};
-
-import { GlobalLoadingScreen } from &apos;@/components/ui/GlobalLoadingScreen&apos;;
-import { ServiceWorkerRegister } from &apos;./register-sw&apos;;
-
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  return (
-    &lt;html lang=&quot;en&quot;&gt;
-      &lt;body className={`${inter.className} bg-gray-50 dark:bg-slate-950 text-slate-900 dark:text-slate-200 antialiased`}&gt;
-        &lt;Script
-          id=&quot;error-suppression&quot;
-          strategy=&quot;beforeInteractive&quot;
-          src=&quot;/error-suppression.js&quot;
-        /&gt;
-        &lt;ThemeProvider /&gt;
-        &lt;RouteErrorBoundary&gt;
-          &lt;div id=&quot;root&quot; className=&quot;min-h-screen flex flex-col&quot;&gt;
-            &lt;AppInitializer /&gt;
-            &lt;GlobalLoadingScreen minDisplayTime={2000} /&gt;
-            &lt;ServiceWorkerRegister /&gt;
-            &lt;SubscriptionModal /&gt;
-            &lt;InstallPrompt /&gt;
-            {children}
-          &lt;/div&gt;
-        &lt;/RouteErrorBoundary&gt;
-      &lt;/body&gt;
-    &lt;/html&gt;
-  );
-}</file><file path="src/services/rag/chatPipeline.ts">import { getIndexedDBServices } from &apos;../indexedDB&apos;;
-import { chatService, embeddingService } from &apos;../gemini&apos;;
-import { vectorSearchService } from &apos;./vectorSearch&apos;;
-import { documentProcessor } from &apos;./documentProcessor&apos;;
-import { citationService } from &apos;./citationService&apos;;
-import { ResponseFormatter } from &apos;./responseFormatter&apos;;
-import { MessageSender, type MessageCreate, type Message } from &apos;@/types&apos;;
-import type { ChatStreamEvent } from &apos;../gemini/chatService&apos;;
-import type { SimplifiedCitationGroup } from &apos;@/types/citation&apos;;
-
-export class ChatPipeline {
-  private indexedDBServices = getIndexedDBServices();
-
-  /**
-   * Enhance user query with context information
-   */
-  private async enhanceQueryWithContext(sessionId: string, content: string): Promise&lt;string&gt; {
-    try {
-      console.log(&apos;\n=== QUERY ENHANCEMENT PROCESS START ===&apos;);
-      console.log(&apos;[ORIGINAL QUERY]&apos;, content);
-
-      // Get session information
-      const session = await this.indexedDBServices.sessionService.getSession(sessionId);
-      const sessionName = session?.name || &apos;Unknown Session&apos;;
-      console.log(&apos;[SESSION INFO]&apos;, `Name: ${sessionName}, ID: ${sessionId}`);
-
-      // Get enabled documents for the session
-      if (!session) {
-        console.log(&apos;[CONTEXT ENHANCEMENT]&apos;, &apos;Session not found - returning original query&apos;);
-        console.log(&apos;=== QUERY ENHANCEMENT PROCESS END ===\n&apos;);
-        return content;
-      }
-      const enabledDocuments = await this.indexedDBServices.documentService.getEnabledDocumentsBySession(sessionId, session.userId);
-      console.log(&apos;[DOCUMENTS FOUND]&apos;, `${enabledDocuments.length} enabled documents`);
-
-      // Extract document names (use title if available, otherwise filename)
-      const documentNames = enabledDocuments.map(doc =&gt; doc.title || doc.filename).filter(Boolean);
-
-      // If no documents are enabled, return the original query
-      if (documentNames.length === 0) {
-        console.log(&apos;[CONTEXT ENHANCEMENT]&apos;, &apos;No enabled documents found - returning original query&apos;);
-        console.log(&apos;=== QUERY ENHANCEMENT PROCESS END ===\n&apos;);
-        return content;
-      }
-
-      // Format the related documents string
-      const relatedDocuments = documentNames.join(&apos;, &apos;);
-      console.log(&apos;[CONTEXT DOCUMENTS]&apos;, relatedDocuments);
-
-      // Create the enhanced query with context
-      const enhancedQuery = `${content} [Context - ${sessionName} and related to ${relatedDocuments}]`;
-
-      console.log(&apos;[ENHANCED QUERY]&apos;, enhancedQuery);
-      console.log(&apos;=== QUERY ENHANCEMENT PROCESS END ===\n&apos;);
-
-      return enhancedQuery;
-    } catch (error) {
-      console.error(&apos;[CONTEXT ENHANCEMENT ERROR]&apos;, error);
-      console.log(&apos;=== QUERY ENHANCEMENT PROCESS END (WITH ERROR) ===\n&apos;);
-      // If there&apos;s an error, return the original query
-      return content;
-    }
-  }
-
-  /**
-   * Rewrites the user query based on chat history to make it standalone.
-   * Solves the &quot;What are its causes?&quot; problem.
-   */
-  private async generateStandaloneQuery(
-    content: string,
-    history: any[],
-    apiKey: string,
-    model: string
-  ): Promise&lt;string&gt; {
-    // 1. Cost Optimization: If no history, no need to rewrite.
-    if (!history || history.length === 0) {
-      console.log(&apos;[QUERY REWRITER]&apos;, &apos;Skipping rewrite - No history.&apos;);
-      return content;
-    }
-
-    // 2. Cost Optimization: Limit history to last 4 messages (2 turns)
-    // This keeps input tokens low for the free tier.
-    const recentHistory = history.slice(-4).map(msg =&gt;
-      `${msg.role === &apos;user&apos; ? &apos;User&apos; : &apos;Assistant&apos;}: ${msg.content}`
-    ).join(&apos;\n&apos;);
-
-    const prompt = `
-      Task: Rewrite the last user question to be a standalone query based on the conversation history.
-      Rules:
-      1. Replace pronouns (it, they, this) with specific nouns from history.
-      2. Keep the query concise.
-      3. If the question is already standalone, return it exactly as is.
-      4. Do NOT answer the question.
-
-      Conversation History:
-      ${recentHistory}
-
-      Last User Question:
-      ${content}
-
-      Standalone Query:
-    `;
-
-    try {
-      // Use a specialized instance for rewriting to avoid interfering with main chat state
-      // We reuse the existing Gemini service structure but make a quick generation call
-      const { geminiService } = await import(&apos;../gemini/geminiService&apos;);
-
-      // Note: We rely on the service already being initialized in AppInitializer,
-      // but we pass options to ensure we use a fast/cheap configuration.
-      const rewrittenQuery = await geminiService.generateResponse(
-        prompt,
-        undefined,
-        undefined,
-        {
-          temperature: 0.1, // Low temperature for deterministic rewriting
-          maxTokens: 100,   // Very low output tokens (saves limits)
-        }
-      );
-
-      const cleanedQuery = rewrittenQuery.trim();
-      console.log(&apos;[QUERY REWRITER]&apos;, `Original: &quot;${content}&quot; -&gt; Rewritten: &quot;${cleanedQuery}&quot;`);
-      return cleanedQuery;
-
-    } catch (error) {
-      console.error(&apos;[QUERY REWRITER ERROR]&apos;, error);
-      // Fallback: If API fails (rate limit), use original query so the app doesn&apos;t crash
-      return content;
-    }
-  }
-
-  /**
-   * Send a message and get AI response with RAG context
-   */
-  async sendMessage(
-    sessionId: string,
-    content: string,
-    onStreamEvent?: (event: ChatStreamEvent) =&gt; void,
-    userMessage?: MessageCreate
-  ): Promise&lt;void&gt; {
-    try {
-      console.log(&apos;\n=== CHAT PIPELINE PROCESS START ===&apos;);
-      console.log(&apos;[USER INPUT]&apos;, `Session: ${sessionId}, Query: &quot;${content}&quot;`);
-
-      // User message is now passed in as a parameter (already saved in chatStore)
-      console.log(&apos;[MESSAGE STATUS]&apos;, &apos;User message already stored in database by chatStore&apos;);
-
-      // Update progress: Query Rewriting (25%)
-      if (onStreamEvent) {
-        onStreamEvent({ type: &apos;status&apos;, message: &apos;Query Rewriting&apos; });
-      }
-      // Note: We&apos;ll update the store progress in the chatStore&apos;s sendMessage function
-
-      // Get enabled documents for the session
-      const sessionForDocuments = await this.indexedDBServices.sessionService.getSession(sessionId);
-      if (!sessionForDocuments) {
-        throw new Error(&apos;Session not found&apos;);
-      }
-
-      // 1. FETCH HISTORY (NEW STEP)
-      // We need the history BEFORE we do the search
-      console.log(&apos;[HISTORY]&apos;, &apos;Fetching chat history for context awareness...&apos;);
-      const history = await this.indexedDBServices.messageService.getMessagesBySession(
-        sessionId,
-        sessionForDocuments.userId
-      );
-
-      // Get Settings for model info
-      const settings = await this.indexedDBServices.settingsService.getSettings(sessionForDocuments.userId);
-      const apiKey = settings?.geminiApiKey || &apos;&apos;;
-      const model = settings?.model || &apos;gemini-2.5-flash-lite&apos;;
-
-      // 2. GENERATE STANDALONE QUERY (NEW STEP)
-      // This converts &quot;What are its causes?&quot; -&gt; &quot;What are the causes of cataract?&quot;
-      console.log(&apos;[REWRITING]&apos;, &apos;Generating standalone query...&apos;);
-      const standaloneQuery = await this.generateStandaloneQuery(content, history, apiKey, model);
-
-      // 🔴 PROMINENT LOG: Show the converted query for tracking
-      console.log(&apos;🔴 Converted query -:&apos;, `&quot;${standaloneQuery}&quot;`);
-
-      // Update progress: Embedding Generation (50%)
-      if (onStreamEvent) {
-        onStreamEvent({ type: &apos;status&apos;, message: &apos;Embedding Generation&apos; });
-      }
-
-      // 3. ENHANCE THE REWRITTEN QUERY, NOT THE ORIGINAL
-      // Modify this line to pass &apos;standaloneQuery&apos; instead of &apos;content&apos;
-      const enhancedQuery = await this.enhanceQueryWithContext(sessionId, standaloneQuery);
-      console.log(&apos;[FINAL SEARCH QUERY]&apos;, enhancedQuery);
-
-      const documents = await this.indexedDBServices.documentService.getDocumentsBySession(sessionId, sessionForDocuments.userId);
-      console.log(&apos;[DOCUMENT STATUS]&apos;, `Found ${documents.length} total documents in session ${sessionId}`);
-      console.log(&apos;[DOCUMENT STATUS]&apos;, &apos;Document details:&apos;, documents.map(doc =&gt; ({
-        id: doc.id,
-        filename: doc.filename,
-        enabled: doc.enabled,
-        status: doc.status
-      })));
-
-      const enabledDocuments = documents.filter(doc =&gt; doc.enabled);
-      console.log(&apos;[DOCUMENT STATUS]&apos;, `${enabledDocuments.length}/${documents.length} documents enabled`);
-
-      // Also check if there are any embeddings available for enabled documents
-      const indexedDBEmbeddingService = this.indexedDBServices.embeddingService;
-      let embeddings: any[] = [];
-
-      if (enabledDocuments.length &gt; 0) {
-        embeddings = await indexedDBEmbeddingService.getEnabledEmbeddingsBySession(sessionId, sessionForDocuments.userId);
-      }
-
-      console.log(&apos;[EMBEDDING STATUS]&apos;, `${embeddings.length} embeddings found for enabled documents`);
-
-      if (enabledDocuments.length === 0 || embeddings.length === 0) {
-        // No enabled documents or no embeddings available, just chat without context
-        console.log(&apos;[PROCESSING MODE]&apos;, &apos;Direct response (no RAG context available)&apos;);
-        await this.generateDirectResponse(sessionId, content, onStreamEvent);
-        console.log(&apos;=== CHAT PIPELINE PROCESS END ===\n&apos;);
-        return;
-      }
-
-      // 4. GENERATE EMBEDDING USING THE REWRITTEN QUERY
-      console.log(&apos;[EMBEDDING GENERATION]&apos;, &apos;Creating vector embedding for enhanced query...&apos;);
-      const queryEmbedding = await embeddingService.generateEmbedding(enhancedQuery);
-      console.log(&apos;[EMBEDDING GENERATED]&apos;, `Vector created with ${queryEmbedding.length} dimensions`);
-
-      // Update progress: Vector Search (75%)
-      if (onStreamEvent) {
-        onStreamEvent({ type: &apos;status&apos;, message: &apos;Vector Search&apos; });
-      }
-
-      // 5. PERFORM SEARCH USING THE REWRITTEN QUERY
-      console.log(&apos;[VECTOR SEARCH]&apos;, &apos;Performing hybrid search...&apos;);
-      const searchResults = await vectorSearchService.searchHybridEnhanced(
-        queryEmbedding,
-        sessionId,
-        enhancedQuery, // Use the enhanced, rewritten query here
-        {
-          maxResults: 8,
-          useDynamicWeighting: true,
-          textWeight: 0.3,
-          vectorWeight: 0.7,
-          userId: sessionForDocuments.userId // Ensure userId is passed
-        }
-      );
-      console.log(&apos;[SEARCH RESULTS]&apos;, `${searchResults.length} relevant chunks found`);
-      console.log(&apos;✅ CHUNKS USED =&apos;, searchResults.length);
-
-      // Update progress: Response Generation (90%)
-      if (onStreamEvent) {
-        onStreamEvent({ type: &apos;status&apos;, message: &apos;Response Generation&apos; });
-      }
-
-      // Log detailed search results for debugging
-      console.log(&apos;[SEARCH RESULTS DETAIL]&apos;, &apos;Detailed search results:&apos;);
-      searchResults.forEach((result, index) =&gt; {
-        console.log(`[SEARCH RESULT ${index}]`, {
-          chunkId: result.chunk.id,
-          documentTitle: result.document.title,
-          similarity: result.similarity,
-          chunkPage: result.chunk.page,
-          metadataPageNumber: result.chunk.metadata?.pageNumber,
-          isCombined: result.chunk.metadata?.isCombined,
-          originalChunkCount: result.chunk.metadata?.originalChunkCount,
-          combinedChunkIds: result.chunk.metadata?.combinedChunkIds,
-          contentPreview: result.chunk.content.substring(0, 150) + &apos;...&apos;
-        });
-      });
-
-      // Build context from search results
-      console.log(&apos;[CONTEXT BUILDING]&apos;, &apos;Constructing context from search results...&apos;);
-      const context = this.buildContext(searchResults);
-      console.log(&apos;[CONTEXT CREATED]&apos;, `Context string length: ${context.length} characters`);
-
-      // ... The rest of the function (Context Building, LLM Generation) remains the same ...
-      // IMPORTANT: The final LLM call (generateSimplifiedContextualResponse)
-      // should use the standalone query for better context understanding
-
-      await this.generateSimplifiedContextualResponse(
-        sessionId,
-        standaloneQuery, // Use the rewritten query instead of original content
-        this.buildContext(searchResults),
-        searchResults,
-        onStreamEvent
-      );
-
-      console.log(&apos;=== CHAT PIPELINE PROCESS END ===\n&apos;);
-
-    } catch (error) {
-      console.error(&apos;[PIPELINE ERROR]&apos;, &apos;Error in chat pipeline:&apos;, error);
-
-      // Save error message
-      const errorMessage: MessageCreate = {
-        sessionId,
-        content: &apos;Sorry, I encountered an error while processing your message. Please try again.&apos;,
-        role: MessageSender.ASSISTANT,
-      };
-
-      await this.indexedDBServices.messageService.createMessage(errorMessage);
-      console.log(&apos;[ERROR HANDLED]&apos;, &apos;Error message saved to database&apos;);
-      console.log(&apos;=== CHAT PIPELINE PROCESS END (WITH ERROR) ===\n&apos;);
-    }
-  }
-
-  /**
-   * Generate response without document context
-   */
-  private async generateDirectResponse(
-    sessionId: string,
-    content: string,
-    onStreamEvent?: (event: ChatStreamEvent) =&gt; void
-  ): Promise&lt;void&gt; {
-    console.log(&apos;\n=== DIRECT RESPONSE MODE (NO RAG) ===&apos;);
-    console.log(&apos;[DIRECT MODE]&apos;, &apos;Generating response without document context&apos;);
-
-    // Generate direct response without context
-    // Generate direct response without context
-    const session = await this.indexedDBServices.sessionService.getSession(sessionId);
-    if (!session) {
-      throw new Error(&apos;Session not found&apos;);
-    }
-
-    const settings = await this.indexedDBServices.settingsService.getSettings(session.userId);
-    const messages = await this.indexedDBServices.messageService.getMessagesBySession(sessionId, session.userId);
-    console.log(&apos;[CHAT HISTORY]&apos;, `Found ${messages.length} previous messages`);
-
-    let fullResponse = &apos;&apos;;
-    let citations: any[] = [];
-
-    await chatService.generateStreamingResponse(
-      [...messages, { id: &apos;temp&apos;, sessionId, content, role: MessageSender.USER, timestamp: new Date() }],
-      [],
-      settings || {
-        userId: session.userId,
-        geminiApiKey: &apos;&apos;,
-        model: &apos;gemma-3-27b-it&apos;,
-        temperature: 0.7,
-        maxTokens: 2048,
-        similarityThreshold: 0.7,
-        chunkSize: 1000,
-        chunkOverlap: 200,
-        theme: &apos;dark&apos;,
-        fontSize: &apos;medium&apos;,
-        showSources: true,
-        autoSave: true,
-        dataRetention: &apos;never&apos;,
-        enableAnalytics: false,
-        crashReporting: false,
-        debugMode: false,
-        logLevel: &apos;error&apos;
-      },
-      (event) =&gt; {
-        if (event.type === &apos;chunk&apos;) {
-          fullResponse += event.content || &apos;&apos;;
-          // Don&apos;t send chunks to UI for direct response either
-        } else if (event.type === &apos;citation&apos;) {
-          citations.push(event.citation);
-          // Don&apos;t send citations to UI during streaming
-        } else if (event.type === &apos;end&apos;) {
-          console.log(&apos;[DIRECT RESPONSE]&apos;, `Generated ${fullResponse.length} characters`);
-
-          // Save assistant message
-          const assistantMessage: MessageCreate = {
-            sessionId,
-            content: fullResponse,
-            role: MessageSender.ASSISTANT,
-            citations: citations.length &gt; 0 ? citations : undefined,
-          };
-
-          this.indexedDBServices.messageService.createMessage(assistantMessage);
-          console.log(&apos;[RESPONSE SAVED]&apos;, &apos;Direct response stored in database&apos;);
-          if (onStreamEvent) {
-            onStreamEvent({
-              type: &apos;done&apos;,
-              content: fullResponse,
-              citations: citations.length &gt; 0 ? citations : undefined
-            });
-          }
-        } else if (event.type === &apos;error&apos;) {
-          console.error(&apos;[DIRECT MODE ERROR]&apos;, &apos;Streaming error:&apos;, event.error);
-          if (onStreamEvent) onStreamEvent(event);
-        }
-      }
-    );
-
-    console.log(&apos;=== DIRECT RESPONSE MODE END ===\n&apos;);
-  }
-
-  /**
-   * Generate response with document context
-   */
-  private async generateContextualResponse(
-    sessionId: string,
-    content: string,
-    context: string,
-    searchResults: any[],
-    onStreamEvent?: (event: ChatStreamEvent) =&gt; void
-  ): Promise&lt;void&gt; {
-    console.log(&apos;\n=== CONTEXTUAL RESPONSE MODE (WITH RAG) ===&apos;);
-    console.log(&apos;[RAG MODE]&apos;, &apos;Generating response with document context&apos;);
-    console.log(&apos;[CONTEXT SUMMARY]&apos;, `Providing ${searchResults.length} context sources to LLM`);
-
-    // Get session for system prompt
-    // Get session for system prompt and userId
-    const session = await this.indexedDBServices.sessionService.getSession(sessionId);
-    if (!session) {
-      throw new Error(&apos;Session not found&apos;);
-    }
-    const systemPrompt = this.getDefaultSystemPrompt(searchResults);
-    console.log(&apos;[SYSTEM PROMPT]&apos;, &apos;Using default system prompt&apos;);
-
-    const settings = await this.indexedDBServices.settingsService.getSettings(session.userId);
-    console.log(&apos;[RAG SETTINGS]&apos;, &apos;Settings loaded for contextual response&apos;);
-    console.log(&apos;[RAG SETTINGS]&apos;, `API Key present: ${settings?.geminiApiKey ? &apos;YES&apos; : &apos;NO&apos;}`);
-    console.log(&apos;[RAG SETTINGS]&apos;, `Temperature: ${settings?.temperature}`);
-    console.log(&apos;[RAG SETTINGS]&apos;, `Max tokens: ${settings?.maxTokens}`);
-
-    const messages = await this.indexedDBServices.messageService.getMessagesBySession(sessionId, session.userId);
-    console.log(&apos;[CHAT HISTORY]&apos;, `Found ${messages.length} previous messages`);
-
-    let fullResponse = &apos;&apos;;
-    let citations: any[] = [];
-
-    await chatService.generateStreamingResponse(
-      [...messages, { id: &apos;temp&apos;, sessionId, content, role: MessageSender.USER, timestamp: new Date() }],
-      searchResults.map(result =&gt; ({
-        chunk: result.chunk,
-        similarity: result.similarity,
-        document: result.document
-      })),
-      settings || {
-        userId: session.userId,
-        geminiApiKey: &apos;&apos;,
-        model: &apos;gemma-3-27b-it&apos;,
-        temperature: 0.7,
-        maxTokens: 2048,
-        similarityThreshold: 0.7,
-        chunkSize: 1000,
-        chunkOverlap: 200,
-        theme: &apos;dark&apos;,
-        fontSize: &apos;medium&apos;,
-        showSources: true,
-        autoSave: true,
-        dataRetention: &apos;never&apos;,
-        enableAnalytics: false,
-        crashReporting: false,
-        debugMode: false,
-        logLevel: &apos;error&apos;
-      },
-      (event) =&gt; {
-        if (event.type === &apos;start&apos;) {
-          console.log(&apos;[RESPONSE START]&apos;, &apos;Beginning streaming response generation&apos;);
-          if (onStreamEvent) onStreamEvent({ type: &apos;status&apos;, message: &apos;Starting response generation...&apos; });
-        } else if (event.type === &apos;thinking&apos;) {
-          if (onStreamEvent) onStreamEvent({ type: &apos;status&apos;, message: event.content || &apos;Thinking...&apos; });
-        } else if (event.type === &apos;progress&apos;) {
-          if (onStreamEvent) onStreamEvent({
-            type: &apos;status&apos;,
-            message: `${event.progress?.message || &apos;Processing...&apos;} ${event.progress?.percentage || 0}%`
-          });
-        } else if (event.type === &apos;chunk&apos;) {
-          if (event.content) {
-            fullResponse += event.content;
-
-            // Validate chunk in real-time
-            const validation = this.validateStreamingChunk(event.content, fullResponse);
-            if (!validation.isValid) {
-              console.warn(&apos;[VALIDATION WARNING]&apos;, &apos;Streaming validation warning:&apos;, validation.warnings);
-            }
-            // Don&apos;t send text chunks to UI - we want to hide the unformatted response
-          }
-        } else if (event.type === &apos;citation&apos;) {
-          citations.push(event.citation);
-          // Don&apos;t send citations to UI during streaming
-        } else if (event.type === &apos;end&apos;) {
-          console.log(&apos;[RESPONSE COMPLETE]&apos;, `Generated ${fullResponse.length} characters with ${citations.length} citations`);
-
-          // Process citations with enhanced validation and renumbering
-          const citationResult = citationService.processCitations(fullResponse, searchResults);
-
-          // Log validation warnings if any
-          if (citationResult.validationWarnings &amp;&amp; citationResult.validationWarnings.length &gt; 0) {
-            console.warn(&apos;[CITATION WARNINGS]&apos;, &apos;Citation validation warnings:&apos;, citationResult.validationWarnings);
-            // Optionally send warnings to UI for debugging
-            if (onStreamEvent) {
-              onStreamEvent({
-                type: &apos;status&apos;,
-                message: `Citation warnings: ${citationResult.validationWarnings.length} issues found`
-              });
-            }
-          }
-
-          // Create metadata for storage with full content
-          const citationMetadata = citationService.extractCitationMetadata(
-            citationResult.citations,
-            searchResults
-          );
-
-          // Save assistant message
-          const assistantMessage: MessageCreate = {
-            sessionId,
-            content: citationResult.renumberedResponse,
-            role: MessageSender.ASSISTANT,
-            citations: citationMetadata,
-          };
-
-          this.indexedDBServices.messageService.createMessage(assistantMessage);
-          console.log(&apos;[RESPONSE SAVED]&apos;, &apos;Contextual response with citations stored in database&apos;);
-          console.log(&apos;[RESPONSE SAVED]&apos;, &apos;Contextual response with citations stored in database&apos;);
-          if (onStreamEvent) {
-            onStreamEvent({
-              type: &apos;done&apos;,
-              content: citationResult.renumberedResponse,
-              citations: citationMetadata
-            });
-          }
-        } else if (event.type === &apos;error&apos;) {
-          console.error(&apos;[RAG MODE ERROR]&apos;, &apos;Streaming error:&apos;, event.error);
-          if (onStreamEvent) onStreamEvent({
-            type: &apos;error&apos;,
-            message: event.error || &apos;Failed to generate response&apos;
-          });
-        }
-      }
-    );
-
-    console.log(&apos;=== CONTEXTUAL RESPONSE MODE END ===\n&apos;);
-  }
-
-  /**
-   * NEW: Generate response with simplified page-based citation system
-   */
-  private async generateSimplifiedContextualResponse(
-    sessionId: string,
-    content: string,
-    context: string,
-    searchResults: any[],
-    onStreamEvent?: (event: ChatStreamEvent) =&gt; void
-  ): Promise&lt;void&gt; {
-    console.log(&apos;\n=== SIMPLIFIED CONTEXTUAL RESPONSE MODE (WITH RAG) ===&apos;);
-    console.log(&apos;[SIMPLIFIED RAG MODE]&apos;, &apos;Generating response with simplified page-based citations&apos;);
-    console.log(&apos;[SIMPLIFIED CONTEXT]&apos;, `Providing ${searchResults.length} context sources to LLM`);
-
-    // Get session for system prompt
-    // Get session for system prompt and userId
-    const session = await this.indexedDBServices.sessionService.getSession(sessionId);
-    if (!session) {
-      throw new Error(&apos;Session not found&apos;);
-    }
-    const systemPrompt = this.getSimplifiedSystemPrompt(searchResults);
-    console.log(&apos;[SIMPLIFIED SYSTEM PROMPT]&apos;, &apos;Using default simplified system prompt&apos;);
-
-    const settings = await this.indexedDBServices.settingsService.getSettings(session.userId);
-    console.log(&apos;[SIMPLIFIED RAG SETTINGS]&apos;, &apos;Settings loaded for simplified contextual response&apos;);
-
-    const messages = await this.indexedDBServices.messageService.getMessagesBySession(sessionId, session.userId);
-    console.log(&apos;[SIMPLIFIED CHAT HISTORY]&apos;, `Found ${messages.length} previous messages`);
-
-    let fullResponse = &apos;&apos;;
-    let citations: any[] = [];
-
-    await chatService.generateStreamingResponse(
-      [...messages, { id: &apos;temp&apos;, sessionId, content, role: MessageSender.USER, timestamp: new Date() }],
-      searchResults.map(result =&gt; ({
-        chunk: result.chunk,
-        similarity: result.similarity,
-        document: result.document
-      })),
-      settings || {
-        userId: session.userId,
-        geminiApiKey: &apos;&apos;,
-        model: &apos;gemini-2.5-flash-lite&apos;,
-        temperature: 0.7,
-        maxTokens: 2048,
-        similarityThreshold: 0.7,
-        chunkSize: 1000,
-        chunkOverlap: 200,
-        theme: &apos;dark&apos;,
-        fontSize: &apos;medium&apos;,
-        showSources: true,
-        autoSave: true,
-        dataRetention: &apos;never&apos;,
-        enableAnalytics: false,
-        crashReporting: false,
-        debugMode: false,
-        logLevel: &apos;error&apos;
-      },
-      async (event) =&gt; {
-        if (event.type === &apos;start&apos;) {
-          console.log(&apos;[SIMPLIFIED RESPONSE START]&apos;, &apos;Beginning streaming response generation&apos;);
-          if (onStreamEvent) onStreamEvent({ type: &apos;status&apos;, message: &apos;Starting response generation...&apos; });
-        } else if (event.type === &apos;thinking&apos;) {
-          if (onStreamEvent) onStreamEvent({ type: &apos;status&apos;, message: event.content || &apos;Thinking...&apos; });
-        } else if (event.type === &apos;progress&apos;) {
-          if (onStreamEvent) onStreamEvent({
-            type: &apos;status&apos;,
-            message: `${event.progress?.message || &apos;Processing...&apos;} ${event.progress?.percentage || 0}%`
-          });
-        } else if (event.type === &apos;chunk&apos;) {
-          if (event.content) {
-            fullResponse += event.content;
-            // Don&apos;t send text chunks to UI - we want to hide the unformatted response
-          }
-        } else if (event.type === &apos;citation&apos;) {
-          citations.push(event.citation);
-          // Don&apos;t send citations to UI during streaming
-        } else if (event.type === &apos;end&apos;) {
-          console.log(&apos;[SIMPLIFIED RESPONSE COMPLETE]&apos;, `Generated ${fullResponse.length} characters with ${citations.length} citations`);
-
-          // Format response to bullet points before processing citations
-          // Use default settings if settings is undefined
-          const settingsForFormatting = settings || {
-            userId: session.userId,
-            geminiApiKey: &apos;&apos;,
-            model: &apos;gemini-2.5-flash-lite&apos;,
-            temperature: 0.7,
-            maxTokens: 2048,
-            similarityThreshold: 0.7,
-            chunkSize: 1000,
-            chunkOverlap: 200,
-            theme: &apos;dark&apos;,
-            fontSize: &apos;medium&apos;,
-            showSources: true,
-            autoSave: true,
-            dataRetention: &apos;never&apos;,
-            enableAnalytics: false,
-            crashReporting: false,
-            debugMode: false,
-            logLevel: &apos;error&apos;
-          };
-
-          console.log(&apos;[DEBUG FORMATTING]&apos;, &apos;About to call ResponseFormatter.formatToBulletPoints&apos;);
-          console.log(&apos;[DEBUG FORMATTING]&apos;, `Settings available: ${!!settingsForFormatting}`);
-          console.log(&apos;[DEBUG FORMATTING]&apos;, `Formatting API key: ${settingsForFormatting.geminiApiKey ? &apos;YES&apos; : &apos;NO&apos;}`);
-          console.log(&apos;[DEBUG FORMATTING]&apos;, `Main API key: ${settingsForFormatting.geminiApiKey ? &apos;YES&apos; : &apos;NO&apos;}`);
-          console.log(&apos;[DEBUG FORMATTING]&apos;, `Response length: ${fullResponse.length}`);
-
-          // Update progress: Response Formatting (95%)
-          if (onStreamEvent) {
-            onStreamEvent({ type: &apos;status&apos;, message: &apos;Response Formatting&apos; });
-          }
-
-          const formattedResponse = await ResponseFormatter.formatToBulletPoints(fullResponse, settingsForFormatting);
-          console.log(&apos;[BULLET FORMATTING]&apos;, `Converted to bullet points: ${formattedResponse.length} characters`);
-
-          // DEBUG: Log formatted response before citation processing
-          console.log(&apos;[PRE-CITATION DEBUG]&apos;, {
-            formattedResponseLength: formattedResponse.length,
-            hasNewlines: formattedResponse.includes(&apos;\n&apos;),
-            newlineCount: (formattedResponse.match(/\n/g) || []).length,
-            bulletCount: (formattedResponse.match(/^\* /gm) || []).length,
-            firstFewLines: formattedResponse.split(&apos;\n&apos;).slice(0, 5),
-            rawCharCodes: Array.from(formattedResponse.substring(0, 100)).map(c =&gt; `${c}(${c.charCodeAt(0)})`).join(&apos; &apos;)
-          });
-
-          // Process citations using simplified system
-          const citationResult: SimplifiedCitationGroup = citationService.processSimplifiedCitations(formattedResponse, searchResults);
-
-          // DEBUG: Log response after citation processing
-          console.log(&apos;[POST-CITATION DEBUG]&apos;, {
-            renumberedResponseLength: citationResult.renumberedResponse.length,
-            hasNewlines: citationResult.renumberedResponse.includes(&apos;\n&apos;),
-            newlineCount: (citationResult.renumberedResponse.match(/\n/g) || []).length,
-            bulletCount: (citationResult.renumberedResponse.match(/^\* /gm) || []).length,
-            firstFewLines: citationResult.renumberedResponse.split(&apos;\n&apos;).slice(0, 5),
-            rawCharCodes: Array.from(citationResult.renumberedResponse.substring(0, 100)).map(c =&gt; `${c}(${c.charCodeAt(0)})`).join(&apos; &apos;)
-          });
-
-          // DEBUG: Log before storing in database
-          console.log(&apos;[PRE-STORAGE DEBUG]&apos;, {
-            contentToStore: citationResult.renumberedResponse,
-            hasNewlines: citationResult.renumberedResponse.includes(&apos;\n&apos;),
-            newlineCount: (citationResult.renumberedResponse.match(/\n/g) || []).length,
-            bulletCount: (citationResult.renumberedResponse.match(/^\* /gm) || []).length,
-            firstFewLines: citationResult.renumberedResponse.split(&apos;\n&apos;).slice(0, 5)
-          });
-
-          console.log(&apos;[SIMPLIFIED CITATION RESULT]&apos;, {
-            originalCitations: citations.length,
-            processedCitations: citationResult.citations.length,
-            pageGroups: citationResult.citations.map(c =&gt; ({ document: c.document, page: c.page }))
-          });
-
-          // Convert simplified citations to message citation format for storage
-          const citationMetadata = citationService.convertSimplifiedToMessageCitations(citationResult.citations);
-
-          // Save assistant message with formatted response
-          const assistantMessage: MessageCreate = {
-            sessionId,
-            content: citationResult.renumberedResponse,
-            role: MessageSender.ASSISTANT,
-            citations: citationMetadata,
-          };
-
-          console.log(&apos;[MESSAGE STORAGE DEBUG]&apos;, &apos;About to store message with content:&apos;, {
-            content: citationResult.renumberedResponse,
-            hasNewlines: citationResult.renumberedResponse.includes(&apos;\n&apos;),
-            newlineCount: (citationResult.renumberedResponse.match(/\n/g) || []).length,
-            bulletCount: (citationResult.renumberedResponse.match(/^\* /gm) || []).length,
-            firstFewLines: citationResult.renumberedResponse.split(&apos;\n&apos;).slice(0, 5)
-          });
-
-          this.indexedDBServices.messageService.createMessage(assistantMessage);
-          console.log(&apos;[SIMPLIFIED RESPONSE SAVED]&apos;, &apos;Simplified contextual response with citations stored in database&apos;);
-          console.log(&apos;[SIMPLIFIED RESPONSE SAVED]&apos;, &apos;Simplified contextual response with citations stored in database&apos;);
-          if (onStreamEvent) {
-            onStreamEvent({
-              type: &apos;done&apos;,
-              content: citationResult.renumberedResponse,
-              citations: citationMetadata
-            });
-          }
-        } else if (event.type === &apos;error&apos;) {
-          console.error(&apos;[SIMPLIFIED RAG MODE ERROR]&apos;, &apos;Streaming error:&apos;, event.error);
-          if (onStreamEvent) onStreamEvent({
-            type: &apos;error&apos;,
-            message: event.error || &apos;Failed to generate response&apos;
-          });
-        }
-      }
-    );
-
-    console.log(&apos;=== SIMPLIFIED CONTEXTUAL RESPONSE MODE END ===\n&apos;);
-  }
-
-  /**
-   * Get simplified system prompt for page-based citation system
-   */
-  private getSimplifiedSystemPrompt(searchResults?: any[]): string {
-    const availableSources = searchResults?.length || 0;
-
-    return `You are a helpful AI assistant that answers questions based on the provided document context.
-
-CRITICAL CONSTRAINT - READ CAREFULLY:
-- You MUST ONLY use information from the provided context documents
-- You are FORBIDDEN from using any general knowledge, external information, or knowledge from your training data
-- If the context does not contain the answer, you MUST respond with &quot;I cannot answer this question based on the provided documents.&quot;
-- Do NOT attempt to answer questions about topics not covered in the context (e.g., &quot;who is the president&quot;, current events, general knowledge)
-- Every single statement you make must be supported by the provided context
-- NEVER answer questions about politics, current events, celebrities, sports, or any topic not in the documents
-- If someone asks &quot;who is the president&quot; or similar general knowledge questions, you must respond that you cannot answer based on the provided documents
-
-CONTEXT USAGE:
-- Use ONLY the provided context to inform your answers
-- Base your responses ENTIRELY on the given documents
-- Don&apos;t mention &quot;according to the context&quot; or similar phrases
-- If context doesn&apos;t contain relevant information, say so clearly
-
-MEDICAL ABBREVIATIONS:
-When processing medical queries, understand and use these common medical abbreviations:
-- &quot;rx&quot; or &quot;Rx&quot; means treatment of a certain condition
-- &quot;Tx&quot; or &quot;tx&quot; also menas means treatment
-- &quot;Dx&quot; or &quot;dx&quot; means diagnosis (you should search for history, clinical features, AND investigations of the condition)
-- &quot;inv&quot; or &quot;Inv&quot; means investigations or diagnostic tests
-- &quot;Give details about: mans Give all the information you can find about hte given query form the sources in a summarized way 
-- &quot;Features&quot; means ONLY CLINICAL FEATURES- give information on HISTORY and CLINICAL examination findings of the particualr condition
-
-
-SIMPLIFIED VANCOUVER CITATION REQUIREMENTS:
-- ALWAYS cite your sources using Vancouver style: [1], [2], [3] format
-- Each citation represents a PAGE from a document that contains the information you&apos;re citing
-- All chunks from the same page are already combined into a single citation
-- Use citations for ALL factual claims, statistics, quotes, and specific information
-- Citations are MANDATORY - every factual statement must have a citation
-- Don&apos;t cite general knowledge or common sense statements (but you shouldn&apos;t be using these anyway)
-- Place citations immediately after the information they support
-- Citations must be numbered sequentially in the order they appear in your response
-- CRITICAL: Only use citation numbers that correspond to the provided context sources (1 through ${availableSources})
-- NEVER invent citation numbers or use numbers outside of available range
-- Each citation number represents a specific page with combined content from that page
-- WARNING: Citing incorrect sources will mislead users and is unacceptable
-
-RESPONSE GUIDELINES:
-- Be accurate and helpful
-- Provide comprehensive but concise answers
-- Handle unit conversions for medical/technical data (e.g., temperatures, weights)
-- Maintain a professional but conversational tone
-- If multiple documents provide conflicting information, acknowledge the discrepancy
-
-ANSWER STRUCTURE:
-1. Direct answer to the question
-2. Supporting details with VERIFIED page-based citations
-3. Additional relevant context if available
-
-Remember: Your goal is to provide accurate, well-cited responses based SOLELY on the provided document context. NEVER use external knowledge. If the context doesn&apos;t contain the answer, explicitly state that you cannot answer based on the provided documents. CITATION ACCURACY IS YOUR HIGHEST PRIORITY.`;
-  }
-
-  /**
-   * Build context string from search results following Flutter app&apos;s approach
-   * Enhanced with clearer source labeling and content previews
-   * IMPROVED: Better page number detection and clearer source identification
-   */
-  private buildContext(searchResults: any[]): string {
-    if (searchResults.length === 0) {
-      return &apos;&apos;;
-    }
-
-    console.log(&apos;\n=== CONTEXT BUILDING DEBUG ===&apos;);
-    console.log(&apos;[BUILDING CONTEXT]&apos;, `Processing ${searchResults.length} search results for context`);
-
-    const contextParts: string[] = [];
-    contextParts.push(&apos;Retrieved Context Sources:\n&apos;);
-
-    for (let i = 0; i &lt; searchResults.length; i++) {
-      const result = searchResults[i];
-      const chunk = result.chunk;
-      const document = result.document;
-
-      // Enhanced page number detection - same logic as citation service
-      let pageInfo = &apos;&apos;;
-      if (chunk.metadata?.pageNumbers &amp;&amp; chunk.metadata.pageNumbers.length &gt; 0) {
-        pageInfo = ` (Page ${chunk.metadata.pageNumbers[0]})`;
-      } else if (chunk.page &amp;&amp; chunk.page &gt; 0) {
-        pageInfo = ` (Page ${chunk.page})`;
-      } else if (chunk.metadata?.pageNumber &amp;&amp; chunk.metadata.pageNumber &gt; 0) {
-        pageInfo = ` (Page ${chunk.metadata.pageNumber})`;
-      } else {
-        // Try to extract from content
-        const pagePatterns = [
-          /page\s+(\d+)/i,
-          /p\.?\s*(\d+)/i,
-          /第(\d+)页/,
-          /page\s+(\d+)\s+of/i,
-        ];
-
-        for (const pattern of pagePatterns) {
-          const match = chunk.content.match(pattern);
-          if (match &amp;&amp; match[1]) {
-            const extractedPage = parseInt(match[1], 10);
-            if (extractedPage &gt; 0) {
-              pageInfo = ` (Page ${extractedPage})`;
-              break;
-            }
-          }
-        }
-      }
-
-      // Create content preview for better source identification
-      const contentPreview = this.createContentPreview(chunk.content);
-      const similarityScore = result.similarity ? ` (Similarity: ${(result.similarity * 100).toFixed(1)}%)` : &apos;&apos;;
-
-      console.log(`[CONTEXT SOURCE ${i + 1}]`, {
-        documentTitle: document.title,
-        pageInfo: pageInfo.trim(),
-        similarity: result.similarity,
-        chunkId: chunk.id,
-        contentPreview: contentPreview,
-        isCombined: chunk.metadata?.isCombined,
-        originalChunkCount: chunk.metadata?.originalChunkCount
-      });
-
-      contextParts.push(`[${i + 1}] ${document.title}${pageInfo}${similarityScore}`);
-      contextParts.push(`Preview: ${contentPreview}`);
-      contextParts.push(&apos;&apos;);
-      contextParts.push(`Full Content:`);
-      contextParts.push(chunk.content.trim());
-      contextParts.push(&apos;&apos;);
-      contextParts.push(&apos;---&apos;);
-      contextParts.push(&apos;&apos;);
-    }
-
-    const finalContext = contextParts.join(&apos;\n&apos;).trim();
-    console.log(&apos;[CONTEXT BUILT]&apos;, `Final context length: ${finalContext.length} characters`);
-    console.log(&apos;=== CONTEXT BUILDING DEBUG END ===\n&apos;);
-
-    return finalContext;
-  }
-
-  /**
-   * Create a brief content preview to help identify relevant sources
-   */
-  private createContentPreview(content: string, maxLength: number = 150): string {
-    // Remove extra whitespace but preserve newlines for list formatting
-    const cleanedContent = content.trim().replace(/[ \t]+/g, &apos; &apos;);
-
-    if (cleanedContent.length &lt;= maxLength) {
-      return cleanedContent;
-    }
-
-    // Try to end at a sentence boundary
-    const truncated = cleanedContent.substring(0, maxLength);
-    const lastSentenceEnd = Math.max(
-      truncated.lastIndexOf(&apos;.&apos;),
-      truncated.lastIndexOf(&apos;!&apos;),
-      truncated.lastIndexOf(&apos;?&apos;)
-    );
-
-    if (lastSentenceEnd &gt; maxLength * 0.7) {
-      return truncated.substring(0, lastSentenceEnd + 1);
-    }
-
-    return truncated + &apos;...&apos;;
-  }
-
-
-  /**
-   * Get enhanced system prompt based on Flutter app&apos;s approach
-   */
-  private getDefaultSystemPrompt(searchResults?: any[]): string {
-    const availableSources = searchResults?.length || 0;
-
-    return `You are a helpful AI assistant that answers questions based on the provided document context.
-
-CRITICAL CONSTRAINT - READ CAREFULLY:
-- You MUST ONLY use information from the provided context documents
-- You are FORBIDDEN from using any general knowledge, external information, or knowledge from your training data
-- If the context does not contain the answer, you MUST respond with &quot;I cannot answer this question based on the provided documents.&quot;
-- Do NOT attempt to answer questions about topics not covered in the context (e.g., &quot;who is the president&quot;, current events, general knowledge)
-- Every single statement you make must be supported by the provided context
-- NEVER answer questions about politics, current events, celebrities, sports, or any topic not in the documents
-- If someone asks &quot;who is the president&quot; or similar general knowledge questions, you must respond that you cannot answer based on the provided documents
-
-CONTEXT USAGE:
-- Use ONLY the provided context to inform your answers
-- Base your responses ENTIRELY on the given documents
-- Don&apos;t mention &quot;according to the context&quot; or similar phrases
-- If context doesn&apos;t contain relevant information, say so clearly
-
-MEDICAL ABBREVIATIONS:
-When processing medical queries, understand and use these common medical abbreviations:
-- &quot;rx&quot; or &quot;Rx&quot; means treatment or prescription
-- &quot;Tx&quot; or &quot;tx&quot; means treatment
-- &quot;Dx&quot; or &quot;dx&quot; means diagnosis (you should search for history, clinical features, and investigations of the condition)
-- &quot;inv&quot; or &quot;Inv&quot; means investigations or diagnostic tests
-
-CRITICAL CITATION ACCURACY REQUIREMENTS:
-- BEFORE citing any source, VERIFY that the information you&apos;re presenting actually appears in that source
-- Each citation [number] MUST reference a source that CONTAINS the specific information you&apos;re citing
-- NEVER cite a source that discusses a different topic, even if it&apos;s related
-- Example: If you&apos;re defining &quot;cataract&quot;, ONLY cite sources that actually contain the cataract definition
-- DO NOT cite sources about ophthalmoscopy or ultrasound when defining cataract
-- Read each source carefully and ensure the content matches what you&apos;re claiming
-- If you&apos;re unsure whether a source contains the information, DO NOT cite it
-- It is BETTER to have fewer citations than to cite irrelevant sources
-
-VANCOUVER CITATION REQUIREMENTS:
-- ALWAYS cite your sources using Vancouver style: [1], [2], [3] format
-- Each citation must reference the specific document chunk that DIRECTLY supports your statement
-- Use citations for ALL factual claims, statistics, quotes, and specific information
-- Citations are MANDATORY - every factual statement must have a citation
-- Don&apos;t cite general knowledge or common sense statements (but you shouldn&apos;t be using these anyway)
-- Place citations immediately after the information they support
-- Citations must be numbered sequentially in the order they appear in your response
-- CRITICAL: Only use citation numbers that correspond to the provided context sources (1 through ${availableSources})
-- NEVER invent citation numbers or use numbers outside the available range
-- Each citation number must match exactly one source from the provided context
-- WARNING: Citing incorrect sources will mislead users and is unacceptable
-
-RESPONSE GUIDELINES:
-- Be accurate and helpful
-- Provide comprehensive but concise answers
-- Handle unit conversions for medical/technical data (e.g., temperatures, weights)
-- Maintain a professional but conversational tone
-- If multiple documents provide conflicting information, acknowledge the discrepancy
-
-CITATION VERIFICATION PROCESS:
-1. Make a factual claim
-2. IMMEDIATELY check if the source [number] actually contains this information
-3. If YES, add the citation
-4. If NO, either find the correct source or remove the claim
-5. Double-check: Does source [number] really say what I&apos;m claiming?
-
-ANSWER STRUCTURE:
-1. Direct answer to the question
-2. Supporting details with VERIFIED citations
-3. Additional relevant context if available
-
-Remember: Your goal is to provide accurate, well-cited responses based SOLELY on the provided document context. NEVER use external knowledge. If the context doesn&apos;t contain the answer, explicitly state that you cannot answer based on the provided documents. CITATION ACCURACY IS YOUR HIGHEST PRIORITY.`;
-  }
-
-  /**
-   * Clear chat history for a session
-   */
-  async clearHistory(sessionId: string): Promise&lt;void&gt; {
-    await this.indexedDBServices.messageService.deleteMessagesBySession(sessionId);
-  }
-
-  /**
-   * Get message history for a session
-   */
-  async getHistory(sessionId: string): Promise&lt;Message[]&gt; {
-    // Get session to verify ownership and get userId
-    const session = await this.indexedDBServices.sessionService.getSession(sessionId);
-    if (!session) {
-      throw new Error(&apos;Session not found&apos;);
-    }
-    return await this.indexedDBServices.messageService.getMessagesBySession(sessionId, session.userId);
-  }
-
-  /**
-   * Validate streaming chunk for quality control
-   */
-  private validateStreamingChunk(chunk: string, fullResponse: string): {
-    isValid: boolean;
-    warnings: string[];
-  } {
-    const warnings: string[] = [];
-    let isValid = true;
-
-    // Check for repeated content (possible loops)
-    if (fullResponse.length &gt; 100 &amp;&amp; chunk.length &gt; 0) {
-      const recentText = fullResponse.slice(-100);
-      if (recentText.includes(chunk) &amp;&amp; chunk.length &gt; 10) {
-        warnings.push(&apos;Possible content repetition detected&apos;);
-        isValid = false;
-      }
-    }
-
-    // Check for excessive citation density
-    const citationMatches = (fullResponse + chunk).match(/\[\d+\]/g);
-    if (citationMatches &amp;&amp; citationMatches.length &gt; 10) {
-      warnings.push(&apos;High citation density detected&apos;);
-    }
-
-    // Check for response getting too long
-    if (fullResponse.length &gt; 8000) {
-      warnings.push(&apos;Response approaching maximum length&apos;);
-    }
-
-    return { isValid, warnings };
-  }
-}
-
-// Singleton instance
-export const chatPipeline = new ChatPipeline();</file><file path="next.config.js">/** @type {import(&apos;next&apos;).NextConfig} */
-const webpack = require(&apos;webpack&apos;);
-
-const nextConfig = {
-  typescript: {
-    ignoreBuildErrors: false,
-  },
-  eslint: {
-    ignoreDuringBuilds: false,
-  },
-  // START NEW CODE
-  compiler: {
-    // Removes console.log in production, keeps console.error and console.warn
-    removeConsole: process.env.NODE_ENV === &quot;production&quot; ? { exclude: [&apos;error&apos;, &apos;warn&apos;] } : false,
-  },
-  // END NEW CODE
-
-  webpack: (config, { dev, isServer }) =&gt; {
-    // Enable WebAssembly support
-    config.experiments = {
-      ...config.experiments,
-      asyncWebAssembly: true,
-      layers: true,
-    };
-
-    // Add support for WebAssembly files
-    config.module.rules.push({
-      test: /\.wasm$/,
-      type: &apos;webassembly/async&apos;,
-    });
-
-    // FIX: Enhanced polyfills for Supabase compatibility in Edge Runtime
-    config.plugins.push(
-      new webpack.DefinePlugin({
-        &apos;process.version&apos;: JSON.stringify(&apos;v20.0.0&apos;),
-        &apos;process.versions&apos;: JSON.stringify({
-          node: &apos;20.0.0&apos;,
-          v8: &apos;10.0.0&apos;
-        }),
-      })
-    );
-
-    return config;
-  },
-  // Headers for security
-  async headers() {
-    return [
-      {
-        source: &apos;/(.*)&apos;,
-        headers: [
-          {
-            key: &apos;X-Content-Type-Options&apos;,
-            value: &apos;nosniff&apos;,
-          },
-          {
-            key: &apos;X-Frame-Options&apos;,
-            value: &apos;DENY&apos;,
-          },
-          {
-            key: &apos;X-XSS-Protection&apos;,
-            value: &apos;1; mode=block&apos;,
-          },
-        ],
-      },
-    ];
-  },
-};
-
-module.exports = nextConfig;</file><file path="src/app/page.tsx">&apos;use client&apos;;
+}</file><file path="src/app/page.tsx">&apos;use client&apos;;
 
 import React, { useEffect, useState } from &apos;react&apos;;
 
@@ -20939,7 +20047,861 @@ export const DocumentLibrary: React.FC&lt;DocumentLibraryProps&gt; = ({ sessionI
       &lt;/Card&gt;
     &lt;/div&gt;
   );
-};</file><file path="src/store/chatStore.ts">import { create } from &apos;zustand&apos;;
+};</file><file path="src/services/rag/chatPipeline.ts">import { getIndexedDBServices } from &apos;../indexedDB&apos;;
+import { chatService, embeddingService } from &apos;../gemini&apos;;
+import { groqService } from &apos;../groq/groqService&apos;;
+import { vectorSearchService } from &apos;./vectorSearch&apos;;
+import { documentProcessor } from &apos;./documentProcessor&apos;;
+import { citationService } from &apos;./citationService&apos;;
+import { ResponseFormatter } from &apos;./responseFormatter&apos;;
+import { MessageSender, type MessageCreate, type Message } from &apos;@/types&apos;;
+import type { ChatStreamEvent } from &apos;../gemini/chatService&apos;;
+import type { SimplifiedCitationGroup } from &apos;@/types/citation&apos;;
+
+export class ChatPipeline {
+  private indexedDBServices = getIndexedDBServices();
+
+  /**
+   * Enhance user query with context information
+   */
+  private async enhanceQueryWithContext(sessionId: string, content: string): Promise&lt;string&gt; {
+    try {
+      console.log(&apos;\n=== QUERY ENHANCEMENT PROCESS START ===&apos;);
+      console.log(&apos;[ORIGINAL QUERY]&apos;, content);
+
+      // Get session information
+      const session = await this.indexedDBServices.sessionService.getSession(sessionId);
+      const sessionName = session?.name || &apos;Unknown Session&apos;;
+      console.log(&apos;[SESSION INFO]&apos;, `Name: ${sessionName}, ID: ${sessionId}`);
+
+      // Get enabled documents for the session
+      if (!session) {
+        console.log(&apos;[CONTEXT ENHANCEMENT]&apos;, &apos;Session not found - returning original query&apos;);
+        console.log(&apos;=== QUERY ENHANCEMENT PROCESS END ===\n&apos;);
+        return content;
+      }
+      const enabledDocuments = await this.indexedDBServices.documentService.getEnabledDocumentsBySession(sessionId, session.userId);
+      console.log(&apos;[DOCUMENTS FOUND]&apos;, `${enabledDocuments.length} enabled documents`);
+
+      // Extract document names (use title if available, otherwise filename)
+      const documentNames = enabledDocuments.map(doc =&gt; doc.title || doc.filename).filter(Boolean);
+
+      // If no documents are enabled, return the original query
+      if (documentNames.length === 0) {
+        console.log(&apos;[CONTEXT ENHANCEMENT]&apos;, &apos;No enabled documents found - returning original query&apos;);
+        console.log(&apos;=== QUERY ENHANCEMENT PROCESS END ===\n&apos;);
+        return content;
+      }
+
+      // Format the related documents string
+      const relatedDocuments = documentNames.join(&apos;, &apos;);
+      console.log(&apos;[CONTEXT DOCUMENTS]&apos;, relatedDocuments);
+
+      // Create the enhanced query with context
+      const enhancedQuery = `${content} [Context - ${sessionName} and related to ${relatedDocuments}]`;
+
+      console.log(&apos;[ENHANCED QUERY]&apos;, enhancedQuery);
+      console.log(&apos;=== QUERY ENHANCEMENT PROCESS END ===\n&apos;);
+
+      return enhancedQuery;
+    } catch (error) {
+      console.error(&apos;[CONTEXT ENHANCEMENT ERROR]&apos;, error);
+      console.log(&apos;=== QUERY ENHANCEMENT PROCESS END (WITH ERROR) ===\n&apos;);
+      // If there&apos;s an error, return the original query
+      return content;
+    }
+  }
+
+  /**
+   * Rewrites the user query based on chat history to make it standalone.
+   * Solves the &quot;What are its causes?&quot; problem.
+   */
+  private async generateStandaloneQuery(
+    content: string,
+    history: any[],
+    apiKey: string,
+    model: string
+  ): Promise&lt;string&gt; {
+    // 1. Cost Optimization: If no history, no need to rewrite.
+    if (!history || history.length === 0) {
+      console.log(&apos;[QUERY REWRITER]&apos;, &apos;Skipping rewrite - No history.&apos;);
+      return content;
+    }
+
+    // 2. Cost Optimization: Limit history to last 4 messages (2 turns)
+    // This keeps input tokens low for the free tier.
+    const recentHistory = history.slice(-4).map(msg =&gt;
+      `${msg.role === &apos;user&apos; ? &apos;User&apos; : &apos;Assistant&apos;}: ${msg.content}`
+    ).join(&apos;\n&apos;);
+
+    const prompt = `
+      Task: Rewrite the last user question to be a standalone query based on the conversation history.
+      Rules:
+      1. Replace pronouns (it, they, this) with specific nouns from history.
+      2. Keep the query concise.
+      3. If the question is already standalone, return it exactly as is.
+      4. Do NOT answer the question.
+
+      Conversation History:
+      ${recentHistory}
+
+      Last User Question:
+      ${content}
+
+      Standalone Query:
+    `;
+
+    try {
+      // Use Groq for rewriting (Fast inference)
+      const rewrittenQuery = await groqService.generateResponse(
+        prompt,
+        &quot;You are a helpful assistant that rewrites queries.&quot;,
+        &apos;llama-3.3-70b-versatile&apos;,
+        {
+          temperature: 0.1, // Low temperature for deterministic rewriting
+          maxTokens: 100,   // Very low output tokens (saves limits)
+        }
+      );
+
+      const cleanedQuery = rewrittenQuery.trim();
+      console.log(&apos;[QUERY REWRITER]&apos;, `Original: &quot;${content}&quot; -&gt; Rewritten: &quot;${cleanedQuery}&quot;`);
+      return cleanedQuery;
+
+    } catch (error) {
+      console.error(&apos;[QUERY REWRITER ERROR]&apos;, error);
+      // Fallback: If API fails (rate limit), use original query so the app doesn&apos;t crash
+      return content;
+    }
+  }
+
+  /**
+   * Send a message and get AI response with RAG context
+   */
+  async sendMessage(
+    sessionId: string,
+    content: string,
+    onStreamEvent?: (event: ChatStreamEvent) =&gt; void,
+    userMessage?: MessageCreate
+  ): Promise&lt;void&gt; {
+    try {
+      console.log(&apos;\n=== CHAT PIPELINE PROCESS START ===&apos;);
+      console.log(&apos;[USER INPUT]&apos;, `Session: ${sessionId}, Query: &quot;${content}&quot;`);
+
+      // User message is now passed in as a parameter (already saved in chatStore)
+      console.log(&apos;[MESSAGE STATUS]&apos;, &apos;User message already stored in database by chatStore&apos;);
+
+      // Update progress: Query Rewriting (25%)
+      if (onStreamEvent) {
+        onStreamEvent({ type: &apos;status&apos;, message: &apos;Query Rewriting&apos; });
+      }
+      // Note: We&apos;ll update the store progress in the chatStore&apos;s sendMessage function
+
+      // Get enabled documents for the session
+      const sessionForDocuments = await this.indexedDBServices.sessionService.getSession(sessionId);
+      if (!sessionForDocuments) {
+        throw new Error(&apos;Session not found&apos;);
+      }
+
+      // 1. FETCH HISTORY (NEW STEP)
+      // We need the history BEFORE we do the search
+      console.log(&apos;[HISTORY]&apos;, &apos;Fetching chat history for context awareness...&apos;);
+      const history = await this.indexedDBServices.messageService.getMessagesBySession(
+        sessionId,
+        sessionForDocuments.userId
+      );
+
+      // Get Settings for model info
+      const settings = await this.indexedDBServices.settingsService.getSettings(sessionForDocuments.userId);
+      const apiKey = settings?.geminiApiKey || &apos;&apos;;
+      const model = settings?.model || &apos;gemini-2.5-flash-lite&apos;;
+
+      // 2. GENERATE STANDALONE QUERY (NEW STEP)
+      // This converts &quot;What are its causes?&quot; -&gt; &quot;What are the causes of cataract?&quot;
+      console.log(&apos;[REWRITING]&apos;, &apos;Generating standalone query...&apos;);
+      const standaloneQuery = await this.generateStandaloneQuery(content, history, apiKey, model);
+
+      // 🔴 PROMINENT LOG: Show the converted query for tracking
+      console.log(&apos;🔴 Converted query -:&apos;, `&quot;${standaloneQuery}&quot;`);
+
+      // Update progress: Embedding Generation (50%)
+      if (onStreamEvent) {
+        onStreamEvent({ type: &apos;status&apos;, message: &apos;Embedding Generation&apos; });
+      }
+
+      // 3. ENHANCE THE REWRITTEN QUERY, NOT THE ORIGINAL
+      // Modify this line to pass &apos;standaloneQuery&apos; instead of &apos;content&apos;
+      const enhancedQuery = await this.enhanceQueryWithContext(sessionId, standaloneQuery);
+      console.log(&apos;[FINAL SEARCH QUERY]&apos;, enhancedQuery);
+
+      const documents = await this.indexedDBServices.documentService.getDocumentsBySession(sessionId, sessionForDocuments.userId);
+      console.log(&apos;[DOCUMENT STATUS]&apos;, `Found ${documents.length} total documents in session ${sessionId}`);
+      console.log(&apos;[DOCUMENT STATUS]&apos;, &apos;Document details:&apos;, documents.map(doc =&gt; ({
+        id: doc.id,
+        filename: doc.filename,
+        enabled: doc.enabled,
+        status: doc.status
+      })));
+
+      const enabledDocuments = documents.filter(doc =&gt; doc.enabled);
+      console.log(&apos;[DOCUMENT STATUS]&apos;, `${enabledDocuments.length}/${documents.length} documents enabled`);
+
+      // Also check if there are any embeddings available for enabled documents
+      const indexedDBEmbeddingService = this.indexedDBServices.embeddingService;
+      let embeddings: any[] = [];
+
+      if (enabledDocuments.length &gt; 0) {
+        embeddings = await indexedDBEmbeddingService.getEnabledEmbeddingsBySession(sessionId, sessionForDocuments.userId);
+      }
+
+      console.log(&apos;[EMBEDDING STATUS]&apos;, `${embeddings.length} embeddings found for enabled documents`);
+
+      if (enabledDocuments.length === 0 || embeddings.length === 0) {
+        // No enabled documents or no embeddings available, just chat without context
+        console.log(&apos;[PROCESSING MODE]&apos;, &apos;Direct response (no RAG context available)&apos;);
+        await this.generateDirectResponse(sessionId, content, onStreamEvent);
+        console.log(&apos;=== CHAT PIPELINE PROCESS END ===\n&apos;);
+        return;
+      }
+
+      // 4. GENERATE EMBEDDING USING THE REWRITTEN QUERY
+      console.log(&apos;[EMBEDDING GENERATION]&apos;, &apos;Creating vector embedding for enhanced query...&apos;);
+      const queryEmbedding = await embeddingService.generateEmbedding(enhancedQuery);
+      console.log(&apos;[EMBEDDING GENERATED]&apos;, `Vector created with ${queryEmbedding.length} dimensions`);
+
+      // Update progress: Vector Search (75%)
+      if (onStreamEvent) {
+        onStreamEvent({ type: &apos;status&apos;, message: &apos;Vector Search&apos; });
+      }
+
+      // 5. PERFORM SEARCH USING THE REWRITTEN QUERY
+      console.log(&apos;[VECTOR SEARCH]&apos;, &apos;Performing hybrid search...&apos;);
+      const searchResults = await vectorSearchService.searchHybridEnhanced(
+        queryEmbedding,
+        sessionId,
+        enhancedQuery, // Use the enhanced, rewritten query here
+        {
+          maxResults: 8,
+          useDynamicWeighting: true,
+          textWeight: 0.3,
+          vectorWeight: 0.7,
+          userId: sessionForDocuments.userId // Ensure userId is passed
+        }
+      );
+      console.log(&apos;[SEARCH RESULTS]&apos;, `${searchResults.length} relevant chunks found`);
+      console.log(&apos;✅ CHUNKS USED =&apos;, searchResults.length);
+
+      // Update progress: Response Generation (90%)
+      if (onStreamEvent) {
+        onStreamEvent({ type: &apos;status&apos;, message: &apos;Response Generation&apos; });
+      }
+
+      // Log detailed search results for debugging
+      console.log(&apos;[SEARCH RESULTS DETAIL]&apos;, &apos;Detailed search results:&apos;);
+      searchResults.forEach((result, index) =&gt; {
+        console.log(`[SEARCH RESULT ${index}]`, {
+          chunkId: result.chunk.id,
+          documentTitle: result.document.title,
+          similarity: result.similarity,
+          chunkPage: result.chunk.page,
+          metadataPageNumber: result.chunk.metadata?.pageNumber,
+          isCombined: result.chunk.metadata?.isCombined,
+          originalChunkCount: result.chunk.metadata?.originalChunkCount,
+          combinedChunkIds: result.chunk.metadata?.combinedChunkIds,
+          contentPreview: result.chunk.content.substring(0, 150) + &apos;...&apos;
+        });
+      });
+
+      // Build context from search results
+      console.log(&apos;[CONTEXT BUILDING]&apos;, &apos;Constructing context from search results...&apos;);
+      const context = this.buildContext(searchResults);
+      console.log(&apos;[CONTEXT CREATED]&apos;, `Context string length: ${context.length} characters`);
+
+      // ... The rest of the function (Context Building, LLM Generation) remains the same ...
+      // IMPORTANT: The final LLM call (generateSimplifiedContextualResponse)
+      // should use the standalone query for better context understanding
+
+      await this.generateSimplifiedContextualResponse(
+        sessionId,
+        standaloneQuery, // Use the rewritten query instead of original content
+        this.buildContext(searchResults),
+        searchResults,
+        onStreamEvent
+      );
+
+      console.log(&apos;=== CHAT PIPELINE PROCESS END ===\n&apos;);
+
+    } catch (error) {
+      console.error(&apos;[PIPELINE ERROR]&apos;, &apos;Error in chat pipeline:&apos;, error);
+
+      // Save error message
+      const errorMessage: MessageCreate = {
+        sessionId,
+        content: &apos;Sorry, I encountered an error while processing your message. Please try again.&apos;,
+        role: MessageSender.ASSISTANT,
+      };
+
+      await this.indexedDBServices.messageService.createMessage(errorMessage);
+      console.log(&apos;[ERROR HANDLED]&apos;, &apos;Error message saved to database&apos;);
+      console.log(&apos;=== CHAT PIPELINE PROCESS END (WITH ERROR) ===\n&apos;);
+    }
+  }
+
+  /**
+   * Generate response without document context
+   */
+  private async generateDirectResponse(
+    sessionId: string,
+    content: string,
+    onStreamEvent?: (event: ChatStreamEvent) =&gt; void
+  ): Promise&lt;void&gt; {
+    console.log(&apos;\n=== DIRECT RESPONSE MODE (NO RAG) ===&apos;);
+    console.log(&apos;[DIRECT MODE]&apos;, &apos;Generating response without document context&apos;);
+
+    // Generate direct response without context
+    // Generate direct response without context
+    const session = await this.indexedDBServices.sessionService.getSession(sessionId);
+    if (!session) {
+      throw new Error(&apos;Session not found&apos;);
+    }
+
+    const settings = await this.indexedDBServices.settingsService.getSettings(session.userId);
+    const messages = await this.indexedDBServices.messageService.getMessagesBySession(sessionId, session.userId);
+    console.log(&apos;[CHAT HISTORY]&apos;, `Found ${messages.length} previous messages`);
+
+    let fullResponse = &apos;&apos;;
+    let citations: any[] = [];
+    const groqModel = settings?.groqModel || &apos;llama-3.3-70b-versatile&apos;;
+    const temperature = settings?.temperature || 0.7;
+    const maxTokens = settings?.maxTokens || 2048;
+
+    // Build conversation history for Groq
+    const groqPrompt = messages.map(msg =&gt;
+      `${msg.role === &apos;user&apos; ? &apos;User&apos; : &apos;Assistant&apos;}: ${msg.content}`
+    ).join(&apos;\n&apos;) + `\nUser: ${content}`;
+
+    await groqService.generateStreamingResponse(
+      groqPrompt,
+      &quot;You are a helpful medical AI assistant.&quot;,
+      groqModel,
+      {
+        temperature,
+        maxTokens,
+        onChunk: (chunk: string) =&gt; {
+          fullResponse += chunk;
+        }
+      }
+    );
+
+    console.log(&apos;[DIRECT RESPONSE]&apos;, `Generated ${fullResponse.length} characters`);
+
+    // Save assistant message
+    const assistantMessage: MessageCreate = {
+      sessionId,
+      content: fullResponse,
+      role: MessageSender.ASSISTANT,
+      citations: citations.length &gt; 0 ? citations : undefined,
+    };
+
+    await this.indexedDBServices.messageService.createMessage(assistantMessage);
+    console.log(&apos;[RESPONSE SAVED]&apos;, &apos;Direct response stored in database&apos;);
+
+    if (onStreamEvent) {
+      onStreamEvent({
+        type: &apos;done&apos;,
+        content: fullResponse,
+        citations: citations.length &gt; 0 ? citations : undefined
+      });
+    }
+
+    console.log(&apos;=== DIRECT RESPONSE MODE END ===\n&apos;);
+  }
+
+  /**
+   * Generate response with document context
+   */
+  private async generateContextualResponse(
+    sessionId: string,
+    content: string,
+    context: string,
+    searchResults: any[],
+    onStreamEvent?: (event: ChatStreamEvent) =&gt; void
+  ): Promise&lt;void&gt; {
+    console.log(&apos;\n=== CONTEXTUAL RESPONSE MODE (WITH RAG) ===&apos;);
+    console.log(&apos;[RAG MODE]&apos;, &apos;Generating response with document context&apos;);
+    console.log(&apos;[CONTEXT SUMMARY]&apos;, `Providing ${searchResults.length} context sources to LLM`);
+
+    // Get session for system prompt
+    // Get session for system prompt and userId
+    const session = await this.indexedDBServices.sessionService.getSession(sessionId);
+    if (!session) {
+      throw new Error(&apos;Session not found&apos;);
+    }
+    const systemPrompt = this.getDefaultSystemPrompt(searchResults);
+    console.log(&apos;[SYSTEM PROMPT]&apos;, &apos;Using default system prompt&apos;);
+
+    const settings = await this.indexedDBServices.settingsService.getSettings(session.userId);
+    console.log(&apos;[RAG SETTINGS]&apos;, &apos;Settings loaded for contextual response&apos;);
+    console.log(&apos;[RAG SETTINGS]&apos;, `API Key present: ${settings?.geminiApiKey ? &apos;YES&apos; : &apos;NO&apos;}`);
+    console.log(&apos;[RAG SETTINGS]&apos;, `Temperature: ${settings?.temperature}`);
+    console.log(&apos;[RAG SETTINGS]&apos;, `Max tokens: ${settings?.maxTokens}`);
+
+    const messages = await this.indexedDBServices.messageService.getMessagesBySession(sessionId, session.userId);
+    console.log(&apos;[CHAT HISTORY]&apos;, `Found ${messages.length} previous messages`);
+
+    let fullResponse = &apos;&apos;;
+
+    const groqModel = settings?.groqModel || &apos;llama-3.3-70b-versatile&apos;;
+
+    await groqService.generateStreamingResponse(
+      `Context:\n${context}\n\nQuestion: ${content}`,
+      systemPrompt,
+      groqModel,
+      {
+        temperature: settings?.temperature || 0.7,
+        maxTokens: settings?.maxTokens || 2048,
+        onChunk: (chunk: string) =&gt; {
+          fullResponse += chunk;
+        }
+      }
+    );
+
+    console.log(&apos;=== CONTEXTUAL RESPONSE MODE END ===\n&apos;);
+  }
+
+  /**
+   * NEW: Generate response with simplified page-based citation system
+   */
+  private async generateSimplifiedContextualResponse(
+    sessionId: string,
+    content: string,
+    context: string,
+    searchResults: any[],
+    onStreamEvent?: (event: ChatStreamEvent) =&gt; void
+  ): Promise&lt;void&gt; {
+    console.log(&apos;\n=== SIMPLIFIED CONTEXTUAL RESPONSE MODE (WITH RAG) ===&apos;);
+    console.log(&apos;[SIMPLIFIED RAG MODE]&apos;, &apos;Generating response with simplified page-based citations&apos;);
+    console.log(&apos;[SIMPLIFIED CONTEXT]&apos;, `Providing ${searchResults.length} context sources to LLM`);
+
+    // Get session for system prompt
+    // Get session for system prompt and userId
+    const session = await this.indexedDBServices.sessionService.getSession(sessionId);
+    if (!session) {
+      throw new Error(&apos;Session not found&apos;);
+    }
+    const systemPrompt = this.getSimplifiedSystemPrompt(searchResults);
+    console.log(&apos;[SIMPLIFIED SYSTEM PROMPT]&apos;, &apos;Using default simplified system prompt&apos;);
+
+    const settings = await this.indexedDBServices.settingsService.getSettings(session.userId);
+    console.log(&apos;[SIMPLIFIED RAG SETTINGS]&apos;, &apos;Settings loaded for simplified contextual response&apos;);
+
+    const messages = await this.indexedDBServices.messageService.getMessagesBySession(sessionId, session.userId);
+    console.log(&apos;[SIMPLIFIED CHAT HISTORY]&apos;, `Found ${messages.length} previous messages`);
+
+    let fullResponse = &apos;&apos;;
+
+    // Build context-aware prompt for Groq
+    const groqModel = settings?.groqModel || &apos;llama-3.3-70b-versatile&apos;;
+
+    // Construct simplified history and context
+    const recentMessages = messages.slice(-5).map(m =&gt;
+      `${m.role === &apos;user&apos; ? &apos;User&apos; : &apos;Assistant&apos;}: ${m.content}`
+    ).join(&apos;\n&apos;);
+
+    const groqPrompt = `
+      Context from documents:
+      ---
+      ${context}
+      ---
+      
+      Conversation History:
+      ${recentMessages}
+      
+      New Question: ${content}
+    `;
+
+    try {
+      await groqService.generateStreamingResponse(
+        groqPrompt,
+        systemPrompt,
+        groqModel,
+        {
+          temperature: settings?.temperature || 0.7,
+          maxTokens: settings?.maxTokens || 2048,
+          onChunk: (chunk: string) =&gt; {
+            fullResponse += chunk;
+          }
+        }
+      );
+
+      console.log(&apos;[SIMPLIFIED RESPONSE COMPLETE]&apos;, `Generated ${fullResponse.length} characters`);
+
+      // Format response to bullet points before processing citations
+      const settingsForFormatting = settings || {
+        userId: session.userId,
+        geminiApiKey: &apos;&apos;,
+        groqApiKey: &apos;&apos;,
+        groqModel: &apos;llama-3.3-70b-versatile&apos;,
+        model: &apos;gemma-3-27b-it&apos;,
+        geminiModel: &apos;gemma-3-27b-it&apos;,
+        temperature: 0.7,
+        maxTokens: 2048,
+        similarityThreshold: 0.7,
+        chunkSize: 1000,
+        chunkOverlap: 200,
+        theme: &apos;dark&apos; as const,
+        fontSize: &apos;medium&apos; as const,
+        showSources: true,
+        autoSave: true,
+        dataRetention: &apos;never&apos; as const,
+        enableAnalytics: false,
+        crashReporting: false,
+        debugMode: false,
+        logLevel: &apos;error&apos; as const
+      };
+
+      if (onStreamEvent) {
+        onStreamEvent({ type: &apos;status&apos;, message: &apos;Response Formatting&apos; });
+      }
+
+      const formattedResponse = await ResponseFormatter.formatToBulletPoints(fullResponse, settingsForFormatting);
+      console.log(&apos;[BULLET FORMATTING]&apos;, `Converted to bullet points: ${formattedResponse.length} characters`);
+
+      // Process citations using simplified system
+      const citationResult: SimplifiedCitationGroup = citationService.processSimplifiedCitations(formattedResponse, searchResults);
+
+      // Convert simplified citations to message citation format for storage
+      const citationMetadata = citationService.convertSimplifiedToMessageCitations(citationResult.citations);
+
+      // Save assistant message with formatted response
+      const assistantMessage: MessageCreate = {
+        sessionId,
+        content: citationResult.renumberedResponse,
+        role: MessageSender.ASSISTANT,
+        citations: citationMetadata,
+      };
+
+      await this.indexedDBServices.messageService.createMessage(assistantMessage);
+
+      if (onStreamEvent) {
+        onStreamEvent({
+          type: &apos;done&apos;,
+          content: citationResult.renumberedResponse,
+          citations: citationMetadata
+        });
+      }
+    } catch (error) {
+      console.error(&apos;[SIMPLIFIED RAG MODE ERROR]&apos;, &apos;Groq error:&apos;, error);
+      if (onStreamEvent) {
+        onStreamEvent({
+          type: &apos;error&apos;,
+          message: error instanceof Error ? error.message : &apos;Failed to generate response via Groq&apos;
+        });
+      }
+    }
+
+    console.log(&apos;=== SIMPLIFIED CONTEXTUAL RESPONSE MODE END ===\n&apos;);
+  }
+
+  /**
+   * Get simplified system prompt for page-based citation system
+   */
+  private getSimplifiedSystemPrompt(searchResults?: any[]): string {
+    const availableSources = searchResults?.length || 0;
+
+    return `You are a helpful AI assistant that answers questions based on the provided document context.
+
+CRITICAL CONSTRAINT - READ CAREFULLY:
+- You MUST ONLY use information from the provided context documents
+- You are FORBIDDEN from using any general knowledge, external information, or knowledge from your training data
+- If the context does not contain the answer, you MUST respond with &quot;I cannot answer this question based on the provided documents.&quot;
+- Do NOT attempt to answer questions about topics not covered in the context (e.g., &quot;who is the president&quot;, current events, general knowledge)
+- Every single statement you make must be supported by the provided context
+- NEVER answer questions about politics, current events, celebrities, sports, or any topic not in the documents
+- If someone asks &quot;who is the president&quot; or similar general knowledge questions, you must respond that you cannot answer based on the provided documents
+
+CONTEXT USAGE:
+- Use ONLY the provided context to inform your answers
+- Base your responses ENTIRELY on the given documents
+- Don&apos;t mention &quot;according to the context&quot; or similar phrases
+- If context doesn&apos;t contain relevant information, say so clearly
+
+MEDICAL ABBREVIATIONS:
+When processing medical queries, understand and use these common medical abbreviations:
+- &quot;rx&quot; or &quot;Rx&quot; means treatment of a certain condition
+- &quot;Tx&quot; or &quot;tx&quot; also menas means treatment
+- &quot;Dx&quot; or &quot;dx&quot; means diagnosis (you should search for history, clinical features, AND investigations of the condition)
+- &quot;inv&quot; or &quot;Inv&quot; means investigations or diagnostic tests
+- &quot;Give details about: mans Give all the information you can find about hte given query form the sources in a summarized way 
+- &quot;Features&quot; means ONLY CLINICAL FEATURES- give information on HISTORY and CLINICAL examination findings of the particualr condition
+
+
+SIMPLIFIED VANCOUVER CITATION REQUIREMENTS:
+- ALWAYS cite your sources using Vancouver style: [1], [2], [3] format
+- Each citation represents a PAGE from a document that contains the information you&apos;re citing
+- All chunks from the same page are already combined into a single citation
+- Use citations for ALL factual claims, statistics, quotes, and specific information
+- Citations are MANDATORY - every factual statement must have a citation
+- Don&apos;t cite general knowledge or common sense statements (but you shouldn&apos;t be using these anyway)
+- Place citations immediately after the information they support
+- Citations must be numbered sequentially in the order they appear in your response
+- CRITICAL: Only use citation numbers that correspond to the provided context sources (1 through ${availableSources})
+- NEVER invent citation numbers or use numbers outside of available range
+- Each citation number represents a specific page with combined content from that page
+- WARNING: Citing incorrect sources will mislead users and is unacceptable
+
+RESPONSE GUIDELINES:
+- Be accurate and helpful
+- Provide comprehensive but concise answers
+- Handle unit conversions for medical/technical data (e.g., temperatures, weights)
+- Maintain a professional but conversational tone
+- If multiple documents provide conflicting information, acknowledge the discrepancy
+
+ANSWER STRUCTURE:
+1. Direct answer to the question
+2. Supporting details with VERIFIED page-based citations
+3. Additional relevant context if available
+
+Remember: Your goal is to provide accurate, well-cited responses based SOLELY on the provided document context. NEVER use external knowledge. If the context doesn&apos;t contain the answer, explicitly state that you cannot answer based on the provided documents. CITATION ACCURACY IS YOUR HIGHEST PRIORITY.`;
+  }
+
+  /**
+   * Build context string from search results following Flutter app&apos;s approach
+   * Enhanced with clearer source labeling and content previews
+   * IMPROVED: Better page number detection and clearer source identification
+   */
+  private buildContext(searchResults: any[]): string {
+    if (searchResults.length === 0) {
+      return &apos;&apos;;
+    }
+
+    console.log(&apos;\n=== CONTEXT BUILDING DEBUG ===&apos;);
+    console.log(&apos;[BUILDING CONTEXT]&apos;, `Processing ${searchResults.length} search results for context`);
+
+    const contextParts: string[] = [];
+    contextParts.push(&apos;Retrieved Context Sources:\n&apos;);
+
+    for (let i = 0; i &lt; searchResults.length; i++) {
+      const result = searchResults[i];
+      const chunk = result.chunk;
+      const document = result.document;
+
+      // Enhanced page number detection - same logic as citation service
+      let pageInfo = &apos;&apos;;
+      if (chunk.metadata?.pageNumbers &amp;&amp; chunk.metadata.pageNumbers.length &gt; 0) {
+        pageInfo = ` (Page ${chunk.metadata.pageNumbers[0]})`;
+      } else if (chunk.page &amp;&amp; chunk.page &gt; 0) {
+        pageInfo = ` (Page ${chunk.page})`;
+      } else if (chunk.metadata?.pageNumber &amp;&amp; chunk.metadata.pageNumber &gt; 0) {
+        pageInfo = ` (Page ${chunk.metadata.pageNumber})`;
+      } else {
+        // Try to extract from content
+        const pagePatterns = [
+          /page\s+(\d+)/i,
+          /p\.?\s*(\d+)/i,
+          /第(\d+)页/,
+          /page\s+(\d+)\s+of/i,
+        ];
+
+        for (const pattern of pagePatterns) {
+          const match = chunk.content.match(pattern);
+          if (match &amp;&amp; match[1]) {
+            const extractedPage = parseInt(match[1], 10);
+            if (extractedPage &gt; 0) {
+              pageInfo = ` (Page ${extractedPage})`;
+              break;
+            }
+          }
+        }
+      }
+
+      // Create content preview for better source identification
+      const contentPreview = this.createContentPreview(chunk.content);
+      const similarityScore = result.similarity ? ` (Similarity: ${(result.similarity * 100).toFixed(1)}%)` : &apos;&apos;;
+
+      console.log(`[CONTEXT SOURCE ${i + 1}]`, {
+        documentTitle: document.title,
+        pageInfo: pageInfo.trim(),
+        similarity: result.similarity,
+        chunkId: chunk.id,
+        contentPreview: contentPreview,
+        isCombined: chunk.metadata?.isCombined,
+        originalChunkCount: chunk.metadata?.originalChunkCount
+      });
+
+      contextParts.push(`[${i + 1}] ${document.title}${pageInfo}${similarityScore}`);
+      contextParts.push(`Preview: ${contentPreview}`);
+      contextParts.push(&apos;&apos;);
+      contextParts.push(`Full Content:`);
+      contextParts.push(chunk.content.trim());
+      contextParts.push(&apos;&apos;);
+      contextParts.push(&apos;---&apos;);
+      contextParts.push(&apos;&apos;);
+    }
+
+    const finalContext = contextParts.join(&apos;\n&apos;).trim();
+    console.log(&apos;[CONTEXT BUILT]&apos;, `Final context length: ${finalContext.length} characters`);
+    console.log(&apos;=== CONTEXT BUILDING DEBUG END ===\n&apos;);
+
+    return finalContext;
+  }
+
+  /**
+   * Create a brief content preview to help identify relevant sources
+   */
+  private createContentPreview(content: string, maxLength: number = 150): string {
+    // Remove extra whitespace but preserve newlines for list formatting
+    const cleanedContent = content.trim().replace(/[ \t]+/g, &apos; &apos;);
+
+    if (cleanedContent.length &lt;= maxLength) {
+      return cleanedContent;
+    }
+
+    // Try to end at a sentence boundary
+    const truncated = cleanedContent.substring(0, maxLength);
+    const lastSentenceEnd = Math.max(
+      truncated.lastIndexOf(&apos;.&apos;),
+      truncated.lastIndexOf(&apos;!&apos;),
+      truncated.lastIndexOf(&apos;?&apos;)
+    );
+
+    if (lastSentenceEnd &gt; maxLength * 0.7) {
+      return truncated.substring(0, lastSentenceEnd + 1);
+    }
+
+    return truncated + &apos;...&apos;;
+  }
+
+
+  /**
+   * Get enhanced system prompt based on Flutter app&apos;s approach
+   */
+  private getDefaultSystemPrompt(searchResults?: any[]): string {
+    const availableSources = searchResults?.length || 0;
+
+    return `You are a helpful AI assistant that answers questions based on the provided document context.
+
+CRITICAL CONSTRAINT - READ CAREFULLY:
+- You MUST ONLY use information from the provided context documents
+- You are FORBIDDEN from using any general knowledge, external information, or knowledge from your training data
+- If the context does not contain the answer, you MUST respond with &quot;I cannot answer this question based on the provided documents.&quot;
+- Do NOT attempt to answer questions about topics not covered in the context (e.g., &quot;who is the president&quot;, current events, general knowledge)
+- Every single statement you make must be supported by the provided context
+- NEVER answer questions about politics, current events, celebrities, sports, or any topic not in the documents
+- If someone asks &quot;who is the president&quot; or similar general knowledge questions, you must respond that you cannot answer based on the provided documents
+
+CONTEXT USAGE:
+- Use ONLY the provided context to inform your answers
+- Base your responses ENTIRELY on the given documents
+- Don&apos;t mention &quot;according to the context&quot; or similar phrases
+- If context doesn&apos;t contain relevant information, say so clearly
+
+MEDICAL ABBREVIATIONS:
+When processing medical queries, understand and use these common medical abbreviations:
+- &quot;rx&quot; or &quot;Rx&quot; means treatment or prescription
+- &quot;Tx&quot; or &quot;tx&quot; means treatment
+- &quot;Dx&quot; or &quot;dx&quot; means diagnosis (you should search for history, clinical features, and investigations of the condition)
+- &quot;inv&quot; or &quot;Inv&quot; means investigations or diagnostic tests
+
+CRITICAL CITATION ACCURACY REQUIREMENTS:
+- BEFORE citing any source, VERIFY that the information you&apos;re presenting actually appears in that source
+- Each citation [number] MUST reference a source that CONTAINS the specific information you&apos;re citing
+- NEVER cite a source that discusses a different topic, even if it&apos;s related
+- Example: If you&apos;re defining &quot;cataract&quot;, ONLY cite sources that actually contain the cataract definition
+- DO NOT cite sources about ophthalmoscopy or ultrasound when defining cataract
+- Read each source carefully and ensure the content matches what you&apos;re claiming
+- If you&apos;re unsure whether a source contains the information, DO NOT cite it
+- It is BETTER to have fewer citations than to cite irrelevant sources
+
+VANCOUVER CITATION REQUIREMENTS:
+- ALWAYS cite your sources using Vancouver style: [1], [2], [3] format
+- Each citation must reference the specific document chunk that DIRECTLY supports your statement
+- Use citations for ALL factual claims, statistics, quotes, and specific information
+- Citations are MANDATORY - every factual statement must have a citation
+- Don&apos;t cite general knowledge or common sense statements (but you shouldn&apos;t be using these anyway)
+- Place citations immediately after the information they support
+- Citations must be numbered sequentially in the order they appear in your response
+- CRITICAL: Only use citation numbers that correspond to the provided context sources (1 through ${availableSources})
+- NEVER invent citation numbers or use numbers outside the available range
+- Each citation number must match exactly one source from the provided context
+- WARNING: Citing incorrect sources will mislead users and is unacceptable
+
+RESPONSE GUIDELINES:
+- Be accurate and helpful
+- Provide comprehensive but concise answers
+- Handle unit conversions for medical/technical data (e.g., temperatures, weights)
+- Maintain a professional but conversational tone
+- If multiple documents provide conflicting information, acknowledge the discrepancy
+
+CITATION VERIFICATION PROCESS:
+1. Make a factual claim
+2. IMMEDIATELY check if the source [number] actually contains this information
+3. If YES, add the citation
+4. If NO, either find the correct source or remove the claim
+5. Double-check: Does source [number] really say what I&apos;m claiming?
+
+ANSWER STRUCTURE:
+1. Direct answer to the question
+2. Supporting details with VERIFIED citations
+3. Additional relevant context if available
+
+Remember: Your goal is to provide accurate, well-cited responses based SOLELY on the provided document context. NEVER use external knowledge. If the context doesn&apos;t contain the answer, explicitly state that you cannot answer based on the provided documents. CITATION ACCURACY IS YOUR HIGHEST PRIORITY.`;
+  }
+
+  /**
+   * Clear chat history for a session
+   */
+  async clearHistory(sessionId: string): Promise&lt;void&gt; {
+    await this.indexedDBServices.messageService.deleteMessagesBySession(sessionId);
+  }
+
+  /**
+   * Get message history for a session
+   */
+  async getHistory(sessionId: string): Promise&lt;Message[]&gt; {
+    // Get session to verify ownership and get userId
+    const session = await this.indexedDBServices.sessionService.getSession(sessionId);
+    if (!session) {
+      throw new Error(&apos;Session not found&apos;);
+    }
+    return await this.indexedDBServices.messageService.getMessagesBySession(sessionId, session.userId);
+  }
+
+  /**
+   * Validate streaming chunk for quality control
+   */
+  private validateStreamingChunk(chunk: string, fullResponse: string): {
+    isValid: boolean;
+    warnings: string[];
+  } {
+    const warnings: string[] = [];
+    let isValid = true;
+
+    // Check for repeated content (possible loops)
+    if (fullResponse.length &gt; 100 &amp;&amp; chunk.length &gt; 0) {
+      const recentText = fullResponse.slice(-100);
+      if (recentText.includes(chunk) &amp;&amp; chunk.length &gt; 10) {
+        warnings.push(&apos;Possible content repetition detected&apos;);
+        isValid = false;
+      }
+    }
+
+    // Check for excessive citation density
+    const citationMatches = (fullResponse + chunk).match(/\[\d+\]/g);
+    if (citationMatches &amp;&amp; citationMatches.length &gt; 10) {
+      warnings.push(&apos;High citation density detected&apos;);
+    }
+
+    // Check for response getting too long
+    if (fullResponse.length &gt; 8000) {
+      warnings.push(&apos;Response approaching maximum length&apos;);
+    }
+
+    return { isValid, warnings };
+  }
+}
+
+// Singleton instance
+export const chatPipeline = new ChatPipeline();</file><file path="src/store/chatStore.ts">import { create } from &apos;zustand&apos;;
 import { devtools, persist } from &apos;zustand/middleware&apos;;
 import type { ChatStore } from &apos;./types&apos;;
 import { Message, MessageSender } from &apos;@/types/message&apos;;
@@ -21527,6 +21489,8 @@ export default function SettingsPage() {
 
   const [localSettings, setLocalSettings] = useState({
     geminiApiKey: &apos;&apos;,
+    groqApiKey: &apos;&apos;,
+    groqModel: &apos;llama-3.3-70b-versatile&apos;,
   });
 
   const [showApiKeyDialog, setShowApiKeyDialog] = useState(false);
@@ -21539,7 +21503,9 @@ export default function SettingsPage() {
   const [isMounted, setIsMounted] = useState(false);
   const [showSaveBanner, setShowSaveBanner] = useState&lt;&apos;success&apos; | &apos;error&apos; | null&gt;(null);
   const [isApiKeySaved, setIsApiKeySaved] = useState(false);
+  const [isGroqApiKeySaved, setIsGroqApiKeySaved] = useState(false);
   const [savedApiKey, setSavedApiKey] = useState(&apos;&apos;);
+  const [savedGroqApiKey, setSavedGroqApiKey] = useState(&apos;&apos;);
 
   useEffect(() =&gt; {
     setIsMounted(true);
@@ -21558,9 +21524,13 @@ export default function SettingsPage() {
       });
       setLocalSettings({
         geminiApiKey: settings.geminiApiKey || &apos;&apos;,
+        groqApiKey: settings.groqApiKey || &apos;&apos;,
+        groqModel: settings.groqModel || &apos;llama-3.3-70b-versatile&apos;,
       });
       setSavedApiKey(settings.geminiApiKey || &apos;&apos;);
+      setSavedGroqApiKey(settings.groqApiKey || &apos;&apos;);
       setIsApiKeySaved(!!settings.geminiApiKey);
+      setIsGroqApiKeySaved(!!settings.groqApiKey);
     }
   }, [settings]);
 
@@ -21571,6 +21541,9 @@ export default function SettingsPage() {
     // Re-enable save button if API key is changed from saved value
     if (field === &apos;geminiApiKey&apos; &amp;&amp; value !== savedApiKey) {
       setIsApiKeySaved(false);
+    }
+    if (field === &apos;groqApiKey&apos; &amp;&amp; value !== savedGroqApiKey) {
+      setIsGroqApiKeySaved(false);
     }
   };
 
@@ -21591,6 +21564,8 @@ export default function SettingsPage() {
     try {
       const defaultSettings = {
         geminiApiKey: &apos;&apos;,
+        groqApiKey: &apos;&apos;,
+        groqModel: &apos;llama-3.3-70b-versatile&apos;,
       };
       await updateSettings(defaultSettings);
       setLocalSettings(defaultSettings);
@@ -21619,6 +21594,62 @@ export default function SettingsPage() {
     }
   };
 
+
+  const handleTestGroqConnection = async () =&gt; {
+    if (!localSettings.groqApiKey) {
+      setValidationResult({
+        isValid: false,
+        error: {
+          type: &apos;INVALID_KEY&apos;,
+          message: &apos;Please enter a Groq API key first&apos;
+        }
+      });
+      setShowValidationError(true);
+      setConnectionStatus(&apos;error&apos;);
+      setTimeout(() =&gt; setConnectionStatus(&apos;idle&apos;), 3000);
+      return;
+    }
+
+    setIsTestingConnection(true);
+    setConnectionStatus(&apos;testing&apos;);
+    setShowValidationError(false);
+
+    try {
+      const { groqService } = await import(&apos;../../services/groq/groqService&apos;);
+      const isValid = await groqService.validateApiKey(localSettings.groqApiKey);
+
+      if (isValid) {
+        setValidationResult({ isValid: true });
+        setConnectionStatus(&apos;success&apos;);
+        setTimeout(() =&gt; setConnectionStatus(&apos;idle&apos;), 5000);
+      } else {
+        setValidationResult({
+          isValid: false,
+          error: {
+            type: &apos;INVALID_KEY&apos;,
+            message: &apos;Invalid Groq API Key. Please check and try again.&apos;
+          }
+        });
+        setConnectionStatus(&apos;error&apos;);
+        setShowValidationError(true);
+        setTimeout(() =&gt; setConnectionStatus(&apos;idle&apos;), 5000);
+      }
+    } catch (error) {
+      setValidationResult({
+        isValid: false,
+        error: {
+          type: &apos;UNKNOWN_ERROR&apos;,
+          message: &apos;Failed to test Groq API key connection&apos;,
+          details: error instanceof Error ? error.message : String(error)
+        }
+      });
+      setConnectionStatus(&apos;error&apos;);
+      setShowValidationError(true);
+      setTimeout(() =&gt; setConnectionStatus(&apos;idle&apos;), 5000);
+    } finally {
+      setIsTestingConnection(false);
+    }
+  };
 
   const handleTestConnection = async () =&gt; {
     if (!localSettings.geminiApiKey) {
@@ -21908,6 +21939,106 @@ export default function SettingsPage() {
                         allowFullScreen
                         loading=&quot;lazy&quot;
                       /&gt;
+                    &lt;/div&gt;
+                  &lt;/div&gt;
+                &lt;/div&gt;
+
+                {/* Groq Configuration */}
+                &lt;div className=&quot;mt-8 pt-8 border-t border-gray-200 dark:border-gray-700&quot;&gt;
+                  &lt;h3 className=&quot;text-lg font-medium text-gray-900 dark:text-white mb-4&quot;&gt;
+                    Groq LLM Configuration (For Faster Chat)
+                  &lt;/h3&gt;
+
+                  &lt;div className=&quot;space-y-4&quot;&gt;
+                    &lt;div&gt;
+                      &lt;label className=&quot;block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2&quot;&gt;
+                        Groq API Key
+                      &lt;/label&gt;
+                      &lt;Input
+                        type=&quot;password&quot;
+                        value={localSettings.groqApiKey}
+                        onChange={(e) =&gt; handleSettingChange(&apos;groqApiKey&apos;, e.target.value)}
+                        placeholder=&quot;gsk_...&quot;
+                        className=&quot;w-full mb-2&quot;
+                      /&gt;
+                      &lt;p className=&quot;text-xs text-gray-500 dark:text-gray-400 mb-4&quot;&gt;
+                        Get your key from &lt;a href=&quot;https://console.groq.com/keys&quot; target=&quot;_blank&quot; rel=&quot;noopener noreferrer&quot; className=&quot;text-blue-500 hover:underline&quot;&gt;Groq Console&lt;/a&gt;
+                      &lt;/p&gt;
+
+                      &lt;div className=&quot;grid grid-cols-1 md:grid-cols-2 gap-4 mb-6&quot;&gt;
+                        &lt;div&gt;
+                          &lt;label className=&quot;block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2&quot;&gt;
+                            Model selection
+                          &lt;/label&gt;
+                          &lt;select
+                            value={localSettings.groqModel}
+                            onChange={(e) =&gt; handleSettingChange(&apos;groqModel&apos;, e.target.value)}
+                            className=&quot;w-full px-3 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500&quot;
+                          &gt;
+                            &lt;option value=&quot;llama-3.3-70b-versatile&quot;&gt;Llama 3.3 70B (Versatile)&lt;/option&gt;
+                            &lt;option value=&quot;groq/compound&quot;&gt;Groq Compound (Agentic Tooling)&lt;/option&gt;
+                            &lt;option value=&quot;groq/compound-mini&quot;&gt;Groq Compound Mini&lt;/option&gt;
+                            &lt;option value=&quot;openai/gpt-oss-120b&quot;&gt;GPT-OSS 120B (OpenAI Open-weights)&lt;/option&gt;
+                            &lt;option value=&quot;openai/gpt-oss-20b&quot;&gt;GPT-OSS 20B&lt;/option&gt;
+                            &lt;option value=&quot;openai/gpt-oss-safeguard-20b&quot;&gt;GPT-OSS Safeguard 20B&lt;/option&gt;
+                            &lt;option value=&quot;meta-llama/llama-4-maverick-17b-128e-instruct&quot;&gt;Llama 4 Maverick 17B&lt;/option&gt;
+                            &lt;option value=&quot;meta-llama/llama-4-scout-17b-16e-instruct&quot;&gt;Llama 4 Scout (Multimodal)&lt;/option&gt;
+                            &lt;option value=&quot;deepseek-r1-distill-llama-70b&quot;&gt;DeepSeek R1 70B (Reasoning)&lt;/option&gt;
+                            &lt;option value=&quot;llama-3.1-8b-instant&quot;&gt;Llama 3.1 8B (Instant)&lt;/option&gt;
+                            &lt;option value=&quot;allam-2-7b&quot;&gt;Allam 2 7B&lt;/option&gt;
+                            &lt;option value=&quot;canopylabs/orpheus-arabic-saudi&quot;&gt;Orpheus Arabic Saudi&lt;/option&gt;
+                            &lt;option value=&quot;moonshotai/kimi-k2-instruct&quot;&gt;Kimi K2 Instruct&lt;/option&gt;
+                            &lt;option value=&quot;moonshotai/kimi-k2-instruct-0905&quot;&gt;Kimi K2 Instruct (0905)&lt;/option&gt;
+                            &lt;option value=&quot;qwen/qwen3-32b&quot;&gt;Qwen 3 32B&lt;/option&gt;
+                            &lt;option value=&quot;meta-llama/llama-guard-4-12b&quot;&gt;Llama Guard 4 12B (Safety)&lt;/option&gt;
+                            &lt;option value=&quot;meta-llama/llama-prompt-guard-2-22m&quot;&gt;Llama Prompt Guard 22M&lt;/option&gt;
+                            &lt;option value=&quot;meta-llama/llama-prompt-guard-2-86m&quot;&gt;Llama Prompt Guard 86M&lt;/option&gt;
+                            &lt;option value=&quot;playai-tts&quot;&gt;PlayAI TTS&lt;/option&gt;
+                            &lt;option value=&quot;playai-tts-arabic&quot;&gt;PlayAI TTS Arabic&lt;/option&gt;
+                            &lt;option value=&quot;whisper-large-v3&quot;&gt;Whisper Large V3 (Audio)&lt;/option&gt;
+                            &lt;option value=&quot;whisper-large-v3-turbo&quot;&gt;Whisper Large V3 Turbo&lt;/option&gt;
+                            &lt;option value=&quot;mixtral-8x7b-32768&quot;&gt;Mixtral 8x7B&lt;/option&gt;
+                          &lt;/select&gt;
+                        &lt;/div&gt;
+                      &lt;/div&gt;
+
+                      &lt;div className=&quot;flex justify-center&quot;&gt;
+                        &lt;Button
+                          variant=&quot;primary&quot;
+                          size=&quot;md&quot;
+                          className=&quot;w-full max-w-sm py-2 shadow-md hover:shadow-lg transition-all duration-200&quot;
+                          onClick={async () =&gt; {
+                            if (localSettings.groqApiKey) {
+                              try {
+                                console.log(&apos;[SETTINGS PAGE] Testing and saving Groq API key...&apos;);
+                                const { groqService } = await import(&apos;../../services/groq/groqService&apos;);
+                                const isValid = await groqService.validateApiKey(localSettings.groqApiKey);
+
+                                if (isValid) {
+                                  await updateSettings({
+                                    groqApiKey: localSettings.groqApiKey,
+                                    groqModel: localSettings.groqModel
+                                  });
+                                  setHasChanges(false);
+                                  setSavedGroqApiKey(localSettings.groqApiKey);
+                                  setIsGroqApiKeySaved(true);
+                                  setShowSaveBanner(&apos;success&apos;);
+                                  setTimeout(() =&gt; setShowSaveBanner(null), 3000);
+                                } else {
+                                  setShowSaveBanner(&apos;error&apos;);
+                                  setTimeout(() =&gt; setShowSaveBanner(null), 3000);
+                                }
+                              } catch (error) {
+                                setShowSaveBanner(&apos;error&apos;);
+                                setTimeout(() =&gt; setShowSaveBanner(null), 3000);
+                              }
+                            }
+                          }}
+                          disabled={!localSettings.groqApiKey || isGroqApiKeySaved}
+                        &gt;
+                          {isGroqApiKeySaved ? &apos;✓ Groq Key Saved&apos; : &apos;Save Groq Key&apos;}
+                        &lt;/Button&gt;
+                      &lt;/div&gt;
                     &lt;/div&gt;
                   &lt;/div&gt;
                 &lt;/div&gt;

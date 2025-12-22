@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Button } from '../ui/Button';
 import { useChat } from '../../store';
 
@@ -25,8 +25,20 @@ export const MessageInput: React.FC<MessageInputProps> = ({
 }) => {
   const [internalMessage, setInternalMessage] = useState('');
   const [isComposing, setIsComposing] = useState(false);
+  const [waitCountdown, setWaitCountdown] = useState(0);
+  const [initialWaitTime, setInitialWaitTime] = useState(0); // Track initial wait time for progress calculation
+  const [pendingMessage, setPendingMessage] = useState<string | null>(null);
   const internalTextareaRef = useRef<HTMLTextAreaElement>(null);
-  const { sendMessage, isStreaming } = useChat();
+  const countdownIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  const {
+    sendMessage,
+    isStreaming,
+    checkRateLimit,
+    recordQuestion,
+    isRateLimited,
+    setRateLimitState
+  } = useChat();
 
   // Use external value if provided, otherwise use internal state
   const message = value !== undefined ? value : internalMessage;
@@ -57,9 +69,103 @@ export const MessageInput: React.FC<MessageInputProps> = ({
     }
   }, [disabled]);
 
+  // Cleanup countdown interval on unmount
+  useEffect(() => {
+    return () => {
+      if (countdownIntervalRef.current) {
+        clearInterval(countdownIntervalRef.current);
+      }
+    };
+  }, []);
+
+  // Handle countdown completion - send the pending message
+  const sendPendingMessage = useCallback(async (messageToSend: string) => {
+    console.log('[RATE LIMIT]', 'Countdown finished, sending pending message');
+
+    // Record this question
+    recordQuestion();
+
+    // Clear rate limit state FIRST
+    setRateLimitState(false, 0);
+    setPendingMessage(null);
+    setWaitCountdown(0);
+    setInitialWaitTime(0);
+
+    try {
+      // Always use sendMessage directly from the store, not onSendMessage
+      // This prevents the parent component from also calling sendMessage
+      await sendMessage(sessionId, messageToSend);
+    } catch (error) {
+      console.error('Failed to send message:', error);
+    }
+  }, [sendMessage, sessionId, recordQuestion, setRateLimitState]);
+
+  // Countdown effect - use a ref to prevent double-sending
+  const messageSentRef = useRef(false);
+
+  useEffect(() => {
+    // Reset the sent flag when a new pending message is set
+    if (pendingMessage) {
+      messageSentRef.current = false;
+    }
+  }, [pendingMessage]);
+
+  useEffect(() => {
+    if (waitCountdown > 0 && pendingMessage) {
+      countdownIntervalRef.current = setInterval(() => {
+        setWaitCountdown(prev => {
+          const newValue = prev - 1;
+          if (newValue <= 0) {
+            if (countdownIntervalRef.current) {
+              clearInterval(countdownIntervalRef.current);
+              countdownIntervalRef.current = null;
+            }
+            // Send the pending message only if not already sent
+            if (pendingMessage && !messageSentRef.current) {
+              messageSentRef.current = true; // Mark as sent to prevent duplicates
+              sendPendingMessage(pendingMessage);
+            }
+            return 0;
+          }
+          return newValue;
+        });
+      }, 1000);
+
+      return () => {
+        if (countdownIntervalRef.current) {
+          clearInterval(countdownIntervalRef.current);
+          countdownIntervalRef.current = null;
+        }
+      };
+    }
+  }, [waitCountdown, pendingMessage, sendPendingMessage]);
+
+
   const handleSend = async () => {
     const trimmedMessage = message.trim();
-    if (!trimmedMessage || disabled || isStreaming || isComposing) {
+    if (!trimmedMessage || disabled || isStreaming || isComposing || waitCountdown > 0) {
+      return;
+    }
+
+    // Check rate limit
+    const waitTime = checkRateLimit();
+
+    if (waitTime > 0) {
+      console.log('[RATE LIMIT]', `User must wait ${waitTime} seconds`);
+
+      // Store the pending message and start countdown
+      setPendingMessage(trimmedMessage);
+      setWaitCountdown(waitTime);
+      setInitialWaitTime(waitTime); // Store initial time for progress calculation
+      setRateLimitState(true, waitTime);
+
+      // Clear the input immediately
+      if (onChange) {
+        onChange('');
+      } else {
+        setInternalMessage('');
+      }
+
       return;
     }
 
@@ -69,6 +175,9 @@ export const MessageInput: React.FC<MessageInputProps> = ({
     } else {
       setInternalMessage('');
     }
+
+    // Record this question for rate limiting
+    recordQuestion();
 
     try {
       if (onSendMessage) {
@@ -109,11 +218,37 @@ export const MessageInput: React.FC<MessageInputProps> = ({
     }
   };
 
-  const isDisabled = disabled || isStreaming || !message.trim();
+  const isDisabled = disabled || isStreaming || !message.trim() || waitCountdown > 0;
+  const isWaiting = waitCountdown > 0;
 
   return (
     <div className={`border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-3 sm:p-4 ${className}`}>
       <div className="max-w-4xl mx-auto">
+        {/* Rate Limit Waiting Indicator - styled like ResponseProgressBar */}
+        {isWaiting && (
+          <div className="mb-4 max-w-[85%] sm:max-w-xs lg:max-w-md xl:max-w-lg mx-auto">
+            {/* "Please wait!" text above */}
+            <div className="text-sm text-yellow-600 dark:text-yellow-400 font-medium mb-3 text-center">
+              ⚡ Please wait!
+            </div>
+
+            {/* Progress bar container */}
+            <div className="w-full bg-yellow-200 dark:bg-yellow-800 rounded-full h-2.5 mb-3">
+              {/* Progress bar fill - drains as time passes */}
+              <div
+                className="bg-yellow-500 dark:bg-yellow-400 h-2.5 rounded-full transition-all duration-1000 ease-linear"
+                style={{ width: `${initialWaitTime > 0 ? (waitCountdown / initialWaitTime) * 100 : 0}%` }}
+              ></div>
+            </div>
+
+            {/* Error message and countdown below */}
+            <div className="flex justify-between items-center text-xs text-yellow-600 dark:text-yellow-500">
+              <span className="truncate mr-2">Too many questions too fast</span>
+              <span className="font-mono font-medium">{waitCountdown}s</span>
+            </div>
+          </div>
+        )}
+
         <div className="flex gap-2 sm:gap-3">
           {/* Textarea */}
           <div className="flex-1 relative">
@@ -125,21 +260,25 @@ export const MessageInput: React.FC<MessageInputProps> = ({
               onPaste={handlePaste}
               onCompositionStart={() => setIsComposing(true)}
               onCompositionEnd={() => setIsComposing(false)}
-              placeholder={placeholder}
-              disabled={disabled || isStreaming}
+              placeholder={isWaiting ? 'Waiting to send your question...' : placeholder}
+              disabled={disabled || isStreaming || isWaiting}
               rows={1}
               className={`
                 w-full px-3 py-2 sm:px-4 sm:py-3 pr-10 sm:pr-12
-                border border-gray-300 dark:border-gray-600 rounded-lg
+                border rounded-lg
                 bg-white dark:bg-gray-800
                 text-gray-900 dark:text-gray-100
                 placeholder-gray-500 dark:placeholder-gray-400
                 resize-none overflow-hidden
-                focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent
+                focus:outline-none focus:ring-2 focus:border-transparent
                 disabled:opacity-50 disabled:cursor-not-allowed
                 transition-colors duration-200
                 text-base sm:text-sm
                 touch-manipulation
+                ${isWaiting
+                  ? 'border-yellow-400 dark:border-yellow-600 focus:ring-yellow-500'
+                  : 'border-gray-300 dark:border-gray-600 focus:ring-blue-500'
+                }
               `}
             />
 
@@ -156,22 +295,28 @@ export const MessageInput: React.FC<MessageInputProps> = ({
             onClick={handleSend}
             disabled={isDisabled}
             loading={isStreaming}
-            className="self-center px-3 sm:px-4"
+            className={`self-center px-3 sm:px-4 ${isWaiting ? 'bg-yellow-500 hover:bg-yellow-600' : ''}`}
           >
-            <svg
-              className="w-4 h-4"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"
-              />
-            </svg>
-            <span className="ml-1 sm:ml-2 hidden sm:inline">Send</span>
+            {isWaiting ? (
+              <span className="font-mono">{waitCountdown}s</span>
+            ) : (
+              <>
+                <svg
+                  className="w-4 h-4"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"
+                  />
+                </svg>
+                <span className="ml-1 sm:ml-2 hidden sm:inline">Send</span>
+              </>
+            )}
           </Button>
         </div>
 
@@ -184,6 +329,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
     </div>
   );
 };
+
 
 // Voice input button component (placeholder for future implementation)
 export const VoiceInputButton: React.FC<{

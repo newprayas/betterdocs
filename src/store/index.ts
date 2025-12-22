@@ -55,6 +55,12 @@ export const useChat = () => {
     setStreamingState: chatStore.setStreamingState,
     addMessage: chatStore.addMessage,
     setError: chatStore.setError,
+    // Rate limiting
+    isRateLimited: chatStore.isRateLimited,
+    rateLimitWaitSeconds: chatStore.rateLimitWaitSeconds,
+    checkRateLimit: chatStore.checkRateLimit,
+    setRateLimitState: chatStore.setRateLimitState,
+    recordQuestion: chatStore.recordQuestion,
   };
 };
 

@@ -504,44 +504,7 @@ export default function SettingsPage() {
                         Get your key from <a href="https://console.groq.com/keys" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">Groq Console</a>
                       </p>
 
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                            Model selection
-                          </label>
-                          <select
-                            value={localSettings.groqModel}
-                            onChange={(e) => handleSettingChange('groqModel', e.target.value)}
-                            className="w-full px-3 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          >
-                            <option value="llama-3.3-70b-versatile">Llama 3.3 70B (Versatile)</option>
-                            <option value="groq/compound">Groq Compound (Agentic Tooling)</option>
-                            <option value="groq/compound-mini">Groq Compound Mini</option>
-                            <option value="openai/gpt-oss-120b">GPT-OSS 120B (OpenAI Open-weights)</option>
-                            <option value="openai/gpt-oss-20b">GPT-OSS 20B</option>
-                            <option value="openai/gpt-oss-safeguard-20b">GPT-OSS Safeguard 20B</option>
-                            <option value="meta-llama/llama-4-maverick-17b-128e-instruct">Llama 4 Maverick 17B</option>
-                            <option value="meta-llama/llama-4-scout-17b-16e-instruct">Llama 4 Scout (Multimodal)</option>
-                            <option value="deepseek-r1-distill-llama-70b">DeepSeek R1 70B (Reasoning)</option>
-                            <option value="llama-3.1-8b-instant">Llama 3.1 8B (Instant)</option>
-                            <option value="allam-2-7b">Allam 2 7B</option>
-                            <option value="canopylabs/orpheus-arabic-saudi">Orpheus Arabic Saudi</option>
-                            <option value="moonshotai/kimi-k2-instruct">Kimi K2 Instruct</option>
-                            <option value="moonshotai/kimi-k2-instruct-0905">Kimi K2 Instruct (0905)</option>
-                            <option value="qwen/qwen3-32b">Qwen 3 32B</option>
-                            <option value="meta-llama/llama-guard-4-12b">Llama Guard 4 12B (Safety)</option>
-                            <option value="meta-llama/llama-prompt-guard-2-22m">Llama Prompt Guard 22M</option>
-                            <option value="meta-llama/llama-prompt-guard-2-86m">Llama Prompt Guard 86M</option>
-                            <option value="playai-tts">PlayAI TTS</option>
-                            <option value="playai-tts-arabic">PlayAI TTS Arabic</option>
-                            <option value="whisper-large-v3">Whisper Large V3 (Audio)</option>
-                            <option value="whisper-large-v3-turbo">Whisper Large V3 Turbo</option>
-                            <option value="mixtral-8x7b-32768">Mixtral 8x7B</option>
-                          </select>
-                        </div>
-                      </div>
-
-                      <div className="flex justify-center">
+                      <div className="flex justify-center mt-4">
                         <Button
                           variant="primary"
                           size="md"

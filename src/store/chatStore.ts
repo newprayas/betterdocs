@@ -34,6 +34,11 @@ export const useChatStore = create<ChatStore>()(
         isPreloading: false,
         preloadingProgress: 0,
 
+        // Rate limiting state
+        questionTimestamps: [],
+        isRateLimited: false,
+        rateLimitWaitSeconds: 0,
+
         // Actions
         loadMessages: async (sessionId: string) => {
           const { userId: currentUserId } = useSessionStore.getState();
@@ -409,6 +414,56 @@ export const useChatStore = create<ChatStore>()(
             progressPercentage: percentage,
             currentProgressStep: step
           });
+        },
+
+        // Rate limiting methods
+        checkRateLimit: () => {
+          const { questionTimestamps } = get();
+          const now = Date.now();
+          const oneMinuteAgo = now - 60000;
+
+          // Filter to get questions in the last minute
+          const recentQuestions = questionTimestamps.filter(ts => ts > oneMinuteAgo);
+
+          // If less than 2 questions in the last minute, no wait needed
+          if (recentQuestions.length < 2) {
+            return 0;
+          }
+
+          // Calculate when the oldest recent question will expire (+ 1 second buffer)
+          const oldestRecentQuestion = Math.min(...recentQuestions);
+          const waitTime = Math.ceil((oldestRecentQuestion + 60000 - now) / 1000) + 1;
+
+          console.log('[RATE LIMIT]', {
+            recentQuestions: recentQuestions.length,
+            waitTime,
+            oldestRecentQuestion: new Date(oldestRecentQuestion).toISOString()
+          });
+
+          return Math.max(0, waitTime);
+        },
+
+        setRateLimitState: (isLimited: boolean, waitSeconds: number) => {
+          set({
+            isRateLimited: isLimited,
+            rateLimitWaitSeconds: waitSeconds
+          });
+        },
+
+        recordQuestion: () => {
+          const { questionTimestamps } = get();
+          const now = Date.now();
+          const oneMinuteAgo = now - 60000;
+
+          // Keep only recent timestamps + the new one
+          const updatedTimestamps = [
+            ...questionTimestamps.filter(ts => ts > oneMinuteAgo),
+            now
+          ];
+
+          console.log('[RATE LIMIT]', 'Recording question. Total in last minute:', updatedTimestamps.length);
+
+          set({ questionTimestamps: updatedTimestamps });
         },
       }),
       {

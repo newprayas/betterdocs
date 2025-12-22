@@ -39,6 +39,11 @@ export interface ChatStore {
   isPreloading: boolean;
   preloadingProgress: number;
 
+  // Rate limiting state
+  questionTimestamps: number[];
+  isRateLimited: boolean;
+  rateLimitWaitSeconds: number;
+
   // Actions
   loadMessages: (sessionId: string) => Promise<void>;
   preloadMessages: (sessionIds: string[]) => Promise<void>;
@@ -49,6 +54,11 @@ export interface ChatStore {
   setError: (error: string | null) => void;
   setReadingSourcesState: (isReadingSources: boolean) => void;
   setProgressState: (percentage: number, step: string) => void;
+
+  // Rate limiting actions
+  checkRateLimit: () => number; // Returns wait time in seconds, 0 if OK
+  setRateLimitState: (isLimited: boolean, waitSeconds: number) => void;
+  recordQuestion: () => void;
 }
 
 export interface DocumentStore {

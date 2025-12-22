@@ -26,7 +26,7 @@ export class VectorSearchService {
 
       // Get embeddings for enabled documents only
       let embeddings: EmbeddingChunk[];
-      
+
       if (documentIds && documentIds.length > 0) {
         embeddings = await this.getEmbeddingsByDocumentIds(documentIds);
       } else {
@@ -38,16 +38,16 @@ export class VectorSearchService {
 
       // Calculate similarities using optimized cosine similarity
       const results: VectorSearchResult[] = [];
-      
+
       for (const embedding of embeddings) {
         // Use pre-computed norm if available
         const embeddingNorm = embedding.metadata?.embeddingNorm || calculateVectorNorm(embedding.embedding);
         const similarity = cosineSimilarity(queryEmbedding, embedding.embedding);
-        
+
         if (similarity >= similarityThreshold) {
           // Get document info from the pre-fetched map (O(1) lookup instead of database call)
           const document = documentMap.get(embedding.documentId);
-          
+
           if (document) {
             results.push({
               chunk: embedding,
@@ -77,12 +77,12 @@ export class VectorSearchService {
 
   private async getEmbeddingsByDocumentIds(documentIds: string[]): Promise<EmbeddingChunk[]> {
     const embeddings: EmbeddingChunk[] = [];
-    
+
     for (const documentId of documentIds) {
       const documentEmbeddings = await this.embeddingService.getEmbeddingsByDocument(documentId);
       embeddings.push(...documentEmbeddings);
     }
-    
+
     return embeddings;
   }
 
@@ -103,31 +103,31 @@ export class VectorSearchService {
   ): Promise<Map<string, any>> {
     // Collect all unique document IDs from embeddings
     const uniqueDocumentIds = new Set<string>();
-    
+
     // Add document IDs from embeddings
     embeddings.forEach(embedding => {
       uniqueDocumentIds.add(embedding.documentId);
     });
-    
+
     // Add specific document IDs if provided
     if (documentIds) {
       documentIds.forEach(id => uniqueDocumentIds.add(id));
     }
-    
+
     // If no specific document IDs and we have a sessionId, get all enabled documents
     if (uniqueDocumentIds.size === 0 && sessionId) {
       const enabledDocuments = await this.documentService.getEnabledDocumentsBySession(sessionId, userId || '');
       enabledDocuments.forEach(doc => uniqueDocumentIds.add(doc.id));
     }
-    
+
     // Fetch all documents in batch
     const documentPromises = Array.from(uniqueDocumentIds).map(async (docId) => {
       const document = await this.documentService.getDocument(docId, userId);
       return document ? [docId, document] as [string, any] : null;
     });
-    
+
     const documentEntries = await Promise.all(documentPromises);
-    
+
     // Create Map for O(1) lookups
     const documentMap = new Map<string, any>();
     documentEntries.forEach(entry => {
@@ -135,7 +135,7 @@ export class VectorSearchService {
         documentMap.set(entry[0], entry[1]);
       }
     });
-    
+
     return documentMap;
   }
 
@@ -155,14 +155,14 @@ export class VectorSearchService {
   private combineChunksByPage(results: VectorSearchResult[]): VectorSearchResult[] {
     console.log('\n=== CHUNK COMBINATION DEBUG START ===');
     console.log('[COMBINE INPUT]', `Processing ${results.length} chunks for combination`);
-    
+
     const pageMap = new Map<string, VectorSearchResult[]>();
 
     // Group chunks by document and page
     for (const result of results) {
       const pageNumber = this.getEffectivePageNumber(result);
       const pageKey = `${result.document.id}_${pageNumber || 'unknown'}`;
-      
+
       /* console.log('[CHUNK ANALYSIS]', {
         chunkId: result.chunk.id,
         documentId: result.document.id,
@@ -174,7 +174,7 @@ export class VectorSearchService {
         pageKey,
         contentPreview: result.chunk.content.substring(0, 100) + '...'
       }); */
-      
+
       if (!pageMap.has(pageKey)) {
         pageMap.set(pageKey, []);
       }
@@ -233,11 +233,11 @@ export class VectorSearchService {
   private createCombinedChunk(chunks: VectorSearchResult[]): VectorSearchResult {
     console.log('\n=== CREATE COMBINED CHUNK DEBUG START ===');
     console.log('[COMBINE INPUT]', `Combining ${chunks.length} chunks`);
-    
+
     // Sort by similarity to find the highest scoring chunk
     const sortedChunks = [...chunks].sort((a, b) => b.similarity - a.similarity);
     const highestScoringChunk = sortedChunks[0];
-    
+
     console.log('[SIMILARITY RANKING]', 'Chunks sorted by similarity:');
     /* sortedChunks.forEach((chunk, index) => {
       console.log(`[RANK ${index + 1}]`, {
@@ -249,7 +249,7 @@ export class VectorSearchService {
         contentPreview: chunk.chunk.content.substring(0, 80) + '...'
       });
     }); */
-    
+
     console.log('[HIGHEST SCORING]', {
       chunkId: highestScoringChunk.chunk.id,
       similarity: highestScoringChunk.similarity,
@@ -258,7 +258,7 @@ export class VectorSearchService {
       effectivePage: this.getEffectivePageNumber(highestScoringChunk),
       selectedAsBase: true
     });
-    
+
     // Collect all unique page numbers from the chunks
     const allPageNumbers = new Set<number>();
     chunks.forEach(chunk => {
@@ -267,23 +267,23 @@ export class VectorSearchService {
         allPageNumbers.add(effectivePage);
       }
     });
-    
+
     const sortedPageNumbers = Array.from(allPageNumbers).sort((a, b) => a - b);
     console.log('[PAGE COLLECTION]', {
       allUniquePages: sortedPageNumbers,
       pageCount: sortedPageNumbers.length,
       pageRange: sortedPageNumbers.length > 1 ? `${sortedPageNumbers[0]}-${sortedPageNumbers[sortedPageNumbers.length - 1]}` : `${sortedPageNumbers[0]}`
     });
-    
+
     // Combine content from all chunks with clear separators
     const combinedContent = chunks
       .sort((a, b) => a.chunk.chunkIndex - b.chunk.chunkIndex) // Maintain original order
       .map(chunk => chunk.chunk.content)
       .join('\n---\n');
-    
+
     // Create combined chunk IDs for reference
     const combinedChunkIds = chunks.map(c => c.chunk.id);
-    
+
     // Create a new combined chunk with all page numbers preserved
     const combinedChunk: EmbeddingChunk = {
       ...highestScoringChunk.chunk,
@@ -330,17 +330,17 @@ export class VectorSearchService {
       console.log('[EFFECTIVE PAGE]', `Using first page from pageNumbers array: ${result.chunk.metadata.pageNumbers[0]} for combined chunk`);
       return result.chunk.metadata.pageNumbers[0];
     }
-    
+
     // Priority 2: Direct page field from chunk
     if (result.chunk.page && result.chunk.page > 0) {
       return result.chunk.page;
     }
-    
+
     // Priority 3: Metadata pageNumber
     if (result.chunk.metadata?.pageNumber && result.chunk.metadata.pageNumber > 0) {
       return result.chunk.metadata.pageNumber;
     }
-    
+
     // Priority 4: Try to extract from content (similar to citation service)
     const content = result.chunk.content;
     const pagePatterns = [
@@ -359,7 +359,7 @@ export class VectorSearchService {
         }
       }
     }
-    
+
     return undefined;
   }
 
@@ -372,13 +372,13 @@ export class VectorSearchService {
     if (result.chunk.metadata?.pageNumbers && result.chunk.metadata.pageNumbers.length > 0) {
       return result.chunk.metadata.pageNumbers;
     }
-    
+
     // For single chunks, try to get the effective page number
     const effectivePage = this.getEffectivePageNumber(result);
     if (effectivePage !== undefined) {
       return [effectivePage];
     }
-    
+
     return undefined;
   }
 
@@ -427,7 +427,7 @@ export class VectorSearchService {
       textResults.forEach(result => {
         const key = result.chunk.id;
         const existing = combinedResults.get(key);
-        
+
         if (existing) {
           // Combine scores
           existing.similarity = Math.min(1, existing.similarity + result.similarity * textWeight);
@@ -458,22 +458,22 @@ export class VectorSearchService {
     try {
       const embeddings = await this.embeddingService.getEnabledEmbeddingsBySession(sessionId, userId);
       const queryLower = query.toLowerCase();
-      
+
       // Batch fetch all relevant documents to eliminate N+1 queries
       const documentMap = await this.batchFetchDocuments(embeddings, undefined, sessionId, userId);
-      
+
       const results: VectorSearchResult[] = [];
 
       for (const embedding of embeddings) {
         const contentLower = embedding.content.toLowerCase();
-        
+
         // Advanced text scoring
         const score = this.calculateTextScore(queryLower, contentLower);
 
         if (score > 0) {
           // Get document info from the pre-fetched map (O(1) lookup instead of database call)
           const document = documentMap.get(embedding.documentId);
-          
+
           if (document) {
             results.push({
               chunk: embedding,
@@ -503,7 +503,7 @@ export class VectorSearchService {
   private calculateTextScore(query: string, content: string): number {
     const queryWords = query.split(/\s+/).filter(word => word.length > 2); // Filter out very short words
     const contentWords = content.split(/\s+/);
-    
+
     let score = 0;
     let exactPhraseMatches = 0;
     let partialMatches = 0;
@@ -518,7 +518,7 @@ export class VectorSearchService {
     // Individual word matching with proximity consideration
     for (let i = 0; i < queryWords.length; i++) {
       const queryWord = queryWords[i];
-      
+
       // Find all positions of this word in content
       const positions: number[] = [];
       for (let j = 0; j < contentWords.length; j++) {
@@ -541,7 +541,7 @@ export class VectorSearchService {
           const nextQueryWord = queryWords[i + 1];
           for (const pos of positions) {
             if (pos + 1 < contentWords.length &&
-                contentWords[pos + 1].includes(nextQueryWord)) {
+              contentWords[pos + 1].includes(nextQueryWord)) {
               wordProximityScore += 0.3;
             }
           }
@@ -597,7 +597,7 @@ export class VectorSearchService {
 
       if (useDynamicWeighting) {
         const queryAnalysis = this.analyzeQuery(queryText);
-        
+
         // Adjust weights based on query type
         if (queryAnalysis.isSpecificQuery) {
           finalVectorWeight = Math.min(0.9, vectorWeight + 0.2);
@@ -635,7 +635,7 @@ export class VectorSearchService {
     const words = query.split(/\s+/).filter(w => w.length > 0);
     const wordCount = words.length;
     const hasQuotes = query.includes('"') || query.includes("'");
-    
+
     // Specific query indicators
     const specificIndicators = [
       /\b\d+\b/, // Numbers
@@ -643,7 +643,7 @@ export class VectorSearchService {
       /\b\w*@\w*\.\w+\b/, // Emails
       /\bhttps?:\/\/\S+\b/, // URLs
     ];
-    
+
     const isSpecificQuery = hasQuotes ||
       wordCount <= 3 ||
       specificIndicators.some(pattern => pattern.test(query));
@@ -678,7 +678,7 @@ export class VectorSearchService {
       const key = result.chunk.id;
       const rrScore = 1 / (k + index + 1);
       const existingScore = resultScores.get(key);
-      
+
       if (existingScore) {
         existingScore.score += rrScore * vectorWeight;
       } else {
@@ -694,7 +694,7 @@ export class VectorSearchService {
       const key = result.chunk.id;
       const rrScore = 1 / (k + index + 1);
       const existingScore = resultScores.get(key);
-      
+
       if (existingScore) {
         existingScore.score += rrScore * textWeight;
         // Update the result with combined similarity
@@ -725,25 +725,25 @@ export class VectorSearchService {
       if (!document || !document.enabled) {
         return [];
       }
-      
+
       const embeddings = await this.embeddingService.getEmbeddingsByDocument(targetChunk.documentId);
-      
+
       // Batch fetch all documents for these embeddings to eliminate N+1 queries
       const documentMap = await this.batchFetchDocuments(embeddings, [targetChunk.documentId], undefined, userId);
-      
+
       const results: VectorSearchResult[] = [];
-      
+
       for (const embedding of embeddings) {
         if (embedding.id === targetChunk.id) {
           continue; // Skip the target chunk itself
         }
-        
+
         const similarity = cosineSimilarity(targetChunk.embedding, embedding.embedding);
-        
+
         if (similarity > 0.5) { // Threshold for similarity
           // Get document info from the pre-fetched map (O(1) lookup instead of database call)
           const document = documentMap.get(embedding.documentId);
-          
+
           if (document) {
             results.push({
               chunk: embedding,
@@ -783,7 +783,7 @@ export class VectorSearchService {
   ): Promise<PageGroup[]> {
     try {
       const {
-        maxResults = 8, // Reduced from 10 to 8 to reduce noise
+        maxResults = 8, // Increased back to 8 as per user request
         similarityThreshold = 0.7,
         documentIds
       } = options;
@@ -802,7 +802,7 @@ export class VectorSearchService {
 
       // Group by page
       const pageGroups = this.groupResultsByPage(searchResults);
-      
+
       console.log('[PAGE GROUPS]', `Created ${pageGroups.length} page groups`);
       pageGroups.forEach((group, index) => {
         console.log(`[PAGE GROUP ${index + 1}]`, {
@@ -829,10 +829,10 @@ export class VectorSearchService {
 
     for (const result of results) {
       const pageNumber = this.getEffectivePageNumber(result);
-      
+
       if (pageNumber !== undefined) {
         const pageKey = `${result.document.id}_${pageNumber}`;
-        
+
         if (!pageMap.has(pageKey)) {
           pageMap.set(pageKey, {
             documentId: result.document.id,
@@ -841,7 +841,7 @@ export class VectorSearchService {
             chunks: []
           });
         }
-        
+
         const pageGroup = pageMap.get(pageKey)!;
         pageGroup.chunks.push({
           id: result.chunk.id,
@@ -850,23 +850,23 @@ export class VectorSearchService {
         });
       }
     }
-    
+
     // Sort page groups by highest similarity and then by document/page
     return Array.from(pageMap.values())
       .sort((a, b) => {
         const maxSimA = Math.max(...a.chunks.map(c => c.similarity));
         const maxSimB = Math.max(...b.chunks.map(c => c.similarity));
-        
+
         if (maxSimB !== maxSimA) {
           return maxSimB - maxSimA; // Higher similarity first
         }
-        
+
         // Then sort by document title and page number
         const docCompare = a.documentTitle.localeCompare(b.documentTitle);
         if (docCompare !== 0) {
           return docCompare;
         }
-        
+
         return a.page - b.page;
       });
   }
@@ -877,13 +877,13 @@ export class VectorSearchService {
    */
   pageGroupsToVectorResults(pageGroups: PageGroup[]): VectorSearchResult[] {
     const results: VectorSearchResult[] = [];
-    
+
     for (const pageGroup of pageGroups) {
       // For each page group, create a combined result
       // Use the highest scoring chunk as the base
       const sortedChunks = [...pageGroup.chunks].sort((a, b) => b.similarity - a.similarity);
       const highestScoringChunk = sortedChunks[0];
-      
+
       // Create a mock VectorSearchResult for the page group
       // This is a simplified representation for compatibility
       const combinedResult: VectorSearchResult = {
@@ -919,10 +919,10 @@ export class VectorSearchService {
           fileName: pageGroup.documentTitle
         }
       };
-      
+
       results.push(combinedResult);
     }
-    
+
     return results;
   }
 }
