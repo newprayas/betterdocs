@@ -6,6 +6,11 @@ export class GeminiService {
   private modelName: string = 'gemma-3-27b-it';
   private embeddingModelName: string = 'text-embedding-004';
 
+  // Embedding key rotation
+  private embeddingKeys: string[] = [];
+  private currentKeyIndex: number = 0;
+  private embeddingGenAI: GoogleGenAI | null = null;
+
   initialize(apiKey: string, modelName: string = 'gemma-3-12b-it', embeddingModelName: string = 'text-embedding-004') {
     try {
       console.log('[GEMINI INIT]', 'Starting Gemini service initialization with new SDK');
@@ -33,6 +38,47 @@ export class GeminiService {
     }
   }
 
+  // Initialize with env-based embedding keys (no user key needed)
+  initializeEmbeddingKeys() {
+    // Load keys from environment variables
+    const key1 = process.env.NEXT_PUBLIC_EMBEDDING_KEY_1;
+    const key2 = process.env.NEXT_PUBLIC_EMBEDDING_KEY_2;
+    const key3 = process.env.NEXT_PUBLIC_EMBEDDING_KEY_3;
+
+    this.embeddingKeys = [key1, key2, key3].filter(Boolean) as string[];
+
+    if (this.embeddingKeys.length === 0) {
+      console.error('[GEMINI EMBEDDING]', 'No embedding keys found in environment variables!');
+      return false;
+    }
+
+    console.log('[GEMINI EMBEDDING]', `Loaded ${this.embeddingKeys.length} embedding keys from environment`);
+
+    // Initialize with the first key
+    this.currentKeyIndex = 0;
+    this.embeddingGenAI = new GoogleGenAI({ apiKey: this.embeddingKeys[0] });
+    console.log('[GEMINI EMBEDDING]', 'Embedding service initialized with key 1');
+
+    return true;
+  }
+
+  // Switch to the next embedding key
+  private switchToNextEmbeddingKey(): boolean {
+    if (this.embeddingKeys.length === 0) {
+      console.error('[GEMINI EMBEDDING]', 'No embedding keys available to switch to');
+      return false;
+    }
+
+    const previousIndex = this.currentKeyIndex;
+    this.currentKeyIndex = (this.currentKeyIndex + 1) % this.embeddingKeys.length;
+
+    console.log('[GEMINI EMBEDDING]', `Switching from key ${previousIndex + 1} to key ${this.currentKeyIndex + 1}`);
+
+    this.embeddingGenAI = new GoogleGenAI({ apiKey: this.embeddingKeys[this.currentKeyIndex] });
+
+    return true;
+  }
+
   private getSDKVersion(): string {
     try {
       // Try to get version from package.json or other sources
@@ -45,6 +91,16 @@ export class GeminiService {
   private ensureInitialized() {
     if (!this.genAI) {
       throw new Error('Gemini service not initialized. Call initialize() first.');
+    }
+  }
+
+  private ensureEmbeddingInitialized() {
+    if (!this.embeddingGenAI) {
+      // Try to auto-initialize embedding keys
+      const success = this.initializeEmbeddingKeys();
+      if (!success || !this.embeddingGenAI) {
+        throw new Error('Embedding service not initialized. Check environment variables.');
+      }
     }
   }
 
@@ -158,25 +214,36 @@ export class GeminiService {
     }
   }
 
-  async embedText(text: string): Promise<Float32Array> {
-    this.ensureInitialized();
+  async embedText(text: string, retryCount: number = 0): Promise<Float32Array> {
+    this.ensureEmbeddingInitialized();
 
     try {
-      const result = await this.genAI!.models.embedContent({
+      const result = await this.embeddingGenAI!.models.embedContent({
         model: this.embeddingModelName,
         contents: text
       });
       const embedding = result.embeddings?.[0];
       const values = embedding?.values || [];
       return new Float32Array(values);
-    } catch (error) {
-      console.error('Error embedding text:', error);
-      throw new Error('Failed to embed text with Gemini');
+    } catch (error: any) {
+      console.error('[GEMINI EMBEDDING ERROR]', `Error with key ${this.currentKeyIndex + 1}:`, error?.message || error);
+
+      // Check if we've tried all keys
+      if (retryCount >= this.embeddingKeys.length - 1) {
+        console.error('[GEMINI EMBEDDING ERROR]', 'All embedding keys have been exhausted');
+        throw new Error('Failed to embed text: All API keys exhausted');
+      }
+
+      // Switch to next key and retry
+      console.log('[GEMINI EMBEDDING]', `Switching to next key due to error (retry ${retryCount + 1})`);
+      this.switchToNextEmbeddingKey();
+
+      return this.embedText(text, retryCount + 1);
     }
   }
 
   async embedBatch(texts: string[]): Promise<Float32Array[]> {
-    this.ensureInitialized();
+    this.ensureEmbeddingInitialized();
 
     try {
       const embeddings = await Promise.all(
@@ -291,6 +358,15 @@ export class GeminiService {
 
   isInitialized(): boolean {
     return this.genAI !== null;
+  }
+
+  isEmbeddingInitialized(): boolean {
+    return this.embeddingGenAI !== null;
+  }
+
+  // Get current embedding key index (for debugging)
+  getCurrentEmbeddingKeyIndex(): number {
+    return this.currentKeyIndex;
   }
 }
 

@@ -72,12 +72,11 @@ type OnboardingStep = 'carousel' | 'apiSetup';
 
 export default function OnboardingPage() {
   const router = useRouter();
-  const { updateSettings, validateApiKey } = useSettingsStore();
+  const { updateSettings } = useSettingsStore();
 
   const [currentStep, setCurrentStep] = useState<OnboardingStep>('carousel');
   const [currentSlide, setCurrentSlide] = useState(0);
   const [apiKey, setApiKey] = useState('');
-  const [model, setModel] = useState('gemma-3-27b-it');
   const [isValidating, setIsValidating] = useState(false);
   const [validationError, setValidationError] = useState('');
   const [isCompleting, setIsCompleting] = useState(false);
@@ -125,17 +124,19 @@ export default function OnboardingPage() {
     setValidationError('');
 
     try {
-      const error = await validateApiKey(apiKey);
-      if (error) {
-        setValidationError(error);
+      // Validate Groq API key
+      const { groqService } = await import('../../services/groq/groqService');
+      const isValid = await groqService.validateApiKey(apiKey);
+
+      if (!isValid) {
+        setValidationError('Invalid API key. Please check your key and try again.');
         setIsValidating(false);
         return;
       }
 
       setIsCompleting(true);
       await updateSettings({
-        geminiApiKey: apiKey,
-        model: model,
+        groqApiKey: apiKey,
       });
 
       // Mark onboarding as complete
@@ -273,23 +274,9 @@ export default function OnboardingPage() {
             </p>
           </Card>
 
-          {/* Video Tutorial */}
-          <div className="mb-6">
-            <h3 className="font-semibold text-white mb-3">Watch how to get your key:</h3>
-            <div className="aspect-[9/16] mx-auto rounded-xl overflow-hidden bg-gray-800 border border-white/10">
-              <iframe
-                src="https://youtube.com/embed/S99m2suega0?rel=0&modestbranding=1&playsinline=1&controls=1"
-                title="API Key Tutorial"
-                className="w-full h-full"
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                allowFullScreen
-              />
-            </div>
-          </div>
-
           {/* Get API Key Link */}
           <a
-            href="https://aistudio.google.com/app/apikey"
+            href="https://console.groq.com/keys"
             target="_blank"
             rel="noopener noreferrer"
             className="flex items-center justify-center gap-2 w-full py-3 px-4 mb-6 rounded-xl bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-semibold hover:from-blue-600 hover:to-indigo-700 transition-all shadow-lg"
@@ -313,7 +300,7 @@ export default function OnboardingPage() {
                   setApiKey(e.target.value);
                   setValidationError('');
                 }}
-                placeholder="AIza..."
+                placeholder="gsk_..."
                 className={clsx(
                   'bg-gray-800 border-gray-700 text-white placeholder-gray-500',
                   validationError && 'border-red-500 focus:border-red-500 focus:ring-red-500'

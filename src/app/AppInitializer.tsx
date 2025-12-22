@@ -148,33 +148,26 @@ export function AppInitializer() {
     }
   }, [isClient, settings?.model, settings?.userId, updateSettings]);
 
-  // Initialize Gemini service when settings change (and API key is available)
+  // Initialize Gemini embedding service with env keys (no user key needed)
   useEffect(() => {
     if (!isClient) return;
 
-    if (settings?.geminiApiKey) {
-      const initializeGemini = async () => {
-        try {
-          console.log('[APP INIT]', 'Initializing Gemini service...');
-          // Use fallback model if settings.model is undefined (for backward compatibility)
-          // Also explicitly check if it's a legacy model here to use the new default immediately even before the migration effect runs
-          let model = settings.model || 'gemma-3-27b-it';
-
-          if (model === 'gemini-2.5-flash-lite' || model === 'gemini-2.0-flash-exp' || model === 'gemini-1.5-flash' || model === 'gemma-3-12b-it' || model === 'gemma-3-4b-it') {
-            console.log('[APP INIT] Temporarily overriding legacy model for init:', model);
-            model = 'gemma-3-27b-it';
-          }
-
-          await geminiService.initialize(settings.geminiApiKey, model, 'text-embedding-004');
-          console.log('[APP INIT]', 'Gemini service initialized successfully');
-        } catch (error) {
-          console.error('[APP INIT ERROR]', 'Failed to initialize Gemini service:', error);
+    const initializeEmbeddings = async () => {
+      try {
+        console.log('[APP INIT]', 'Initializing Gemini embedding service with env keys...');
+        const success = geminiService.initializeEmbeddingKeys();
+        if (success) {
+          console.log('[APP INIT]', 'Gemini embedding service initialized successfully');
+        } else {
+          console.error('[APP INIT ERROR]', 'Failed to initialize Gemini embedding service - no keys found');
         }
-      };
+      } catch (error) {
+        console.error('[APP INIT ERROR]', 'Failed to initialize Gemini embedding service:', error);
+      }
+    };
 
-      initializeGemini();
-    }
-  }, [isClient, settings?.geminiApiKey, settings?.model]);
+    initializeEmbeddings();
+  }, [isClient]);
 
   // Initialize Groq service when settings change (and Groq API key is available)
   useEffect(() => {

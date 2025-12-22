@@ -300,8 +300,8 @@ export default function SettingsPage() {
           </p>
         </div>
 
-        {/* Start Chatting Button - Appears when API key is saved */}
-        {isApiKeySaved && (
+        {/* Start Chatting Button - Appears when Groq API key is saved */}
+        {isGroqApiKeySaved && (
           <div className="flex justify-center mb-6">
             <Button
               variant="primary"
@@ -350,17 +350,35 @@ export default function SettingsPage() {
               </h2>
 
               <div className="space-y-4">
+                {/* Groq API Key */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Gemini API Key
+                    Groq API Key
                   </label>
                   <Input
-                    type="text"
-                    value={localSettings.geminiApiKey}
-                    onChange={(e) => handleSettingChange('geminiApiKey', e.target.value)}
-                    placeholder="Enter your Gemini API key"
-                    className="w-full mb-4"
+                    type="password"
+                    value={localSettings.groqApiKey}
+                    onChange={(e) => handleSettingChange('groqApiKey', e.target.value)}
+                    placeholder="gsk_..."
+                    className="w-full mb-2"
                   />
+
+                  <div className="mt-4 mb-4">
+                    <p className="font-semibold text-gray-900 dark:text-white">📚 What is API key?</p>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">It is a simple password needed to chat with your documents 🥳 - you can get it from the link below ✨</p>
+                  </div>
+
+                  <p className="text-sm text-gray-500 dark:text-gray-400 mt-4">
+                    ✅ Get your API key from{' '}
+                    <a
+                      href="https://console.groq.com/keys"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-600 dark:text-blue-400 hover:underline font-bold"
+                    >
+                      [Groq Console - Click here ✨]
+                    </a>
+                  </p>
 
                   <div className="flex justify-center mt-6">
                     <Button
@@ -368,180 +386,36 @@ export default function SettingsPage() {
                       size="md"
                       className="w-full max-w-sm py-2 shadow-md hover:shadow-lg transition-all duration-200"
                       onClick={async () => {
-                        if (localSettings.geminiApiKey) {
+                        if (localSettings.groqApiKey) {
                           try {
-                            console.log('[SETTINGS PAGE] Testing and saving API key...');
+                            console.log('[SETTINGS PAGE] Testing and saving Groq API key...');
+                            const { groqService } = await import('../../services/groq/groqService');
+                            const isValid = await groqService.validateApiKey(localSettings.groqApiKey);
 
-                            // Test connection first
-                            const { geminiService } = await import('../../services/gemini');
-                            const result = await geminiService.validateApiKey(localSettings.geminiApiKey);
-
-                            if (result.isValid) {
-                              // Save API key if test is successful
-                              await updateSettings({ geminiApiKey: localSettings.geminiApiKey });
+                            if (isValid) {
+                              await updateSettings({
+                                groqApiKey: localSettings.groqApiKey,
+                                groqModel: localSettings.groqModel
+                              });
                               setHasChanges(false);
-                              setSavedApiKey(localSettings.geminiApiKey);
-                              setIsApiKeySaved(true);
-                              console.log('[SETTINGS PAGE] API key saved and tested successfully');
-
-                              // Show success banner
+                              setSavedGroqApiKey(localSettings.groqApiKey);
+                              setIsGroqApiKeySaved(true);
                               setShowSaveBanner('success');
                               setTimeout(() => setShowSaveBanner(null), 3000);
                             } else {
-                              // Show error banner if test fails
                               setShowSaveBanner('error');
                               setTimeout(() => setShowSaveBanner(null), 3000);
                             }
                           } catch (error) {
-                            console.error('[SETTINGS PAGE] Failed to test or save API key:', error);
                             setShowSaveBanner('error');
                             setTimeout(() => setShowSaveBanner(null), 3000);
                           }
                         }
                       }}
-                      disabled={!localSettings.geminiApiKey || isApiKeySaved}
+                      disabled={!localSettings.groqApiKey || isGroqApiKeySaved}
                     >
-                      {isApiKeySaved ? '✓ API Key Saved' : 'Save API Key'}
+                      {isGroqApiKeySaved ? '✓ API Key Saved' : 'Save API Key'}
                     </Button>
-                  </div>
-
-                  {/* Validation Result Display */}
-                  {showValidationError && validationResult && !validationResult.isValid && (
-                    <div className="mt-2 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md">
-                      <div className="flex items-start gap-2">
-                        <span className="text-lg">{getErrorIcon(validationResult.error?.type || 'UNKNOWN_ERROR')}</span>
-                        <div className="flex-1">
-                          <p className="text-sm font-medium text-red-800 dark:text-red-200">
-                            {getErrorMessage(validationResult)}
-                          </p>
-                          {validationResult.responseTime && (
-                            <p className="text-xs text-red-600 dark:text-red-400 mt-1">
-                              Response time: {validationResult.responseTime}ms
-                            </p>
-                          )}
-                        </div>
-                        <button
-                          onClick={() => setShowValidationError(false)}
-                          className="text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-200"
-                        >
-                          ✕
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {validationResult && validationResult.isValid && connectionStatus === 'success' && (
-                    <div className="mt-2 p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-md">
-                      <div className="flex items-center gap-2">
-                        <span className="text-lg">✅</span>
-                        <div className="flex-1">
-                          <p className="text-sm font-medium text-green-800 dark:text-green-200">
-                            API key is valid and working correctly!
-                          </p>
-                          {validationResult.responseTime && (
-                            <p className="text-xs text-green-600 dark:text-green-400 mt-1">
-                              Response time: {validationResult.responseTime}ms
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="mt-4 mb-4">
-                    <p className="font-semibold text-gray-900 dark:text-white">📚 What is API key?</p>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">It is a simple password needed to chat with your documents 🥳 - you can get it from the yellow link ✨</p>
-                  </div>
-
-                  <p className="text-sm text-gray-500 dark:text-gray-400 mt-4">
-                    ✅ Get your API key from{' '}
-                    <a
-                      href="https://makersuite.google.com/app/apikey"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-yellow-600 dark:text-yellow-400 hover:underline font-bold"
-                    >
-                      [Google AI Studio - Click here ✨]
-                    </a>
-                  </p>
-                  <p className="text-sm text-gray-500 dark:text-gray-400 mt-4 mb-2">
-                    🎉 Just follow <span className="text-yellow-600 dark:text-yellow-400">EASY 7 STEPS</span> shown below to get API KEY
-                  </p>
-                  <div className="mt-2 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
-                    <div className="relative w-full" style={{ paddingBottom: '177.78%' }}>
-                      <iframe
-                        src="https://youtube.com/embed/S99m2suega0?rel=0&modestbranding=1&playsinline=1&controls=1"
-                        title="How to get Gemini API Key"
-                        className="absolute top-0 left-0 w-full h-full rounded-lg"
-                        frameBorder="0"
-                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                        allowFullScreen
-                        loading="lazy"
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {/* Groq Configuration */}
-                <div className="mt-8 pt-8 border-t border-gray-200 dark:border-gray-700">
-                  <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">
-                    Groq LLM Configuration (For Faster Chat)
-                  </h3>
-
-                  <div className="space-y-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                        Groq API Key
-                      </label>
-                      <Input
-                        type="password"
-                        value={localSettings.groqApiKey}
-                        onChange={(e) => handleSettingChange('groqApiKey', e.target.value)}
-                        placeholder="gsk_..."
-                        className="w-full mb-2"
-                      />
-                      <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
-                        Get your key from <a href="https://console.groq.com/keys" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">Groq Console</a>
-                      </p>
-
-                      <div className="flex justify-center mt-4">
-                        <Button
-                          variant="primary"
-                          size="md"
-                          className="w-full max-w-sm py-2 shadow-md hover:shadow-lg transition-all duration-200"
-                          onClick={async () => {
-                            if (localSettings.groqApiKey) {
-                              try {
-                                console.log('[SETTINGS PAGE] Testing and saving Groq API key...');
-                                const { groqService } = await import('../../services/groq/groqService');
-                                const isValid = await groqService.validateApiKey(localSettings.groqApiKey);
-
-                                if (isValid) {
-                                  await updateSettings({
-                                    groqApiKey: localSettings.groqApiKey,
-                                    groqModel: localSettings.groqModel
-                                  });
-                                  setHasChanges(false);
-                                  setSavedGroqApiKey(localSettings.groqApiKey);
-                                  setIsGroqApiKeySaved(true);
-                                  setShowSaveBanner('success');
-                                  setTimeout(() => setShowSaveBanner(null), 3000);
-                                } else {
-                                  setShowSaveBanner('error');
-                                  setTimeout(() => setShowSaveBanner(null), 3000);
-                                }
-                              } catch (error) {
-                                setShowSaveBanner('error');
-                                setTimeout(() => setShowSaveBanner(null), 3000);
-                              }
-                            }
-                          }}
-                          disabled={!localSettings.groqApiKey || isGroqApiKeySaved}
-                        >
-                          {isGroqApiKeySaved ? '✓ Groq Key Saved' : 'Save Groq Key'}
-                        </Button>
-                      </div>
-                    </div>
                   </div>
                 </div>
 
