@@ -138,6 +138,11 @@ export const DocumentList: React.FC<DocumentListProps> = ({
               </svg>
             }
           />
+          {documents.filter(d => d.enabled).length > 4 && (
+            <p className="text-xs text-amber-600 dark:text-amber-400 mt-2 ml-1 animate-in fade-in slide-in-from-top-1 duration-300">
+              Consider switching off some books, the app works best with 4-5 active books
+            </p>
+          )}
         </div>
       )}
 

@@ -26,7 +26,6 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
   const [isLoadingList, setIsLoadingList] = useState(true);
   const [selectedCategory, setSelectedCategory] = useState<string>('All Sources');
   const [selectedBooks, setSelectedBooks] = useState<Set<string>>(new Set());
-  const [selectAll, setSelectAll] = useState(false);
   const [isBatchProcessing, setIsBatchProcessing] = useState(false);
   const [processingStatus, setProcessingStatus] = useState<ProcessingStatus>({});
   const [error, setError] = useState<string | null>(null);
@@ -62,6 +61,9 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
     return books.filter(book => book.category === selectedCategory);
   }, [books, selectedCategory]);
 
+  // Derived state for select all checkbox
+  const areAllFilteredSelected = filteredBooks.length > 0 && filteredBooks.every(book => selectedBooks.has(book.id));
+
   // Calculate total progress for batch processing
   const totalProgress = useMemo(() => {
     if (selectedBooks.size === 0) return 0;
@@ -87,18 +89,21 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
     }
     setSelectedBooks(newSelectedBooks);
 
-    // Update select all checkbox state
-    setSelectAll(newSelectedBooks.size === filteredBooks.length && filteredBooks.length > 0);
+    // No need to manually update state, it's derived
   };
 
   // Handle select all checkbox
   const handleSelectAll = () => {
-    if (selectAll) {
-      setSelectedBooks(new Set());
+    const newSelected = new Set(selectedBooks);
+
+    if (areAllFilteredSelected) {
+      // Uncheck: Remove all currently filtered books from selection
+      filteredBooks.forEach(book => newSelected.delete(book.id));
     } else {
-      setSelectedBooks(new Set(filteredBooks.map(book => book.id)));
+      // Check: Add all currently filtered books to selection
+      filteredBooks.forEach(book => newSelected.add(book.id));
     }
-    setSelectAll(!selectAll);
+    setSelectedBooks(newSelected);
   };
 
   // Check for duplicate books directly in IndexedDB
@@ -112,21 +117,21 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
       description: book.description,
       category: book.category
     });
-    
+
     try {
       // Check if userId is available before proceeding
       if (!userId) {
         console.log('🔍 DUPLICATE CHECK: No userId available, cannot check for duplicates');
         return false;
       }
-      
+
       // Get documents directly from IndexedDB to avoid timing issues with document store
       const { documentService } = await getIndexedDBServices();
       const documents = await documentService.getDocumentsBySession(sessionId, userId);
-      
+
       console.log(`🔍 DUPLICATE CHECK: Comparing against ${documents.length} existing documents from IndexedDB`);
       console.log(`🔍 DUPLICATE CHECK: IndexedDB query performed at: ${new Date().toISOString()}`);
-      
+
       // Log all existing documents for detailed comparison
       console.log(`🔍 DUPLICATE CHECK: Existing documents in IndexedDB:`, documents.map(doc => ({
         id: doc.id,
@@ -137,7 +142,7 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
         enabled: doc.enabled,
         createdAt: doc.createdAt
       })));
-      
+
       // PRIMARY CHECK: Compare book.filename with document.filename (this is the most reliable match)
       console.log(`🔍 DUPLICATE CHECK: Checking book.filename vs doc.filename (PRIMARY CHECK)`);
       const bookFilenameMatch = documents.some(doc => {
@@ -150,7 +155,7 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
         alert(`"${book.name}" is already in your library. Skipping duplicate.`);
         return true;
       }
-      
+
       // SECONDARY CHECK: Compare book.filename with document.title (in case title was set to filename)
       console.log(`🔍 DUPLICATE CHECK: Checking book.filename vs doc.title (SECONDARY CHECK)`);
       const bookFilenameTitleMatch = documents.some(doc => {
@@ -163,7 +168,7 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
         alert(`"${book.name}" is already in your library. Skipping duplicate.`);
         return true;
       }
-      
+
       // TERTIARY CHECK: Compare book.name with document.filename (for backwards compatibility)
       console.log(`🔍 DUPLICATE CHECK: Checking book.name vs doc.filename (TERTIARY CHECK)`);
       const nameToFilenameMatch = documents.some(doc => {
@@ -176,7 +181,7 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
         alert(`"${book.name}" is already in your library. Skipping duplicate.`);
         return true;
       }
-      
+
       // QUATERNARY CHECK: Compare book.name with document.title (for backwards compatibility)
       console.log(`🔍 DUPLICATE CHECK: Checking book.name vs doc.title (QUATERNARY CHECK)`);
       const nameToTitleMatch = documents.some(doc => {
@@ -189,7 +194,7 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
         alert(`"${book.name}" is already in your library. Skipping duplicate.`);
         return true;
       }
-      
+
       // CASE-INSENSITIVE CHECKS: As fallbacks
       console.log(`🔍 DUPLICATE CHECK: Checking case-insensitive book.filename vs doc.filename`);
       const caseInsensitiveFilenameMatch = documents.some(doc => {
@@ -202,7 +207,7 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
         alert(`"${book.name}" is already in your library (case-insensitive match). Skipping duplicate.`);
         return true;
       }
-      
+
       console.log(`🔍 DUPLICATE CHECK: Checking case-insensitive book.name vs doc.filename`);
       const caseInsensitiveNameMatch = documents.some(doc => {
         const matches = doc.filename.toLowerCase() === book.name.toLowerCase();
@@ -214,7 +219,7 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
         alert(`"${book.name}" is already in your library (case-insensitive match). Skipping duplicate.`);
         return true;
       }
-      
+
       console.log(`🔍 NO DUPLICATE: No duplicate found for "${book.name}" (filename: ${book.filename})`);
       return false; // No duplicate found
     } catch (error) {
@@ -223,14 +228,14 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
       console.log('🔍 DUPLICATE CHECK: Falling back to document store due to IndexedDB error');
       const { documents } = useDocumentStore.getState();
       console.log(`🔍 DUPLICATE CHECK: Comparing against ${documents.length} existing documents from document store (fallback)`);
-      
+
       const bookFilenameMatch = documents.some(doc => doc.filename === book.filename);
       if (bookFilenameMatch) {
         console.log(`🔍 DUPLICATE FOUND: Book filename match for "${book.filename}" (fallback check)`);
         alert(`"${book.name}" is already in your library. Skipping duplicate.`);
         return true;
       }
-      
+
       console.log(`🔍 NO DUPLICATE: No duplicate found for "${book.name}" (fallback check)`);
       return false;
     }
@@ -240,7 +245,7 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
   const processSingleBook = async (book: LibraryItem): Promise<void> => {
     console.log(`🔍 PROCESSING: Starting to process book "${book.name}"`);
     console.log(`🔍 DUPLICATE CHECK: Performing duplicate check for "${book.name}"`);
-    
+
     // Check for duplicates before processing (now async)
     const isDuplicate = await checkForDuplicate(book);
     if (isDuplicate) {
@@ -255,7 +260,7 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
       }));
       return;
     }
-    
+
     console.log(`🔍 PROCESSING: Continuing with normal processing for "${book.name}" (no duplicate found)`);
     if (!userId) throw new Error("User ID is required");
 
@@ -512,7 +517,6 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
 
       // Clear selections and close modal
       setSelectedBooks(new Set());
-      setSelectAll(false);
       setProcessingStatus({});
       onClose();
 
@@ -543,6 +547,10 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
               <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Medical Library</h2>
               <p className="text-sm text-gray-500 dark:text-gray-400">
                 Verified medical resources, ready for instant use.
+                <br />
+                <span className="text-xs italic text-blue-600 dark:text-blue-400 mt-1 inline-block font-medium">
+                  Please add large books using Wifi
+                </span>
               </p>
             </div>
             <Button variant="primary" onClick={onClose} disabled={isBatchProcessing}>
@@ -586,7 +594,7 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
               <label className="flex items-center gap-2 cursor-pointer">
                 <input
                   type="checkbox"
-                  checked={selectAll}
+                  checked={areAllFilteredSelected}
                   onChange={handleSelectAll}
                   disabled={isBatchProcessing}
                   className="w-5 h-5 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"

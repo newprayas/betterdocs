@@ -7,8 +7,8 @@ import { createClient } from '@/utils/supabase/client'
 // Subscription pricing tiers - matches Supabase enum values
 const SUBSCRIPTION_TIERS = [
     { id: '1 Month', name: '1 Month', duration: '1 month', price: 100, savings: 0 },
-    { id: '3 Months', name: '3 Months', duration: '3 months', price: 200, savings: 100 },
-    { id: '6 Months', name: '6 Months', duration: '6 months', price: 450, savings: 150 },
+    { id: '3 Months', name: '3 Months', duration: '3 months', price: 250, savings: 50 },
+    { id: '6 Months', name: '6 Months', duration: '6 months', price: 500, savings: 100 },
     { id: '12 Months', name: '12 Months', duration: '12 months', price: 800, savings: 400 },
 ]
 
@@ -134,18 +134,23 @@ export default function SubscriptionModal() {
                                             <p className="text-sm sm:text-base text-gray-600 dark:text-gray-300 leading-relaxed">
                                                 However, to keep this app running we need to pay some bills - mainly the cost of building this app, monthly server costs to host this website, and API cost to provide your answers. We really wish we could keep this app as a free service (free is awesome!), but these costs are unavoidable - we have to pay these companies to run our app, which you are a part of now ✨
                                             </p>
+                                            <p className="text-sm sm:text-base text-gray-600 dark:text-gray-300 leading-relaxed">
+                                                Hence if you find this app useful and also would want it to continue existing, please consider subscribing for a small fee.
+                                            </p>
                                             <div className="bg-indigo-50 dark:bg-indigo-900/20 p-4 rounded-xl border border-indigo-100 dark:border-indigo-800/30">
-                                                <p className="text-sm sm:text-base font-medium text-gray-800 dark:text-gray-200 leading-relaxed">
-                                                    Hence if you find this app useful and also would want it to continue existing, please consider subscribing for a small fee of just ✨ <span className="text-indigo-600 dark:text-indigo-400 font-bold">'100 tk per month'</span> ✨ <span className="text-xs text-gray-500 dark:text-gray-400 block mt-1">(That is less than a cup of coffee a month for all the medical knowledge you need every day 🎉 Sounds like an incredible deal?)</span>
+                                                <p className="text-sm sm:text-base font-medium text-gray-800 dark:text-gray-200 leading-relaxed text-center">
+                                                    🎉 <strong>Prices are 'less than a cup of coffee a month'</strong>
+                                                    <br />
+                                                    Fair price for ALL the medical knowledge in the world in your pockets?
+                                                    <br />
+                                                    ✨ Good doctors value accurate medical knowledge ✨ - That's priceless !
                                                 </p>
                                             </div>
                                             <p className="text-sm sm:text-base text-gray-600 dark:text-gray-300 leading-relaxed">
                                                 Without your support we will have to sadly shut this app down for everyone, users who love this app as much as you do 😔
                                             </p>
                                             <p className="text-sm sm:text-base font-medium text-gray-900 dark:text-white text-center mt-6">
-                                                Every subscription counts, truly appreciate the support ❤️
-                                                <br />
-                                                <span className="text-sm font-normal text-gray-500 dark:text-gray-400 mt-2 block">We have simplified the pricing plans for you:</span>
+                                                We have simplified the pricing plans for you:
                                             </p>
 
                                             {/* Pricing Tiers */}
