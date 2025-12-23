@@ -143,7 +143,7 @@ export default function SubscriptionModal() {
                                                     <br />
                                                     A small price for all the medical knowledge in the world in your pocket 🥳
                                                     <br />
-                                                    ✨ Good Answers make Good Doctors ✨
+                                                    ✨ Good Answers make Good Doctors - that's priceless ✨
                                                 </p>
                                             </div>
                                             <p className="text-sm sm:text-base text-gray-600 dark:text-gray-300 leading-relaxed">

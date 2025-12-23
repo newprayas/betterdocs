@@ -366,7 +366,7 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
     if (selectedBooks.size === 0) return alert("Please select at least one book");
 
     setIsBatchProcessing(true);
-    const selectedBooksList = filteredBooks.filter(book => selectedBooks.has(book.id));
+    const selectedBooksList = books.filter(book => selectedBooks.has(book.id));
 
     try {
       // Process all selected books sequentially to avoid race conditions in duplicate checking
