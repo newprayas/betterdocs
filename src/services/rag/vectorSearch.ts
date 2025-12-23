@@ -62,10 +62,43 @@ export class VectorSearchService {
         }
       }
 
-      // Apply page deduplication
-      const deduplicatedResults = this.deduplicateByPage(results);
+      // 1. Sort results by similarity (Descending) - Critical for Adaptive Context Window
+      results.sort((a, b) => b.similarity - a.similarity);
 
-      // Sort by similarity (descending) and limit results
+      // 2. Adaptive Context Window Logic (Score Gap)
+      // This filters out low-quality chunks that are significantly worse than the best match.
+      const adaptiveResults: VectorSearchResult[] = [];
+
+      if (results.length > 0) {
+        const bestScore = results[0].similarity;
+
+        // CONFIGURATION: Adaptive Context Window Threshold
+        // 0.85 (15% gap) is High Precision (Good for medical facts - Reduces hallucinations)
+        // 0.75 (25% gap) is More Permissive (Good for creative tasks)
+        // LOCATED HERE: Change this value to adjust strictness
+        const SCORE_THRESHOLD_RATIO = 0.85;
+        const cutoff = bestScore * SCORE_THRESHOLD_RATIO;
+
+        console.log(`[Adaptive Filter] Best Score: ${bestScore.toFixed(3)}, Cutoff Threshold: ${cutoff.toFixed(3)} (Ratio: ${SCORE_THRESHOLD_RATIO})`);
+
+        for (const result of results) {
+          // KEY LOGIC: If this chunk is significantly worse than the best one, stop.
+          // We assume if the score drops too much, it's likely a different topic or low quality distraction.
+          if (result.similarity < cutoff) {
+            console.log(`[Adaptive Filter] Dropped chunk. Score ${result.similarity.toFixed(3)} is below cutoff ${cutoff.toFixed(3)}`);
+            continue;
+          }
+
+          adaptiveResults.push(result);
+        }
+        console.log(`[Adaptive Filter] Kept ${adaptiveResults.length} chunks out of ${results.length} total results.`);
+      }
+
+      // 3. Apply page deduplication (combine chunks from same page)
+      // We use adaptiveResults here instead of raw results
+      const deduplicatedResults = this.deduplicateByPage(adaptiveResults);
+
+      // 4. Final Sort and Limit
       return deduplicatedResults
         .sort((a, b) => b.similarity - a.similarity)
         .slice(0, maxResults);

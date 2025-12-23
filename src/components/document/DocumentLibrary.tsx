@@ -548,7 +548,7 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
               <p className="text-sm text-gray-500 dark:text-gray-400">
                 Verified medical resources, ready for instant use.
                 <br />
-                <span className="text-xs italic text-blue-600 dark:text-blue-400 mt-1 inline-block font-medium">
+                <span className="bg-blue-600 text-white px-1.5 py-0.5 rounded-sm text-[10px] font-bold mt-2 inline-block uppercase tracking-wider shadow-sm w-fit">
                   Please add large books using Wifi
                 </span>
               </p>

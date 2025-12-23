@@ -142,6 +142,8 @@ export default function SessionPage() {
   useEffect(() => {
     if (activeTab === 'documents' && sessionId) {
       loadDocuments(sessionId);
+      // Ensure the page starts from top when switching tabs
+      window.scrollTo({ top: 0, behavior: 'instant' });
     }
   }, [activeTab, sessionId, loadDocuments]);
 
@@ -470,7 +472,7 @@ export default function SessionPage() {
                       variant="ghost"
                       onClick={() => setActiveTab('chat')}
                       size="md"
-                      className="text-sm px-4 py-2 bg-green-400 hover:bg-green-500 dark:bg-green-500 dark:hover:bg-green-600 text-white rounded-full shadow-sm transition-colors duration-200"
+                      className="text-sm px-4 py-2 bg-green-600 hover:bg-green-700 dark:bg-green-700 dark:hover:bg-green-800 text-white rounded-full shadow-sm transition-colors duration-200"
                     >
                       <svg
                         className="w-4 h-4 mr-2"
