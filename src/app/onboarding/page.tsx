@@ -52,20 +52,6 @@ const carouselSlides = [
       </svg>
     ),
   },
-  {
-    id: 4,
-    title: 'You Are in Control',
-    subtitle: 'You choose the books',
-    description: 'Decide where your information comes from. No more blindly trusting the internet - doctors demand accuracy, not guesswork!',
-    image: '/onboarding/Screenshot_2025-12-08-01-06-06-329_com.android.chrome.jpg',
-    gradient: 'from-purple-500 to-violet-600',
-    iconBg: 'bg-purple-500',
-    icon: (
-      <svg className="w-8 h-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-      </svg>
-    ),
-  },
 ];
 
 type OnboardingStep = 'carousel' | 'apiSetup';
