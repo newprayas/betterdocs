@@ -112,10 +112,10 @@ export const Header: React.FC<HeaderProps> = ({
             <div className="hidden sm:flex items-center">
               <div className={`
                 h-2 w-2 rounded-full mr-2
-                ${settings?.geminiApiKey ? 'bg-green-500' : 'bg-red-500'}
+                ${settings?.groqApiKey ? 'bg-green-500' : 'bg-red-500'}
               `} />
               <span className="text-xs text-gray-600 dark:text-gray-300">
-                {settings?.geminiApiKey ? 'Connected' : 'Not Connected'}
+                {settings?.groqApiKey ? 'Connected' : 'Not Connected'}
               </span>
             </div>
           </div>
@@ -189,10 +189,10 @@ export const SimpleHeader: React.FC = () => {
             <div className="hidden sm:flex items-center">
               <div className={`
                 h-2 w-2 rounded-full mr-2
-                ${settings?.geminiApiKey ? 'bg-green-500' : 'bg-red-500'}
+                ${settings?.groqApiKey ? 'bg-green-500' : 'bg-red-500'}
               `} />
               <span className="text-xs text-gray-600 dark:text-gray-300">
-                {settings?.geminiApiKey ? 'Connected' : 'Setup Required'}
+                {settings?.groqApiKey ? 'Connected' : 'Setup Required'}
               </span>
             </div>
 

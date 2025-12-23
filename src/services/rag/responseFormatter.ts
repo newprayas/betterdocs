@@ -39,20 +39,20 @@ export class ResponseFormatter {
       return response;
     }
 
-    // Use main API key for formatting
-    const formattingApiKey = settings.geminiApiKey;
+    // Use Groq API key for formatting (since we're using Groq for formatting)
+    const formattingApiKey = settings.groqApiKey;
 
-    console.log(`[${timestamp}] [INDENTATION DEBUG] LLM FORMATTER:`, 'Using main API key for formatting:', settings.geminiApiKey ? `YES (${settings.geminiApiKey.substring(0, 10)}...)` : 'NO');
+    console.log(`[${timestamp}] [INDENTATION DEBUG] LLM FORMATTER:`, 'Using Groq API key for formatting:', settings.groqApiKey ? `YES (${settings.groqApiKey.substring(0, 10)}...)` : 'NO');
 
     if (!formattingApiKey) {
-      console.log(`[${timestamp}] [INDENTATION DEBUG] FORMATTING SKIPPED:`, 'No API key available, returning original response');
+      console.log(`[${timestamp}] [INDENTATION DEBUG] FORMATTING SKIPPED:`, 'No Groq API key available, returning original response');
       console.log(`=== [${timestamp}] [INDENTATION DEBUG] LLM RESPONSE FORMATTER END ===\n`);
       return response;
     }
 
     try {
       console.log(`[${timestamp}] [INDENTATION DEBUG] LLM FORMATTING:`, 'Using LLM to convert to bullet points...');
-      console.log(`[${timestamp}] [INDENTATION DEBUG] LLM FORMATTING:`, `Calling Gemini service with main API key`);
+      console.log(`[${timestamp}] [INDENTATION DEBUG] LLM FORMATTING:`, `Calling Groq service for formatting`);
 
       const formattingPrompt = this.buildFormattingPrompt(response);
       console.log(`[${timestamp}] [INDENTATION DEBUG] FORMATTING PROMPT:`, formattingPrompt.substring(0, 300) + '...');
@@ -74,7 +74,7 @@ export class ResponseFormatter {
         }
       );
 
-      console.log(`[${timestamp}] [INDENTATION DEBUG] LLM FORMATTING:`, 'Gemini service response received, length:', formattedResponse.length);
+      console.log(`[${timestamp}] [INDENTATION DEBUG] LLM FORMATTING:`, 'Groq service response received, length:', formattedResponse.length);
 
       // Comprehensive analysis of formatted response
       console.log(`[${timestamp}] [INDENTATION DEBUG] ANALYZING FORMATTED RESPONSE STRUCTURE:`);
@@ -149,7 +149,7 @@ CRITICAL FORMATTING RULES:
      * Another sub-point [2]
 4. Preserve ALL citations in their original positions.
 5. Move citations to the END of the specific bullet point they support.
-6. Create logical section headers using bold format with checkmark emoji: ✅ **[Section Title]:**
+6. Create logical section headers using bold format: **Section Title:**
 7. Do not add, remove, or change any factual information.
 
 EXAMPLE TRANSFORMATION:
@@ -158,7 +158,7 @@ INPUT:
 "Surgical management includes early surgery within 2 weeks involving limbal stem cell transplantation [1] and amniotic membrane grafts [2]. Late surgery after 6 months involves symblepharon release [3] and keratoplasty [1]."
 
 OUTPUT:
-✅ **Surgical Management:**
+**Surgical Management:**
 * Early Surgery (within 2 weeks):
     * Limbal stem cell transplantation [1]
     * Amniotic membrane grafts [2]
@@ -319,7 +319,7 @@ ${response}`;
     });
 
     // Format section
-    let formatted = `✅ **${section.title}:**\n`;
+    let formatted = `**${section.title}:**\n`;
     formatted += bulletPointsWithCitations.join('\n');
 
     console.log(`[SECTION FORMATTED]`, `Section formatted with ${bulletPointsWithCitations.length} bullet points`);
