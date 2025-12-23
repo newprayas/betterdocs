@@ -135,15 +135,15 @@ export default function SubscriptionModal() {
                                                 However, to keep this app running we need to pay some bills - mainly the cost of building this app, monthly server costs to host this website, and API cost to provide your answers. We really wish we could keep this app as a free service (free is awesome!), but these costs are unavoidable - we have to pay these companies to run our app, which you are a part of now ✨
                                             </p>
                                             <p className="text-sm sm:text-base text-gray-600 dark:text-gray-300 leading-relaxed">
-                                                Hence if you find this app useful and also would want it to continue existing, please consider subscribing for a small fee.
+                                                Hence if you find this app useful and want it to continue existing, please consider subscribing for a small fee.
                                             </p>
                                             <div className="bg-indigo-50 dark:bg-indigo-900/20 p-4 rounded-xl border border-indigo-100 dark:border-indigo-800/30">
                                                 <p className="text-sm sm:text-base font-medium text-gray-800 dark:text-gray-200 leading-relaxed text-center">
                                                     🎉 <strong>Prices are 'less than a cup of coffee a month'</strong>
                                                     <br />
-                                                    Fair price for ALL the medical knowledge in the world in your pockets?
+                                                    A small price for all the medical knowledge in the world in your pocket 🥳
                                                     <br />
-                                                    ✨ Good doctors value accurate medical knowledge ✨ - That's priceless !
+                                                    ✨ Good Answers make Good Doctors ✨
                                                 </p>
                                             </div>
                                             <p className="text-sm sm:text-base text-gray-600 dark:text-gray-300 leading-relaxed">
