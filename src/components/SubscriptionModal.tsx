@@ -129,7 +129,23 @@ export default function SubscriptionModal() {
                                         </Dialog.Title>
                                         <div className="mt-4 space-y-4 text-left">
                                             <p className="text-sm sm:text-base text-gray-600 dark:text-gray-300 leading-relaxed">
-                                                Thanks for trying out MEDDY! We hope you found it useful. To continue using the app, please subscribe to one of our plans below.
+                                                It's awesome that you have been using the app and we are so happy you love it. We are grateful for your support ❤️
+                                            </p>
+                                            <p className="text-sm sm:text-base text-gray-600 dark:text-gray-300 leading-relaxed">
+                                                However, to keep this app running we need to pay some bills - mainly the cost of building this app, monthly server costs to host this website, and API cost to provide your answers. We really wish we could keep this app as a free service (free is awesome!), but these costs are unavoidable - we have to pay these companies to run our app, which you are a part of now ✨
+                                            </p>
+                                            <div className="bg-indigo-50 dark:bg-indigo-900/20 p-4 rounded-xl border border-indigo-100 dark:border-indigo-800/30">
+                                                <p className="text-sm sm:text-base font-medium text-gray-800 dark:text-gray-200 leading-relaxed">
+                                                    Hence if you find this app useful and also would want it to continue existing, please consider subscribing for a small fee of just ✨ <span className="text-indigo-600 dark:text-indigo-400 font-bold">'100 tk per month'</span> ✨ <span className="text-xs text-gray-500 dark:text-gray-400 block mt-1">(That is less than a cup of coffee a month for all the medical knowledge you need every day 🎉 Sounds like an incredible deal?)</span>
+                                                </p>
+                                            </div>
+                                            <p className="text-sm sm:text-base text-gray-600 dark:text-gray-300 leading-relaxed">
+                                                Without your support we will have to sadly shut this app down for everyone, users who love this app as much as you do 😔
+                                            </p>
+                                            <p className="text-sm sm:text-base font-medium text-gray-900 dark:text-white text-center mt-6">
+                                                Every subscription counts, truly appreciate the support ❤️
+                                                <br />
+                                                <span className="text-sm font-normal text-gray-500 dark:text-gray-400 mt-2 block">We have simplified the pricing plans for you:</span>
                                             </p>
 
                                             {/* Pricing Tiers */}
