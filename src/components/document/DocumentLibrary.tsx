@@ -540,24 +540,29 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
       <Card className="w-full max-w-5xl h-[85vh] flex flex-col bg-gray-50 dark:bg-slate-900 shadow-2xl relative">
 
+        {/* Absolute Close Button */}
+        <button
+          onClick={onClose}
+          disabled={isBatchProcessing}
+          className="absolute top-4 right-4 p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-slate-800 rounded-full transition-colors z-30 disabled:opacity-50"
+          aria-label="Close"
+        >
+          <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+
         {/* Header */}
         <div className="p-6 border-b border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 rounded-t-lg">
-          <div className="flex justify-between items-center mb-4">
-            <div>
-              <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Medical Library</h2>
-              <p className="text-sm text-gray-500 dark:text-gray-400">
-                Verified medical resources, ready for instant use.
-                <br />
-                <span className="bg-blue-600 text-white px-1.5 py-0.5 rounded-sm text-[10px] font-bold mt-2 inline-block uppercase tracking-wider shadow-sm w-fit">
-                  Please add large books using Wifi
-                </span>
-              </p>
-            </div>
-            <Button variant="primary" onClick={onClose} disabled={isBatchProcessing}>
-              <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </Button>
+          <div className="flex flex-col mb-4">
+            <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Medical Library</h2>
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              Verified medical resources, ready for instant use.
+              <br />
+              <span className="bg-blue-600 text-white px-1.5 py-0.5 rounded-sm text-[10px] font-bold mt-2 inline-block uppercase tracking-wider shadow-sm w-fit">
+                Please add large books using Wifi
+              </span>
+            </p>
           </div>
 
         </div>
