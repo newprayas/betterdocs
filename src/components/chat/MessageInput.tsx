@@ -229,7 +229,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
           <div className="mb-4 max-w-[85%] sm:max-w-xs lg:max-w-md xl:max-w-lg mx-auto">
             {/* "Please wait!" text above */}
             <div className="text-sm text-yellow-600 dark:text-yellow-400 font-medium mb-3 text-center">
-              ⚡ Please wait!
+              ⚡ Please wait !
             </div>
 
             {/* Progress bar container */}
