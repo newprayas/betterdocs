@@ -20,6 +20,19 @@ export async function middleware(request: NextRequest) {
             return NextResponse.next()
         }
 
+        // ============ GEO-BLOCKING ============
+        // Only allow users from Bangladesh (BD) and Nepal (NP)
+        const ALLOWED_COUNTRIES = ['BD', 'NP'];
+        const country = request.geo?.country;
+
+        // If country is detected and NOT in the allowed list, show 404
+        if (country && !ALLOWED_COUNTRIES.includes(country)) {
+            console.log(`🚫 [MIDDLEWARE] Geo-blocked request from ${country}`);
+            // Rewrite to Next.js built-in 404 page
+            return NextResponse.rewrite(new URL('/404', request.url));
+        }
+        // ======================================
+
         let response = NextResponse.next({
             request: {
                 headers: request.headers,
