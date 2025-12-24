@@ -25,11 +25,11 @@ export async function middleware(request: NextRequest) {
         const ALLOWED_COUNTRIES = ['BD', 'NP'];
         const country = request.geo?.country;
 
-        // If country is detected and NOT in the allowed list, show 404
+        // If country is detected and NOT in the allowed list, return raw 404
         if (country && !ALLOWED_COUNTRIES.includes(country)) {
             console.log(`🚫 [MIDDLEWARE] Geo-blocked request from ${country}`);
-            // Rewrite to Next.js built-in 404 page
-            return NextResponse.rewrite(new URL('/404', request.url));
+            // Return a raw 404 response - bypasses Next.js entirely
+            return new NextResponse(null, { status: 404, statusText: 'Not Found' });
         }
         // ======================================
 
