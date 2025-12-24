@@ -227,8 +227,8 @@ const LIBRARY_CATALOG = [
   },
   {
     "id": "youtube_lectures_processed",
-    "name": "Medical Youtube Lectures",
-    "description": "Processed transcripts and vectors from selected lectures.",
+    "name": "Masud sirs Youtube Lectures",
+    "description": "Masud sirs Youtube lectures - complete all videos",
     "filename": "shard_025_v1.bin",
     "size": "8.0 MB",
     "category": "Lectures",

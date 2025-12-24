@@ -342,6 +342,26 @@ export class DocumentService {
   }
 
   /**
+   * Get ALL documents for a user across ALL sessions
+   * Used for cross-session duplicate detection
+   */
+  async getAllDocumentsForUser(userId: string): Promise<Document[]> {
+    if (!db) return [];
+    if (!userId) return [];
+
+    const documents = await db.documents
+      .filter((doc: Document) => doc.userId === userId)
+      .toArray();
+
+    // Ensure date fields are Date objects (handles IndexedDB serialization)
+    return documents.map(document => ({
+      ...document,
+      createdAt: ensureDate(document.createdAt),
+      processedAt: document.processedAt ? ensureDate(document.processedAt) : undefined
+    }));
+  }
+
+  /**
    * Check if a document with the given filename exists in a specific session
    * Returns the document if found, undefined otherwise
    */

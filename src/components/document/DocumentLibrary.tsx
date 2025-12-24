@@ -106,163 +106,187 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
     setSelectedBooks(newSelected);
   };
 
-  // Check for duplicate books directly in IndexedDB
-  const checkForDuplicate = async (book: LibraryItem): Promise<boolean> => {
-    console.log(`🔍 DUPLICATE CHECK: Starting duplicate check for book: "${book.name}"`);
-    console.log(`🔍 DUPLICATE CHECK: Timestamp: ${new Date().toISOString()}`);
-    console.log(`🔍 DUPLICATE CHECK: Book details:`, {
-      id: book.id,
-      name: book.name,
-      filename: book.filename,
-      description: book.description,
-      category: book.category
-    });
+  // Check for cached books across all sessions - returns source document if found
+  // This enables smart caching: if book exists in another session, we copy instead of re-downloading
+  const findCachedBook = async (book: LibraryItem): Promise<{ document: any; isInCurrentSession: boolean } | null> => {
+    console.log(`🔍 CACHE CHECK: Looking for cached book: "${book.name}"`);
 
     try {
-      // Check if userId is available before proceeding
       if (!userId) {
-        console.log('🔍 DUPLICATE CHECK: No userId available, cannot check for duplicates');
-        return false;
+        console.log('🔍 CACHE CHECK: No userId available');
+        return null;
       }
 
-      // Get documents directly from IndexedDB to avoid timing issues with document store
+      // Get ALL documents for this user across ALL sessions
       const { documentService } = await getIndexedDBServices();
-      const documents = await documentService.getDocumentsBySession(sessionId, userId);
+      const allDocuments = await documentService.getAllDocumentsForUser(userId);
 
-      console.log(`🔍 DUPLICATE CHECK: Comparing against ${documents.length} existing documents from IndexedDB`);
-      console.log(`🔍 DUPLICATE CHECK: IndexedDB query performed at: ${new Date().toISOString()}`);
+      console.log(`🔍 CACHE CHECK: Searching ${allDocuments.length} documents across all sessions`);
+      console.log(`🔍 CACHE CHECK: Documents:`, allDocuments.map(d => ({ filename: d.filename, title: d.title, sessionId: d.sessionId })));
 
-      // Log all existing documents for detailed comparison
-      console.log(`🔍 DUPLICATE CHECK: Existing documents in IndexedDB:`, documents.map(doc => ({
-        id: doc.id,
-        filename: doc.filename,
-        title: doc.title,
-        sessionId: doc.sessionId,
-        status: doc.status,
-        enabled: doc.enabled,
-        createdAt: doc.createdAt
-      })));
+      // Extract keywords from book name for fuzzy matching (words with 4+ chars)
+      const bookKeywords = book.name
+        .toLowerCase()
+        .split(/\s+/)
+        .filter(word => word.length >= 4)
+        .map(word => word.replace(/[^a-z0-9]/g, ''));
 
-      // PRIMARY CHECK: Compare book.filename with document.filename (this is the most reliable match)
-      console.log(`🔍 DUPLICATE CHECK: Checking book.filename vs doc.filename (PRIMARY CHECK)`);
-      const bookFilenameMatch = documents.some(doc => {
-        const matches = doc.filename === book.filename;
-        console.log(`🔍 DUPLICATE CHECK: Comparing book.filename "${book.filename}" with doc.filename "${doc.filename}" = ${matches}`);
-        return matches;
-      });
-      if (bookFilenameMatch) {
-        console.log(`🔍 DUPLICATE FOUND: Book filename match for "${book.filename}"`);
-        alert(`"${book.name}" is already in your library. Skipping duplicate.`);
-        return true;
+      console.log(`🔍 CACHE CHECK: Book keywords for fuzzy match:`, bookKeywords);
+
+      // Find matching document using multiple strategies
+      let matchedDoc = null;
+
+      // Strategy 1: Exact filename match
+      matchedDoc = allDocuments.find(doc => doc.filename === book.filename);
+      if (matchedDoc) console.log(`🔍 CACHE CHECK: Matched by exact filename`);
+
+      // Strategy 2: Check if document filename/title contains book keywords
+      if (!matchedDoc && bookKeywords.length > 0) {
+        matchedDoc = allDocuments.find(doc => {
+          // Normalize both texts: remove special characters for better matching
+          const docText = `${doc.filename} ${doc.title || ''}`.toLowerCase().replace(/[^a-z0-9\s]/g, '');
+          // Match if at least 1 keyword is found (lowered threshold for better cache hits)
+          const matchCount = bookKeywords.filter(kw => docText.includes(kw)).length;
+          const isMatch = matchCount >= 1;
+          if (isMatch) {
+            console.log(`🔍 CACHE CHECK: Fuzzy match found! Keywords matched: ${matchCount}/${bookKeywords.length} in "${docText}"`);
+          }
+          return isMatch;
+        });
+        if (matchedDoc) console.log(`🔍 CACHE CHECK: Matched by fuzzy keyword matching`);
       }
 
-      // SECONDARY CHECK: Compare book.filename with document.title (in case title was set to filename)
-      console.log(`🔍 DUPLICATE CHECK: Checking book.filename vs doc.title (SECONDARY CHECK)`);
-      const bookFilenameTitleMatch = documents.some(doc => {
-        const matches = doc.title === book.filename;
-        console.log(`🔍 DUPLICATE CHECK: Comparing book.filename "${book.filename}" with doc.title "${doc.title}" = ${matches}`);
-        return matches;
-      });
-      if (bookFilenameTitleMatch) {
-        console.log(`🔍 DUPLICATE FOUND: Book filename vs title match for "${book.filename}"`);
-        alert(`"${book.name}" is already in your library. Skipping duplicate.`);
-        return true;
+      // Strategy 3: Case-insensitive exact name match
+      if (!matchedDoc) {
+        matchedDoc = allDocuments.find(doc =>
+          doc.filename.toLowerCase() === book.name.toLowerCase() ||
+          (doc.title && doc.title.toLowerCase() === book.name.toLowerCase())
+        );
+        if (matchedDoc) console.log(`🔍 CACHE CHECK: Matched by case-insensitive name`);
       }
 
-      // TERTIARY CHECK: Compare book.name with document.filename (for backwards compatibility)
-      console.log(`🔍 DUPLICATE CHECK: Checking book.name vs doc.filename (TERTIARY CHECK)`);
-      const nameToFilenameMatch = documents.some(doc => {
-        const matches = doc.filename === book.name;
-        console.log(`🔍 DUPLICATE CHECK: Comparing book.name "${book.name}" with doc.filename "${doc.filename}" = ${matches}`);
-        return matches;
-      });
-      if (nameToFilenameMatch) {
-        console.log(`🔍 DUPLICATE FOUND: Book name to filename match for "${book.name}"`);
-        alert(`"${book.name}" is already in your library. Skipping duplicate.`);
-        return true;
+      if (matchedDoc) {
+        const isInCurrentSession = matchedDoc.sessionId === sessionId;
+        console.log(`🔍 CACHE HIT: Found "${book.name}" in ${isInCurrentSession ? 'CURRENT' : 'ANOTHER'} session`);
+        return { document: matchedDoc, isInCurrentSession };
       }
 
-      // QUATERNARY CHECK: Compare book.name with document.title (for backwards compatibility)
-      console.log(`🔍 DUPLICATE CHECK: Checking book.name vs doc.title (QUATERNARY CHECK)`);
-      const nameToTitleMatch = documents.some(doc => {
-        const matches = doc.title === book.name;
-        console.log(`🔍 DUPLICATE CHECK: Comparing book.name "${book.name}" with doc.title "${doc.title}" = ${matches}`);
-        return matches;
-      });
-      if (nameToTitleMatch) {
-        console.log(`🔍 DUPLICATE FOUND: Book name to title match for "${book.name}"`);
-        alert(`"${book.name}" is already in your library. Skipping duplicate.`);
-        return true;
-      }
-
-      // CASE-INSENSITIVE CHECKS: As fallbacks
-      console.log(`🔍 DUPLICATE CHECK: Checking case-insensitive book.filename vs doc.filename`);
-      const caseInsensitiveFilenameMatch = documents.some(doc => {
-        const matches = doc.filename.toLowerCase() === book.filename.toLowerCase();
-        console.log(`🔍 DUPLICATE CHECK: Comparing "${book.filename.toLowerCase()}" with "${doc.filename.toLowerCase()}" = ${matches}`);
-        return matches;
-      });
-      if (caseInsensitiveFilenameMatch) {
-        console.log(`🔍 DUPLICATE FOUND: Case-insensitive filename match for "${book.filename}"`);
-        alert(`"${book.name}" is already in your library (case-insensitive match). Skipping duplicate.`);
-        return true;
-      }
-
-      console.log(`🔍 DUPLICATE CHECK: Checking case-insensitive book.name vs doc.filename`);
-      const caseInsensitiveNameMatch = documents.some(doc => {
-        const matches = doc.filename.toLowerCase() === book.name.toLowerCase();
-        console.log(`🔍 DUPLICATE CHECK: Comparing "${book.name.toLowerCase()}" with "${doc.filename.toLowerCase()}" = ${matches}`);
-        return matches;
-      });
-      if (caseInsensitiveNameMatch) {
-        console.log(`🔍 DUPLICATE FOUND: Case-insensitive name match for "${book.name}"`);
-        alert(`"${book.name}" is already in your library (case-insensitive match). Skipping duplicate.`);
-        return true;
-      }
-
-      console.log(`🔍 NO DUPLICATE: No duplicate found for "${book.name}" (filename: ${book.filename})`);
-      return false; // No duplicate found
+      console.log(`🔍 CACHE MISS: "${book.name}" not found in any session`);
+      return null;
     } catch (error) {
-      console.error('🔍 DUPLICATE CHECK ERROR: Error checking for duplicates in IndexedDB:', error);
-      // If we can't check IndexedDB, fall back to document store as a last resort
-      console.log('🔍 DUPLICATE CHECK: Falling back to document store due to IndexedDB error');
-      const { documents } = useDocumentStore.getState();
-      console.log(`🔍 DUPLICATE CHECK: Comparing against ${documents.length} existing documents from document store (fallback)`);
-
-      const bookFilenameMatch = documents.some(doc => doc.filename === book.filename);
-      if (bookFilenameMatch) {
-        console.log(`🔍 DUPLICATE FOUND: Book filename match for "${book.filename}" (fallback check)`);
-        alert(`"${book.name}" is already in your library. Skipping duplicate.`);
-        return true;
-      }
-
-      console.log(`🔍 NO DUPLICATE: No duplicate found for "${book.name}" (fallback check)`);
-      return false;
+      console.error('🔍 CACHE CHECK ERROR:', error);
+      return null;
     }
   };
 
-  // Process a single book
-  const processSingleBook = async (book: LibraryItem): Promise<void> => {
-    console.log(`🔍 PROCESSING: Starting to process book "${book.name}"`);
-    console.log(`🔍 DUPLICATE CHECK: Performing duplicate check for "${book.name}"`);
+  // Copy a book from another session to the current session (fast, no download)
+  const copyBookFromCache = async (
+    book: LibraryItem,
+    sourceDoc: any,
+    onProgress: (progress: number) => void
+  ): Promise<void> => {
+    console.log(`📋 CACHE COPY: Copying "${book.name}" from session ${sourceDoc.sessionId} to ${sessionId}`);
 
-    // Check for duplicates before processing (now async)
-    const isDuplicate = await checkForDuplicate(book);
-    if (isDuplicate) {
-      console.log(`🔍 PROCESSING: Book "${book.name}" skipped due to being a duplicate`);
-      // Mark as skipped to show in UI
-      setProcessingStatus(prev => ({
-        ...prev,
-        [book.id]: {
-          status: 'error',
-          error: 'Duplicate document - already in library'
-        }
+    const { documentService, embeddingService } = await getIndexedDBServices();
+
+    // Animate progress over 2 seconds (fake but satisfying UX)
+    const animateProgress = async () => {
+      for (let i = 0; i <= 100; i += 5) {
+        onProgress(i);
+        await new Promise(resolve => setTimeout(resolve, 100)); // 100ms * 20 steps = 2 seconds
+      }
+    };
+
+    // Start animation and copy in parallel
+    const animationPromise = animateProgress();
+
+    // Get embeddings from source document
+    const sourceEmbeddings = await embeddingService.getEmbeddingsByDocument(sourceDoc.id);
+    console.log(`📋 CACHE COPY: Found ${sourceEmbeddings.length} embeddings to copy`);
+
+    // Create new document in current session (with new ID)
+    const newDocId = crypto.randomUUID();
+    const newDocument = await documentService.createDocument({
+      id: newDocId,
+      sessionId: sessionId,
+      filename: sourceDoc.filename,
+      fileSize: sourceDoc.fileSize,
+      pageCount: sourceDoc.pageCount,
+      title: sourceDoc.title,
+      originalPath: sourceDoc.originalPath,
+    }, userId!);
+
+    // Copy embeddings with new IDs pointing to new document
+    if (sourceEmbeddings.length > 0) {
+      const newEmbeddings = sourceEmbeddings.map(emb => ({
+        ...emb,
+        id: crypto.randomUUID(),
+        documentId: newDocId,
+        sessionId: sessionId,
+        createdAt: new Date(),
       }));
-      return;
+
+      await embeddingService.addEmbeddingsDirectly(newEmbeddings);
+      console.log(`📋 CACHE COPY: Copied ${newEmbeddings.length} embeddings`);
     }
 
-    console.log(`🔍 PROCESSING: Continuing with normal processing for "${book.name}" (no duplicate found)`);
+    // Mark document as completed
+    await documentService.updateDocumentStatus(newDocId, 'completed', undefined, userId ?? undefined);
+
+    // Wait for animation to finish (ensures smooth UX)
+    await animationPromise;
+
+    console.log(`📋 CACHE COPY: Successfully copied "${book.name}" to current session`);
+  };
+
+  // Process a single book (with smart caching)
+  const processSingleBook = async (book: LibraryItem): Promise<void> => {
+    console.log(`🔍 PROCESSING: Starting to process book "${book.name}"`);
+
     if (!userId) throw new Error("User ID is required");
+
+    // Check if book is already cached somewhere
+    const cached = await findCachedBook(book);
+
+    if (cached) {
+      if (cached.isInCurrentSession) {
+        // Book is already in THIS session - just mark as duplicate
+        console.log(`🔍 PROCESSING: Book "${book.name}" already exists in current session`);
+        setProcessingStatus(prev => ({
+          ...prev,
+          [book.id]: { status: 'completed', progress: 100 }
+        }));
+        return;
+      }
+
+      // Book exists in ANOTHER session - copy it with fake progress animation
+      console.log(`🔍 PROCESSING: Book "${book.name}" found in another session, copying...`);
+      setProcessingStatus(prev => ({
+        ...prev,
+        [book.id]: { status: 'processing', progress: 0 }
+      }));
+
+      try {
+        await copyBookFromCache(book, cached.document, (progress) => {
+          setProcessingStatus(prev => ({
+            ...prev,
+            [book.id]: { status: 'processing', progress }
+          }));
+        });
+
+        setProcessingStatus(prev => ({
+          ...prev,
+          [book.id]: { status: 'completed', progress: 100 }
+        }));
+        return;
+      } catch (err) {
+        console.error(`📋 CACHE COPY ERROR: Failed to copy "${book.name}", falling back to download`, err);
+        // Fall through to normal download
+      }
+    }
+
+    // Book not cached anywhere - proceed with normal download
+    console.log(`🔍 PROCESSING: No cache found for "${book.name}", downloading fresh...`);
 
     console.log('🔍 PROCESS SINGLE BOOK DEBUG: Starting processing for book:', {
       bookId: book.id,
