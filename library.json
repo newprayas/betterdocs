@@ -1,14 +1,4 @@
-import { LibraryItem } from '@/types/library';
-
-// ---------------- CONFIGURATION ----------------
-const HF_USER = 'prayas12';
-const HF_REPO = 'vector-datasets-prod';
-// "resolve/main" ensures we get the raw file from the latest commit
-const BASE_URL = `https://huggingface.co/datasets/${HF_USER}/${HF_REPO}/resolve/main`;
-// -----------------------------------------------
-
-// Embedded library catalog (not hosted externally for obscurity)
-const LIBRARY_CATALOG = [
+[
   {
     "id": "national_rabies_guideline_2021",
     "name": "National Rabies Guideline 2021",
@@ -234,43 +224,4 @@ const LIBRARY_CATALOG = [
     "category": "Lectures",
     "version": "1.0"
   }
-];
-
-export const libraryService = {
-  /**
-   * Returns the embedded library catalog with full download URLs
-   * (No external fetch - catalog is embedded in code for obscurity)
-   */
-  async getAvailableBooks(): Promise<LibraryItem[]> {
-    // Map the embedded catalog to include the full download URL
-    return LIBRARY_CATALOG.map((item) => ({
-      ...item,
-      url: `${BASE_URL}/${item.filename}`
-    }));
-  },
-
-  /**
-   * Downloads and parses a .bin shard file (gzip compressed JSON)
-   * Uses the browser's native DecompressionStream for performance
-   */
-  async downloadAndParseBook(url: string): Promise<any> {
-    console.log(`[Library] Starting download: ${url}`);
-    const response = await fetch(url);
-
-    if (!response.ok) throw new Error(`Download failed: ${response.statusText}`);
-    if (!response.body) throw new Error("ReadableStream not supported by browser");
-
-    // 1. Create a stream for decompression
-    const ds = new DecompressionStream('gzip');
-
-    // 2. Pipe the download stream through the decompressor
-    const decompressedStream = response.body.pipeThrough(ds);
-
-    // 3. Convert the stream into a Response object to easily parse JSON
-    // This prevents having to buffer the whole string in JS memory manually
-    const jsonResponse = new Response(decompressedStream);
-
-    console.log(`[Library] Decompression complete, parsing JSON...`);
-    return await jsonResponse.json();
-  }
-};
+]
