@@ -559,8 +559,11 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
             <p className="text-sm text-gray-500 dark:text-gray-400">
               Verified medical resources, ready for instant use.
               <br />
-              <span className="bg-blue-600 text-white px-1.5 py-0.5 rounded-sm text-[10px] font-bold mt-2 inline-block uppercase tracking-wider shadow-sm w-fit">
-                Please add large books using Wifi
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 mt-2.5 text-xs font-semibold rounded-sm bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border border-blue-100 dark:border-blue-800/50 shadow-sm w-fit">
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.141 0M1.345 8.99c5.858-5.857 15.352-5.857 21.21 0" />
+                </svg>
+                Please add large books using WiFi
               </span>
             </p>
           </div>
