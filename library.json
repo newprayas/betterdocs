@@ -217,8 +217,8 @@
   },
   {
     "id": "youtube_lectures_processed",
-    "name": "Medical Youtube Lectures",
-    "description": "Processed transcripts and vectors from selected lectures.",
+    "name": "Masud sir's Youtube Lectures",
+    "description": "Msaud sir's Youtube lectures - complete all videos",
     "filename": "shard_025_v1.bin",
     "size": "8.0 MB",
     "category": "Lectures",
