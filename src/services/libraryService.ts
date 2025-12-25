@@ -123,7 +123,7 @@ const LIBRARY_CATALOG = [
     "description": "Diseases of Ear, Nose and Throat.",
     "filename": "shard_013_v1.bin",
     "size": "25.0 MB",
-    "category": "Otolaryngology",
+    "category": "ENT",
     "version": "7.0"
   },
   {
@@ -146,7 +146,7 @@ const LIBRARY_CATALOG = [
   },
   {
     "id": "illustrated_synopsis_derm",
-    "name": "Illustrated Synopsis of Dermatology & STD",
+    "name": "Neela Khanna - Illustrated Synopsis of Dermatology & STD",
     "description": "Visual guide to dermatological conditions.",
     "filename": "shard_016_v1.bin",
     "size": "15.0 MB",

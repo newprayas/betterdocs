@@ -1,8 +1,11 @@
 'use client'
 
-import { Fragment, useState, useEffect, useRef } from 'react'
+import { Fragment, useState, useEffect, useRef, useCallback } from 'react'
 import { Dialog, Transition } from '@headlessui/react'
-import { createClient } from '@/utils/supabase/client'
+import {
+    checkSubscriptionStatus,
+    setupVisibilityChangeListener
+} from '@/services/subscriptionCheckService'
 
 // Subscription pricing tiers - matches Supabase enum values
 const SUBSCRIPTION_TIERS = [
@@ -12,78 +15,43 @@ const SUBSCRIPTION_TIERS = [
     { id: '12 Months', name: '12 Months', duration: '12 months', price: 800, savings: 400 },
 ]
 
-// Plan duration in days - matches Supabase subscription_plan values
-const PLAN_DURATIONS: Record<string, number> = {
-    '1 Month': 30,
-    '3 Months': 90,
-    '6 Months': 180,
-    '12 Months': 365,
-}
-
 export default function SubscriptionModal() {
     const [open, setOpen] = useState(false)
     const [loading, setLoading] = useState(true)
     const [daysRemaining, setDaysRemaining] = useState<number | null>(null)
-    const supabase = createClient()
     const titleRef = useRef(null)
 
+    // Callback to handle subscription status updates
+    const handleStatusUpdate = useCallback((status: { hasAccess: boolean; daysRemaining: number | null }) => {
+        setDaysRemaining(status.daysRemaining)
+
+        // Show modal if user doesn't have access (trial expired AND subscription expired/invalid)
+        if (!status.hasAccess) {
+            console.log('[SUBSCRIPTION MODAL] Showing modal - no access')
+            setOpen(true)
+        } else {
+            console.log('[SUBSCRIPTION MODAL] User has access, hiding modal')
+            setOpen(false)
+        }
+    }, [])
+
     useEffect(() => {
-        async function checkSubscription() {
-            const { data: { user } } = await supabase.auth.getUser()
-            if (!user) {
-                setLoading(false)
-                return
-            }
-
-            const { data: profile } = await supabase
-                .from('profiles')
-                .select('*')
-                .eq('id', user.id)
-                .single()
-
-            if (profile) {
-                const now = new Date()
-                const trialStart = new Date(profile.trial_start_date)
-                const trialEnd = new Date(trialStart.getTime() + 30 * 24 * 60 * 60 * 1000) // 30 days
-                const trialExpired = now > trialEnd
-
-                // Check subscription using plan + start date (auto-calculates expiry)
-                const isSubscribed = profile.is_subscribed
-                const subscriptionPlan = profile.subscription_plan as string | null
-                const subscriptionStartDate = profile.subscription_start_date
-                    ? new Date(profile.subscription_start_date)
-                    : null
-
-                // Calculate subscription validity from plan + start date
-                let subscriptionValid = false
-                if (isSubscribed && subscriptionPlan && subscriptionStartDate) {
-                    const planDays = PLAN_DURATIONS[subscriptionPlan] || 30
-                    const subscriptionExpiry = new Date(subscriptionStartDate.getTime() + planDays * 24 * 60 * 60 * 1000)
-                    subscriptionValid = now < subscriptionExpiry
-
-                    // Calculate days remaining if valid
-                    if (subscriptionValid) {
-                        const diffTime = subscriptionExpiry.getTime() - now.getTime()
-                        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
-                        setDaysRemaining(diffDays)
-                        console.log(`[SUBSCRIPTION] Valid: ${subscriptionPlan}, ${diffDays} days remaining`)
-                    } else {
-                        console.log(`[SUBSCRIPTION] Expired: ${subscriptionPlan}`)
-                    }
-                }
-
-                // Show modal if:
-                // 1. Trial has expired AND
-                // 2. No valid subscription (either not subscribed or subscription expired)
-                if (trialExpired && !subscriptionValid) {
-                    setOpen(true)
-                }
+        // Initial subscription check on mount (force server check)
+        async function initialCheck() {
+            const status = await checkSubscriptionStatus(true) // Force server check on initial load
+            if (status) {
+                handleStatusUpdate(status)
             }
             setLoading(false)
         }
 
-        checkSubscription()
-    }, [])
+        initialCheck()
+
+        // Setup visibility change listener for subsequent checks
+        const cleanup = setupVisibilityChangeListener(handleStatusUpdate)
+
+        return cleanup
+    }, [handleStatusUpdate])
 
     if (loading) return null
 
