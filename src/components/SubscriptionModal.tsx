@@ -107,11 +107,11 @@ export default function SubscriptionModal() {
                                             </p>
                                             <div className="bg-indigo-50 dark:bg-indigo-900/20 p-4 rounded-xl border border-indigo-100 dark:border-indigo-800/30">
                                                 <p className="text-sm sm:text-base font-medium text-gray-800 dark:text-gray-200 leading-relaxed text-center">
-                                                    🎉 <strong>That is 'less than a cup of coffee a month'</strong>
+                                                    🎉 <strong>Prices are'less than a cup of coffee a month'</strong>
                                                     <br />
-                                                    Fair price for all the medical knowledge in the world in your pocket 🥳
+                                                    Fair price for all the medical knowledge in the world in your pockets? 🥳
                                                     <br />
-                                                    ✨ Good Answers make Good Doctors - that's priceless ✨
+                                                    ✨ Good Answers make Good Doctors ✨That's priceless
                                                 </p>
                                             </div>
                                             <p className="text-sm sm:text-base text-gray-600 dark:text-gray-300 leading-relaxed">
@@ -155,7 +155,7 @@ export default function SubscriptionModal() {
                                                                 </p>
                                                             )}
                                                             {tier.note && (
-                                                                <p className="text-xs text-indigo-600 dark:text-indigo-400 font-medium italic mt-1">
+                                                                <p className="text-xs text-green-600 dark:text-green-400 font-medium mt-1">
                                                                     {tier.note}
                                                                 </p>
                                                             )}
