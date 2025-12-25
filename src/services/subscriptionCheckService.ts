@@ -4,7 +4,8 @@ import { createClient } from '@/utils/supabase/client'
 
 // Constants
 const COOLDOWN_MS = 5 * 60 * 1000 // 5 minutes
-const BUFFER_HOURS = 24 // Skip server check if subscription ends in > 24 hours
+const BUFFER_HOURS = 6 // Skip server check if subscription ends in > 6 hours (nervous at 6h)
+const MAX_CACHE_AGE_MS = 24 * 60 * 60 * 1000 // Force server check if cache is older than 24 hours
 const STORAGE_KEY = 'subscription_check_cache'
 
 // Plan duration in days - matches Supabase subscription_plan values
@@ -87,22 +88,28 @@ function shouldSkipServerCheck(cache: SubscriptionCache | null, userId: string):
     const now = Date.now()
     const timeSinceLastCheck = now - cache.lastCheck
 
-    // Check cooldown (5 minutes)
+    // 1. Force check if cache is too old (24 hours) - allows for "abrupt stop" of access
+    if (timeSinceLastCheck > MAX_CACHE_AGE_MS) {
+        return { skip: false, reason: 'cache-too-old-24h' }
+    }
+
+    // 2. Check cooldown (5 minutes) to prevent spamming
     if (timeSinceLastCheck < COOLDOWN_MS) {
         return { skip: true, reason: 'cooldown-active' }
     }
 
-    // Check if subscription ends in > 24 hours (skip server if so)
+    // 3. Check if subscription ends in > 6 hours (skip server if so)
     const subscriptionEndsAt = cache.subscriptionEndsAt ? new Date(cache.subscriptionEndsAt) : null
     const trialEndsAt = cache.trialEndsAt ? new Date(cache.trialEndsAt) : null
 
     // Use the later of trial end or subscription end
-    const effectiveEndDate = subscriptionEndsAt && cache.isSubscribed
+    const effectiveEndDate = (subscriptionEndsAt && cache.isSubscribed)
         ? subscriptionEndsAt
         : trialEndsAt
 
     if (effectiveEndDate) {
         const hoursUntilExpiry = (effectiveEndDate.getTime() - now) / (1000 * 60 * 60)
+        // If it expires soon (< 6 hours), we want to be strict and check server every 5 mins
         if (hoursUntilExpiry > BUFFER_HOURS) {
             return { skip: true, reason: 'subscription-valid-beyond-buffer' }
         }
