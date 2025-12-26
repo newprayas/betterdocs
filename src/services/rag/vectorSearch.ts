@@ -17,95 +17,39 @@ export class VectorSearchService {
       userId?: string;
     } = {}
   ): Promise<VectorSearchResult[]> {
-    try {
-      const {
-        maxResults = 8,
-        similarityThreshold = 0.7,
-        documentIds
-      } = options;
+    return new Promise((resolve, reject) => {
+      // Initialize Worker
+      const worker = new Worker(new URL('../../workers/vectorSearch.worker.ts', import.meta.url));
 
-      // Get embeddings for enabled documents only
-      let embeddings: EmbeddingChunk[];
-
-      if (documentIds && documentIds.length > 0) {
-        embeddings = await this.getEmbeddingsByDocumentIds(documentIds);
-      } else {
-        embeddings = await this.embeddingService.getEnabledEmbeddingsBySession(sessionId, options.userId);
-      }
-
-      // Batch fetch all relevant documents at once to eliminate N+1 queries
-      const documentMap = await this.batchFetchDocuments(embeddings, documentIds, sessionId, options.userId);
-
-      // Calculate similarities using optimized cosine similarity
-      const results: VectorSearchResult[] = [];
-
-      for (const embedding of embeddings) {
-        // Use pre-computed norm if available
-        const embeddingNorm = embedding.metadata?.embeddingNorm || calculateVectorNorm(embedding.embedding);
-        const similarity = cosineSimilarity(queryEmbedding, embedding.embedding);
-
-        if (similarity >= similarityThreshold) {
-          // Get document info from the pre-fetched map (O(1) lookup instead of database call)
-          const document = documentMap.get(embedding.documentId);
-
-          if (document) {
-            results.push({
-              chunk: embedding,
-              similarity,
-              document: {
-                id: document.id,
-                title: document.title || document.filename,
-                fileName: document.filename,
-              },
-            });
-          }
+      worker.onmessage = (event) => {
+        const { type, payload, error } = event.data;
+        if (type === 'SEARCH_RESULT') {
+          resolve(payload);
+          worker.terminate(); // Clean up
+        } else if (type === 'ERROR') {
+          console.error('[VectorWorker] Error:', error);
+          reject(new Error(error));
+          worker.terminate();
         }
-      }
+      };
 
-      // 1. Sort results by similarity (Descending) - Critical for Adaptive Context Window
-      results.sort((a, b) => b.similarity - a.similarity);
+      worker.onerror = (error) => {
+        console.error('[VectorWorker] Unexpected error:', error);
+        reject(error);
+        worker.terminate();
+      };
 
-      // 2. Adaptive Context Window Logic (Score Gap)
-      // This filters out low-quality chunks that are significantly worse than the best match.
-      const adaptiveResults: VectorSearchResult[] = [];
-
-      if (results.length > 0) {
-        const bestScore = results[0].similarity;
-
-        // CONFIGURATION: Adaptive Context Window Threshold
-        // 0.85 (15% gap) is High Precision (Good for medical facts - Reduces hallucinations)
-        // 0.75 (25% gap) is More Permissive (Good for creative tasks)
-        // LOCATED HERE: Change this value to adjust strictness
-        const SCORE_THRESHOLD_RATIO = 0.85;
-        const cutoff = bestScore * SCORE_THRESHOLD_RATIO;
-
-        console.log(`[Adaptive Filter] Best Score: ${bestScore.toFixed(3)}, Cutoff Threshold: ${cutoff.toFixed(3)} (Ratio: ${SCORE_THRESHOLD_RATIO})`);
-
-        for (const result of results) {
-          // KEY LOGIC: If this chunk is significantly worse than the best one, stop.
-          // We assume if the score drops too much, it's likely a different topic or low quality distraction.
-          if (result.similarity < cutoff) {
-            console.log(`[Adaptive Filter] Dropped chunk. Score ${result.similarity.toFixed(3)} is below cutoff ${cutoff.toFixed(3)}`);
-            continue;
-          }
-
-          adaptiveResults.push(result);
+      // Send Request
+      console.log('🚀 [MAIN THREAD] Offloading search to Worker...');
+      worker.postMessage({
+        type: 'SEARCH',
+        payload: {
+          queryEmbedding,
+          sessionId,
+          options
         }
-        console.log(`[Adaptive Filter] Kept ${adaptiveResults.length} chunks out of ${results.length} total results.`);
-      }
-
-      // 3. Apply page deduplication (combine chunks from same page)
-      // We use adaptiveResults here instead of raw results
-      const deduplicatedResults = this.deduplicateByPage(adaptiveResults);
-
-      // 4. Final Sort and Limit
-      return deduplicatedResults
-        .sort((a, b) => b.similarity - a.similarity)
-        .slice(0, maxResults);
-    } catch (error) {
-      console.error('Error in vector search:', error);
-      throw new Error('Failed to perform vector search');
-    }
+      });
+    });
   }
 
   private async getEmbeddingsByDocumentIds(documentIds: string[]): Promise<EmbeddingChunk[]> {

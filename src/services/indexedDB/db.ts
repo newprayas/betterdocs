@@ -106,8 +106,9 @@ export class RAGDatabase extends Dexie {
 }
 
 
-// Only create database instance on client side
-export const db = typeof window !== 'undefined' ? new RAGDatabase() : null;
+// Only create database instance on client side (Window or Worker)
+const isBrowser = typeof window !== 'undefined' || typeof self !== 'undefined';
+export const db = isBrowser ? new RAGDatabase() : null;
 
 // Helper functions for database operations
 export const initDB = async (): Promise<void> => {
