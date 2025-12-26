@@ -18,6 +18,7 @@ interface ProcessingStatus {
     status: 'pending' | 'processing' | 'completed' | 'error';
     progress?: number;
     error?: string;
+    documentId?: string;
   };
 }
 
@@ -195,7 +196,7 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
     book: LibraryItem,
     sourceDoc: any,
     onProgress: (progress: number) => void
-  ): Promise<void> => {
+  ): Promise<string> => {
     console.log(`📋 CACHE COPY: Copying "${book.name}" from session ${sourceDoc.sessionId} to ${sessionId}`);
 
     const { documentService, embeddingService } = await getIndexedDBServices();
@@ -248,10 +249,11 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
     await animationPromise;
 
     console.log(`📋 CACHE COPY: Successfully copied "${book.name}" to current session`);
+    return newDocId;
   };
 
-  // Process a single book (with smart caching)
-  const processSingleBook = async (book: LibraryItem): Promise<void> => {
+  // Process a single book (with smart caching) and return the resulting document ID if successful
+  const processSingleBook = async (book: LibraryItem): Promise<string | undefined> => {
     console.log(`🔍 PROCESSING: Starting to process book "${book.name}"`);
 
     if (!userId) throw new Error("User ID is required");
@@ -261,13 +263,11 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
 
     if (cached) {
       if (cached.isInCurrentSession) {
-        // Book is already in THIS session - just mark as duplicate
-        console.log(`🔍 PROCESSING: Book "${book.name}" already exists in current session`);
         setProcessingStatus(prev => ({
           ...prev,
-          [book.id]: { status: 'completed', progress: 100 }
+          [book.id]: { status: 'completed', progress: 100, documentId: cached.document.id }
         }));
-        return;
+        return cached.document.id;
       }
 
       // Book exists in ANOTHER session - copy it with fake progress animation
@@ -278,7 +278,7 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
       }));
 
       try {
-        await copyBookFromCache(book, cached.document, (progress) => {
+        const newDocId = await copyBookFromCache(book, cached.document, (progress) => {
           setProcessingStatus(prev => ({
             ...prev,
             [book.id]: { status: 'processing', progress }
@@ -287,9 +287,9 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
 
         setProcessingStatus(prev => ({
           ...prev,
-          [book.id]: { status: 'completed', progress: 100 }
+          [book.id]: { status: 'completed', progress: 100, documentId: newDocId }
         }));
-        return;
+        return newDocId;
       } catch (err) {
         console.error(`📋 CACHE COPY ERROR: Failed to copy "${book.name}", falling back to download`, err);
         // Fall through to normal download
@@ -362,8 +362,14 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
 
       setProcessingStatus(prev => ({
         ...prev,
-        [book.id]: { status: 'completed', progress: 100 }
+        [book.id]: {
+          status: 'completed',
+          progress: 100,
+          documentId: jsonData.document_metadata?.id
+        }
       }));
+
+      return jsonData.document_metadata?.id;
     } catch (err) {
       console.error('🔍 PROCESSING ERROR DEBUG: Error processing book:', {
         bookName: book.name,
@@ -402,153 +408,74 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
 
     setIsBatchProcessing(true);
     const selectedBooksList = books.filter(book => selectedBooks.has(book.id));
+    const processedDocIds: Record<string, string> = {};
 
     try {
-      // Process all selected books sequentially to avoid race conditions in duplicate checking
+      // Process all selected books sequentially
       for (const book of selectedBooksList) {
-        await processSingleBook(book);
+        const docId = await processSingleBook(book);
+        if (docId) {
+          processedDocIds[book.id] = docId;
+        }
       }
 
-      // Wait a moment for the final status updates
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Wait a moment for the final status updates and database sync
+      await new Promise(resolve => setTimeout(resolve, 1500));
 
       // Refresh UI to get the actual document status from database
       await loadDocuments(sessionId);
 
-      // CRITICAL FIX: Get accurate success/failure counts by checking actual document status
-      // rather than relying on processingStatus which might have race conditions
-      const { documents } = useDocumentStore.getState();
-
-      console.log('🔍 SUCCESS COUNT DEBUG: Documents in store after processing:', documents.length);
-      console.log('🔍 SUCCESS COUNT DEBUG: Processing status:', processingStatus);
-
-      // Enhanced logging for debugging document matching
-      console.log('🔍 DOCUMENT STORE DEBUG: All documents in store:', documents.map(doc => ({
-        id: doc.id,
-        filename: doc.filename,
-        title: doc.title,
-        status: doc.status,
-        sessionId: doc.sessionId,
-        enabled: doc.enabled
-      })));
-
-      console.log('🔍 SELECTED BOOKS DEBUG: All selected books:', selectedBooksList.map(book => ({
-        id: book.id,
-        name: book.name,
-        url: book.url
-      })));
+      // Get accurate documents from store (Zustand state is fresh here because of the await)
+      const { documents: allDocs } = useDocumentStore.getState();
 
       // Count successful and failed downloads by checking actual document status
       let successful = 0;
       let failed = 0;
 
       for (const book of selectedBooksList) {
-        console.log('🔍 MATCHING DEBUG: Attempting to match book:', {
-          bookId: book.id,
-          bookName: book.name,
-          bookUrl: book.url
-        });
+        // Try to find the document using the ID we captured during processing
+        const trackedId = processedDocIds[book.id];
+        let document = allDocs.find(doc => doc.id === trackedId);
 
-        // Enhanced matching logic with multiple fallback strategies
-        let document = documents.find(doc =>
-          doc.filename === book.name ||
-          doc.title === book.name ||
-          doc.id.includes(book.id)
-        );
-
-        // If not found with exact matches, try fuzzy matching
+        // Fallback strategies for finding the document
         if (!document) {
-          console.log('🔍 MATCHING DEBUG: Exact match failed, trying fuzzy matching');
+          document = allDocs.find(doc =>
+            doc.filename === book.name ||
+            doc.title === book.name ||
+            doc.id.includes(book.id)
+          );
 
-          // Try matching by extracting filename from URL
-          const urlFilename = book.url.split('/').pop()?.split('.')[0];
-          if (urlFilename) {
-            document = documents.find(doc =>
-              doc.filename.includes(urlFilename) ||
-              doc.title?.includes(urlFilename) ||
-              doc.id.includes(urlFilename)
-            );
-            console.log('🔍 MATCHING DEBUG: URL filename matching:', {
-              urlFilename,
-              found: !!document
-            });
-          }
-
-          // Try matching by book ID parts (in case of UUID regeneration)
-          if (!document && book.id.includes('_')) {
-            const bookIdParts = book.id.split('_');
-            for (const part of bookIdParts) {
-              if (part.length > 3) { // Only use meaningful parts
-                document = documents.find(doc =>
-                  doc.id.includes(part) ||
-                  doc.filename.includes(part) ||
-                  doc.title?.includes(part)
-                );
-                if (document) {
-                  console.log('🔍 MATCHING DEBUG: Found by ID part:', part);
-                  break;
-                }
-              }
-            }
-          }
-
-          // Try matching by normalized name (lowercase, no special chars)
           if (!document) {
-            const normalizedName = book.name.toLowerCase().replace(/[^a-z0-9]/g, '');
-            document = documents.find(doc => {
-              const normalizedFilename = doc.filename.toLowerCase().replace(/[^a-z0-9]/g, '');
-              const normalizedTitle = doc.title?.toLowerCase().replace(/[^a-z0-9]/g, '') || '';
-              const normalizedId = doc.id.toLowerCase().replace(/[^a-z0-9]/g, '');
-              return normalizedFilename.includes(normalizedName) ||
-                normalizedTitle.includes(normalizedName) ||
-                normalizedId.includes(normalizedName);
-            });
-            console.log('🔍 MATCHING DEBUG: Normalized name matching:', {
-              normalizedName,
-              found: !!document
-            });
+            const urlFilename = book.url.split('/').pop()?.split('.')[0];
+            if (urlFilename) {
+              document = allDocs.find(doc =>
+                doc.filename.includes(urlFilename) ||
+                doc.title?.includes(urlFilename)
+              );
+            }
           }
         }
 
-        console.log('🔍 DOCUMENT STATUS DEBUG:', {
-          bookId: book.id,
-          bookName: book.name,
-          documentFound: !!document,
-          documentId: document?.id,
-          documentFilename: document?.filename,
-          documentTitle: document?.title,
-          documentStatus: document?.status,
-          processingStatus: processingStatus[book.id]?.status
-        });
-
-        // Use actual document status if available, fallback to processing status
-        const actualStatus = document?.status || processingStatus[book.id]?.status;
+        const actualStatus = document?.status;
 
         if (actualStatus === 'completed') {
           successful++;
-          console.log('🔍 COUNT DEBUG: Counted as successful - Book:', book.name, 'Document:', document?.filename);
-        } else if (actualStatus === 'failed' || actualStatus === 'error') {
-          failed++;
-          console.log('🔍 COUNT DEBUG: Counted as failed - Book:', book.name, 'Status:', actualStatus);
+          console.log(`🔍 SUCCESS: Found and confirmed book "${book.name}"`);
         } else {
-          // If status is unclear, check processing status as fallback
-          if (processingStatus[book.id]?.status === 'completed') {
-            successful++;
-            console.log('🔍 COUNT DEBUG: Counted as successful (processing status) - Book:', book.name);
-          } else if (processingStatus[book.id]?.status === 'error') {
-            failed++;
-            console.log('🔍 COUNT DEBUG: Counted as failed (processing status) - Book:', book.name);
-          } else {
-            // Unknown status - count as failed for safety
-            failed++;
-            console.log('🔍 COUNT DEBUG: Counted as failed (unknown status) - Book:', book.name, 'Actual status:', actualStatus);
-          }
+          failed++;
+          console.log(`🔍 FAILURE: Could not confirm status for "${book.name}" (Status: ${actualStatus || 'not found'})`);
         }
       }
 
-      console.log('🔍 FINAL COUNT DEBUG:', { successful, failed, total: selectedBooksList.length });
+      console.log('🔍 FINAL BATCH STATS:', { successful, failed, total: selectedBooksList.length });
 
-      alert("Books were added, you can start chatting!");
+      if (failed === 0) {
+        alert("All books were successfully added!");
+      } else if (successful > 0) {
+        alert(`${successful} books were added. ${failed} failed.`);
+      } else {
+        alert("Failed to add the selected books.");
+      }
 
       // Clear selections and close modal
       setSelectedBooks(new Set());

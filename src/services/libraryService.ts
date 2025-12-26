@@ -1,10 +1,30 @@
 import { LibraryItem } from '@/types/library';
 
 // ---------------- CONFIGURATION ----------------
-const HF_USER = 'prayas12';
-const HF_REPO = 'vector-datasets-prod';
-// "resolve/main" ensures we get the raw file from the latest commit
-const BASE_URL = `https://huggingface.co/datasets/${HF_USER}/${HF_REPO}/resolve/main`;
+const MIRRORS = [
+  "https://huggingface.co/datasets/prayas12/vector-datasets-prod/resolve/main",
+  "https://huggingface.co/datasets/Almade/vector-datasets-prodV2/resolve/main",
+  "https://huggingface.co/datasets/AILabstar/vector-datasets-prodV3/resolve/main",
+  "https://huggingface.co/datasets/AIlabstar1/vector-datasets-prodV4/resolve/main"
+];
+
+// Round-robin index to ensure balanced load across mirrors
+// We start at a random index to distribute load even on app reload
+let currentMirrorIndex = Math.floor(Math.random() * MIRRORS.length);
+
+/**
+ * Rotates to the next mirror in the list (Round-Robin)
+ */
+const rotateMirror = () => {
+  currentMirrorIndex = (currentMirrorIndex + 1) % MIRRORS.length;
+};
+
+/**
+ * Gets a specific mirror URL by index
+ */
+const getMirrorUrl = (index: number) => {
+  return MIRRORS[index % MIRRORS.length];
+};
 // -----------------------------------------------
 
 // Embedded library catalog (not hosted externally for obscurity)
@@ -323,10 +343,12 @@ export const libraryService = {
    * (No external fetch - catalog is embedded in code for obscurity)
    */
   async getAvailableBooks(): Promise<LibraryItem[]> {
-    // Map the embedded catalog to include the full download URL
+    // Return items with a placeholder URL, the actual URL is determined at download time
     return LIBRARY_CATALOG.map((item) => ({
       ...item,
-      url: `${BASE_URL}/${item.filename}`
+      // We attach the filename as the URL so that the frontend code doesn't break
+      // But the actual download function will ignore this usage and use the mirrors
+      url: item.filename
     }));
   },
 
@@ -334,24 +356,60 @@ export const libraryService = {
    * Downloads and parses a .bin shard file (gzip compressed JSON)
    * Uses the browser's native DecompressionStream for performance
    */
-  async downloadAndParseBook(url: string): Promise<any> {
-    console.log(`[Library] Starting download: ${url}`);
-    const response = await fetch(url);
+  async downloadAndParseBook(filenameOrUrl: string): Promise<any> {
+    // Extract filename from URL if a full URL was passed (legacy compatibility)
+    const filename = filenameOrUrl.split('/').pop() || filenameOrUrl;
 
-    if (!response.ok) throw new Error(`Download failed: ${response.statusText}`);
-    if (!response.body) throw new Error("ReadableStream not supported by browser");
+    // Try up to 4 mirrors
+    for (let attempt = 0; attempt < MIRRORS.length; attempt++) {
+      // Logic:
+      // 1. Get the current mirror index (Round-Robin)
+      // 2. Add 'attempt' offset so if we fail, we try the NEXT mirror in the list cyclically
+      const mirrorIndex = (currentMirrorIndex + attempt) % MIRRORS.length;
+      const mirrorBaseUrl = getMirrorUrl(mirrorIndex);
+      const url = `${mirrorBaseUrl}/${filename}`;
 
-    // 1. Create a stream for decompression
-    const ds = new DecompressionStream('gzip');
+      console.log(`[Library] ⬇️ Downloading "${filename}" from Mirror #${mirrorIndex + 1} (${mirrorBaseUrl})...`);
 
-    // 2. Pipe the download stream through the decompressor
-    const decompressedStream = response.body.pipeThrough(ds);
+      try {
+        const response = await fetch(url);
 
-    // 3. Convert the stream into a Response object to easily parse JSON
-    // This prevents having to buffer the whole string in JS memory manually
-    const jsonResponse = new Response(decompressedStream);
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        if (!response.body) {
+          throw new Error("ReadableStream not supported by browser");
+        }
 
-    console.log(`[Library] Decompression complete, parsing JSON...`);
-    return await jsonResponse.json();
+        // 1. Create a stream for decompression
+        const ds = new DecompressionStream('gzip');
+
+        // 2. Pipe the download stream through the decompressor
+        const decompressedStream = response.body.pipeThrough(ds);
+
+        // 3. Convert the stream into a Response object to easily parse JSON
+        const jsonResponse = new Response(decompressedStream);
+
+        console.log(`[Library] ✅ Decompression complete, parsing JSON...`);
+        const result = await jsonResponse.json();
+
+        // SUCCESS! Rotate the global mirror index once so the NEXT book
+        // starts with the next mirror in the sequence (Load Balancing)
+        rotateMirror();
+
+        return result;
+
+      } catch (err) {
+        console.warn(`[Library] ⚠️ Mirror #${mirrorIndex + 1} failed for "${filename}":`, err);
+
+        // If this was the last mirror, throw the error to the caller
+        if (attempt === MIRRORS.length - 1) {
+          console.error(`[Library] ❌ All ${MIRRORS.length} mirrors failed for "${filename}". Giving up.`);
+          throw new Error(`Failed to download book after trying all mirrors. Last error: ${err}`);
+        }
+
+        console.log(`[Library] 🔄 Switching to next mirror...`);
+      }
+    }
   }
 };
