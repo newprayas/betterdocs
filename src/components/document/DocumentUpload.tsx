@@ -59,7 +59,7 @@ export const DocumentUpload: React.FC<DocumentUploadProps> = ({
 
     setIsUploading(true);
     setUploadProgress({});
-    
+
     try {
       onUploadStart?.(validFiles);
 
@@ -81,7 +81,7 @@ export const DocumentUpload: React.FC<DocumentUploadProps> = ({
       });
 
       await Promise.allSettled(uploadPromises);
-      
+
       // Reload documents to get updated list
       onUploadComplete?.([]);
     } catch (error) {
@@ -124,117 +124,19 @@ export const DocumentUpload: React.FC<DocumentUploadProps> = ({
     : 0;
 
   return (
-    <Card className={clsx('border-2 border-dashed', className)}>
-      <div
-        className={clsx(
-          'p-4 sm:p-6 lg:p-8 text-center transition-colors duration-200 touch-manipulation',
-          isDragging ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-400' : 'border-gray-300 dark:border-gray-600'
-        )}
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-        onDrop={handleDrop}
-      >
-        <input
-          ref={fileInputRef}
-          type="file"
-          multiple
-          accept=".pdf,.txt,.doc,.docx,.rtf"
-          onChange={handleFileSelect}
-          className="hidden"
-          disabled={isUploading}
-        />
-
-        {!isUploading ? (
-          <>
-            <div className="mx-auto w-10 h-10 sm:w-12 sm:h-12 text-gray-400 mb-3 sm:mb-4">
-              <svg
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
-                />
-              </svg>
-            </div>
-            
-            <h3 className="text-base sm:text-lg font-medium text-gray-900 dark:text-white mb-2">
-              Upload Documents
-            </h3>
-            
-            <p className="text-sm sm:text-base text-gray-600 dark:text-gray-300 mb-3 sm:mb-4">
-              Drag and drop files here, or click to select files
-            </p>
-            
-            <div className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mb-3 sm:mb-4">
-              <p>Supported formats: PDF, TXT, DOC, DOCX, RTF</p>
-              <p>Maximum file size: {maxSizeMB}MB</p>
-              <p>Maximum files: {maxFiles}</p>
-            </div>
-            
-            {trigger || (
-              <Button onClick={openFileDialog} disabled={isUploading} className="w-full sm:w-auto">
-                Select Files
-              </Button>
-            )}
-          </>
-        ) : (
-          <div className="space-y-3 sm:space-y-4">
-            <div className="mx-auto w-10 h-10 sm:w-12 sm:h-12 text-blue-500 animate-spin">
-              <svg
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-                />
-              </svg>
-            </div>
-            
-            <h3 className="text-base sm:text-lg font-medium text-gray-900 dark:text-white">
-              Uploading Documents...
-            </h3>
-            
-            {/* Overall Progress */}
-            <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
-              <div
-                className="bg-blue-500 h-2 rounded-full transition-all duration-300"
-                style={{ width: `${overallProgress}%` }}
-              />
-            </div>
-            
-            <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-300">
-              {Math.round(overallProgress)}% complete
-            </p>
-            
-            {/* Individual File Progress */}
-            {Object.entries(uploadProgress).map(([filename, progress]) => (
-              <div key={filename} className="text-left space-y-1">
-                <div className="flex justify-between text-xs sm:text-sm">
-                  <span className="text-gray-600 dark:text-gray-300 truncate">
-                    {filename}
-                  </span>
-                  <span className="text-gray-500 dark:text-gray-400">
-                    {Math.round(progress)}%
-                  </span>
-                </div>
-                <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1">
-                  <div
-                    className="bg-blue-500 h-1 rounded-full transition-all duration-300"
-                    style={{ width: `${progress}%` }}
-                  />
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+    <Card className={clsx('border-2 border-dashed border-gray-200 dark:border-slate-700 bg-gray-50/50 dark:bg-slate-900/50', className)}>
+      <div className="p-6 sm:p-8 text-center text-gray-500 dark:text-gray-400">
+        <div className="mx-auto w-12 h-12 mb-3 opacity-50">
+          <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+          </svg>
+        </div>
+        <h3 className="text-sm font-medium text-gray-900 dark:text-white mb-1">
+          Local Uploads Disabled
+        </h3>
+        <p className="text-xs max-w-[200px] mx-auto opacity-75">
+          During the Public Beta, only the curated Medical Library is available to ensure quality and zero cost.
+        </p>
       </div>
     </Card>
   );
@@ -254,7 +156,7 @@ export const DocumentUploadCompact: React.FC<{
     if (!e.target.files || e.target.files.length === 0) return;
 
     setIsUploading(true);
-    
+
     try {
       const file = e.target.files[0];
       await uploadDocuments(sessionId, [file]);
@@ -268,24 +170,17 @@ export const DocumentUploadCompact: React.FC<{
 
   return (
     <div className={clsx('flex items-center gap-2', className)}>
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept=".pdf,.txt,.doc,.docx,.rtf"
-        onChange={handleFileSelect}
-        className="hidden"
-        disabled={isUploading}
-      />
-      
       <Button
         variant="outline"
         size="sm"
-        onClick={() => fileInputRef.current?.click()}
-        disabled={isUploading}
-        loading={isUploading}
-        className="flex-1 sm:flex-none"
+        disabled={true}
+        title="Local uploads are disabled in the Beta"
+        className="flex-1 sm:flex-none opacity-50 cursor-not-allowed"
       >
-        {isUploading ? 'Uploading...' : 'Add Document'}
+        <svg className="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+        </svg>
+        Add Document
       </Button>
     </div>
   );

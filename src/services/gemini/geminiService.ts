@@ -38,45 +38,47 @@ export class GeminiService {
     }
   }
 
-  // Initialize with env-based embedding keys (no user key needed)
+  // Initialize with proxy (no client-side keys needed)
   initializeEmbeddingKeys() {
-    // Load keys from environment variables
-    const key1 = process.env.NEXT_PUBLIC_EMBEDDING_KEY_1;
-    const key2 = process.env.NEXT_PUBLIC_EMBEDDING_KEY_2;
-    const key3 = process.env.NEXT_PUBLIC_EMBEDDING_KEY_3;
-
-    this.embeddingKeys = [key1, key2, key3].filter(Boolean) as string[];
-
-    if (this.embeddingKeys.length === 0) {
-      console.error('[GEMINI EMBEDDING]', 'No embedding keys found in environment variables!');
-      return false;
-    }
-
-    console.log('[GEMINI EMBEDDING]', `Loaded ${this.embeddingKeys.length} embedding keys from environment`);
-
-    // Initialize with the first key
-    this.currentKeyIndex = 0;
-    this.embeddingGenAI = new GoogleGenAI({ apiKey: this.embeddingKeys[0] });
-    console.log('[GEMINI EMBEDDING]', 'Embedding service initialized with key 1');
-
+    console.log('[GEMINI EMBEDDING]', 'Using Server-Side Proxy for embeddings (Secure Mode)');
     return true;
   }
 
-  // Switch to the next embedding key
+  // Switch to the next embedding key (No-op for proxy)
   private switchToNextEmbeddingKey(): boolean {
-    if (this.embeddingKeys.length === 0) {
-      console.error('[GEMINI EMBEDDING]', 'No embedding keys available to switch to');
-      return false;
-    }
-
-    const previousIndex = this.currentKeyIndex;
-    this.currentKeyIndex = (this.currentKeyIndex + 1) % this.embeddingKeys.length;
-
-    console.log('[GEMINI EMBEDDING]', `Switching from key ${previousIndex + 1} to key ${this.currentKeyIndex + 1}`);
-
-    this.embeddingGenAI = new GoogleGenAI({ apiKey: this.embeddingKeys[this.currentKeyIndex] });
-
+    console.log('[GEMINI EMBEDDING]', 'Key rotation handled by server proxy');
     return true;
+  }
+
+  // ... (getSDKVersion, ensureInitialized kept same)
+
+  private ensureEmbeddingInitialized() {
+    // Proxy is always "initialized"
+    return;
+  }
+
+  // ... (generateResponse, generateStreamingResponse kept same)
+
+  async embedText(text: string, retryCount: number = 0): Promise<Float32Array> {
+    try {
+      const response = await fetch('/api/embed', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Proxy error: ${response.status} ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      if (data.error) throw new Error(data.error);
+
+      return new Float32Array(data.embedding);
+    } catch (error: any) {
+      console.error('[GEMINI EMBEDDING ERROR]', 'Proxy Request Failed:', error);
+      throw new Error('Failed to embed text via proxy');
+    }
   }
 
   private getSDKVersion(): string {
@@ -94,15 +96,7 @@ export class GeminiService {
     }
   }
 
-  private ensureEmbeddingInitialized() {
-    if (!this.embeddingGenAI) {
-      // Try to auto-initialize embedding keys
-      const success = this.initializeEmbeddingKeys();
-      if (!success || !this.embeddingGenAI) {
-        throw new Error('Embedding service not initialized. Check environment variables.');
-      }
-    }
-  }
+
 
   async generateResponse(
     prompt: string,
@@ -214,33 +208,7 @@ export class GeminiService {
     }
   }
 
-  async embedText(text: string, retryCount: number = 0): Promise<Float32Array> {
-    this.ensureEmbeddingInitialized();
 
-    try {
-      const result = await this.embeddingGenAI!.models.embedContent({
-        model: this.embeddingModelName,
-        contents: text
-      });
-      const embedding = result.embeddings?.[0];
-      const values = embedding?.values || [];
-      return new Float32Array(values);
-    } catch (error: any) {
-      console.error('[GEMINI EMBEDDING ERROR]', `Error with key ${this.currentKeyIndex + 1}:`, error?.message || error);
-
-      // Check if we've tried all keys
-      if (retryCount >= this.embeddingKeys.length - 1) {
-        console.error('[GEMINI EMBEDDING ERROR]', 'All embedding keys have been exhausted');
-        throw new Error('Failed to embed text: All API keys exhausted');
-      }
-
-      // Switch to next key and retry
-      console.log('[GEMINI EMBEDDING]', `Switching to next key due to error (retry ${retryCount + 1})`);
-      this.switchToNextEmbeddingKey();
-
-      return this.embedText(text, retryCount + 1);
-    }
-  }
 
   async embedBatch(texts: string[]): Promise<Float32Array[]> {
     this.ensureEmbeddingInitialized();
