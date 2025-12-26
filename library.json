@@ -223,5 +223,86 @@
     "size": "8.0 MB",
     "category": "Lectures",
     "version": "1.0"
+  },
+  {
+    "id": "brs_physiology_costanzo_linda_s_srg_processed",
+    "name": "BRS-Physiology-Costanzo-Linda-S.-SRG",
+    "description": "Processed content of BRS-Physiology-Costanzo-Linda-S.-SRG",
+    "filename": "shard_026_v1.bin",
+    "size": "4.8 MB",
+    "category": "Physiology",
+    "version": "1.0"
+  },
+  {
+    "id": "ebnezar_and_rakesh_textbook_of_orthopedics_copy_processed",
+    "name": "Ebnezar & Rakesh Textbook of Orthopedics copy",
+    "description": "Processed content of Ebnezar & Rakesh Textbook of Orthopedics copy",
+    "filename": "shard_027_v1.bin",
+    "size": "12.0 MB",
+    "category": "Orthopedics",
+    "version": "1.0"
+  },
+  {
+    "id": "essential_orthopaedics_by_maheshwari_7th_edition_notesmed_processed",
+    "name": "Essential-Orthopaedics-by-Maheshwari-7th-Edition-NotesMed",
+    "description": "Processed content of Essential-Orthopaedics-by-Maheshwari-7th-Edition-NotesMed",
+    "filename": "shard_028_v1.bin",
+    "size": "7.0 MB",
+    "category": "Orthopedics",
+    "version": "1.0"
+  },
+  {
+    "id": "first_aid_for_usmle_step_i_2022_processed",
+    "name": "First Aid for USMLE Step I 2022",
+    "description": "USMLE",
+    "filename": "shard_029_v1.bin",
+    "size": "5.8 MB",
+    "category": "Medical Books",
+    "version": "1.0"
+  },
+  {
+    "id": "gomellas_neonatology_8th_edition_processed",
+    "name": "Gomellas Neonatology 8th edition",
+    "description": "Processed content of Gomellas Neonatology 8th edition",
+    "filename": "shard_030_v1.bin",
+    "size": "28.1 MB",
+    "category": "Pediatrics",
+    "version": "1.0"
+  },
+  {
+    "id": "manipal_manual_of_surgery_5th_edition_processed",
+    "name": "Manipal Manual of Surgery 5th Edition",
+    "description": "Processed content of Manipal Manual of Surgery 5th Edition",
+    "filename": "shard_031_v1.bin",
+    "size": "21.2 MB",
+    "category": "Surgery",
+    "version": "1.0"
+  },
+  {
+    "id": "nelson_essentials_of_pediatrics_processed",
+    "name": "Nelson-essentials-of-pediatrics",
+    "description": "Processed content of Nelson-essentials-of-pediatrics",
+    "filename": "shard_032_v1.bin",
+    "size": "23.1 MB",
+    "category": "Pediatrics",
+    "version": "1.0"
+  },
+  {
+    "id": "williams_obstetrics_22th_processed",
+    "name": "Williams Obstetrics 22th",
+    "description": "Processed content of Williams Obstetrics 22th",
+    "filename": "shard_033_v1.bin",
+    "size": "23.8 MB",
+    "category": "Gyne and Obs",
+    "version": "1.0"
+  },
+  {
+    "id": "opthal_kharuna_processed",
+    "name": "opthal_kharuna",
+    "description": "Processed content of opthal_kharuna",
+    "filename": "shard_034_v1.bin",
+    "size": "10.0 MB",
+    "category": "Opthalmology",
+    "version": "1.0"
   }
 ]
