@@ -124,14 +124,17 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
       console.log(`🔍 CACHE CHECK: Searching ${allDocuments.length} documents across all sessions`);
       console.log(`🔍 CACHE CHECK: Documents:`, allDocuments.map(d => ({ filename: d.filename, title: d.title, sessionId: d.sessionId })));
 
-      // Extract keywords from book name for fuzzy matching (words with 4+ chars)
+      // 127: Extract keywords from book name for fuzzy matching (words with 4+ chars)
+      // Filter out common "noise" words to avoid false positive matches on titles like "5th edition copy"
+      const STOP_WORDS = ['edition', 'copy', 'book', 'textbook', 'volume', 'processed', 'manual', 'essential', 'illustrated', 'synopsis'];
+
       const bookKeywords = book.name
         .toLowerCase()
         .split(/\s+/)
-        .filter(word => word.length >= 4)
+        .filter(word => word.length >= 4 && !STOP_WORDS.includes(word))
         .map(word => word.replace(/[^a-z0-9]/g, ''));
 
-      console.log(`🔍 CACHE CHECK: Book keywords for fuzzy match:`, bookKeywords);
+      console.log(`🔍 CACHE CHECK: Book keywords for fuzzy match (after filtering stop words):`, bookKeywords);
 
       // Find matching document using multiple strategies
       let matchedDoc = null;
@@ -145,11 +148,19 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
         matchedDoc = allDocuments.find(doc => {
           // Normalize both texts: remove special characters for better matching
           const docText = `${doc.filename} ${doc.title || ''}`.toLowerCase().replace(/[^a-z0-9\s]/g, '');
-          // Match if at least 1 keyword is found (lowered threshold for better cache hits)
-          const matchCount = bookKeywords.filter(kw => docText.includes(kw)).length;
-          const isMatch = matchCount >= 1;
+
+          // Count how many of our keywords appear in the document text
+          const keywordsFound = bookKeywords.filter(kw => docText.includes(kw));
+          const matchCount = keywordsFound.length;
+
+          // THRESHOLD LOGIC:
+          // If we have 2 or more keywords, require at least 2 to match
+          // If we have only 1 keyword, it must match
+          const threshold = Math.min(bookKeywords.length, 2);
+          const isMatch = matchCount >= threshold;
+
           if (isMatch) {
-            console.log(`🔍 CACHE CHECK: Fuzzy match found! Keywords matched: ${matchCount}/${bookKeywords.length} in "${docText}"`);
+            console.log(`🔍 CACHE CHECK: Fuzzy match found! Keywords matched: ${matchCount}/${bookKeywords.length} (${keywordsFound.join(', ')}) in "${docText}"`);
           }
           return isMatch;
         });
