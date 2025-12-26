@@ -60,7 +60,7 @@ const LIBRARY_CATALOG = [
     "description": "Standard textbook for orthopedic surgery.",
     "filename": "shard_006_v1.bin",
     "size": "28.9 MB",
-    "category": "Surgery",
+    "category": "Orthopedics",
     "version": "10.0"
   },
   {
@@ -267,7 +267,7 @@ const LIBRARY_CATALOG = [
     "description": "USMLE",
     "filename": "shard_029_v1.bin",
     "size": "5.8 MB",
-    "category": "Medical Books",
+    "category": "USMLE",
     "version": "1.0"
   },
   {
@@ -312,7 +312,7 @@ const LIBRARY_CATALOG = [
     "description": "Processed content of opthal_kharuna",
     "filename": "shard_034_v1.bin",
     "size": "10.0 MB",
-    "category": "Opthalmology",
+    "category": "Ophthalmology",
     "version": "1.0"
   }
 ];
