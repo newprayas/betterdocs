@@ -231,7 +231,7 @@ export class ChatPipeline {
         sessionId,
         enhancedQuery, // Use the enhanced, rewritten query here
         {
-          maxResults: 8,
+          maxResults: 12,
           useDynamicWeighting: true,
           textWeight: 0.3,
           vectorWeight: 0.7,
