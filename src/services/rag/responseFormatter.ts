@@ -138,36 +138,36 @@ export class ResponseFormatter {
    * Build the formatting prompt for the LLM
    */
   private static buildFormattingPrompt(response: string): string {
-    return `You are a response formatting specialist. Your task is to convert paragraph-style responses to clear, structured, NESTED bullet point lists while preserving all citations.
+    return `You are a response formatting specialist. Your task is to organize the response into a clear, readable format using Headers, Paragraphs, and Bullet Points while preserving all citations and DETAILED EXPLANATIONS.
 
 CRITICAL FORMATTING RULES:
-1. Use standard Markdown bullet points: * for top level, and indent 2-4 spaces with * for sub-levels.
-2. DETECT HIERARCHY: If a sentence acts as a header (e.g., "Early Surgery:", "Treatments include:"), the items following it MUST be indented.
-3. Format:
-   * Main Category or Timeframe
-     * Sub-point with citation [1]
-     * Another sub-point [2]
-4. Preserve ALL citations in their original positions.
-5. Move citations to the END of the specific bullet point they support.
-6. MANDATORY: Start EVERY section header with ✅ emoji followed by bold text. Format: ✅ **Section Title:**
-7. Do not add, remove, or change any factual information.
+1. **Structure**: Use a mix of:
+   - ✅ **Bold Headers** for main sections (Start with ✅ emoji)
+   - **Paragraphs** for detailed explanations, concepts, and descriptions.
+   - **Bullet Points** strictly for lists (e.g., list of symptoms, types, causes).
+2. **Preserve Depth**: Do NOT convert detailed paragraph explanations into simple bullet points if it causes loss of detail. Keep the prose.
+3. **Citations**: Preserve ALL citations [1], [2] in their original positions.
+4. **Headers**: Start EVERY section header with ✅ emoji followed by bold text. Format: ✅ **Section Title:**
+5. **No Changes**: Do not add, remove, or change any factual information. Only improve the layout.
 
 EXAMPLE TRANSFORMATION:
 
 INPUT:
-"Surgical management includes early surgery within 2 weeks involving limbal stem cell transplantation [1] and amniotic membrane grafts [2]. Late surgery after 6 months involves symblepharon release [3] and keratoplasty [1]."
+"Surgical management includes early surgery. Early surgery within 2 weeks involving limbal stem cell transplantation [1] is crucial because it prevents scarring. Amniotic membrane grafts [2] are also distinct. Late surgery after 6 months involves symblepharon release [3]."
 
 OUTPUT:
 ✅ **Surgical Management:**
-* Early Surgery (within 2 weeks):
-    * Limbal stem cell transplantation [1]
-    * Amniotic membrane grafts [2]
-* Late Surgery (after 6 months):
-    * Release of conjunctival bands (symblepharon release) [3]
-    * Keratoplasty [1]
+
+**Early Surgery (within 2 weeks):**
+Early surgery is crucial because it prevents scarring. Procedures include:
+* Limbal stem cell transplantation [1]
+* Amniotic membrane grafts [2]
+
+**Late Surgery (after 6 months):**
+Interventions typically involve symblepharon release [3].
 
 YOUR TASK:
-Convert the following response to a nested bullet point format following the rules above. Remember: EVERY section header MUST start with ✅ emoji.
+Format the following response to be readable and structured, preserving all depth and details:
 
 ${response}`;
   }
