@@ -6,6 +6,7 @@ import { groqService } from '../services/groq/groqService';
 import { useSettingsStore, useSessionStore, useDocumentStore, useChatStore } from '../store';
 import { createClient } from '../utils/supabase/client';
 import { userIdLogger } from '../utils/userIdDebugLogger';
+import { storageManager } from '../services/storage/storageManager';
 
 export function AppInitializer() {
   const [isClient, setIsClient] = useState(false);
@@ -173,11 +174,19 @@ export function AppInitializer() {
   useEffect(() => {
     if (!isClient) return;
 
-    if (settings?.groqApiKey) {
-      console.log('[APP INIT]', 'Initializing Groq service...');
-      groqService.initialize(settings.groqApiKey);
-      console.log('[APP INIT]', 'Groq service initialized successfully');
-    }
+    const initializeGroqAndStorage = async () => {
+      if (settings?.groqApiKey) {
+        console.log('[APP INIT]', 'Initializing Groq service...');
+        await groqService.initialize(settings.groqApiKey || '');
+        console.log('[APP INIT] Groq service initialized successfully');
+
+        // Initialize Storage Manager (Request Persistence)
+        await storageManager.init();
+        console.log('[APP INIT] Storage Manager initialized');
+      }
+    };
+
+    initializeGroqAndStorage();
   }, [isClient, settings?.groqApiKey]);
 
   // Global Storage Check

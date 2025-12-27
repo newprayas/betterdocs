@@ -13,7 +13,7 @@ import { Switch } from '../../components/ui/Switch';
 import { ConfirmDialog } from '../../components/common/ConfirmDialog';
 import { Header } from '../../components/layout/Header';
 import clsx from 'clsx';
-import { StorageUsage } from '../../components/settings/StorageUsage';
+
 import type { ApiKeyValidationResult } from '../../types/settings';
 
 export default function SettingsPage() {
@@ -423,6 +423,8 @@ export default function SettingsPage() {
             </div>
           </Card>
 
+
+
           {/* Appearance Settings */}
           <Card>
             <div className="p-6">
@@ -450,17 +452,7 @@ export default function SettingsPage() {
             </div>
           </Card>
 
-          {/* Data & Storage Settings */}
-          <Card>
-            <div className="p-6">
-              <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">
-                Data & Storage
-              </h2>
-              <div className="space-y-4">
-                <StorageUsage />
-              </div>
-            </div>
-          </Card>
+
 
         </div>
       </main>

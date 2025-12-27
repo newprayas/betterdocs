@@ -70,12 +70,18 @@ async function performVectorSearch(
     let candidateChunks: { id: string; documentId: string; embedding: Float32Array; embeddingNorm?: number }[] = [];
 
     if (documentIds && documentIds.length > 0) {
-        // Specific docs
-        const chunks = await db.embeddings
+        // Specific docs - optimize with cursor to avoid loading content
+        await db.embeddings
             .where('documentId')
             .anyOf(documentIds)
-            .toArray();
-        candidateChunks = chunks; // Dexie doesn't easily support partial select on anyOf, so we take hit here or optimize later.
+            .each(chunk => {
+                candidateChunks.push({
+                    id: chunk.id,
+                    documentId: chunk.documentId,
+                    embedding: chunk.embedding,
+                    embeddingNorm: chunk.embeddingNorm
+                });
+            });
     } else {
         // Session docs
         // Get enabled document IDs first
@@ -87,13 +93,18 @@ async function performVectorSearch(
 
         if (enabledDocs.length === 0) return [];
 
-        // Fetch embeddings for these docs
-        // Optimization: We could use a compound index or just iterate. 
-        // For now, standard fetch is okay because we are in a worker and not blocking UI.
-        candidateChunks = await db.embeddings
+        // Fetch embeddings for these docs using cursor optimization
+        await db.embeddings
             .where('documentId')
             .anyOf(enabledDocs as string[])
-            .toArray();
+            .each(chunk => {
+                candidateChunks.push({
+                    id: chunk.id,
+                    documentId: chunk.documentId,
+                    embedding: chunk.embedding,
+                    embeddingNorm: chunk.embeddingNorm
+                });
+            });
     }
 
     // 2. Calculate Similarities (Heavy Math)
