@@ -111,7 +111,7 @@ export default function SubscriptionModal() {
                                                     <br />
                                                     Fair price for all the medical knowledge in the world in your pockets? 🥳
                                                     <br />
-                                                    ✨ Great Answers make Great Doctors That's priceless
+                                                    ✨ Good Answers make Great Doctors That's priceless
                                                 </p>
                                             </div>
                                             <p className="text-sm sm:text-base text-gray-600 dark:text-gray-300 leading-relaxed">
