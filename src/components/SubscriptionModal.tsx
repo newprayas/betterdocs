@@ -172,7 +172,7 @@ export default function SubscriptionModal() {
                                 </div>
                                 <div className="mt-8 flex flex-col gap-3">
                                     <a
-                                        href="https://t.me/prayas_ojha"
+                                        href="https://t.me/meddyapp"
                                         target="_blank"
                                         rel="noopener noreferrer"
                                         className="inline-flex w-full flex-col items-center justify-center rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 px-4 py-3.5 text-white shadow-lg shadow-indigo-500/25 hover:from-indigo-500 hover:to-purple-500 hover:shadow-indigo-500/40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 transition-all transform hover:-translate-y-0.5"

@@ -491,7 +491,7 @@ export default function SessionPage() {
                     <p className="text-yellow-500 mb-4">No worries! 🥳</p>
                     <Button
                       variant="secondary"
-                      onClick={() => window.open('https://t.me/prayas_ojha', '_blank')}
+                      onClick={() => window.open('https://t.me/meddyapp', '_blank')}
                       size="md"
                       className="text-sm px-4 py-2"
                     >
