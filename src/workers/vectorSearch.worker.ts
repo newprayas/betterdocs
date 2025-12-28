@@ -107,11 +107,21 @@ async function performVectorSearch(
             });
     }
 
-    // 2. Calculate Similarities (Heavy Math)
+    // 2. Calculate Similarities (Heavy Math - OPTIMIZED)
     const results: { id: string; similarity: number }[] = [];
 
+    // Pre-calculate query norm ONCE (saves thousands of recalculations)
+    const queryNorm = calculateVectorNorm(queryEmbedding);
+    console.log('👷 [WORKER] Query norm calculated:', queryNorm.toFixed(4));
+
     for (const chunk of candidateChunks) {
-        const similarity = cosineSimilarity(queryEmbedding, chunk.embedding);
+        // Use pre-computed norms for both query and chunk
+        const similarity = cosineSimilarity(
+            queryEmbedding,
+            chunk.embedding,
+            queryNorm,
+            chunk.embeddingNorm // From IndexedDB
+        );
         if (similarity >= similarityThreshold) {
             results.push({ id: chunk.id, similarity });
         }

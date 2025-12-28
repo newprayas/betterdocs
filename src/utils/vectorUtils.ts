@@ -55,14 +55,34 @@ export function normalizeVector(vector: Float32Array): Float32Array {
 
 /**
  * Calculate cosine similarity between two vectors
- * Optimized for performance
+ * Optimized for performance - supports optional pre-computed norms
  */
-export function cosineSimilarity(a: Float32Array, b: Float32Array): number {
+export function cosineSimilarity(
+  a: Float32Array,
+  b: Float32Array,
+  precomputedNormA?: number,
+  precomputedNormB?: number
+): number {
   if (a.length !== b.length) {
     throw new Error('Vector dimensions must match');
   }
 
   let dotProduct = 0;
+
+  // If we have pre-computed norms, just calculate dot product
+  if (precomputedNormA !== undefined && precomputedNormB !== undefined) {
+    for (let i = 0; i < a.length; i++) {
+      dotProduct += a[i] * b[i];
+    }
+
+    if (precomputedNormA === 0 || precomputedNormB === 0) {
+      return 0;
+    }
+
+    return dotProduct / (precomputedNormA * precomputedNormB);
+  }
+
+  // Fallback: calculate everything (original behavior)
   let normA = 0;
   let normB = 0;
 
@@ -82,6 +102,7 @@ export function cosineSimilarity(a: Float32Array, b: Float32Array): number {
 
   return dotProduct / (normA * normB);
 }
+
 
 /**
  * Calculate dot product of two vectors
