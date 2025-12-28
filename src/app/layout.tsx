@@ -12,8 +12,8 @@ import { ThemeProvider } from '@/components/common/ThemeProvider';
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: 'Meddy - Chat with Documents Privately',
-  description: 'Private RAG chat application for documents',
+  title: 'Meddy - Chat with your books!',
+  description: 'App to chat with textbooks, guidelines and lecture notes',
   manifest: '/manifest.json',
   icons: {
     icon: [
