@@ -155,9 +155,8 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
           const matchCount = keywordsFound.length;
 
           // THRESHOLD LOGIC:
-          // If we have 2 or more keywords, require at least 2 to match
-          // If we have only 1 keyword, it must match
-          const threshold = Math.min(bookKeywords.length, 2);
+          // Require ALL keywords to match (exact match)
+          const threshold = bookKeywords.length;
           const isMatch = matchCount >= threshold;
 
           if (isMatch) {
