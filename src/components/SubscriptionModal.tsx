@@ -9,10 +9,10 @@ import {
 
 // Subscription pricing tiers - matches Supabase enum values
 const SUBSCRIPTION_TIERS = [
-    { id: '1 Month', name: '1 Month', duration: '1 month', price: 100, savings: 0, note: 'Easiest!' },
-    { id: '3 Months', name: '3 Months', duration: '3 months', price: 250, savings: 50 },
-    { id: '6 Months', name: '6 Months', duration: '6 months', price: 500, savings: 100 },
-    { id: '12 Months', name: '12 Months', duration: '12 months', price: 800, savings: 400 },
+    { id: '1 Month', name: '1 Month', duration: '1 month', price: 150, savings: 0, note: 'Easiest!' },
+    { id: '3 Months', name: '3 Months', duration: '3 months', price: 300, savings: 150 },
+    { id: '6 Months', name: '6 Months', duration: '6 months', price: 600, savings: 300 },
+    { id: '12 Months', name: '12 Months', duration: '12 months', price: 1000, savings: 800 },
 ]
 
 export default function SubscriptionModal() {
@@ -107,11 +107,11 @@ export default function SubscriptionModal() {
                                             </p>
                                             <div className="bg-indigo-50 dark:bg-indigo-900/20 p-4 rounded-xl border border-indigo-100 dark:border-indigo-800/30">
                                                 <p className="text-sm sm:text-base font-medium text-gray-800 dark:text-gray-200 leading-relaxed text-center">
-                                                    🎉 <strong>Prices are'less than a cup of coffee a month'</strong>
+                                                    🎉 <strong>Prices are less than a cup of coffee a month </strong>
                                                     <br />
                                                     Fair price for all the medical knowledge in the world in your pockets? 🥳
                                                     <br />
-                                                    ✨ Good Answers make Good Doctors ✨That's priceless
+                                                    ✨ Great Answers make Great Doctors That's priceless
                                                 </p>
                                             </div>
                                             <p className="text-sm sm:text-base text-gray-600 dark:text-gray-300 leading-relaxed">
