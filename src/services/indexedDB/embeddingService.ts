@@ -1,7 +1,7 @@
 import { db } from './db';
 import type { EmbeddingChunk, EmbeddingChunkCreate } from '@/types';
 import { ensureDate } from '@/utils/date';
-import { float32ToBytes, bytesToFloat32Array, calculateVectorNorm, validateVector } from '@/utils/vectorUtils';
+import { float32ToBytes, bytesToFloat32Array, calculateVectorNorm, validateVector, compressVector } from '@/utils/vectorUtils';
 
 export class EmbeddingService {
   /**
@@ -22,6 +22,7 @@ export class EmbeddingService {
       sessionId: data.sessionId,
       content: data.content,
       embedding: data.embedding,
+      embeddingQuantized: compressVector(data.embedding), // Compressed for faster search
       chunkIndex: data.metadata.chunkIndex, // Extract chunkIndex as top-level field
       source: data.metadata.source,
       page: data.metadata.pageNumber,
@@ -70,6 +71,7 @@ export class EmbeddingService {
         source: data.metadata.source,
         page: data.metadata.pageNumber,
         embedding: data.embedding,
+        embeddingQuantized: compressVector(data.embedding), // Compressed for faster search
         tokenCount: data.metadata.tokenCount,
         embeddingNorm: norm,
         metadata: {

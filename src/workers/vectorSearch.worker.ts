@@ -1,5 +1,5 @@
 import { db } from '../services/indexedDB/db';
-import { cosineSimilarity, calculateVectorNorm } from '../utils/vectorUtils';
+import { cosineSimilarity, calculateVectorNorm, decompressVector } from '../utils/vectorUtils';
 import type { VectorSearchResult, EmbeddingChunk } from '../types';
 
 // Define worker message types
@@ -66,8 +66,8 @@ async function performVectorSearch(
     }
 
     // 1. Fetch Candidates (Optimized for Memory)
-    // We only need embedding + ID + norm. We DO NOT load the full content yet.
-    let candidateChunks: { id: string; documentId: string; embedding: Float32Array; embeddingNorm?: number }[] = [];
+    // We only need embedding + ID + norm + quantized. We DO NOT load the full content yet.
+    let candidateChunks: { id: string; documentId: string; embedding: Float32Array; embeddingQuantized?: Int16Array; embeddingNorm?: number }[] = [];
 
     if (documentIds && documentIds.length > 0) {
         // Specific docs - optimize with cursor to avoid loading content
@@ -79,6 +79,7 @@ async function performVectorSearch(
                     id: chunk.id,
                     documentId: chunk.documentId,
                     embedding: chunk.embedding,
+                    embeddingQuantized: chunk.embeddingQuantized,
                     embeddingNorm: chunk.embeddingNorm
                 });
             });
@@ -102,28 +103,50 @@ async function performVectorSearch(
                     id: chunk.id,
                     documentId: chunk.documentId,
                     embedding: chunk.embedding,
+                    embeddingQuantized: chunk.embeddingQuantized,
                     embeddingNorm: chunk.embeddingNorm
                 });
             });
     }
 
-    // 2. Calculate Similarities (Heavy Math - OPTIMIZED)
+    // 2. Calculate Similarities (Heavy Math - OPTIMIZED with Early Exit)
     const results: { id: string; similarity: number }[] = [];
 
     // Pre-calculate query norm ONCE (saves thousands of recalculations)
     const queryNorm = calculateVectorNorm(queryEmbedding);
     console.log('👷 [WORKER] Query norm calculated:', queryNorm.toFixed(4));
 
+    // Early Exit Configuration
+    const EARLY_EXIT_THRESHOLD = 0.85; // High-quality result threshold
+    const EARLY_EXIT_MIN_RESULTS = maxResults * 2; // Need at least 2x maxResults before exiting
+    let highQualityCount = 0;
+
     for (const chunk of candidateChunks) {
+        // Use quantized embedding if available (faster), fallback to original
+        const effectiveEmbedding = chunk.embeddingQuantized
+            ? decompressVector(chunk.embeddingQuantized)
+            : chunk.embedding;
+
         // Use pre-computed norms for both query and chunk
         const similarity = cosineSimilarity(
             queryEmbedding,
-            chunk.embedding,
+            effectiveEmbedding,
             queryNorm,
             chunk.embeddingNorm // From IndexedDB
         );
         if (similarity >= similarityThreshold) {
             results.push({ id: chunk.id, similarity });
+
+            // Track high-quality results for early exit
+            if (similarity >= EARLY_EXIT_THRESHOLD) {
+                highQualityCount++;
+            }
+        }
+
+        // EARLY EXIT: If we have enough high-quality results, stop searching
+        if (highQualityCount >= EARLY_EXIT_MIN_RESULTS) {
+            console.log(`👷 [WORKER] Early exit triggered! Found ${highQualityCount} high-quality results out of ${results.length} total.`);
+            break;
         }
     }
 

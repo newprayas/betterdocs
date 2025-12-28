@@ -9,6 +9,7 @@ export interface EmbeddingChunk {
   source?: string;
   page?: number;
   embedding: Float32Array;
+  embeddingQuantized?: Int16Array; // Compressed embedding for faster search
   tokenCount: number;
   embeddingNorm: number;
   metadata: {
