@@ -65,54 +65,8 @@ async function performVectorSearch(
         throw new Error('Database not initialized in worker');
     }
 
-    // 1. Fetch Candidates (Optimized for Memory)
-    // We only need embedding + ID + norm + quantized. We DO NOT load the full content yet.
-    let candidateChunks: { id: string; documentId: string; embedding: Float32Array; embeddingQuantized?: Int16Array; embeddingNorm?: number }[] = [];
-
-    if (documentIds && documentIds.length > 0) {
-        // Specific docs - optimize with cursor to avoid loading content
-        await db.embeddings
-            .where('documentId')
-            .anyOf(documentIds)
-            .each(chunk => {
-                candidateChunks.push({
-                    id: chunk.id,
-                    documentId: chunk.documentId,
-                    embedding: chunk.embedding,
-                    embeddingQuantized: chunk.embeddingQuantized,
-                    embeddingNorm: chunk.embeddingNorm
-                });
-            });
-    } else {
-        // Session docs
-        // Get enabled document IDs first
-        const enabledDocs = await db.documents
-            .where('sessionId')
-            .equals(sessionId)
-            .and(doc => doc.enabled === true)
-            .primaryKeys();
-
-        if (enabledDocs.length === 0) return [];
-
-        // Fetch embeddings for these docs using cursor optimization
-        await db.embeddings
-            .where('documentId')
-            .anyOf(enabledDocs as string[])
-            .each(chunk => {
-                candidateChunks.push({
-                    id: chunk.id,
-                    documentId: chunk.documentId,
-                    embedding: chunk.embedding,
-                    embeddingQuantized: chunk.embeddingQuantized,
-                    embeddingNorm: chunk.embeddingNorm
-                });
-            });
-    }
-
-    // 2. Calculate Similarities (Heavy Math - OPTIMIZED with Early Exit)
+    // 1 & 2. Fetch & Calculate Similarities (Optimized for Memory - Lazy Loading)
     const results: { id: string; similarity: number }[] = [];
-
-    // Pre-calculate query norm ONCE (saves thousands of recalculations)
     const queryNorm = calculateVectorNorm(queryEmbedding);
     console.log('👷 [WORKER] Query norm calculated:', queryNorm.toFixed(4));
 
@@ -121,7 +75,7 @@ async function performVectorSearch(
     const EARLY_EXIT_MIN_RESULTS = maxResults * 2; // Need at least 2x maxResults before exiting
     let highQualityCount = 0;
 
-    for (const chunk of candidateChunks) {
+    const processChunkOnTheFly = (chunk: any) => {
         // Use quantized embedding if available (faster), fallback to original
         const effectiveEmbedding = chunk.embeddingQuantized
             ? decompressVector(chunk.embeddingQuantized)
@@ -134,6 +88,7 @@ async function performVectorSearch(
             queryNorm,
             chunk.embeddingNorm // From IndexedDB
         );
+
         if (similarity >= similarityThreshold) {
             results.push({ id: chunk.id, similarity });
 
@@ -143,12 +98,36 @@ async function performVectorSearch(
             }
         }
 
-        // EARLY EXIT: If we have enough high-quality results, stop searching
+        // EARLY EXIT: Stop iteration if we have enough high-quality results
         if (highQualityCount >= EARLY_EXIT_MIN_RESULTS) {
-            console.log(`👷 [WORKER] Early exit triggered! Found ${highQualityCount} high-quality results out of ${results.length} total.`);
-            break;
+            console.log(`👷 [WORKER] Early exit triggered! Found ${highQualityCount} high-quality results.`);
+            return false; // Stop Dexie iteration
+        }
+    };
+
+    if (documentIds && documentIds.length > 0) {
+        // Specific docs - optimize with cursor to avoid loading content
+        await db.embeddings
+            .where('documentId')
+            .anyOf(documentIds)
+            .each(processChunkOnTheFly);
+    } else {
+        // Session docs
+        const enabledDocs = await db.documents
+            .where('sessionId')
+            .equals(sessionId)
+            .and(doc => doc.enabled === true)
+            .primaryKeys();
+
+        if (enabledDocs.length > 0) {
+            await db.embeddings
+                .where('documentId')
+                .anyOf(enabledDocs as string[])
+                .each(processChunkOnTheFly);
         }
     }
+
+    console.log(`👷 [WORKER] Scanned total of ${results.length} results matching threshold.`);
 
     // 3. Sort & Adaptive Filter (The "Brain")
     results.sort((a, b) => b.similarity - a.similarity);
