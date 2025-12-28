@@ -25,15 +25,29 @@ export const DocumentList: React.FC<DocumentListProps> = ({
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Filter documents
+  // Filter and sort documents
   const filteredDocuments = useMemo(() => {
+    let result = documents;
+
+    // Filter by search query
     if (searchQuery) {
-      return documents.filter(doc =>
+      result = documents.filter(doc =>
         doc.filename.toLowerCase().includes(searchQuery.toLowerCase()) ||
         doc.title?.toLowerCase().includes(searchQuery.toLowerCase())
       );
     }
-    return documents;
+
+    // Sort: Enabled first, then Alphabetical
+    return [...result].sort((a, b) => {
+      // 1. Enabled status (Active first)
+      if (a.enabled && !b.enabled) return -1;
+      if (!a.enabled && b.enabled) return 1;
+
+      // 2. Alphabetical by title or filename
+      const titleA = (a.title || a.filename).toLowerCase();
+      const titleB = (b.title || b.filename).toLowerCase();
+      return titleA.localeCompare(titleB);
+    });
   }, [documents, searchQuery]);
 
   if (loading) {
@@ -114,6 +128,16 @@ export const DocumentList: React.FC<DocumentListProps> = ({
 
   return (
     <div className={clsx('space-y-3 sm:space-y-4', className)}>
+      {/* Pro Tip Disclaimer - Only show if more than 5 books are active */}
+      {documents.filter(d => d.enabled).length > 5 && (
+        <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-800 rounded-lg p-3 flex items-start sm:items-center gap-3">
+          <div className="text-lg">💡</div>
+          <p className="text-sm text-amber-800 dark:text-amber-200">
+            Keep only <span className="font-semibold">4-5 most relevant books active</span> to get the best answers!
+          </p>
+        </div>
+      )}
+
       {/* Search */}
       {showSearch && (
         <div className="w-full">
