@@ -41,7 +41,7 @@ export const ResponseProgressBar: React.FC<ResponseProgressBarProps> = ({
   const clampedProgress = Math.min(100, Math.max(0, progress));
 
   return (
-    <div className={`max-w-[85%] sm:max-w-xs lg:max-w-md xl:max-w-lg mx-auto ${className}`}>
+    <div className={`max-w-[70%] sm:max-w-[280px] lg:max-w-[320px] xl:max-w-[360px] mx-auto ${className}`}>
       {/* "Reading the sources" text */}
       <div className="text-sm text-gray-600 dark:text-gray-400 font-medium mb-3 text-center">
         Reading the sources
@@ -62,9 +62,9 @@ export const ResponseProgressBar: React.FC<ResponseProgressBarProps> = ({
         <span className="font-medium">{clampedProgress}%</span>
       </div>
 
-      {/* Helpful tip */}
+      {/* Helpful tip - wraps to multiple lines */}
       {currentTip && (
-        <div className="text-xs text-amber-600 dark:text-amber-400 text-center font-medium">
+        <div className="text-xs text-amber-600 dark:text-amber-400 text-center font-medium leading-relaxed">
           {currentTip}
         </div>
       )}
