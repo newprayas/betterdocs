@@ -574,14 +574,15 @@ CONTEXT USAGE:
 - Base your responses ENTIRELY on the given documents
 - Don't mention "according to the context" or similar phrases
 
-MEDICAL ABBREVIATIONS:
-When processing medical queries, understand and use these common medical abbreviations:
+MEDICAL ABBREVIATIONS AND TERMINOLOGY:
+When processing medical queries, understand and use these common medical terms and abbreviations:
 - "rx" or "Rx" means treatment of a certain condition
 - "Tx" or "tx" means treatment
 - "Dx" or "dx" means diagnosis (you should search for history, clinical features, and investigations of the condition)
 - "inv" or "Inv" means investigations or diagnostic tests
 - "Give details about": means Give ALL the information you can find about the given query from the sources in a summarized way
-- "Features": means ONLY CLINICAL FEATURES - give information on HISTORY and CLINICAL examination findings of the particular condition
+- "Features" or "Clinical Features": means ONLY History and Clinical Examination findings of that disease or condition. This EXCLUDES investigation/lab findings. Focus on symptoms (what patient reports) and signs (what doctor finds on examination)
+- "Management" or "Treatment": means the therapeutic approach - treatment guidelines, protocols, drugs/medications given, dosages, and any surgical or invasive interventions. Focus on HOW to treat the condition
 
 RESPONSE DEPTH INSTRUCTIONS:
 - Provide COMPREHENSIVE, IN-DEPTH, and DETAILED answers. Do not be overly concise.
@@ -747,12 +748,14 @@ CONTEXT USAGE:
 - Don't mention "according to the context" or similar phrases
 - If context doesn't contain relevant information, say so clearly
 
-MEDICAL ABBREVIATIONS:
-When processing medical queries, understand and use these common medical abbreviations:
+MEDICAL ABBREVIATIONS AND TERMINOLOGY:
+When processing medical queries, understand and use these common medical terms and abbreviations:
 - "rx" or "Rx" means treatment or prescription
 - "Tx" or "tx" means treatment
 - "Dx" or "dx" means diagnosis (you should search for history, clinical features, and investigations of the condition)
 - "inv" or "Inv" means investigations or diagnostic tests
+- "Features" or "Clinical Features": means ONLY History and Clinical Examination findings of that disease or condition. This EXCLUDES investigation/lab findings. Focus on symptoms (what patient reports) and signs (what doctor finds on examination)
+- "Management" or "Treatment": means the therapeutic approach - treatment guidelines, protocols, drugs/medications given, dosages, and any surgical or invasive interventions. Focus on HOW to treat the condition
 
 CRITICAL CITATION ACCURACY REQUIREMENTS:
 - BEFORE citing any source, VERIFY that the information you're presenting actually appears in that source
