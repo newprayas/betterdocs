@@ -37,13 +37,9 @@ export const DocumentList: React.FC<DocumentListProps> = ({
       );
     }
 
-    // Sort: Enabled first, then Alphabetical
+    // Sort: Alphabetical
     return [...result].sort((a, b) => {
-      // 1. Enabled status (Active first)
-      if (a.enabled && !b.enabled) return -1;
-      if (!a.enabled && b.enabled) return 1;
-
-      // 2. Alphabetical by title or filename
+      // Alphabetical by title or filename
       const titleA = (a.title || a.filename).toLowerCase();
       const titleB = (b.title || b.filename).toLowerCase();
       return titleA.localeCompare(titleB);
