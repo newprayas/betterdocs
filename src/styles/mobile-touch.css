@@ -6,7 +6,11 @@
 }
 
 /* Prevent double-tap zoom on touch devices */
-input, textarea, button, a, select {
+input,
+textarea,
+button,
+a,
+select {
   touch-action: manipulation;
 }
 
@@ -17,24 +21,33 @@ input, textarea, button, a, select {
 }
 
 /* Improve tap feedback */
-button, .btn, [role="button"] {
+button,
+.btn,
+[role="button"] {
   -webkit-tap-highlight-color: rgba(0, 0, 0, 0.1);
   transition: background-color 0.1s ease;
 }
 
 /* Remove hover effects on touch devices */
 @media (hover: none) and (pointer: coarse) {
-  button:hover, .btn:hover, [role="button"]:hover {
+
+  button:not([role="switch"]):hover,
+  .btn:hover,
+  [role="button"]:hover {
     background-color: inherit;
   }
-  
-  button:active, .btn:active, [role="button"]:active {
+
+  button:active,
+  .btn:active,
+  [role="button"]:active {
     background-color: rgba(0, 0, 0, 0.05);
   }
 }
 
 /* Improve input focus on mobile */
-input:focus, textarea:focus, select:focus {
+input:focus,
+textarea:focus,
+select:focus {
   outline: 2px solid #3b82f6;
   outline-offset: 2px;
 }
@@ -59,7 +72,9 @@ input:focus, textarea:focus, select:focus {
 }
 
 /* Better mobile card interactions */
-.card, .document-card, .session-card {
+.card,
+.document-card,
+.session-card {
   -webkit-tap-highlight-color: rgba(59, 130, 246, 0.1);
 }
 
@@ -90,7 +105,8 @@ input:focus, textarea:focus, select:focus {
 }
 
 /* Mobile-friendly switches and toggles */
-.switch, .toggle {
+.switch,
+.toggle {
   touch-action: manipulation;
   min-height: 44px;
   min-width: 44px;
@@ -150,11 +166,13 @@ input:focus, textarea:focus, select:focus {
 
 /* Improve mobile keyboard handling */
 @media (max-width: 768px) {
+
   /* Only prevent viewport shrink when keyboard is active */
-  html, body {
+  html,
+  body {
     height: 100%;
   }
-  
+
   /* Better mobile viewport handling */
   .mobile-keyboard-active {
     height: 100vh;
@@ -217,7 +235,8 @@ input:focus, textarea:focus, select:focus {
 
 /* Improve mobile input interactions */
 .mobile-input {
-  font-size: 16px; /* Prevent zoom on iOS */
+  font-size: 16px;
+  /* Prevent zoom on iOS */
   padding: 12px 16px;
   border-radius: 8px;
   touch-action: manipulation;
@@ -225,7 +244,8 @@ input:focus, textarea:focus, select:focus {
 
 /* Better mobile textarea interactions */
 .mobile-textarea {
-  font-size: 16px; /* Prevent zoom on iOS */
+  font-size: 16px;
+  /* Prevent zoom on iOS */
   padding: 12px 16px;
   border-radius: 8px;
   touch-action: manipulation;
@@ -235,7 +255,8 @@ input:focus, textarea:focus, select:focus {
 
 /* Improve mobile select interactions */
 .mobile-select {
-  font-size: 16px; /* Prevent zoom on iOS */
+  font-size: 16px;
+  /* Prevent zoom on iOS */
   padding: 12px 16px;
   border-radius: 8px;
   touch-action: manipulation;
