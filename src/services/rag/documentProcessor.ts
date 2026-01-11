@@ -25,7 +25,7 @@ export class DocumentProcessor {
     console.log(`🔍 DOCUMENT PROCESSOR DUPLICATE CHECK: Checking for duplicate filename "${filename}" in session "${sessionId}"`);
     console.log(`🔍 DOCUMENT PROCESSOR DUPLICATE CHECK: Timestamp: ${new Date().toISOString()}`);
     console.log(`🔍 DOCUMENT PROCESSOR DUPLICATE CHECK: User ID: ${userId}`);
-    
+
     if (!sessionId || !filename || !userId) {
       console.log('🔍 DOCUMENT PROCESSOR DUPLICATE CHECK: Missing required parameters');
       return undefined;
@@ -33,7 +33,7 @@ export class DocumentProcessor {
 
     try {
       const { documentService } = getIndexedDBServices();
-      
+
       // Check for exact filename match
       console.log(`🔍 DOCUMENT PROCESSOR DUPLICATE CHECK: Checking exact filename match`);
       let existingDoc = await documentService.getDocumentByFilename(sessionId, filename, userId);
@@ -46,12 +46,12 @@ export class DocumentProcessor {
         });
         return existingDoc;
       }
-      
+
       // Get all documents in the session for manual checking
       console.log(`🔍 DOCUMENT PROCESSOR DUPLICATE CHECK: No exact match found, checking all documents in session`);
       const allDocs = await documentService.getDocumentsBySession(sessionId, userId);
       console.log(`🔍 DOCUMENT PROCESSOR DUPLICATE CHECK: Found ${allDocs.length} documents in session`);
-      
+
       // Log all documents for debugging
       console.log(`🔍 DOCUMENT PROCESSOR DUPLICATE CHECK: All documents in session:`, allDocs.map(doc => ({
         id: doc.id,
@@ -60,7 +60,7 @@ export class DocumentProcessor {
         status: doc.status,
         enabled: doc.enabled
       })));
-      
+
       // Check for case-insensitive filename match
       console.log(`🔍 DOCUMENT PROCESSOR DUPLICATE CHECK: Checking case-insensitive filename match`);
       const caseInsensitiveMatch = allDocs.find(doc =>
@@ -75,7 +75,7 @@ export class DocumentProcessor {
         });
         return caseInsensitiveMatch;
       }
-      
+
       // Check for filename match against title (in case title was set to filename)
       console.log(`🔍 DOCUMENT PROCESSOR DUPLICATE CHECK: Checking filename vs title match`);
       const titleMatch = allDocs.find(doc =>
@@ -90,7 +90,7 @@ export class DocumentProcessor {
         });
         return titleMatch;
       }
-      
+
       console.log(`🔍 DOCUMENT PROCESSOR DUPLICATE CHECK: No duplicate found for filename "${filename}"`);
       return undefined;
     } catch (error) {
@@ -537,7 +537,7 @@ export class DocumentProcessor {
           packageData.document_metadata.filename,
           session.userId
         );
-        
+
         if (duplicateDoc) {
           console.log('🔍 DUPLICATE PREVENTION: Found duplicate document, throwing error to prevent creation');
           const duplicateError = new Error(
@@ -913,7 +913,7 @@ export class DocumentProcessor {
         throw new Error(errorMessage);
       } else {
         // If embeddings were saved, don't throw - the document is actually processed successfully
-        console.log('🎉 CORE PROCESSING SUCCEEDED: Document processed successfully despite secondary error');
+        console.log('🎉 CORE PROCESSING SUCCEEDE: Document processed successfully despite secondary error');
         return operation.id;
       }
     }
