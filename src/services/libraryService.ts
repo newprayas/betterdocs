@@ -347,8 +347,8 @@ const LIBRARY_CATALOG = [
     "id": "newdoc_voyage",
     "name": "voyage_masud",
     "description": "Processed content of voyage",
-    "filename": "Shard P V1.bin",
-    "size": "11.9 MB",
+    "filename": "totest.bin",
+    "size": "2.9 MB",
     "category": "Ophthalmology",
     "version": "1.0"
   }
