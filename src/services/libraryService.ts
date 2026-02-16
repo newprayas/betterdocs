@@ -342,6 +342,15 @@ const LIBRARY_CATALOG = [
     "size": "10.0 MB",
     "category": "Ophthalmology",
     "version": "1.0"
+  },
+  {
+    "id": "newdoc_voyage",
+    "name": "voyage_masud",
+    "description": "Processed content of voyage",
+    "filename": "Shard P V1.bin",
+    "size": "11.9 MB",
+    "category": "Ophthalmology",
+    "version": "1.0"
   }
 ];
 
