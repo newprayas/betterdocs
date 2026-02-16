@@ -1,16 +1,24 @@
 import { LibraryItem } from '@/types/library';
 
 // ---------------- CONFIGURATION ----------------
+/*
+  Mirror behavior summary (previous setup):
+  - MIRRORS had 4 Hugging Face dataset endpoints.
+  - `currentMirrorIndex` started at a random mirror to spread load.
+  - `downloadAndParseBook` tried mirrors in round-robin order on failure.
+  - `rotateMirror()` advanced the starting mirror after each successful download.
+
+  Quick revert guide:
+  - Put the other mirror URLs back into MIRRORS.
+  - Change `currentMirrorIndex` back to:
+      Math.floor(Math.random() * MIRRORS.length)
+*/
 const MIRRORS = [
-  "https://huggingface.co/datasets/prayas12/vector-datasets-prod/resolve/main",
-  "https://huggingface.co/datasets/Almade/vector-datasets-prodV2/resolve/main",
-  "https://huggingface.co/datasets/AILabstar/vector-datasets-prodV3/resolve/main",
   "https://huggingface.co/datasets/AIlabstar1/vector-datasets-prodV4/resolve/main"
 ];
 
-// Round-robin index to ensure balanced load across mirrors
-// We start at a random index to distribute load even on app reload
-let currentMirrorIndex = Math.floor(Math.random() * MIRRORS.length);
+// Rotation effectively disabled because only one mirror is configured.
+let currentMirrorIndex = 0;
 
 /**
  * Rotates to the next mirror in the list (Round-Robin)
@@ -360,7 +368,7 @@ export const libraryService = {
     // Extract filename from URL if a full URL was passed (legacy compatibility)
     const filename = filenameOrUrl.split('/').pop() || filenameOrUrl;
 
-    // Try up to 4 mirrors
+    // Try all configured mirrors (currently 1)
     for (let attempt = 0; attempt < MIRRORS.length; attempt++) {
       // Logic:
       // 1. Get the current mirror index (Round-Robin)
