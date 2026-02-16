@@ -640,7 +640,7 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
                         {book.name}
                       </h3>
                       <p className="text-sm text-gray-500 dark:text-gray-400 line-clamp-2 min-h-[2.5rem]">
-                        {book.description}
+                        File: {book.filename}
                       </p>
                     </div>
 
@@ -683,7 +683,7 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
                     {/* Meta Info */}
                     <div className="mt-auto pt-4 border-t border-gray-100 dark:border-slate-700/50">
                       <span className="text-xs font-mono text-gray-400">
-                        {book.size} • v{book.version}
+                        {book.size}
                       </span>
                     </div>
                   </div>
