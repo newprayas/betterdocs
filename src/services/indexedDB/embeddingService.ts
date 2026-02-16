@@ -9,8 +9,8 @@ export class EmbeddingService {
    */
   async createEmbedding(data: EmbeddingChunkCreate): Promise<EmbeddingChunk> {
     // Validate embedding before storage
-    if (!validateVector(data.embedding, 768)) {
-      throw new Error('Invalid embedding: must have 768 dimensions and contain valid values');
+    if (!validateVector(data.embedding, 1024)) {
+      throw new Error('Invalid embedding: must have 1024 dimensions and contain valid values');
     }
 
     // Calculate and store norm for faster similarity calculations
@@ -55,8 +55,8 @@ export class EmbeddingService {
 
     const embeddingChunks: EmbeddingChunk[] = embeddings.map(data => {
       // Validate embedding
-      if (!validateVector(data.embedding, 768)) {
-        throw new Error(`Invalid embedding for chunk ${data.documentId}: must have 768 dimensions and contain valid values`);
+      if (!validateVector(data.embedding, 1024)) {
+        throw new Error(`Invalid embedding for chunk ${data.documentId}: must have 1024 dimensions and contain valid values`);
       }
 
       // Calculate norm for faster similarity calculations

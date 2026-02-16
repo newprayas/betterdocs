@@ -74,8 +74,8 @@ export class EmbeddingService {
 
   async validateEmbedding(embedding: Float32Array): Promise<boolean> {
     try {
-      // Check if embedding has valid dimensions (should be 768 for gemini-embedding-001)
-      if (embedding.length !== 768) {
+      // Check if embedding has valid dimensions (Voyage 4 Large default in this app)
+      if (embedding.length !== 1024) {
         return false;
       }
 

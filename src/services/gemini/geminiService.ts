@@ -4,14 +4,14 @@ import type { AppSettings, ApiKeyValidationResult } from '@/types/settings';
 export class GeminiService {
   private genAI: GoogleGenAI | null = null;
   private modelName: string = 'gemma-3-27b-it';
-  private embeddingModelName: string = 'text-embedding-004';
+  private embeddingModelName: string = 'voyage-4-large';
 
   // Embedding key rotation
   private embeddingKeys: string[] = [];
   private currentKeyIndex: number = 0;
   private embeddingGenAI: GoogleGenAI | null = null;
 
-  initialize(apiKey: string, modelName: string = 'gemma-3-12b-it', embeddingModelName: string = 'text-embedding-004') {
+  initialize(apiKey: string, modelName: string = 'gemma-3-12b-it', embeddingModelName: string = 'voyage-4-large') {
     try {
       console.log('[GEMINI INIT]', 'Starting Gemini service initialization with new SDK');
       console.log('[GEMINI INIT]', `API Key provided: ${apiKey ? 'YES' : 'NO'}`);

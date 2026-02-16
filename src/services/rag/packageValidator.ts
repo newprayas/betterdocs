@@ -171,7 +171,14 @@ export class PackageValidator {
 
     // Validate embedding model
     if (docMeta.embedding_model && typeof docMeta.embedding_model === 'string') {
-      const supportedModels = ['gemini-embedding-001', 'text-embedding-004', 'models/text-embedding-004'];
+      const supportedModels = [
+        'voyage-4-large',
+        'voyage-4',
+        'voyage-4-lite',
+        'gemini-embedding-001',
+        'text-embedding-004',
+        'models/text-embedding-004'
+      ];
       if (!supportedModels.includes(docMeta.embedding_model)) {
         warnings.push(`Unknown embedding model: ${docMeta.embedding_model}`);
       }
@@ -288,8 +295,8 @@ export class PackageValidator {
         errors.push(`Chunk ${index}: embedding must be an array`);
       } else {
         // Check embedding dimensions
-        if (chunk.embedding.length !== 768) {
-          errors.push(`Chunk ${index}: embedding must have 768 dimensions, found ${chunk.embedding.length}`);
+        if (chunk.embedding.length !== 1024) {
+          errors.push(`Chunk ${index}: embedding must have 1024 dimensions, found ${chunk.embedding.length}`);
         }
 
         // Check for invalid values
