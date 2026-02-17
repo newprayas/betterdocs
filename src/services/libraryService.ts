@@ -35,14 +35,23 @@ const getMirrorUrl = (index: number) => {
 };
 // -----------------------------------------------
 
+//shard_4a8.bin
+
 // Embedded library catalog (not hosted externally for obscurity)
 const LIBRARY_CATALOG = [
   {
     "id": "newdoc_voyage",
     "name": "voyage_masud",
-    "filename": "totest.bin",
+    "filename": "shard_4a8.bin",
     "size": "2.9 MB",
     "category": "Ophthalmology"
+  },
+  {
+    "id": "bailey_love_27ed",
+    "name": "27 ED Bailey love practice of surgery",
+    "filename": "shard_2t3.bin",
+    "size": "43 MB",
+    "category": "Surgery"
   }
 ];
 
