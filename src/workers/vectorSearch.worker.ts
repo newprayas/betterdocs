@@ -86,7 +86,15 @@ async function performVectorSearch(
     throw new Error('Database not initialized in worker');
   }
 
+  console.log(
+    '[RETRIEVAL WORKER] mode=%s maxResults=%d threshold=%s',
+    retrievalMode,
+    maxResults,
+    similarityThreshold.toFixed(3)
+  );
+
   if (retrievalMode !== 'ann_rerank_v1') {
+    console.log('[RETRIEVAL WORKER] Using legacy brute-force vector search');
     return bruteForceVectorSearch(queryEmbedding, sessionId, {
       maxResults,
       similarityThreshold,
@@ -94,6 +102,7 @@ async function performVectorSearch(
     });
   }
 
+  console.log('[RETRIEVAL WORKER] Using ANN candidate search');
   try {
     return await annVectorSearch(queryEmbedding, sessionId, {
       maxResults,
@@ -128,10 +137,17 @@ async function annVectorSearch(
 
   const globalCandidateBudget = Math.max(options.maxResults * options.annCandidateMultiplier, 96);
   const perDocBudget = Math.max(Math.ceil(globalCandidateBudget / enabledDocIds.length), 24);
+  console.log(
+    '[ANN SEARCH] enabledDocs=%d globalBudget=%d perDocBudget=%d',
+    enabledDocIds.length,
+    globalCandidateBudget,
+    perDocBudget
+  );
 
   const queryNorm = calculateVectorNorm(queryEmbedding);
   const annCandidates: CandidateScore[] = [];
   const fallbackDocIds: string[] = [];
+  let annDocsUsed = 0;
 
   for (const documentId of enabledDocIds) {
     let annIndex: ParsedAnnIndex | null = null;
@@ -160,6 +176,7 @@ async function annVectorSearch(
       continue;
     }
 
+    annDocsUsed += 1;
     annCandidates.push(...approxCandidates);
   }
 
@@ -172,11 +189,23 @@ async function annVectorSearch(
   });
 
   const candidateIds = Array.from(candidateMap.keys());
+  console.log(
+    '[ANN SEARCH] annDocsUsed=%d fallbackDocs=%d approxCandidates=%d uniqueCandidates=%d',
+    annDocsUsed,
+    fallbackDocIds.length,
+    annCandidates.length,
+    candidateIds.length
+  );
   const exactAnnScores = await scoreCandidatesExactly(queryEmbedding, queryNorm, candidateIds, options.similarityThreshold);
 
   const fallbackScores = fallbackDocIds.length > 0
     ? await bruteForceCandidateScores(queryEmbedding, queryNorm, fallbackDocIds, options.similarityThreshold)
     : [];
+  console.log(
+    '[ANN SEARCH] exactMatches=%d fallbackMatches=%d',
+    exactAnnScores.length,
+    fallbackScores.length
+  );
 
   const combined = [...exactAnnScores, ...fallbackScores];
   combined.sort((a, b) => b.similarity - a.similarity);
@@ -189,6 +218,11 @@ async function annVectorSearch(
   const cutoff = bestScore * 0.85;
   const filtered = combined.filter(item => item.similarity >= cutoff);
   const top = filtered.slice(0, Math.max(options.maxResults * 2, options.maxResults));
+  console.log(
+    '[ANN SEARCH] filtered=%d returnLimit=%d',
+    filtered.length,
+    Math.max(options.maxResults * 2, options.maxResults)
+  );
 
   return hydrateVectorSearchResults(top).then(results => results.slice(0, options.maxResults));
 }

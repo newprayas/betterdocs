@@ -42,7 +42,12 @@ export class VectorSearchService {
       };
 
       // Send Request
-      console.log('🚀 [MAIN THREAD] Offloading search to Worker...');
+      console.log(
+        '🚀 [MAIN THREAD] Offloading search to Worker... mode=%s maxResults=%s annMultiplier=%s',
+        options.retrievalMode || 'legacy_hybrid',
+        options.maxResults ?? 'default',
+        options.annCandidateMultiplier ?? 'default'
+      );
       worker.postMessage({
         type: 'SEARCH',
         payload: {
@@ -393,6 +398,12 @@ export class VectorSearchService {
       const textResults = options.retrievalMode === 'ann_rerank_v1'
         ? this.textRerankCandidates(vectorResults, queryText, Math.min(maxResults * 2, 40))
         : await this.textSearch(queryText, sessionId, maxResults * 2, options.userId);
+      console.log(
+        '[RETRIEVAL HYBRID] mode=%s vectorResults=%d textResults=%d',
+        options.retrievalMode || 'legacy_hybrid',
+        vectorResults.length,
+        textResults.length
+      );
 
       // Combine and score results
       const combinedResults = new Map<string, VectorSearchResult>();
@@ -486,7 +497,7 @@ export class VectorSearchService {
     maxResults: number
   ): VectorSearchResult[] {
     const queryLower = query.toLowerCase();
-    return candidates
+    const reranked = candidates
       .map((candidate) => {
         const contentLower = candidate.chunk.content.toLowerCase();
         const textScore = this.calculateTextScore(queryLower, contentLower);
@@ -497,6 +508,13 @@ export class VectorSearchService {
       })
       .sort((a, b) => b.similarity - a.similarity)
       .slice(0, maxResults);
+    console.log(
+      '[RERANK] ANN candidate-only rerank active: input=%d window=%d cap=40 output=%d',
+      candidates.length,
+      maxResults,
+      reranked.length
+    );
+    return reranked;
   }
 
   /**
@@ -600,6 +618,12 @@ export class VectorSearchService {
       const textResults = retrievalMode === 'ann_rerank_v1'
         ? this.textRerankCandidates(vectorResults, queryText, Math.min(maxResults * 2, 40))
         : await this.textSearch(queryText, sessionId, maxResults * 2, options.userId);
+      console.log(
+        '[RETRIEVAL HYBRID ENHANCED] mode=%s vectorResults=%d textResults=%d',
+        retrievalMode,
+        vectorResults.length,
+        textResults.length
+      );
 
       // Dynamic weighting based on query characteristics
       let finalTextWeight = textWeight;

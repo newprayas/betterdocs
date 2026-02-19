@@ -166,6 +166,7 @@ export class ChatPipeline {
       const apiKey = settings?.geminiApiKey || '';
       const model = settings?.model || 'gemini-2.5-flash-lite';
       const retrievalMode = settings?.retrievalMode || 'legacy_hybrid';
+      console.log('[RETRIEVAL MODE]', retrievalMode);
 
       // 2. GENERATE STANDALONE QUERY (NEW STEP)
       // This converts "What are its causes?" -> "What are the causes of cataract?"
