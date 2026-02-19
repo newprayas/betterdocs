@@ -23,6 +23,10 @@ export class SettingsService {
 
     const id = this.getSettingsId(userId);
     const settings = await db.settings.get(id);
+    if (settings && !settings.retrievalMode) {
+      settings.retrievalMode = 'legacy_hybrid';
+      await db.settings.put(settings);
+    }
     console.log('[SETTINGS GET]', `Retrieved settings for user: ${userId}`);
     return settings;
   }
@@ -44,6 +48,7 @@ export class SettingsService {
       similarityThreshold: 0.7,
       chunkSize: 1000,
       chunkOverlap: 200,
+      retrievalMode: 'legacy_hybrid',
       theme: 'dark' as const,
       fontSize: 'medium' as const,
       showSources: true,
@@ -260,6 +265,7 @@ export class SettingsService {
       similarityThreshold: settings.similarityThreshold,
       chunkSize: settings.chunkSize,
       chunkOverlap: settings.chunkOverlap,
+      retrievalMode: settings.retrievalMode || 'legacy_hybrid',
       theme: settings.theme,
       fontSize: settings.fontSize,
       showSources: settings.showSources,
@@ -300,6 +306,9 @@ export class SettingsService {
       }
       if (typeof imported.chunkOverlap === 'number' && imported.chunkOverlap >= 0) {
         validUpdates.chunkOverlap = imported.chunkOverlap;
+      }
+      if (imported.retrievalMode === 'legacy_hybrid' || imported.retrievalMode === 'ann_rerank_v1') {
+        validUpdates.retrievalMode = imported.retrievalMode;
       }
       if (typeof imported.maxTokens === 'number' && imported.maxTokens > 0) {
         validUpdates.maxTokens = imported.maxTokens;

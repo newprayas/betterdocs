@@ -12,6 +12,93 @@ import { useDocumentStore } from '@/store';
 
 export class DocumentProcessor {
   private embeddingService = getIndexedDBServices().embeddingService;
+  private annIndexService = getIndexedDBServices().annIndexService;
+
+  private decodeBase64ToArrayBuffer(base64: string): ArrayBuffer {
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    return bytes.buffer;
+  }
+
+  private buildFinalChunkIds(
+    chunks: PreprocessedChunk[],
+    actualDocId: string,
+    needsNewId: boolean
+  ): string[] {
+    if (!needsNewId) {
+      return chunks.map(chunk => chunk.id);
+    }
+
+    return chunks.map((_, index) => `chunk_${actualDocId}_${index}`);
+  }
+
+  private async persistAnnIndexIfPresent(
+    packageData: PreprocessedPackage,
+    actualDocId: string,
+    chunks: PreprocessedChunk[],
+    needsNewId: boolean
+  ): Promise<void> {
+    const ann = packageData.ann_index;
+    if (!ann) {
+      await this.annIndexService.markMissingIndexForDocument({
+        documentId: actualDocId,
+        embeddingDimensions: 1024,
+        reason: 'ANN index not provided in package',
+        version: packageData.format_version || '1.0'
+      });
+      return;
+    }
+
+    if (ann.algorithm !== 'hnsw') {
+      await this.annIndexService.markMissingIndexForDocument({
+        documentId: actualDocId,
+        embeddingDimensions: ann.embedding_dimensions || 1024,
+        reason: `Unsupported ANN algorithm: ${ann.algorithm}`,
+        version: packageData.format_version || '1.0'
+      });
+      return;
+    }
+
+    if (!ann.artifact_base64) {
+      await this.annIndexService.markMissingIndexForDocument({
+        documentId: actualDocId,
+        embeddingDimensions: ann.embedding_dimensions || 1024,
+        reason: 'ANN artifact payload missing (artifact_base64 not found)',
+        params: ann.params ? {
+          m: ann.params.m,
+          efConstruction: ann.params.ef_construction,
+          efSearch: ann.params.ef_search
+        } : undefined,
+        version: packageData.format_version || '1.0'
+      });
+      return;
+    }
+
+    const finalIdMap = this.buildFinalChunkIds(chunks, actualDocId, needsNewId);
+
+    const graphData = this.decodeBase64ToArrayBuffer(ann.artifact_base64);
+    await this.annIndexService.saveIndexForDocument({
+      documentId: actualDocId,
+      graphData,
+      idMap: finalIdMap,
+      params: {
+        m: ann.params.m,
+        efConstruction: ann.params.ef_construction,
+        efSearch: ann.params.ef_search
+      },
+      embeddingDimensions: ann.embedding_dimensions,
+      artifactName: ann.artifact_name,
+      artifactChecksum: ann.artifact_checksum,
+      artifactSize: ann.artifact_size,
+      idMapName: ann.id_map_name,
+      idMapChecksum: ann.id_map_checksum,
+      idMapSize: ann.id_map_size,
+      version: packageData.format_version || '1.0'
+    });
+  }
 
   /**
    * Check if a document with the given filename already exists in the session
@@ -597,6 +684,12 @@ export class DocumentProcessor {
 
       // Get chunks directly from package (new format)
       const chunks: PreprocessedChunk[] = packageData.chunks;
+
+      try {
+        await this.persistAnnIndexIfPresent(packageData, actualDocId, chunks, needsNewId);
+      } catch (annError) {
+        console.warn('⚠️ ANN index persistence failed, continuing with legacy fallback:', annError);
+      }
 
       onProgress?.({
         totalChunks: chunks.length,

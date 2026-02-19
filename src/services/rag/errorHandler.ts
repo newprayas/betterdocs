@@ -56,10 +56,10 @@ export class IngestionErrorHandler {
       errors.push({
         code: 'UNSUPPORTED_VERSION',
         message: `Unsupported package format version: ${packageData.format_version}`,
-        details: { supportedVersions: ['1.0'], providedVersion: packageData.format_version },
+        details: { supportedVersions: ['1.0', '1.1'], providedVersion: packageData.format_version },
         timestamp: new Date(),
         recoverable: false,
-        suggestedAction: 'Please use a package with format version 1.0'
+        suggestedAction: 'Please use a package with format version 1.0 or 1.1'
       });
     } else if (error.message?.includes('document_metadata')) {
       errors.push({

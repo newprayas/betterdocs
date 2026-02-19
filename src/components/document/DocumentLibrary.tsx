@@ -198,7 +198,7 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
   ): Promise<string> => {
     console.log(`📋 CACHE COPY: Copying "${book.name}" from session ${sourceDoc.sessionId} to ${sessionId}`);
 
-    const { documentService, embeddingService } = await getIndexedDBServices();
+    const { documentService, embeddingService, annIndexService } = await getIndexedDBServices();
 
     // Animate progress over 2 seconds (fake but satisfying UX)
     const animateProgress = async () => {
@@ -240,6 +240,9 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
       await embeddingService.addEmbeddingsDirectly(newEmbeddings);
       console.log(`📋 CACHE COPY: Copied ${newEmbeddings.length} embeddings`);
     }
+
+    // Clone ANN index assets if available so copied books keep fast retrieval
+    await annIndexService.cloneIndexForDocument(sourceDoc.id, newDocId);
 
     // Mark document as completed
     await documentService.updateDocumentStatus(newDocId, 'completed', undefined, userId ?? undefined);

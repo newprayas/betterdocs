@@ -30,6 +30,7 @@ export default function SettingsPage() {
     geminiApiKey: '',
     groqApiKey: '',
     groqModel: 'llama-3.3-70b-versatile',
+    retrievalMode: 'legacy_hybrid' as 'legacy_hybrid' | 'ann_rerank_v1',
   });
 
   const [showApiKeyDialog, setShowApiKeyDialog] = useState(false);
@@ -65,6 +66,7 @@ export default function SettingsPage() {
         geminiApiKey: settings.geminiApiKey || '',
         groqApiKey: settings.groqApiKey || '',
         groqModel: settings.groqModel || 'llama-3.3-70b-versatile',
+        retrievalMode: settings.retrievalMode || 'legacy_hybrid',
       });
       setSavedApiKey(settings.geminiApiKey || '');
       setSavedGroqApiKey(settings.groqApiKey || '');
@@ -105,6 +107,7 @@ export default function SettingsPage() {
         geminiApiKey: '',
         groqApiKey: '',
         groqModel: 'llama-3.3-70b-versatile',
+        retrievalMode: 'legacy_hybrid' as const,
       };
       await updateSettings(defaultSettings);
       setLocalSettings(defaultSettings);
@@ -447,6 +450,27 @@ export default function SettingsPage() {
                     onCheckedChange={(checked) => updateSettings({ theme: checked ? 'dark' : 'light' })}
                     size="md"
                   />
+                </div>
+
+                <div className="pt-4 border-t border-gray-200 dark:border-slate-700">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Retrieval Mode (Feature Flag)
+                  </label>
+                  <select
+                    value={localSettings.retrievalMode}
+                    onChange={async (e) => {
+                      const mode = e.target.value as 'legacy_hybrid' | 'ann_rerank_v1';
+                      setLocalSettings(prev => ({ ...prev, retrievalMode: mode }));
+                      await updateSettings({ retrievalMode: mode });
+                    }}
+                    className="w-full rounded-md border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100"
+                  >
+                    <option value="legacy_hybrid">Legacy Hybrid (stable)</option>
+                    <option value="ann_rerank_v1">ANN + Top-40 Rerank (beta)</option>
+                  </select>
+                  <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                    Use ANN mode for faster on-device retrieval. If ANN assets are missing, the app auto-falls back to legacy mode.
+                  </p>
                 </div>
               </div>
             </div>

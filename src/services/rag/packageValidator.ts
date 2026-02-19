@@ -28,7 +28,7 @@ export class PackageValidator {
       } else if (typeof packageData.format_version !== 'string') {
         errors.push('format_version must be a string');
       } else if (!this.isSupportedVersion(packageData.format_version)) {
-        errors.push(`Unsupported format version: ${packageData.format_version}. Supported versions: 1.0`);
+        errors.push(`Unsupported format version: ${packageData.format_version}. Supported versions: 1.0, 1.1`);
       }
 
       // Validate export_metadata
@@ -45,6 +45,15 @@ export class PackageValidator {
       const chunksValidation = this.validateChunks(packageData.chunks, packageData.document_metadata);
       errors.push(...chunksValidation.errors);
       warnings.push(...chunksValidation.warnings);
+
+      // Validate optional ANN block for v1.1 packages
+      if (packageData.ann_index) {
+        const annValidation = this.validateAnnIndex(packageData.ann_index, packageData.chunks);
+        errors.push(...annValidation.errors);
+        warnings.push(...annValidation.warnings);
+      } else if (packageData.format_version === '1.1') {
+        warnings.push('format_version 1.1 package has no ann_index block; legacy retrieval will be used');
+      }
 
       // Validate export_stats if present
       if (packageData.export_stats) {
@@ -71,7 +80,7 @@ export class PackageValidator {
   }
 
   private isSupportedVersion(version: string): boolean {
-    const supportedVersions = ['1.0'];
+    const supportedVersions = ['1.0', '1.1'];
     return supportedVersions.includes(version);
   }
 
@@ -337,6 +346,80 @@ export class PackageValidator {
       } else if (chunk.embedding && chunk.embedding.length !== chunk.embedding_dimensions) {
         errors.push(`Chunk ${index}: embedding_dimensions (${chunk.embedding_dimensions}) doesn't match actual embedding length (${chunk.embedding.length})`);
       }
+    }
+
+    return { errors, warnings };
+  }
+
+  private validateAnnIndex(annIndex: any, chunks: any[]): { errors: string[]; warnings: string[] } {
+    const errors: string[] = [];
+    const warnings: string[] = [];
+
+    if (!annIndex || typeof annIndex !== 'object') {
+      errors.push('ann_index must be an object when provided');
+      return { errors, warnings };
+    }
+
+    if (annIndex.algorithm !== 'hnsw') {
+      errors.push(`ann_index.algorithm must be "hnsw", found "${annIndex.algorithm}"`);
+    }
+
+    if (annIndex.distance !== 'cosine') {
+      errors.push(`ann_index.distance must be "cosine", found "${annIndex.distance}"`);
+    }
+
+    if (typeof annIndex.embedding_dimensions !== 'number') {
+      errors.push('ann_index.embedding_dimensions must be a number');
+    } else if (chunks?.length > 0 && Array.isArray(chunks[0]?.embedding)) {
+      const chunkDim = chunks[0].embedding.length;
+      if (chunkDim !== annIndex.embedding_dimensions) {
+        errors.push(`ann_index.embedding_dimensions (${annIndex.embedding_dimensions}) does not match chunk embedding dimension (${chunkDim})`);
+      }
+    }
+
+    if (!annIndex.params || typeof annIndex.params !== 'object') {
+      errors.push('ann_index.params is required and must be an object');
+    } else {
+      if (typeof annIndex.params.m !== 'number' || annIndex.params.m <= 0) {
+        errors.push('ann_index.params.m must be a positive number');
+      }
+      if (typeof annIndex.params.ef_construction !== 'number' || annIndex.params.ef_construction <= 0) {
+        errors.push('ann_index.params.ef_construction must be a positive number');
+      }
+      if (typeof annIndex.params.ef_search !== 'number' || annIndex.params.ef_search <= 0) {
+        errors.push('ann_index.params.ef_search must be a positive number');
+      }
+    }
+
+    if (annIndex.artifact_base64 !== undefined && typeof annIndex.artifact_base64 !== 'string') {
+      errors.push('ann_index.artifact_base64 must be a base64 string');
+    }
+
+    if (annIndex.id_map !== undefined && !Array.isArray(annIndex.id_map)) {
+      errors.push('ann_index.id_map must be an array when provided');
+    }
+
+    if (Array.isArray(annIndex.id_map)) {
+      if (annIndex.id_map.length !== chunks.length) {
+        warnings.push(`ann_index.id_map length (${annIndex.id_map.length}) differs from chunk count (${chunks.length})`);
+      }
+      if (annIndex.id_map.some((v: any) => typeof v !== 'string')) {
+        errors.push('ann_index.id_map must contain only string IDs');
+      }
+    }
+
+    const hasInline = !!annIndex.artifact_base64 && Array.isArray(annIndex.id_map);
+    const hasExternal = !!annIndex.artifact_name && !!annIndex.id_map_name;
+    if (!hasInline && !hasExternal) {
+      warnings.push('ann_index payload is missing (inline or external metadata); legacy retrieval fallback will be used');
+    }
+
+    if (annIndex.artifact_size !== undefined && typeof annIndex.artifact_size !== 'number') {
+      errors.push('ann_index.artifact_size must be a number');
+    }
+
+    if (annIndex.id_map_size !== undefined && typeof annIndex.id_map_size !== 'number') {
+      errors.push('ann_index.id_map_size must be a number');
     }
 
     return { errors, warnings };

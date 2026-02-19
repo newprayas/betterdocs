@@ -15,6 +15,8 @@ export class VectorSearchService {
       similarityThreshold?: number;
       documentIds?: string[];
       userId?: string;
+      retrievalMode?: 'legacy_hybrid' | 'ann_rerank_v1';
+      annCandidateMultiplier?: number;
     } = {}
   ): Promise<VectorSearchResult[]> {
     return new Promise((resolve, reject) => {
@@ -369,6 +371,7 @@ export class VectorSearchService {
       textWeight?: number;
       vectorWeight?: number;
       userId?: string;
+      retrievalMode?: 'legacy_hybrid' | 'ann_rerank_v1';
     } = {}
   ): Promise<VectorSearchResult[]> {
     try {
@@ -383,10 +386,13 @@ export class VectorSearchService {
       const vectorResults = await this.searchSimilar(queryEmbedding, sessionId, {
         maxResults: maxResults * 2, // Get more to allow for text search
         similarityThreshold: similarityThreshold * 0.8, // Lower threshold for hybrid
+        retrievalMode: options.retrievalMode || 'legacy_hybrid'
       });
 
-      // Get text search results (simple keyword matching for now)
-      const textResults = await this.textSearch(queryText, sessionId, maxResults * 2, options.userId);
+      // In ANN mode, rerank only top vector candidates to avoid full second pass.
+      const textResults = options.retrievalMode === 'ann_rerank_v1'
+        ? this.textRerankCandidates(vectorResults, queryText, Math.min(maxResults * 2, 40))
+        : await this.textSearch(queryText, sessionId, maxResults * 2, options.userId);
 
       // Combine and score results
       const combinedResults = new Map<string, VectorSearchResult>();
@@ -474,6 +480,25 @@ export class VectorSearchService {
     }
   }
 
+  private textRerankCandidates(
+    candidates: VectorSearchResult[],
+    query: string,
+    maxResults: number
+  ): VectorSearchResult[] {
+    const queryLower = query.toLowerCase();
+    return candidates
+      .map((candidate) => {
+        const contentLower = candidate.chunk.content.toLowerCase();
+        const textScore = this.calculateTextScore(queryLower, contentLower);
+        return {
+          ...candidate,
+          similarity: Math.min(1, candidate.similarity + (textScore * 0.3))
+        };
+      })
+      .sort((a, b) => b.similarity - a.similarity)
+      .slice(0, maxResults);
+  }
+
   /**
    * Calculate advanced text similarity score
    */
@@ -548,6 +573,8 @@ export class VectorSearchService {
       vectorWeight?: number;
       useDynamicWeighting?: boolean;
       userId?: string;
+      retrievalMode?: 'legacy_hybrid' | 'ann_rerank_v1';
+      annCandidateMultiplier?: number;
     } = {}
   ): Promise<VectorSearchResult[]> {
     try {
@@ -556,17 +583,23 @@ export class VectorSearchService {
         similarityThreshold = 0.7,
         textWeight = 0.3,
         vectorWeight = 0.7,
-        useDynamicWeighting = true
+        useDynamicWeighting = true,
+        retrievalMode = 'legacy_hybrid',
+        annCandidateMultiplier = 12
       } = options;
 
       // Get vector search results
       const vectorResults = await this.searchSimilar(queryEmbedding, sessionId, {
         maxResults: maxResults * 2,
         similarityThreshold: similarityThreshold * 0.8,
+        retrievalMode,
+        annCandidateMultiplier
       });
 
-      // Get text search results
-      const textResults = await this.textSearch(queryText, sessionId, maxResults * 2, options.userId);
+      // In ANN mode, rerank only the vector candidates to avoid a full second pass.
+      const textResults = retrievalMode === 'ann_rerank_v1'
+        ? this.textRerankCandidates(vectorResults, queryText, Math.min(maxResults * 2, 40))
+        : await this.textSearch(queryText, sessionId, maxResults * 2, options.userId);
 
       // Dynamic weighting based on query characteristics
       let finalTextWeight = textWeight;

@@ -35,6 +35,54 @@ const getMirrorUrl = (index: number) => {
 };
 // -----------------------------------------------
 
+const arrayBufferToBase64 = (buffer: ArrayBuffer): string => {
+  let binary = '';
+  const bytes = new Uint8Array(buffer);
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.subarray(i, i + chunkSize);
+    binary += String.fromCharCode(...chunk);
+  }
+  return btoa(binary);
+};
+
+const downloadBinaryAsBase64 = async (url: string): Promise<string> => {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Failed ANN artifact download: ${response.status} ${response.statusText}`);
+  }
+  const buffer = await response.arrayBuffer();
+  return arrayBufferToBase64(buffer);
+};
+
+const downloadIdMap = async (url: string): Promise<string[]> => {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Failed ANN id-map download: ${response.status} ${response.statusText}`);
+  }
+
+  if (!response.body) {
+    throw new Error('ReadableStream not available for ANN id-map');
+  }
+
+  const isGzip = url.endsWith('.gz') || url.endsWith('.gzip');
+  let textResponse: Response;
+
+  if (isGzip) {
+    const ds = new DecompressionStream('gzip');
+    textResponse = new Response(response.body.pipeThrough(ds));
+  } else {
+    textResponse = new Response(response.body);
+  }
+
+  const json = await textResponse.json();
+  if (!Array.isArray(json) || json.some((v) => typeof v !== 'string')) {
+    throw new Error('ANN id-map payload is invalid');
+  }
+
+  return json;
+};
+
 //shard_4a8.bin
 
 // Embedded library catalog (not hosted externally for obscurity)
@@ -52,6 +100,13 @@ const LIBRARY_CATALOG = [
     "filename": "shard_2t3.bin",
     "size": "43 MB",
     "category": "Surgery"
+  },
+  {
+    "id": "youtube_lectures_prof_masud_sir",
+    "name": "Youtube lectures Prof Masud sir",
+    "filename": "shard_8p5.bin",
+    "size": "2.7 MB",
+    "category": "Medical Education"
   }
 ];
 
@@ -110,6 +165,30 @@ export const libraryService = {
 
         console.log(`[Library] ✅ Decompression complete, parsing JSON...`);
         const result = await jsonResponse.json();
+
+        // Try to hydrate ANN payload if metadata exists (non-blocking)
+        if (result?.ann_index && !result.ann_index.artifact_base64) {
+          const ann = result.ann_index;
+          if (ann.artifact_name) {
+            try {
+              const annUrl = `${mirrorBaseUrl}/${ann.artifact_name}`;
+              ann.artifact_base64 = await downloadBinaryAsBase64(annUrl);
+              console.log(`[Library] ✅ ANN artifact downloaded: ${ann.artifact_name}`);
+            } catch (annError) {
+              console.warn('[Library] ⚠️ ANN artifact download failed, using legacy fallback:', annError);
+            }
+          }
+
+          if (ann.id_map_name) {
+            try {
+              const idMapUrl = `${mirrorBaseUrl}/${ann.id_map_name}`;
+              ann.id_map = await downloadIdMap(idMapUrl);
+              console.log(`[Library] ✅ ANN id-map downloaded: ${ann.id_map_name}`);
+            } catch (idMapError) {
+              console.warn('[Library] ⚠️ ANN id-map download failed, using legacy fallback:', idMapError);
+            }
+          }
+        }
 
         // SUCCESS! Rotate the global mirror index once so the NEXT book
         // starts with the next mirror in the sequence (Load Balancing)

@@ -165,6 +165,7 @@ export class ChatPipeline {
       const settings = await this.indexedDBServices.settingsService.getSettings(sessionForDocuments.userId);
       const apiKey = settings?.geminiApiKey || '';
       const model = settings?.model || 'gemini-2.5-flash-lite';
+      const retrievalMode = settings?.retrievalMode || 'legacy_hybrid';
 
       // 2. GENERATE STANDALONE QUERY (NEW STEP)
       // This converts "What are its causes?" -> "What are the causes of cataract?"
@@ -235,6 +236,7 @@ export class ChatPipeline {
           useDynamicWeighting: true,
           textWeight: 0.3,
           vectorWeight: 0.7,
+          retrievalMode,
           userId: sessionForDocuments.userId // Ensure userId is passed
         }
       );
@@ -499,6 +501,7 @@ export class ChatPipeline {
         similarityThreshold: 0.7,
         chunkSize: 1000,
         chunkOverlap: 200,
+        retrievalMode: 'legacy_hybrid' as const,
         theme: 'dark' as const,
         fontSize: 'medium' as const,
         showSources: true,

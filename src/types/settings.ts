@@ -22,6 +22,7 @@ export interface AppSettings {
   similarityThreshold: number;
   chunkSize: number;
   chunkOverlap: number;
+  retrievalMode: 'legacy_hybrid' | 'ann_rerank_v1';
 
   // UI Settings
   theme: 'dark' | 'light';
@@ -51,6 +52,7 @@ export interface SettingsUpdate {
   similarityThreshold?: number;
   chunkSize?: number;
   chunkOverlap?: number;
+  retrievalMode?: 'legacy_hybrid' | 'ann_rerank_v1';
   theme?: 'dark' | 'light';
   fontSize?: 'small' | 'medium' | 'large';
   showSources?: boolean;

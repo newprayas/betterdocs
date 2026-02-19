@@ -23,6 +23,27 @@ export interface PreprocessedPackage {
     };
   };
   chunks: PreprocessedChunk[];
+  ann_index?: PreprocessedAnnIndex;
+}
+
+export interface PreprocessedAnnIndex {
+  algorithm: 'hnsw';
+  embedding_dimensions: number;
+  distance: 'cosine';
+  params: {
+    m: number;
+    ef_construction: number;
+    ef_search: number;
+  };
+  artifact_name?: string;
+  artifact_checksum?: string;
+  artifact_size?: number;
+  id_map_name?: string;
+  id_map_checksum?: string;
+  id_map_size?: number;
+  // Inline payloads for upload/import compatibility
+  artifact_base64?: string;
+  id_map?: string[];
 }
 
 // This interface is no longer needed as the new structure has chunks directly in the package
