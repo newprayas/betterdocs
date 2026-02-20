@@ -2,7 +2,7 @@ import React from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Button } from '../ui/Button';
-import { useSettingsStore } from '../../store';
+import { groqService } from '../../services/groq/groqService';
 
 interface HeaderProps {
   title?: string;
@@ -16,7 +16,7 @@ export const Header: React.FC<HeaderProps> = ({
   actions,
 }) => {
   const router = useRouter();
-  const { settings } = useSettingsStore();
+  const isInferenceReady = groqService.isInitialized();
 
   const handleBack = () => {
     // Always go to home when clicking back in the header
@@ -112,10 +112,10 @@ export const Header: React.FC<HeaderProps> = ({
             <div className="hidden sm:flex items-center">
               <div className={`
                 h-2 w-2 rounded-full mr-2
-                ${settings?.groqApiKey ? 'bg-green-500' : 'bg-red-500'}
+                ${isInferenceReady ? 'bg-green-500' : 'bg-red-500'}
               `} />
               <span className="text-xs text-gray-600 dark:text-gray-300">
-                {settings?.groqApiKey ? 'Connected' : 'Not Connected'}
+                {isInferenceReady ? 'Connected' : 'No Inference Keys'}
               </span>
             </div>
           </div>
@@ -127,7 +127,7 @@ export const Header: React.FC<HeaderProps> = ({
 
 // Simple header for home page
 export const SimpleHeader: React.FC = () => {
-  const { settings } = useSettingsStore();
+  const isInferenceReady = groqService.isInitialized();
 
   return (
     <header className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
@@ -189,10 +189,10 @@ export const SimpleHeader: React.FC = () => {
             <div className="hidden sm:flex items-center">
               <div className={`
                 h-2 w-2 rounded-full mr-2
-                ${settings?.groqApiKey ? 'bg-green-500' : 'bg-red-500'}
+                ${isInferenceReady ? 'bg-green-500' : 'bg-red-500'}
               `} />
               <span className="text-xs text-gray-600 dark:text-gray-300">
-                {settings?.groqApiKey ? 'Connected' : 'Setup Required'}
+                {isInferenceReady ? 'Connected' : 'No Inference Keys'}
               </span>
             </div>
 

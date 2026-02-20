@@ -4,7 +4,7 @@ import React, { useEffect, useState, useRef } from 'react';
 
 export const dynamic = 'force-dynamic';
 import { useParams, useRouter } from 'next/navigation';
-import { useSessionStore, useChatStore, useDocumentStore, useSettingsStore } from '../../../store';
+import { useSessionStore, useChatStore, useDocumentStore } from '../../../store';
 import { TabBar, ChatTabs } from '../../../components/layout';
 import { ChatList, MessageInput, PhrasePills } from '../../../components/chat';
 import { DocumentList, JsonUpload, DocumentLibrary } from '../../../components/document';
@@ -62,9 +62,6 @@ export default function SessionPage() {
     loadDocuments,
     isUploading: documentsLoading,
   } = useDocumentStore();
-
-  const { settings } = useSettingsStore();
-  const { userId } = useSessionStore();
 
   // ADD THIS VARIABLE
   const hasDocuments = (currentSession?.documentCount || 0) > 0 || documents.length > 0;
@@ -346,19 +343,6 @@ export default function SessionPage() {
                   )}
                 </div>
 
-                {/* API Key Configuration Button */}
-                {!settings?.groqApiKey && (
-                  <div className="flex-shrink-0 mt-4 max-w-4xl mx-auto w-full">
-                    <Button
-                      onClick={() => router.push('/settings')}
-                      variant="primary"
-                      className="w-full"
-                    >
-                      Set Cerebras API Key First
-                    </Button>
-                  </div>
-                )}
-
                 {/* Phrase Pills */}
                 <div className="flex-shrink-0 mt-4 max-w-4xl mx-auto w-full">
                   <PhrasePills
@@ -371,13 +355,11 @@ export default function SessionPage() {
                 <div className="flex-shrink-0 mt-4 max-w-4xl mx-auto w-full">
                   <MessageInput
                     sessionId={sessionId}
-                    disabled={isStreaming || !settings?.groqApiKey || !hasDocuments}
+                    disabled={isStreaming || !hasDocuments}
                     placeholder={
-                      !settings?.groqApiKey
-                        ? 'Please configure your Cerebras API key in settings'
-                        : !hasDocuments
-                          ? 'Please add a book FIRST to chat'
-                          : 'Ask a question about your documents...'
+                      !hasDocuments
+                        ? 'Please add a book FIRST to chat'
+                        : 'Ask a question about your documents...'
                     }
                     value={messageInput}
                     onChange={setMessageInput}
@@ -393,19 +375,6 @@ export default function SessionPage() {
                     className="max-w-4xl mx-auto"
                   />
                 </div>
-
-                {/* API Key Configuration Button */}
-                {!settings?.groqApiKey && (
-                  <div className="flex-shrink-0 mt-4 max-w-4xl mx-auto w-full">
-                    <Button
-                      onClick={() => router.push('/settings')}
-                      variant="primary"
-                      className="w-full"
-                    >
-                      Set Cerebras API Key First
-                    </Button>
-                  </div>
-                )}
 
                 {/* Phrase Pills */}
                 <div className="flex-shrink-0 mt-4 max-w-4xl mx-auto w-full">
@@ -431,13 +400,11 @@ export default function SessionPage() {
                   )}
                   <MessageInput
                     sessionId={sessionId}
-                    disabled={isStreaming || !settings?.groqApiKey || !hasDocuments}
+                    disabled={isStreaming || !hasDocuments}
                     placeholder={
-                      !settings?.groqApiKey
-                        ? 'Please configure your Cerebras API key in settings'
-                        : !hasDocuments
-                          ? 'Please add a book FIRST to chat'
-                          : 'Ask a question about your documents...'
+                      !hasDocuments
+                        ? 'Please add a book FIRST to chat'
+                        : 'Ask a question about your documents...'
                     }
                     value={messageInput}
                     onChange={setMessageInput}

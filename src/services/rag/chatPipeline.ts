@@ -130,28 +130,27 @@ export class ChatPipeline {
   }
 
   /**
-   * Expand short keyword-like medical queries into a clearer clinical question.
+   * Expand ultra-short medical queries into a clearer query using LLM intent inference.
    */
   private async expandShortMedicalQueryIfNeeded(query: string): Promise<string> {
     const normalized = query.trim().replace(/\s+/g, ' ');
     if (!normalized) return query;
 
     const words = normalized.split(' ').filter(Boolean);
-    const hasQuestionVerb = /\b(what|how|why|when|where|which|differentiate|define|management|treatment|diagnosis|features)\b/i.test(normalized);
-    const keywordLike = words.length <= 6 || /(?:\bvs\b|\/|-)/i.test(normalized);
-
-    if (!keywordLike || hasQuestionVerb) {
+    const isVeryShortQuery = words.length < 4;
+    if (!isVeryShortQuery) {
       return normalized;
     }
 
     try {
       const prompt = `
-Task: Rewrite the medical keyword query into a clear standalone clinical question for retrieval.
+Task: Expand the very short medical query into a clearer standalone query for retrieval.
 Rules:
 1) Keep intent exactly same.
 2) Do not answer.
 3) Output only one rewritten question.
-4) Keep it concise.
+4) Infer likely user intent and make the query clearer and more searchable.
+5) Keep it clinically relevant and concise (target 6-14 words).
 
 Query:
 ${normalized}
@@ -163,11 +162,16 @@ ${normalized}
         'gpt-oss-120b',
         {
           temperature: 0.1,
-          maxTokens: 60,
+          maxTokens: 80,
         }
       )).trim().replace(/^["']|["']$/g, '');
 
-      if (!expanded || expanded.length < normalized.length) {
+      if (!expanded) {
+        return normalized;
+      }
+
+      const expandedWordCount = expanded.split(' ').filter(Boolean).length;
+      if (expandedWordCount <= words.length) {
         return normalized;
       }
 

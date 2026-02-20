@@ -186,20 +186,18 @@ export function AppInitializer() {
     initializeEmbeddings();
   }, [isClient]);
 
-  // Initialize inference service when settings change (Cerebras API key)
+  // Initialize inference service from env keys (and optional legacy saved key) plus storage manager
   useEffect(() => {
     if (!isClient) return;
 
     const initializeGroqAndStorage = async () => {
-      if (settings?.groqApiKey) {
-        console.log('[APP INIT]', 'Initializing inference service...');
-        await groqService.initialize(settings.groqApiKey || '');
-        console.log('[APP INIT] Inference service initialized successfully');
+      console.log('[APP INIT]', 'Initializing inference service...');
+      await groqService.initialize(settings?.groqApiKey || '');
+      console.log('[APP INIT]', 'Inference service initialized:', groqService.isInitialized() ? 'ready' : 'missing keys');
 
-        // Initialize Storage Manager (Request Persistence)
-        await storageManager.init();
-        console.log('[APP INIT] Storage Manager initialized');
-      }
+      // Initialize Storage Manager (Request Persistence)
+      await storageManager.init();
+      console.log('[APP INIT] Storage Manager initialized');
     };
 
     initializeGroqAndStorage();

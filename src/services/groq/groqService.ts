@@ -24,15 +24,58 @@ type CerebrasChatResponse = {
 
 export class GroqService {
   private apiKey: string = '';
+  private envApiKeys: string[] = [];
+  private keyRotationIndex: number = 0;
+
+  constructor() {
+    this.envApiKeys = this.loadEnvApiKeys();
+    console.log('[CEREBRAS SERVICE]', `Loaded ${this.envApiKeys.length} env API key(s)`);
+  }
+
+  private loadEnvApiKeys(): string[] {
+    const keys: string[] = [];
+    for (let i = 1; i <= 6; i++) {
+      const key =
+        process.env[`NEXT_PUBLIC_CEREBRAS_API_${i}` as keyof NodeJS.ProcessEnv] ||
+        process.env[`CEREBRAS_API_${i}` as keyof NodeJS.ProcessEnv] ||
+        process.env[`Cerebras_API_${i}` as keyof NodeJS.ProcessEnv] ||
+        '';
+      const trimmed = String(key).trim();
+      if (trimmed) {
+        keys.push(trimmed);
+      }
+    }
+    return keys;
+  }
+
+  private getAllAvailableKeys(): string[] {
+    const keys = [...this.envApiKeys];
+    if (this.apiKey.trim()) {
+      keys.push(this.apiKey.trim());
+    }
+    // Deduplicate while preserving order
+    return keys.filter((k, idx) => keys.indexOf(k) === idx);
+  }
+
+  private getNextApiKey(): string {
+    const keys = this.getAllAvailableKeys();
+    if (keys.length === 0) {
+      throw new Error('Cerebras service not initialized and no env keys configured');
+    }
+    const key = keys[this.keyRotationIndex % keys.length];
+    this.keyRotationIndex = (this.keyRotationIndex + 1) % Math.max(keys.length, 1);
+    return key;
+  }
 
   initialize(apiKey: string) {
+    // Optional manual key (legacy settings path). Env keys remain primary and are rotated.
     if (!apiKey || apiKey === this.apiKey) return;
     this.apiKey = apiKey;
-    console.log('[CEREBRAS SERVICE]', 'Initialized with key:', apiKey.substring(0, 7) + '...');
+    console.log('[CEREBRAS SERVICE]', 'Initialized with manual key:', apiKey.substring(0, 7) + '...');
   }
 
   isInitialized(): boolean {
-    return this.apiKey.trim().length > 0;
+    return this.getAllAvailableKeys().length > 0;
   }
 
   private getModel(model?: string): string {
@@ -134,7 +177,7 @@ export class GroqService {
     try {
       const response = await fetch(`${CEREBRAS_BASE_URL}/chat/completions`, {
         method: 'POST',
-        headers: this.buildHeaders(this.apiKey),
+        headers: this.buildHeaders(this.getNextApiKey()),
         body: JSON.stringify({
           model: modelToUse,
           stream: false,
@@ -186,7 +229,7 @@ export class GroqService {
 
     const response = await fetch(`${CEREBRAS_BASE_URL}/chat/completions`, {
       method: 'POST',
-      headers: this.buildHeaders(this.apiKey),
+      headers: this.buildHeaders(this.getNextApiKey()),
       body: JSON.stringify({
         model: modelToUse,
         stream: true,
@@ -253,4 +296,3 @@ export class GroqService {
 }
 
 export const groqService = new GroqService();
-

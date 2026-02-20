@@ -425,8 +425,8 @@ export const useChatStore = create<ChatStore>()(
           // Filter to get questions in the last minute
           const recentQuestions = questionTimestamps.filter(ts => ts > oneMinuteAgo);
 
-          // If less than 2 questions in the last minute, no wait needed
-          if (recentQuestions.length < 2) {
+          // Allow up to 3 questions in the last minute. Block from the 4th.
+          if (recentQuestions.length < 3) {
             return 0;
           }
 

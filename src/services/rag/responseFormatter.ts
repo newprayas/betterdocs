@@ -102,13 +102,11 @@ export class ResponseFormatter {
       return response;
     }
 
-    // Use inference provider API key for formatting.
-    const formattingApiKey = settings.groqApiKey;
+    const inferenceReady = groqService.isInitialized();
+    console.log(`[${timestamp}] [INDENTATION DEBUG] LLM FORMATTER:`, 'Inference service ready:', inferenceReady ? 'YES' : 'NO');
 
-    console.log(`[${timestamp}] [INDENTATION DEBUG] LLM FORMATTER:`, 'Using inference API key for formatting:', settings.groqApiKey ? `YES (${settings.groqApiKey.substring(0, 10)}...)` : 'NO');
-
-    if (!formattingApiKey) {
-      console.log(`[${timestamp}] [INDENTATION DEBUG] FORMATTING SKIPPED:`, 'No inference API key available, returning original response');
+    if (!inferenceReady) {
+      console.log(`[${timestamp}] [INDENTATION DEBUG] FORMATTING SKIPPED:`, 'Inference service not initialized, returning original response');
       console.log(`=== [${timestamp}] [INDENTATION DEBUG] LLM RESPONSE FORMATTER END ===\n`);
       return response;
     }
