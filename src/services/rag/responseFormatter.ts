@@ -140,6 +140,12 @@ export class ResponseFormatter {
 
       console.log(`[${timestamp}] [INDENTATION DEBUG] LLM FORMATTING:`, 'Inference service response received, length:', formattedResponse.length);
 
+      if (!formattedResponse || !formattedResponse.trim()) {
+        console.warn(`[${timestamp}] [INDENTATION DEBUG] FORMATTER EMPTY OUTPUT:`, 'Returning original response to avoid blank assistant message.');
+        console.log(`=== [${timestamp}] [INDENTATION DEBUG] LLM RESPONSE FORMATTER END ===\n`);
+        return response;
+      }
+
       // Comprehensive analysis of formatted response
       console.log(`[${timestamp}] [INDENTATION DEBUG] ANALYZING FORMATTED RESPONSE STRUCTURE:`);
       IndentationAnalyzer.logMarkdownStructure(formattedResponse);

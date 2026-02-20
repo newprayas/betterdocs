@@ -8,6 +8,8 @@ import { ResponseFormatter } from './responseFormatter';
 import { MessageSender, type MessageCreate, type Message } from '@/types';
 import type { ChatStreamEvent } from '../gemini/chatService';
 import type { SimplifiedCitationGroup } from '@/types/citation';
+import type { EmbeddingChunk, VectorSearchResult } from '@/types/embedding';
+import { cosineSimilarity } from '@/utils/vectorUtils';
 
 export class ChatPipeline {
   private indexedDBServices = getIndexedDBServices();
@@ -63,122 +65,190 @@ export class ChatPipeline {
     }
   }
 
+  private normalizeCommonMedicalTypos(text: string): string {
+    return text
+      .replace(/\bmanamgnet\b/gi, 'management')
+      .replace(/\bmanagment\b/gi, 'management')
+      .replace(/\bmanagemnt\b/gi, 'management')
+      .replace(/\btrematnet\b/gi, 'treatment')
+      .replace(/\btretment\b/gi, 'treatment')
+      .replace(/\buclers\b/gi, 'ulcers')
+      .replace(/\bulser\b/gi, 'ulcer')
+      .replace(/\bdiffren(?:t|ti)ate\b/gi, 'differentiate');
+  }
+
+  private sanitizeRewriterOutput(raw: string): string {
+    const firstLine = raw
+      .split('\n')
+      .map((line) => line.trim())
+      .find((line) => line.length > 0) || '';
+
+    return firstLine
+      .replace(/^standalone\s+query\s*:\s*/i, '')
+      .replace(/^rewritten\s+query\s*:\s*/i, '')
+      .replace(/^[-*]\s+/, '')
+      .replace(/^["'`]|["'`]$/g, '')
+      .trim();
+  }
+
+  private isInsufficientEvidenceResponse(text: string): boolean {
+    const normalized = text.toLowerCase().replace(/\s+/g, ' ').trim();
+    if (!normalized) return false;
+    return (
+      normalized.includes('i cannot answer this question based on the provided documents') ||
+      normalized.includes('cannot answer this question based on the provided documents') ||
+      normalized.includes('insufficient information in the provided documents') ||
+      normalized.includes('not enough information in the provided documents')
+    );
+  }
+
+  private getChunkPageNumber(chunk: EmbeddingChunk): number | null {
+    if (chunk.page && chunk.page > 0) return chunk.page;
+    if (chunk.metadata?.pageNumber && chunk.metadata.pageNumber > 0) return chunk.metadata.pageNumber;
+    if (chunk.metadata?.pageNumbers && chunk.metadata.pageNumbers.length > 0) {
+      const first = chunk.metadata.pageNumbers.find((p) => p > 0);
+      if (first) return first;
+    }
+    return null;
+  }
+
+  private includeNeighborPageChunks(
+    baseResults: VectorSearchResult[],
+    sessionEmbeddings: EmbeddingChunk[],
+    queryEmbedding: Float32Array,
+    maxAdditional: number = 4
+  ): VectorSearchResult[] {
+    if (baseResults.length === 0 || sessionEmbeddings.length === 0 || maxAdditional <= 0) {
+      return baseResults;
+    }
+
+    const existingChunkIds = new Set(baseResults.map((r) => r.chunk.id));
+    const docInfoById = new Map(baseResults.map((r) => [r.document.id, r.document]));
+    const targetNeighborPages = new Set<string>();
+
+    for (const result of baseResults) {
+      const page = this.getChunkPageNumber(result.chunk);
+      if (!page) continue;
+      if (page > 1) targetNeighborPages.add(`${result.document.id}:${page - 1}`);
+      targetNeighborPages.add(`${result.document.id}:${page + 1}`);
+    }
+
+    if (targetNeighborPages.size === 0) {
+      return baseResults;
+    }
+
+    const bestCandidateByPage = new Map<string, { chunk: EmbeddingChunk; similarity: number }>();
+    for (const chunk of sessionEmbeddings) {
+      if (existingChunkIds.has(chunk.id)) continue;
+
+      const page = this.getChunkPageNumber(chunk);
+      if (!page) continue;
+
+      const pageKey = `${chunk.documentId}:${page}`;
+      if (!targetNeighborPages.has(pageKey)) continue;
+
+      const similarity = cosineSimilarity(queryEmbedding, chunk.embedding);
+      const current = bestCandidateByPage.get(pageKey);
+      if (!current || similarity > current.similarity) {
+        bestCandidateByPage.set(pageKey, { chunk, similarity });
+      }
+    }
+
+    const additions = Array.from(bestCandidateByPage.values())
+      .sort((a, b) => b.similarity - a.similarity)
+      .slice(0, maxAdditional)
+      .map(({ chunk, similarity }) => {
+        const existingDocInfo = docInfoById.get(chunk.documentId);
+        const title = existingDocInfo?.title || chunk.metadata?.documentTitle || chunk.source || 'Document';
+        const fileName = existingDocInfo?.fileName || chunk.source || title;
+        return {
+          chunk,
+          similarity,
+          document: {
+            id: chunk.documentId,
+            title,
+            fileName
+          }
+        } as VectorSearchResult;
+      });
+
+    if (additions.length > 0) {
+      console.log(
+        '[NEIGHBOR PAGES] Added %d neighbor-page chunk(s): %o',
+        additions.length,
+        additions.map((r) => ({
+          chunkId: r.chunk.id,
+          documentId: r.document.id,
+          page: this.getChunkPageNumber(r.chunk),
+          similarity: r.similarity
+        }))
+      );
+    }
+
+    return [...baseResults, ...additions].sort((a, b) => b.similarity - a.similarity);
+  }
+
   /**
    * Rewrites the user query based on chat history to make it standalone.
    * Solves the "What are its causes?" problem.
    */
   private async generateStandaloneQuery(
     content: string,
-    history: any[],
-    apiKey: string,
-    model: string
+    history: any[]
   ): Promise<string> {
-    // 1. Cost Optimization: If no history, no need to rewrite.
-    if (!history || history.length === 0) {
-      console.log('[QUERY REWRITER]', 'Skipping rewrite - No history.');
-      return await this.expandShortMedicalQueryIfNeeded(content);
-    }
-
-    // 2. Cost Optimization: Limit history to last 4 messages (2 turns)
-    // This keeps input tokens low for the free tier.
-    const recentHistory = history.slice(-4).map(msg =>
+    const normalizedOriginal = this.normalizeCommonMedicalTypos(content.trim().replace(/\s+/g, ' '));
+    const recentHistory = (history || []).slice(-6).map(msg =>
       `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}`
     ).join('\n');
 
     const prompt = `
-      Task: Rewrite the last user question to be a standalone query based on the conversation history.
-      Rules:
-      1. Replace pronouns (it, they, this) with specific nouns from history.
-      2. Keep the query concise.
-      3. If the question is already standalone, return it exactly as is.
-      4. Do NOT answer the question.
+Task: Rewrite the user's latest query into ONE standalone medical search query.
 
-      Conversation History:
-      ${recentHistory}
-
-      Last User Question:
-      ${content}
-
-      Standalone Query:
-    `;
-
-    try {
-      // Use Cerebras-backed inference service for rewriting
-      const rewrittenQuery = await groqService.generateResponse(
-        prompt,
-        "You are a helpful assistant that rewrites queries.",
-        'gpt-oss-120b',
-        {
-          temperature: 0.1, // Low temperature for deterministic rewriting
-          maxTokens: 100,   // Very low output tokens (saves limits)
-        }
-      );
-
-      const cleanedQuery = rewrittenQuery.trim();
-      const expandedQuery = await this.expandShortMedicalQueryIfNeeded(cleanedQuery);
-      console.log('[QUERY REWRITER]', `Original: "${content}" -> Rewritten: "${cleanedQuery}"`);
-      if (expandedQuery !== cleanedQuery) {
-        console.log('[QUERY EXPANDER]', `Expanded: "${cleanedQuery}" -> "${expandedQuery}"`);
-      }
-      return expandedQuery;
-
-    } catch (error) {
-      console.error('[QUERY REWRITER ERROR]', error);
-      // Fallback: If API fails (rate limit), use original query so the app doesn't crash
-      return await this.expandShortMedicalQueryIfNeeded(content);
-    }
-  }
-
-  /**
-   * Expand ultra-short medical queries into a clearer query using LLM intent inference.
-   */
-  private async expandShortMedicalQueryIfNeeded(query: string): Promise<string> {
-    const normalized = query.trim().replace(/\s+/g, ' ');
-    if (!normalized) return query;
-
-    const words = normalized.split(' ').filter(Boolean);
-    const isVeryShortQuery = words.length < 4;
-    if (!isVeryShortQuery) {
-      return normalized;
-    }
-
-    try {
-      const prompt = `
-Task: Expand the very short medical query into a clearer standalone query for retrieval.
 Rules:
-1) Keep intent exactly same.
-2) Do not answer.
-3) Output only one rewritten question.
-4) Infer likely user intent and make the query clearer and more searchable.
-5) Keep it clinically relevant and concise (target 6-14 words).
+1) Keep the user's intent exactly.
+2) Resolve pronouns using conversation history (it/this/that/they).
+3) Fix spelling/typos (medical and non-medical).
+4) If query has fewer than 3 words, expand it into a clear natural query.
+5) Normalize common short forms when useful:
+   - rx/tx -> treatment/management
+   - dx -> diagnosis
+   - inv -> investigations
+6) Do NOT answer the question.
+7) Output ONLY the rewritten query text in one line.
 
-Query:
-${normalized}
+Conversation History:
+${recentHistory || 'No prior history'}
+
+Latest User Query:
+${normalizedOriginal}
 `.trim();
 
-      const expanded = (await groqService.generateResponse(
+    try {
+      const rewrittenQuery = await groqService.generateResponse(
         prompt,
-        "You rewrite short medical search phrases into clear clinical questions.",
-        'gpt-oss-120b',
+        "You rewrite medical search queries for retrieval.",
+        'llama3.1-8b',
         {
           temperature: 0.1,
           maxTokens: 80,
         }
-      )).trim().replace(/^["']|["']$/g, '');
+      );
 
-      if (!expanded) {
-        return normalized;
+      const cleanedQuery = this.sanitizeRewriterOutput(rewrittenQuery);
+
+      // Tiny guardrail #1: reject empty/1-word rewrite.
+      const wordCount = cleanedQuery.split(/\s+/).filter(Boolean).length;
+      if (!cleanedQuery || wordCount <= 1) {
+        console.warn('[QUERY REWRITER]', `Rejected weak rewrite "${cleanedQuery}". Falling back to "${normalizedOriginal}"`);
+        return normalizedOriginal;
       }
 
-      const expandedWordCount = expanded.split(' ').filter(Boolean).length;
-      if (expandedWordCount <= words.length) {
-        return normalized;
-      }
+      console.log('[QUERY REWRITER]', `Original: "${normalizedOriginal}" -> Rewritten: "${cleanedQuery}"`);
+      return cleanedQuery;
 
-      return expanded;
     } catch (error) {
-      console.warn('[QUERY EXPANDER]', 'Expansion failed, using original short query');
-      return normalized;
+      console.error('[QUERY REWRITER ERROR]', error);
+      return normalizedOriginal;
     }
   }
 
@@ -220,15 +290,13 @@ ${normalized}
 
       // Get Settings for model info
       const settings = await this.indexedDBServices.settingsService.getSettings(sessionForDocuments.userId);
-      const apiKey = settings?.geminiApiKey || '';
-      const model = settings?.model || 'gemini-2.5-flash-lite';
       const retrievalMode = settings?.retrievalMode || 'legacy_hybrid';
       console.log('[RETRIEVAL MODE]', retrievalMode);
 
       // 2. GENERATE STANDALONE QUERY (NEW STEP)
       // This converts "What are its causes?" -> "What are the causes of cataract?"
       console.log('[REWRITING]', 'Generating standalone query...');
-      const standaloneQuery = await this.generateStandaloneQuery(content, history, apiKey, model);
+      const standaloneQuery = await this.generateStandaloneQuery(content, history);
 
       // 🔴 PROMINENT LOG: Show the converted query for tracking
       console.log('🔴 Converted query -:', `"${standaloneQuery}"`);
@@ -241,6 +309,7 @@ ${normalized}
       // 3. ENHANCE THE REWRITTEN QUERY, NOT THE ORIGINAL
       // Modify this line to pass 'standaloneQuery' instead of 'content'
       const enhancedQuery = await this.enhanceQueryWithContext(sessionId, standaloneQuery);
+      const retrievalQuery = enhancedQuery;
       console.log('[FINAL SEARCH QUERY]', enhancedQuery);
 
       const documents = await this.indexedDBServices.documentService.getDocumentsBySession(sessionId, sessionForDocuments.userId);
@@ -257,7 +326,7 @@ ${normalized}
 
       // Also check if there are any embeddings available for enabled documents
       const indexedDBEmbeddingService = this.indexedDBServices.embeddingService;
-      let embeddings: any[] = [];
+      let embeddings: EmbeddingChunk[] = [];
 
       if (enabledDocuments.length > 0) {
         embeddings = await indexedDBEmbeddingService.getEnabledEmbeddingsBySession(sessionId, sessionForDocuments.userId);
@@ -275,7 +344,7 @@ ${normalized}
 
       // 4. GENERATE EMBEDDING USING THE REWRITTEN QUERY
       console.log('[EMBEDDING GENERATION]', 'Creating vector embedding for enhanced query...');
-      const queryEmbedding = await embeddingService.generateEmbedding(enhancedQuery);
+      const queryEmbedding = await embeddingService.generateEmbedding(retrievalQuery);
       console.log('[EMBEDDING GENERATED]', `Vector created with ${queryEmbedding.length} dimensions`);
 
       // Update progress: Vector Search (75%)
@@ -285,10 +354,10 @@ ${normalized}
 
       // 5. PERFORM SEARCH USING THE REWRITTEN QUERY
       console.log('[VECTOR SEARCH]', 'Performing hybrid search...');
-      const searchResults = await vectorSearchService.searchHybridEnhanced(
+      let searchResults = await vectorSearchService.searchHybridEnhanced(
         queryEmbedding,
         sessionId,
-        enhancedQuery, // Use the enhanced, rewritten query here
+        retrievalQuery, // Use retrieval-expanded query for better recall
         {
           maxResults: 12,
           useDynamicWeighting: true,
@@ -298,6 +367,35 @@ ${normalized}
           userId: sessionForDocuments.userId // Ensure userId is passed
         }
       );
+
+      // Safety net: if rewrite caused zero-hit retrieval, retry once with the original user query.
+      if (searchResults.length === 0 && standaloneQuery.trim().toLowerCase() !== content.trim().toLowerCase()) {
+        console.warn('[SEARCH FALLBACK]', 'No results for rewritten query. Retrying with original query.');
+        const fallbackEnhancedQuery = await this.enhanceQueryWithContext(sessionId, content);
+        const fallbackRetrievalQuery = fallbackEnhancedQuery;
+        const fallbackEmbedding = await embeddingService.generateEmbedding(fallbackRetrievalQuery);
+        const fallbackResults = await vectorSearchService.searchHybridEnhanced(
+          fallbackEmbedding,
+          sessionId,
+          fallbackRetrievalQuery,
+          {
+            maxResults: 12,
+            useDynamicWeighting: true,
+            textWeight: 0.3,
+            vectorWeight: 0.7,
+            retrievalMode,
+            userId: sessionForDocuments.userId
+          }
+        );
+        if (fallbackResults.length > 0) {
+          console.log('[SEARCH FALLBACK]', `Recovered ${fallbackResults.length} result(s) using original query.`);
+          searchResults = fallbackResults;
+        }
+      }
+
+      // Neighbor-page inclusion: include page N-1 / N+1 chunks to preserve section continuity.
+      searchResults = this.includeNeighborPageChunks(searchResults, embeddings, queryEmbedding, 4);
+
       console.log('[SEARCH RESULTS]', `${searchResults.length} relevant chunks found`);
       console.log('✅ CHUNKS USED =', searchResults.length);
 
@@ -578,14 +676,21 @@ ${normalized}
       const formattedResponse = await ResponseFormatter.formatToBulletPoints(fullResponse, settingsForFormatting);
       console.log('[BULLET FORMATTING]', `Converted to bullet points: ${formattedResponse.length} characters`);
 
+      const isNoEvidenceResponse = this.isInsufficientEvidenceResponse(formattedResponse || fullResponse);
+
       // Process citations using simplified system
       const citationResult: SimplifiedCitationGroup = citationService.processSimplifiedCitations(formattedResponse, searchResults);
 
       // Convert simplified citations to message citation format for storage
       let citationMetadata = citationService.convertSimplifiedToMessageCitations(citationResult.citations);
 
+      // If model explicitly says evidence is insufficient, do not attach normal source cards.
+      if (isNoEvidenceResponse) {
+        citationMetadata = [];
+      }
+
       // Reliability fallback: if inline [n] citations are missing, still show source references.
-      if (citationMetadata.length === 0 && searchResults.length > 0) {
+      if (!isNoEvidenceResponse && citationMetadata.length === 0 && searchResults.length > 0) {
         console.warn('[CITATION FALLBACK]', `No parsed inline citations found. Attaching fallback references from top ${Math.min(searchResults.length, 6)} results.`);
         citationMetadata = this.buildFallbackCitationsFromSearchResults(searchResults, 6);
       }
