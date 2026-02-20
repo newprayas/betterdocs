@@ -354,7 +354,7 @@ export default function SessionPage() {
                       variant="primary"
                       className="w-full"
                     >
-                      Set API Key First
+                      Set Cerebras API Key First
                     </Button>
                   </div>
                 )}
@@ -374,7 +374,7 @@ export default function SessionPage() {
                     disabled={isStreaming || !settings?.groqApiKey || !hasDocuments}
                     placeholder={
                       !settings?.groqApiKey
-                        ? 'Please configure your API key in settings'
+                        ? 'Please configure your Cerebras API key in settings'
                         : !hasDocuments
                           ? 'Please add a book FIRST to chat'
                           : 'Ask a question about your documents...'
@@ -402,7 +402,7 @@ export default function SessionPage() {
                       variant="primary"
                       className="w-full"
                     >
-                      Set API Key First
+                      Set Cerebras API Key First
                     </Button>
                   </div>
                 )}
@@ -434,7 +434,7 @@ export default function SessionPage() {
                     disabled={isStreaming || !settings?.groqApiKey || !hasDocuments}
                     placeholder={
                       !settings?.groqApiKey
-                        ? 'Please configure your API key in settings'
+                        ? 'Please configure your Cerebras API key in settings'
                         : !hasDocuments
                           ? 'Please add a book FIRST to chat'
                           : 'Ask a question about your documents...'

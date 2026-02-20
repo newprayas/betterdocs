@@ -29,7 +29,7 @@ export default function SettingsPage() {
   const [localSettings, setLocalSettings] = useState({
     geminiApiKey: '',
     groqApiKey: '',
-    groqModel: 'llama-3.3-70b-versatile',
+    groqModel: 'gpt-oss-120b',
     retrievalMode: 'legacy_hybrid' as 'legacy_hybrid' | 'ann_rerank_v1',
   });
 
@@ -65,7 +65,7 @@ export default function SettingsPage() {
       setLocalSettings({
         geminiApiKey: settings.geminiApiKey || '',
         groqApiKey: settings.groqApiKey || '',
-        groqModel: settings.groqModel || 'llama-3.3-70b-versatile',
+        groqModel: settings.groqModel || 'gpt-oss-120b',
         retrievalMode: settings.retrievalMode || 'legacy_hybrid',
       });
       setSavedApiKey(settings.geminiApiKey || '');
@@ -106,7 +106,7 @@ export default function SettingsPage() {
       const defaultSettings = {
         geminiApiKey: '',
         groqApiKey: '',
-        groqModel: 'llama-3.3-70b-versatile',
+        groqModel: 'gpt-oss-120b',
         retrievalMode: 'legacy_hybrid' as const,
       };
       await updateSettings(defaultSettings);
@@ -143,7 +143,7 @@ export default function SettingsPage() {
         isValid: false,
         error: {
           type: 'INVALID_KEY',
-          message: 'Please enter a Groq API key first'
+          message: 'Please enter a Cerebras API key first'
         }
       });
       setShowValidationError(true);
@@ -169,7 +169,7 @@ export default function SettingsPage() {
           isValid: false,
           error: {
             type: 'INVALID_KEY',
-            message: 'Invalid Groq API Key. Please check and try again.'
+            message: 'Invalid Cerebras API Key. Please check and try again.'
           }
         });
         setConnectionStatus('error');
@@ -181,7 +181,7 @@ export default function SettingsPage() {
         isValid: false,
         error: {
           type: 'UNKNOWN_ERROR',
-          message: 'Failed to test Groq API key connection',
+          message: 'Failed to test Cerebras API key connection',
           details: error instanceof Error ? error.message : String(error)
         }
       });
@@ -303,7 +303,7 @@ export default function SettingsPage() {
           </p>
         </div>
 
-        {/* Start Chatting Button - Appears when Groq API key is saved */}
+        {/* Start Chatting Button - Appears when Cerebras API key is saved */}
         {isGroqApiKeySaved && (
           <div className="flex justify-center mb-6">
             <Button
@@ -353,16 +353,16 @@ export default function SettingsPage() {
               </h2>
 
               <div className="space-y-4">
-                {/* Groq API Key */}
+                {/* Cerebras API Key */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Groq API Key
+                    Cerebras API Key
                   </label>
                   <Input
                     type="password"
                     value={localSettings.groqApiKey}
                     onChange={(e) => handleSettingChange('groqApiKey', e.target.value)}
-                    placeholder="gsk_..."
+                    placeholder="Paste Cerebras API key..."
                     className="w-full mb-2"
                   />
 
@@ -374,12 +374,12 @@ export default function SettingsPage() {
                   <p className="text-sm text-gray-500 dark:text-gray-400 mt-4">
                     ✅ Get your API key from{' '}
                     <a
-                      href="https://console.groq.com/keys"
+                      href="https://cloud.cerebras.ai"
                       target="_blank"
                       rel="noopener noreferrer"
                       className="text-blue-600 dark:text-blue-400 hover:underline font-bold"
                     >
-                      [Groq Console - Click here ✨]
+                      [Cerebras Cloud - Click here ✨]
                     </a>
                   </p>
 
@@ -391,7 +391,7 @@ export default function SettingsPage() {
                       onClick={async () => {
                         if (localSettings.groqApiKey) {
                           try {
-                            console.log('[SETTINGS PAGE] Testing and saving Groq API key...');
+                            console.log('[SETTINGS PAGE] Testing and saving Cerebras API key...');
                             const { groqService } = await import('../../services/groq/groqService');
                             const isValid = await groqService.validateApiKey(localSettings.groqApiKey);
 

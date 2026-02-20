@@ -1,182 +1,255 @@
-import Groq from 'groq-sdk';
+const CEREBRAS_BASE_URL = 'https://api.cerebras.ai/v1';
+const DEFAULT_MODEL = 'gpt-oss-120b';
 
-// Rate limit error type for detection
-interface RateLimitError {
-    error?: {
-        message?: string;
-        type?: string;
-        code?: string;
+type ChatMessage = {
+  role: 'system' | 'user' | 'assistant';
+  content: string;
+};
+
+type CerebrasChatResponse = {
+  choices?: Array<{
+    message?: {
+      content?: string;
     };
-}
+    delta?: {
+      content?: string;
+    };
+  }>;
+  error?: {
+    message?: string;
+    type?: string;
+    code?: string;
+  };
+};
 
 export class GroqService {
-    private groq: Groq | null = null;
-    private apiKey: string = '';
+  private apiKey: string = '';
 
-    // Model rotation: alternate between these two models
-    private readonly MODEL_A = 'moonshotai/kimi-k2-instruct';
-    private readonly MODEL_B = 'moonshotai/kimi-k2-instruct-0905';
-    private lastModelUsed: 'A' | 'B' = 'B'; // Start with B so first call uses A
+  initialize(apiKey: string) {
+    if (!apiKey || apiKey === this.apiKey) return;
+    this.apiKey = apiKey;
+    console.log('[CEREBRAS SERVICE]', 'Initialized with key:', apiKey.substring(0, 7) + '...');
+  }
 
-    initialize(apiKey: string) {
-        if (!apiKey || apiKey === this.apiKey) return;
+  isInitialized(): boolean {
+    return this.apiKey.trim().length > 0;
+  }
 
-        console.log('[GROQ SERVICE]', 'Initializing with key:', apiKey.substring(0, 7) + '...');
-        this.apiKey = apiKey;
-        this.groq = new Groq({
-            apiKey: apiKey,
-            dangerouslyAllowBrowser: true // Required for client-side usage in Next.js
-        });
+  private getModel(model?: string): string {
+    return (model && model.trim()) || DEFAULT_MODEL;
+  }
+
+  private isRateLimitStatus(status: number): boolean {
+    return status === 429;
+  }
+
+  private extractWaitTime(message: string): number {
+    const match = message.match(/try again in ([\d.]+)s/i);
+    if (match) {
+      return Math.ceil(parseFloat(match[1]));
     }
+    return 10;
+  }
 
-    isInitialized(): boolean {
-        return this.groq !== null;
+  private buildHeaders(apiKey: string): HeadersInit {
+    return {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    };
+  }
+
+  private async parseErrorBody(response: Response): Promise<string> {
+    try {
+      const text = await response.text();
+      if (!text) {
+        return `${response.status} ${response.statusText}`;
+      }
+
+      try {
+        const json = JSON.parse(text);
+        const apiMsg = json?.error?.message || json?.message;
+        if (typeof apiMsg === 'string' && apiMsg.trim()) {
+          return apiMsg;
+        }
+      } catch {
+        // non-json body
+      }
+
+      return `${response.status} ${response.statusText}: ${text.slice(0, 300)}`;
+    } catch {
+      return `${response.status} ${response.statusText}`;
     }
+  }
 
-    // Get the next model to use (alternating)
-    private getNextModel(): string {
-        if (this.lastModelUsed === 'A') {
-            this.lastModelUsed = 'B';
-            console.log('[GROQ SERVICE]', 'Switching to Model B:', this.MODEL_B);
-            return this.MODEL_B;
-        } else {
-            this.lastModelUsed = 'A';
-            console.log('[GROQ SERVICE]', 'Switching to Model A:', this.MODEL_A);
-            return this.MODEL_A;
-        }
+  private buildMessages(prompt: string, systemPrompt?: string): ChatMessage[] {
+    const messages: ChatMessage[] = [];
+    if (systemPrompt) {
+      messages.push({ role: 'system', content: systemPrompt });
     }
+    messages.push({ role: 'user', content: prompt });
+    return messages;
+  }
 
-    // Check if an error is a rate limit error
-    private isRateLimitError(error: unknown): boolean {
-        if (error && typeof error === 'object' && 'status' in error) {
-            return (error as { status: number }).status === 429;
-        }
-        if (error instanceof Error && error.message.includes('429')) {
-            return true;
-        }
+  async validateApiKey(apiKey: string): Promise<boolean> {
+    try {
+      const response = await fetch(`${CEREBRAS_BASE_URL}/chat/completions`, {
+        method: 'POST',
+        headers: this.buildHeaders(apiKey),
+        body: JSON.stringify({
+          model: DEFAULT_MODEL,
+          stream: false,
+          messages: [{ role: 'user', content: 'Ping' }],
+          temperature: 0,
+          max_tokens: 1,
+          top_p: 1,
+        }),
+      });
+
+      if (!response.ok) {
+        const msg = await this.parseErrorBody(response);
+        console.error('[CEREBRAS SERVICE] API validation failed:', msg);
         return false;
+      }
+
+      return true;
+    } catch (error) {
+      console.error('[CEREBRAS SERVICE] API validation failed:', error);
+      return false;
+    }
+  }
+
+  async generateResponse(
+    prompt: string,
+    systemPrompt?: string,
+    model?: string,
+    options?: { temperature?: number; maxTokens?: number }
+  ): Promise<string> {
+    if (!this.isInitialized()) {
+      throw new Error('Cerebras service not initialized');
     }
 
-    // Extract wait time from rate limit error message
-    private extractWaitTime(error: unknown): number {
-        if (error instanceof Error) {
-            const match = error.message.match(/try again in ([\d.]+)s/i);
-            if (match) {
-                return Math.ceil(parseFloat(match[1]));
-            }
+    const modelToUse = this.getModel(model);
+    console.log('[CEREBRAS SERVICE]', 'Generating response with model:', modelToUse);
+
+    try {
+      const response = await fetch(`${CEREBRAS_BASE_URL}/chat/completions`, {
+        method: 'POST',
+        headers: this.buildHeaders(this.apiKey),
+        body: JSON.stringify({
+          model: modelToUse,
+          stream: false,
+          messages: this.buildMessages(prompt, systemPrompt),
+          temperature: options?.temperature ?? 0.7,
+          max_tokens: options?.maxTokens ?? 4096,
+          top_p: 1,
+        }),
+      });
+
+      if (!response.ok) {
+        const errMessage = await this.parseErrorBody(response);
+        console.error('[CEREBRAS SERVICE ERROR]', errMessage);
+
+        if (this.isRateLimitStatus(response.status)) {
+          const waitTime = this.extractWaitTime(errMessage);
+          return `⚠️ You are asking too many questions too fast. Please wait for ${waitTime} seconds before asking again.`;
         }
-        return 10; // Default wait time
+        throw new Error(errMessage);
+      }
+
+      const completion = (await response.json()) as CerebrasChatResponse;
+      return completion.choices?.[0]?.message?.content || '';
+    } catch (error) {
+      if (error instanceof Error && /429|rate limit/i.test(error.message)) {
+        const waitTime = this.extractWaitTime(error.message);
+        return `⚠️ You are asking too many questions too fast. Please wait for ${waitTime} seconds before asking again.`;
+      }
+      throw error;
+    }
+  }
+
+  async generateStreamingResponse(
+    prompt: string,
+    systemPrompt?: string,
+    model?: string,
+    options?: {
+      temperature?: number;
+      maxTokens?: number;
+      onChunk?: (chunk: string) => void;
+    }
+  ): Promise<void> {
+    if (!this.isInitialized()) {
+      throw new Error('Cerebras service not initialized');
     }
 
-    async validateApiKey(apiKey: string): Promise<boolean> {
+    const modelToUse = this.getModel(model);
+    console.log('[CEREBRAS SERVICE]', 'Generating streaming response with model:', modelToUse);
+
+    const response = await fetch(`${CEREBRAS_BASE_URL}/chat/completions`, {
+      method: 'POST',
+      headers: this.buildHeaders(this.apiKey),
+      body: JSON.stringify({
+        model: modelToUse,
+        stream: true,
+        messages: this.buildMessages(prompt, systemPrompt),
+        temperature: options?.temperature ?? 0.7,
+        max_tokens: options?.maxTokens ?? 4096,
+        top_p: 1,
+      }),
+    });
+
+    if (!response.ok) {
+      const errMessage = await this.parseErrorBody(response);
+      console.error('[CEREBRAS SERVICE STREAM ERROR]', errMessage);
+
+      if (this.isRateLimitStatus(response.status) && options?.onChunk) {
+        const waitTime = this.extractWaitTime(errMessage);
+        options.onChunk(`⚠️ You are asking too many questions too fast. Please wait for ${waitTime} seconds before asking again.`);
+        return;
+      }
+      throw new Error(errMessage);
+    }
+
+    if (!response.body) {
+      throw new Error('Streaming response body is not available');
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder('utf-8');
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const rawLine of lines) {
+        const line = rawLine.trim();
+        if (!line || !line.startsWith('data:')) {
+          continue;
+        }
+
+        const data = line.slice(5).trim();
+        if (!data || data === '[DONE]') {
+          continue;
+        }
+
         try {
-            const tempGroq = new Groq({ apiKey, dangerouslyAllowBrowser: true });
-            await tempGroq.chat.completions.create({
-                messages: [{ role: 'user', content: 'Ping' }],
-                model: 'llama-3.3-70b-versatile',
-                max_tokens: 1
-            });
-            return true;
-        } catch (error) {
-            console.error('[GROQ SERVICE]', 'API validation failed:', error);
-            return false;
+          const parsed = JSON.parse(data) as CerebrasChatResponse;
+          const content = parsed.choices?.[0]?.delta?.content || parsed.choices?.[0]?.message?.content || '';
+          if (content && options?.onChunk) {
+            options.onChunk(content);
+          }
+        } catch {
+          // Ignore non-JSON SSE lines.
         }
+      }
     }
-
-    async generateResponse(
-        prompt: string,
-        systemPrompt?: string,
-        model?: string, // Ignored - we use rotation
-        options?: { temperature?: number; maxTokens?: number }
-    ): Promise<string> {
-        if (!this.groq) throw new Error('Groq not initialized');
-
-        const modelToUse = this.getNextModel();
-        console.log('[GROQ SERVICE]', 'Generating response with model:', modelToUse);
-
-        const messages: any[] = [];
-        if (systemPrompt) {
-            messages.push({ role: 'system', content: systemPrompt });
-        }
-        messages.push({ role: 'user', content: prompt });
-
-        try {
-            const completion = await this.groq.chat.completions.create({
-                messages,
-                model: modelToUse,
-                temperature: options?.temperature ?? 0.7,
-                max_completion_tokens: options?.maxTokens ?? 4096,
-            });
-
-            return completion.choices[0]?.message?.content || '';
-        } catch (error) {
-            console.error('[GROQ SERVICE ERROR]', error);
-
-            // Handle rate limit errors gracefully
-            if (this.isRateLimitError(error)) {
-                const waitTime = this.extractWaitTime(error);
-                console.log('[GROQ SERVICE]', `Rate limited. Wait time: ${waitTime}s`);
-                return `⚠️ You are asking too many questions too fast. Please wait for ${waitTime} seconds before asking again.`;
-            }
-
-            throw error;
-        }
-    }
-
-    async generateStreamingResponse(
-        prompt: string,
-        systemPrompt?: string,
-        model?: string, // Ignored - we use rotation
-        options?: {
-            temperature?: number;
-            maxTokens?: number;
-            onChunk?: (chunk: string) => void;
-        }
-    ): Promise<void> {
-        if (!this.groq) throw new Error('Groq not initialized');
-
-        const modelToUse = this.getNextModel();
-        console.log('[GROQ SERVICE]', 'Generating streaming response with model:', modelToUse);
-
-        const messages: any[] = [];
-        if (systemPrompt) {
-            messages.push({ role: 'system', content: systemPrompt });
-        }
-        messages.push({ role: 'user', content: prompt });
-
-        try {
-            const stream = await this.groq.chat.completions.create({
-                messages,
-                model: modelToUse,
-                temperature: options?.temperature ?? 0.7,
-                max_completion_tokens: options?.maxTokens ?? 4096,
-                stream: true,
-            });
-
-            for await (const chunk of stream) {
-                const content = chunk.choices[0]?.delta?.content || '';
-                if (content && options?.onChunk) {
-                    options.onChunk(content);
-                }
-            }
-        } catch (error) {
-            console.error('[GROQ SERVICE STREAM ERROR]', error);
-
-            // Handle rate limit errors gracefully
-            if (this.isRateLimitError(error)) {
-                const waitTime = this.extractWaitTime(error);
-                console.log('[GROQ SERVICE]', `Rate limited during streaming. Wait time: ${waitTime}s`);
-
-                // Send rate limit message as a chunk
-                if (options?.onChunk) {
-                    options.onChunk(`⚠️ You are asking too many questions too fast. Please wait for ${waitTime} seconds before asking again.`);
-                }
-                return; // Don't throw, we've handled it
-            }
-
-            throw error;
-        }
-    }
+  }
 }
 
 export const groqService = new GroqService();

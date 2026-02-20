@@ -76,7 +76,7 @@ export class ChatPipeline {
     // 1. Cost Optimization: If no history, no need to rewrite.
     if (!history || history.length === 0) {
       console.log('[QUERY REWRITER]', 'Skipping rewrite - No history.');
-      return content;
+      return await this.expandShortMedicalQueryIfNeeded(content);
     }
 
     // 2. Cost Optimization: Limit history to last 4 messages (2 turns)
@@ -103,11 +103,11 @@ export class ChatPipeline {
     `;
 
     try {
-      // Use Groq for rewriting (Fast inference)
+      // Use Cerebras-backed inference service for rewriting
       const rewrittenQuery = await groqService.generateResponse(
         prompt,
         "You are a helpful assistant that rewrites queries.",
-        'llama-3.3-70b-versatile',
+        'gpt-oss-120b',
         {
           temperature: 0.1, // Low temperature for deterministic rewriting
           maxTokens: 100,   // Very low output tokens (saves limits)
@@ -115,13 +115,66 @@ export class ChatPipeline {
       );
 
       const cleanedQuery = rewrittenQuery.trim();
+      const expandedQuery = await this.expandShortMedicalQueryIfNeeded(cleanedQuery);
       console.log('[QUERY REWRITER]', `Original: "${content}" -> Rewritten: "${cleanedQuery}"`);
-      return cleanedQuery;
+      if (expandedQuery !== cleanedQuery) {
+        console.log('[QUERY EXPANDER]', `Expanded: "${cleanedQuery}" -> "${expandedQuery}"`);
+      }
+      return expandedQuery;
 
     } catch (error) {
       console.error('[QUERY REWRITER ERROR]', error);
       // Fallback: If API fails (rate limit), use original query so the app doesn't crash
-      return content;
+      return await this.expandShortMedicalQueryIfNeeded(content);
+    }
+  }
+
+  /**
+   * Expand short keyword-like medical queries into a clearer clinical question.
+   */
+  private async expandShortMedicalQueryIfNeeded(query: string): Promise<string> {
+    const normalized = query.trim().replace(/\s+/g, ' ');
+    if (!normalized) return query;
+
+    const words = normalized.split(' ').filter(Boolean);
+    const hasQuestionVerb = /\b(what|how|why|when|where|which|differentiate|define|management|treatment|diagnosis|features)\b/i.test(normalized);
+    const keywordLike = words.length <= 6 || /(?:\bvs\b|\/|-)/i.test(normalized);
+
+    if (!keywordLike || hasQuestionVerb) {
+      return normalized;
+    }
+
+    try {
+      const prompt = `
+Task: Rewrite the medical keyword query into a clear standalone clinical question for retrieval.
+Rules:
+1) Keep intent exactly same.
+2) Do not answer.
+3) Output only one rewritten question.
+4) Keep it concise.
+
+Query:
+${normalized}
+`.trim();
+
+      const expanded = (await groqService.generateResponse(
+        prompt,
+        "You rewrite short medical search phrases into clear clinical questions.",
+        'gpt-oss-120b',
+        {
+          temperature: 0.1,
+          maxTokens: 60,
+        }
+      )).trim().replace(/^["']|["']$/g, '');
+
+      if (!expanded || expanded.length < normalized.length) {
+        return normalized;
+      }
+
+      return expanded;
+    } catch (error) {
+      console.warn('[QUERY EXPANDER]', 'Expansion failed, using original short query');
+      return normalized;
     }
   }
 
@@ -324,11 +377,11 @@ export class ChatPipeline {
 
     let fullResponse = '';
     let citations: any[] = [];
-    const groqModel = settings?.groqModel || 'llama-3.3-70b-versatile';
+    const groqModel = settings?.groqModel || 'gpt-oss-120b';
     const temperature = settings?.temperature || 0.7;
     const maxTokens = settings?.maxTokens || 2048;
 
-    // Build conversation history for Groq
+    // Build conversation history for inference service
     const groqPrompt = messages.map(msg =>
       `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}`
     ).join('\n') + `\nUser: ${content}`;
@@ -404,7 +457,7 @@ export class ChatPipeline {
 
     let fullResponse = '';
 
-    const groqModel = settings?.groqModel || 'llama-3.3-70b-versatile';
+    const groqModel = settings?.groqModel || 'gpt-oss-120b';
 
     await groqService.generateStreamingResponse(
       `Context:\n${context}\n\nQuestion: ${content}`,
@@ -453,8 +506,8 @@ export class ChatPipeline {
 
     let fullResponse = '';
 
-    // Build context-aware prompt for Groq
-    const groqModel = settings?.groqModel || 'llama-3.3-70b-versatile';
+    // Build context-aware prompt for inference service
+    const groqModel = settings?.groqModel || 'gpt-oss-120b';
 
     // Construct simplified history and context
     const recentMessages = messages.slice(-5).map(m =>
@@ -494,7 +547,7 @@ export class ChatPipeline {
         userId: session.userId,
         geminiApiKey: '',
         groqApiKey: '',
-        groqModel: 'llama-3.3-70b-versatile',
+        groqModel: 'gpt-oss-120b',
         model: 'gemma-3-27b-it',
         geminiModel: 'gemma-3-27b-it',
         temperature: 0.7,
@@ -525,14 +578,30 @@ export class ChatPipeline {
       const citationResult: SimplifiedCitationGroup = citationService.processSimplifiedCitations(formattedResponse, searchResults);
 
       // Convert simplified citations to message citation format for storage
-      const citationMetadata = citationService.convertSimplifiedToMessageCitations(citationResult.citations);
+      let citationMetadata = citationService.convertSimplifiedToMessageCitations(citationResult.citations);
+
+      // Reliability fallback: if inline [n] citations are missing, still show source references.
+      if (citationMetadata.length === 0 && searchResults.length > 0) {
+        console.warn('[CITATION FALLBACK]', `No parsed inline citations found. Attaching fallback references from top ${Math.min(searchResults.length, 6)} results.`);
+        citationMetadata = this.buildFallbackCitationsFromSearchResults(searchResults, 6);
+      }
+
+      // Final hard guard: ensure text citation markers and reference panel are always in sync.
+      const consistentCitationOutput = this.enforceCitationConsistency(
+        citationResult.renumberedResponse,
+        citationMetadata
+      );
+      const responseWithQueryHeader = this.prependAnsweredQueryHeader(
+        consistentCitationOutput.content,
+        content
+      );
 
       // Save assistant message with formatted response
       const assistantMessage: MessageCreate = {
         sessionId,
-        content: citationResult.renumberedResponse,
+        content: responseWithQueryHeader,
         role: MessageSender.ASSISTANT,
-        citations: citationMetadata,
+        citations: consistentCitationOutput.citations,
       };
 
       await this.indexedDBServices.messageService.createMessage(assistantMessage);
@@ -540,16 +609,16 @@ export class ChatPipeline {
       if (onStreamEvent) {
         onStreamEvent({
           type: 'done',
-          content: citationResult.renumberedResponse,
-          citations: citationMetadata
+          content: responseWithQueryHeader,
+          citations: consistentCitationOutput.citations
         });
       }
     } catch (error) {
-      console.error('[SIMPLIFIED RAG MODE ERROR]', 'Groq error:', error);
+      console.error('[SIMPLIFIED RAG MODE ERROR]', 'Inference provider error:', error);
       if (onStreamEvent) {
         onStreamEvent({
           type: 'error',
-          message: error instanceof Error ? error.message : 'Failed to generate response via Groq'
+          message: error instanceof Error ? error.message : 'Failed to generate response via inference provider'
         });
       }
     }
@@ -605,6 +674,7 @@ SIMPLIFIED VANCOUVER CITATION REQUIREMENTS:
 - Citations must be numbered sequentially in the order they appear in your response
 - CRITICAL: Only use citation numbers that correspond to the provided context sources (1 through ${availableSources})
 - NEVER invent citation numbers or use numbers outside of available range
+- Every factual paragraph or bullet must include at least one citation marker [n]
 
 RESPONSE GUIDELINES:
 - Be accurate and helpful
@@ -612,6 +682,8 @@ RESPONSE GUIDELINES:
 - Handle unit conversions for medical/technical data
 - Maintain a professional but conversational tone
 - If multiple documents provide conflicting information, acknowledge the discrepancy
+- Do NOT use markdown tables unless the user explicitly asks for a table
+- Prefer headings, short paragraphs, and bullet lists for better mobile readability
 
 ANSWER STRUCTURE:
 1. Direct answer to the question
@@ -728,6 +800,151 @@ Remember: Your goal is to provide accurate, well-cited responses based SOLELY on
     return truncated + '...';
   }
 
+  /**
+   * Fallback citation builder when the model does not emit [n] markers.
+   * Uses top retrieved chunks, deduplicated by document+page.
+   */
+  private buildFallbackCitationsFromSearchResults(searchResults: any[], limit: number = 6): any[] {
+    const fallbackCitations: any[] = [];
+    const seenKeys = new Set<string>();
+
+    const isLowContent = (text: string): boolean => {
+      const compact = (text || '').replace(/\s+/g, ' ').trim();
+      if (compact.length < 220) return true;
+      const alphaChars = compact.replace(/[^A-Za-z]/g, '').length;
+      const words = compact.split(/\s+/).filter(Boolean);
+      const uniqueWords = new Set(words.map((w) => w.toLowerCase())).size;
+      return alphaChars < 100 || words.length < 35 || uniqueWords < 18;
+    };
+
+    const preferred = searchResults.filter((result) => !isLowContent(result.chunk?.content || ''));
+    const candidates = preferred.length > 0 ? preferred : searchResults;
+
+    for (const result of candidates) {
+      const documentName = result.document?.title || result.document?.fileName || 'Unknown Document';
+      const page =
+        result.chunk?.metadata?.pageNumbers?.[0] ??
+        result.chunk?.page ??
+        result.chunk?.metadata?.pageNumber;
+
+      const dedupeKey = `${documentName}::${page ?? 'unknown'}`;
+      if (seenKeys.has(dedupeKey)) continue;
+      seenKeys.add(dedupeKey);
+
+      fallbackCitations.push({
+        document: documentName,
+        page: typeof page === 'number' ? page : undefined,
+        excerpt: (result.chunk?.content || '').slice(0, 2000),
+      });
+
+      if (fallbackCitations.length >= limit) break;
+    }
+
+    return fallbackCitations;
+  }
+
+  /**
+   * Keep inline [n] markers and references panel perfectly aligned.
+   * Removes out-of-range markers, then compacts numbering to 1..N.
+   */
+  private enforceCitationConsistency(
+    content: string,
+    citations: any[]
+  ): { content: string; citations: any[] } {
+    const normalizedBrackets = content
+      .replace(/[【［]/g, '[')
+      .replace(/[】］]/g, ']');
+
+    if (!citations || citations.length === 0) {
+      // No references available: remove dangling numeric citation markers.
+      return {
+        content: normalizedBrackets
+          .replace(/\[[^\]]+\]/g, '')
+          .replace(/\b\d+†L\d+(?:-L?\d+)?\b/g, '')
+          .replace(/ +([.,;:!])/g, '$1')
+          .trim(),
+        citations: [],
+      };
+    }
+
+    const extractIndices = (innerContent: string): number[] => {
+      const indices: number[] = [];
+      const seen = new Set<number>();
+      for (const segment of innerContent.split(',')) {
+        const match = segment.match(/^\s*(\d+)/);
+        if (!match) continue;
+        const idx = parseInt(match[1], 10);
+        if (Number.isNaN(idx) || seen.has(idx)) continue;
+        seen.add(idx);
+        indices.push(idx);
+      }
+      return indices;
+    };
+
+    const maxIndex = citations.length;
+    let normalized = normalizedBrackets.replace(/\[([^\]]+)\]/g, (_match, inner: string) => {
+      const inRange = extractIndices(inner)
+        .filter((n) => n >= 1 && n <= maxIndex)
+        .sort((a, b) => a - b);
+      if (inRange.length === 0) return '';
+      return `[${inRange.join(', ')}]`;
+    });
+
+    // Remove leftover non-standard citation artifacts.
+    normalized = normalized
+      .replace(/\b\d+†L\d+(?:-L?\d+)?\b/g, '')
+      .replace(/\[\s*(?:\+|†)[^\]]*\]/g, '');
+
+    const used = new Set<number>();
+    normalized.replace(/\[([^\]]+)\]/g, (_match, inner: string) => {
+      extractIndices(inner).forEach((n) => used.add(n));
+      return '';
+    });
+
+    if (used.size === 0) {
+      return {
+        content: normalized.replace(/ +([.,;:!])/g, '$1').trim(),
+        citations,
+      };
+    }
+
+    const sortedUsed = Array.from(used).sort((a, b) => a - b);
+    const indexMap = new Map<number, number>();
+    sortedUsed.forEach((oldIndex, i) => indexMap.set(oldIndex, i + 1));
+
+    normalized = normalized.replace(/\[([^\]]+)\]/g, (_match, inner: string) => {
+      const remapped = extractIndices(inner)
+        .map((n) => indexMap.get(n))
+        .filter((n): n is number => typeof n === 'number')
+        .sort((a, b) => a - b);
+      if (remapped.length === 0) return '';
+      return `[${remapped.join(', ')}]`;
+    });
+
+    const compactedCitations = sortedUsed.map((oldIndex) => citations[oldIndex - 1]).filter(Boolean);
+
+    return {
+      content: normalized.replace(/ +([.,;:!])/g, '$1').trim(),
+      citations: compactedCitations,
+    };
+  }
+
+  /**
+   * Show users the exact query text answered by the model.
+   */
+  private prependAnsweredQueryHeader(content: string, answeredQuery: string): string {
+    const safeQuery = (answeredQuery || '').trim();
+    if (!safeQuery) return content;
+
+    const existing = content.trimStart();
+    const headerRegex = /^\*\*Answer for:\*\*\s*".*?"\s*\n/i;
+    if (headerRegex.test(existing)) {
+      return content;
+    }
+
+    return `**Answer for:** "${safeQuery}"\n\n${content}`;
+  }
+
 
   /**
    * Get enhanced system prompt based on Flutter app's approach
@@ -783,6 +1000,7 @@ VANCOUVER CITATION REQUIREMENTS:
 - NEVER invent citation numbers or use numbers outside the available range
 - Each citation number must match exactly one source from the provided context
 - WARNING: Citing incorrect sources will mislead users and is unacceptable
+- Every factual paragraph or bullet must include at least one citation marker [n]
 
 RESPONSE GUIDELINES:
 - Be accurate and helpful
@@ -790,6 +1008,8 @@ RESPONSE GUIDELINES:
 - Handle unit conversions for medical/technical data (e.g., temperatures, weights)
 - Maintain a professional but conversational tone
 - If multiple documents provide conflicting information, acknowledge the discrepancy
+- Do NOT use markdown tables unless the user explicitly asks for a table
+- Prefer headings, short paragraphs, and bullet lists for better mobile readability
 
 CITATION VERIFICATION PROCESS:
 1. Make a factual claim

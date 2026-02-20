@@ -14,6 +14,69 @@ export interface FormattedSection {
 }
 
 export class ResponseFormatter {
+  private static collapseRepeatedBlocks(text: string): string {
+    const lines = text.split('\n');
+    const output: string[] = [];
+    const seenNormalized = new Set<string>();
+
+    const normalize = (line: string): string =>
+      line
+        .toLowerCase()
+        .replace(/\[\d+(?:,\s*\d+)*\]/g, '')
+        .replace(/[^\w\s]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (trimmed.length === 0) {
+        output.push(line);
+        continue;
+      }
+
+      // Preserve short structural lines and list bullets.
+      if (trimmed.length < 20 || /^[-*•]\s+/.test(trimmed) || /^#{1,6}\s/.test(trimmed)) {
+        output.push(line);
+        continue;
+      }
+
+      const key = normalize(trimmed);
+      if (key.length < 20) {
+        output.push(line);
+        continue;
+      }
+
+      if (seenNormalized.has(key)) {
+        continue;
+      }
+
+      seenNormalized.add(key);
+      output.push(line);
+    }
+
+    return output.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  }
+
+  private static extractCitationIndices(text: string): number[] {
+    const citationPattern = /\[([^\]]+)\]/g;
+    const indices = new Set<number>();
+    let match;
+
+    while ((match = citationPattern.exec(text)) !== null) {
+      const parts = match[1].split(',');
+      for (const part of parts) {
+        const m = part.match(/^\s*(\d+)/);
+        if (!m) continue;
+        const n = parseInt(m[1], 10);
+        if (Number.isFinite(n)) {
+          indices.add(n);
+        }
+      }
+    }
+
+    return Array.from(indices).sort((a, b) => a - b);
+  }
+
   /**
    * Convert paragraph response to bullet point format using LLM
    * Preserves citations and moves them to end of bullet points
@@ -39,20 +102,23 @@ export class ResponseFormatter {
       return response;
     }
 
-    // Use Groq API key for formatting (since we're using Groq for formatting)
+    // Use inference provider API key for formatting.
     const formattingApiKey = settings.groqApiKey;
 
-    console.log(`[${timestamp}] [INDENTATION DEBUG] LLM FORMATTER:`, 'Using Groq API key for formatting:', settings.groqApiKey ? `YES (${settings.groqApiKey.substring(0, 10)}...)` : 'NO');
+    console.log(`[${timestamp}] [INDENTATION DEBUG] LLM FORMATTER:`, 'Using inference API key for formatting:', settings.groqApiKey ? `YES (${settings.groqApiKey.substring(0, 10)}...)` : 'NO');
 
     if (!formattingApiKey) {
-      console.log(`[${timestamp}] [INDENTATION DEBUG] FORMATTING SKIPPED:`, 'No Groq API key available, returning original response');
+      console.log(`[${timestamp}] [INDENTATION DEBUG] FORMATTING SKIPPED:`, 'No inference API key available, returning original response');
       console.log(`=== [${timestamp}] [INDENTATION DEBUG] LLM RESPONSE FORMATTER END ===\n`);
       return response;
     }
 
+    const originalCitationIndices = this.extractCitationIndices(response);
+    const originalCitationCount = originalCitationIndices.length;
+
     try {
       console.log(`[${timestamp}] [INDENTATION DEBUG] LLM FORMATTING:`, 'Using LLM to convert to bullet points...');
-      console.log(`[${timestamp}] [INDENTATION DEBUG] LLM FORMATTING:`, `Calling Groq service for formatting`);
+      console.log(`[${timestamp}] [INDENTATION DEBUG] LLM FORMATTING:`, `Calling inference service for formatting`);
 
       const formattingPrompt = this.buildFormattingPrompt(response);
       console.log(`[${timestamp}] [INDENTATION DEBUG] FORMATTING PROMPT:`, formattingPrompt.substring(0, 300) + '...');
@@ -67,14 +133,14 @@ export class ResponseFormatter {
       const formattedResponse = await groqService.generateResponse(
         formattingPrompt,
         "You are a response formatting specialist.",
-        settings.groqModel || 'llama-3.3-70b-versatile',
+        settings.groqModel || 'gpt-oss-120b',
         {
           temperature: 0.3, // Lower temperature for consistent formatting
           maxTokens: Math.min(response.length * 2, 4000), // Allow for expansion but cap it
         }
       );
 
-      console.log(`[${timestamp}] [INDENTATION DEBUG] LLM FORMATTING:`, 'Groq service response received, length:', formattedResponse.length);
+      console.log(`[${timestamp}] [INDENTATION DEBUG] LLM FORMATTING:`, 'Inference service response received, length:', formattedResponse.length);
 
       // Comprehensive analysis of formatted response
       console.log(`[${timestamp}] [INDENTATION DEBUG] ANALYZING FORMATTED RESPONSE STRUCTURE:`);
@@ -120,11 +186,29 @@ export class ResponseFormatter {
         improvement: formattedAnalysis.maxIndentLevel > originalAnalysis.maxIndentLevel ? 'YES - Added nesting' : 'NO - No improvement'
       });
 
-      console.log(`[${timestamp}] [INDENTATION DEBUG] LLM FORMATTING COMPLETE:`, `Formatted response: ${formattedResponse.length} characters`);
-      console.log(`[${timestamp}] [INDENTATION DEBUG] FORMATTED PREVIEW:`, formattedResponse.substring(0, 200) + (formattedResponse.length > 200 ? '...' : ''));
+      const formattedCitationIndices = this.extractCitationIndices(formattedResponse);
+      const formattedCitationCount = formattedCitationIndices.length;
+      const minimumAcceptableCitationCount = Math.max(1, Math.ceil(originalCitationCount * 0.6));
+      const citationsDegraded =
+        originalCitationCount > 0 &&
+        (formattedCitationCount === 0 || formattedCitationCount < minimumAcceptableCitationCount);
+
+      if (citationsDegraded) {
+        console.warn(
+          `[${timestamp}] [INDENTATION DEBUG] CITATION GUARD:`,
+          `Formatter degraded citations (original=${originalCitationCount}, formatted=${formattedCitationCount}). Returning original response.`
+        );
+        console.log(`=== [${timestamp}] [INDENTATION DEBUG] LLM RESPONSE FORMATTER END ===\n`);
+        return response;
+      }
+
+      const cleanedFormattedResponse = this.collapseRepeatedBlocks(formattedResponse);
+
+      console.log(`[${timestamp}] [INDENTATION DEBUG] LLM FORMATTING COMPLETE:`, `Formatted response: ${cleanedFormattedResponse.length} characters`);
+      console.log(`[${timestamp}] [INDENTATION DEBUG] FORMATTED PREVIEW:`, cleanedFormattedResponse.substring(0, 200) + (cleanedFormattedResponse.length > 200 ? '...' : ''));
       console.log(`=== [${timestamp}] [INDENTATION DEBUG] LLM RESPONSE FORMATTER END ===\n`);
 
-      return formattedResponse;
+      return cleanedFormattedResponse;
 
     } catch (error) {
       console.error(`[${timestamp}] [INDENTATION DEBUG] LLM FORMATTING ERROR:`, 'Failed to format with LLM:', error);
@@ -145,10 +229,12 @@ CRITICAL FORMATTING RULES:
    - ✅ **Bold Headers** for main sections (Start with ✅ emoji)
    - **Paragraphs** for detailed explanations, concepts, and descriptions.
    - **Bullet Points** strictly for lists (e.g., list of symptoms, types, causes).
+   - Do NOT use markdown tables. Convert any table-like data into bullets/sub-bullets.
 2. **Preserve Depth**: Do NOT convert detailed paragraph explanations into simple bullet points if it causes loss of detail. Keep the prose.
-3. **Citations**: Preserve ALL citations [1], [2] in their original positions.
+3. **Citations**: Preserve ALL citations [1], [2] in their original positions and keep citation brackets exactly as [n].
 4. **Headers**: Start EVERY section header with ✅ emoji followed by bold text. Format: ✅ **Section Title:**
 5. **No Changes**: Do not add, remove, or change any factual information. Only improve the layout.
+6. **No Repetition**: Do not repeat the same section, paragraph, or list items.
 
 EXAMPLE TRANSFORMATION:
 

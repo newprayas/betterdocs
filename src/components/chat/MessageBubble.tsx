@@ -26,9 +26,11 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(({
   const processedContent = useMemo(() => {
     const content = message.content;
     const citations = message.citations;
+    // Normalize model-inserted HTML line break tags so users don't see literal "<br>" text.
+    const normalizedContent = content.replace(/<br\s*\/?>/gi, '\n');
 
     if (!citations || citations.length === 0 || isUser) {
-      return content;
+      return normalizedContent;
     }
     
     const citationMap = new Map<number, Citation>();
@@ -36,7 +38,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(({
       citationMap.set(index + 1, citation);
     });
     
-    let processed = content;
+    let processed = normalizedContent;
     
     processed = processed.replace(/\[citation:(\d+)\]/g, (match, num) => {
       const citationNum = parseInt(num);
@@ -147,6 +149,26 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(({
                   >
                     {children}
                   </ul>
+                ),
+                table: ({ node, className, children, ...props }) => (
+                  <div className="my-3 w-full overflow-x-auto">
+                    <table
+                      className={clsx("min-w-[640px] text-sm", className)}
+                      {...props}
+                    >
+                      {children}
+                    </table>
+                  </div>
+                ),
+                th: ({ node, className, children, ...props }) => (
+                  <th className={clsx("align-top whitespace-normal break-words", className)} {...props}>
+                    {children}
+                  </th>
+                ),
+                td: ({ node, className, children, ...props }) => (
+                  <td className={clsx("align-top whitespace-normal break-words", className)} {...props}>
+                    {children}
+                  </td>
                 ),
                 li: ({ node, className, children, ...props }) => (
                   <li

@@ -110,7 +110,7 @@ export default function OnboardingPage() {
     setValidationError('');
 
     try {
-      // Validate Groq API key
+      // Validate Cerebras API key
       const { groqService } = await import('../../services/groq/groqService');
       const isValid = await groqService.validateApiKey(apiKey);
 
@@ -262,12 +262,12 @@ export default function OnboardingPage() {
 
           {/* Get API Key Link */}
           <a
-            href="https://console.groq.com/keys"
+            href="https://cloud.cerebras.ai"
             target="_blank"
             rel="noopener noreferrer"
             className="flex items-center justify-center gap-2 w-full py-3 px-4 mb-6 rounded-xl bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-semibold hover:from-blue-600 hover:to-indigo-700 transition-all shadow-lg"
           >
-            Get Your Free API Key
+            Get Your Free Cerebras API Key
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
             </svg>
@@ -286,7 +286,7 @@ export default function OnboardingPage() {
                   setApiKey(e.target.value);
                   setValidationError('');
                 }}
-                placeholder="gsk_..."
+                placeholder="Paste Cerebras API key..."
                 className={clsx(
                   'bg-gray-800 border-gray-700 text-white placeholder-gray-500',
                   validationError && 'border-red-500 focus:border-red-500 focus:ring-red-500'

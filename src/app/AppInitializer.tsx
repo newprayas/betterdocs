@@ -149,6 +149,22 @@ export function AppInitializer() {
     }
   }, [isClient, settings?.model, settings?.userId, updateSettings]);
 
+  // Migration: replace legacy Groq model IDs with Cerebras model default
+  useEffect(() => {
+    if (!isClient || !settings || !settings.userId) return;
+
+    const legacyInferenceModels = [
+      'llama-3.3-70b-versatile',
+      'moonshotai/kimi-k2-instruct',
+      'moonshotai/kimi-k2-instruct-0905'
+    ];
+
+    if (settings.groqModel && legacyInferenceModels.includes(settings.groqModel)) {
+      console.log('[APP INIT] 🔄 MIGRATION: Upgrading legacy inference model', settings.groqModel, 'to gpt-oss-120b');
+      updateSettings({ groqModel: 'gpt-oss-120b' });
+    }
+  }, [isClient, settings?.groqModel, settings?.userId, updateSettings]);
+
   // Initialize Gemini embedding service with env keys (no user key needed)
   useEffect(() => {
     if (!isClient) return;
@@ -170,15 +186,15 @@ export function AppInitializer() {
     initializeEmbeddings();
   }, [isClient]);
 
-  // Initialize Groq service when settings change (and Groq API key is available)
+  // Initialize inference service when settings change (Cerebras API key)
   useEffect(() => {
     if (!isClient) return;
 
     const initializeGroqAndStorage = async () => {
       if (settings?.groqApiKey) {
-        console.log('[APP INIT]', 'Initializing Groq service...');
+        console.log('[APP INIT]', 'Initializing inference service...');
         await groqService.initialize(settings.groqApiKey || '');
-        console.log('[APP INIT] Groq service initialized successfully');
+        console.log('[APP INIT] Inference service initialized successfully');
 
         // Initialize Storage Manager (Request Persistence)
         await storageManager.init();

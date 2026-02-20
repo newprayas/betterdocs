@@ -23,6 +23,32 @@ export interface ProcessedCitations {
 
 export class CitationService {
   /**
+   * Parse citation indices from bracket content.
+   * Supports:
+   * - [1]
+   * - [1, 2]
+   * - noisy formats like [5+L1-L3] (extracts leading 5)
+   */
+  private parseCitationIndices(innerContent: string): number[] {
+    const indices: number[] = [];
+    const seen = new Set<number>();
+    const segments = innerContent.split(',');
+
+    for (const segment of segments) {
+      const m = segment.match(/^\s*(\d+)/);
+      if (!m) continue;
+
+      const index = parseInt(m[1], 10);
+      if (Number.isNaN(index) || seen.has(index)) continue;
+
+      seen.add(index);
+      indices.push(index);
+    }
+
+    return indices;
+  }
+
+  /**
    * Extract citations from AI response and process them
    * Filters unused citations and renumbers them sequentially
    * Enhanced with robust validation and page number accuracy
@@ -194,25 +220,22 @@ export class CitationService {
 
   /**
    * Extract citation references from text using regex
-   * FIXED: Handles comma-separated citations like [2, 13]
+   * Handles both normal and noisy citation notations.
    */
   private extractCitationReferences(text: string): Array<{ index: number; position: number }> {
-    // Pattern matches [1], [1,2], [1, 2, 3] etc.
-    const citationPattern = /\[([\d,\s]+)\]/g;
+    // Match any bracket group, then parse supported citation formats.
+    const citationPattern = /\[([^\]]+)\]/g;
     const matches: Array<{ index: number; position: number }> = [];
     let match;
 
     while ((match = citationPattern.exec(text)) !== null) {
-      // Split by comma and process each number found in the brackets
-      const indices = match[1].split(',').map(s => parseInt(s.trim(), 10));
+      const indices = this.parseCitationIndices(match[1]);
       
       for (const index of indices) {
-        if (!isNaN(index)) {
-          matches.push({
-            index,
-            position: match.index,
-          });
-        }
+        matches.push({
+          index,
+          position: match.index,
+        });
       }
     }
 
@@ -359,11 +382,11 @@ export class CitationService {
     });
 
     // Replace both single [1] and multi [1, 2] citations
-    const citationGroupPattern = /\[([\d,\s]+)\]/g;
+    const citationGroupPattern = /\[([^\]]+)\]/g;
     
     renumbered = renumbered.replace(citationGroupPattern, (match, innerContent) => {
-        // Parse all numbers in the bracket
-        const indices = innerContent.split(',').map((s: string) => parseInt(s.trim(), 10));
+        // Parse supported citation indices (including noisy forms like [5+L1-L3])
+        const indices = this.parseCitationIndices(innerContent);
         
         // Map to new valid indices
         const newIndices = indices
@@ -722,15 +745,15 @@ export class CitationService {
     console.log('[CONTEXT EXTRACTION]', `Extracting contexts from response of ${response.length} characters`);
     
     const citationContexts = new Map<number, string>();
-    const citationPattern = /\[([\d,\s]+)\]/g;
+    const citationPattern = /\[([^\]]+)\]/g;
     let match;
     let lastIndex = 0;
 
     while ((match = citationPattern.exec(response)) !== null) {
       const citationPosition = match.index;
       
-      // Parse all indices in this group
-      const indices = match[1].split(',').map(s => parseInt(s.trim(), 10));
+      // Parse all indices in this group (supports noisy forms like [5+L1-L3])
+      const indices = this.parseCitationIndices(match[1]);
       
       // Extract text from last position to this citation group
       const textSegment = response.substring(lastIndex, citationPosition).replace(/[ \t]+/g, ' ').trim();
@@ -1075,21 +1098,32 @@ export class CitationService {
       console.log(`[CONTEXT ${index}]`, context.substring(0, 100) + (context.length > 100 ? '...' : ''));
     });
 
+    // If model output has no citations, derive citations from answer content and retrieved sources.
+    if (citationMatches.length === 0) {
+      const derived = this.deriveCitationsFromResponseContent(response, pageGroups);
+      console.log('[SIMPLIFIED DERIVED RESULT]', {
+        derivedCitations: derived.citations.length,
+        usedSourceIndices: derived.usedSourceIndices,
+      });
+      console.log('=== SIMPLIFIED CITATION PROCESSING END ===\n');
+      return derived;
+    }
+
     // Filter valid citations and create simplified citations
     const validCitations: SimplifiedCitation[] = [];
     const validationWarnings: string[] = [];
     
     for (const match of citationMatches) {
       const sourceIndex = match.index;
+      const citationContext = citationContexts.get(sourceIndex);
       
-      // CRITICAL FIX: Convert 1-based citation to 0-based index
-      // LLM citations are 1-based (CONTEXT SOURCE 1, 2, 3, 4, 5) but searchResults array is 0-based
-      const correctedSourceIndex = sourceIndex - 1;
+      // LLM citations are 1-based (CONTEXT SOURCE 1, 2, 3...) while array is 0-based
+      let correctedSourceIndex = sourceIndex - 1;
       console.log(`[SIMPLIFIED CITATION MAPPING]`, `Citation [${sourceIndex}] -> searchResults[${correctedSourceIndex}] (CONTEXT SOURCE ${sourceIndex})`);
       
       if (correctedSourceIndex >= 0 && correctedSourceIndex < searchResults.length) {
-        const result = searchResults[correctedSourceIndex];
-        const pageNumber = this.getEffectivePageNumber(result);
+        let result = searchResults[correctedSourceIndex];
+        let pageNumber = this.getEffectivePageNumber(result);
         
         console.log(`[PROCESSING CITATION [${sourceIndex}]]`, {
           documentTitle: result.document.title || result.document.fileName,
@@ -1101,31 +1135,79 @@ export class CitationService {
         
         if (pageNumber !== undefined) {
           // Find the page group for this result
-          const pageGroup = pageGroups.find(pg =>
+          let pageGroup = pageGroups.find(pg =>
             pg.documentId === result.document.id && pg.page === pageNumber
           );
           
           if (pageGroup) {
             // Combine all content from this page
-            const combinedContent = pageGroup.chunks
+            let combinedContent = pageGroup.chunks
               .sort((a, b) => a.content.localeCompare(b.content)) // Sort for consistency
               .map(chunk => chunk.content)
               .join('\n---\n');
             
-            // NEW: Validate that citation context matches the source content
-            const citationContext = citationContexts.get(sourceIndex);
+            // Validate that citation context matches the source content.
             let isValidCitation = true;
             let validationReason = '';
             
             if (citationContext) {
-              const validation = this.checkContentMatchWithConfidence(citationContext, combinedContent);
-              isValidCitation = validation.confidence >= 0.2; // LESS STRICT: lowered threshold from 0.3 to 0.2
-              validationReason = validation.reason;
+              const currentValidation = this.checkContentMatchWithConfidence(citationContext, combinedContent);
+              let bestIndex = correctedSourceIndex;
+              let bestValidation = currentValidation;
+              let bestResult = result;
+              let bestPageNumber = pageNumber;
+              let bestPageGroup = pageGroup;
+              let bestCombinedContent = combinedContent;
+
+              // Try remapping citation to best matching retrieved chunk/page.
+              for (let candidateIndex = 0; candidateIndex < searchResults.length; candidateIndex++) {
+                const candidateResult = searchResults[candidateIndex];
+                const candidatePage = this.getEffectivePageNumber(candidateResult);
+                if (candidatePage === undefined) continue;
+
+                const candidatePageGroup = pageGroups.find(pg =>
+                  pg.documentId === candidateResult.document.id && pg.page === candidatePage
+                );
+                if (!candidatePageGroup) continue;
+
+                const candidateContent = candidatePageGroup.chunks
+                  .map(chunk => chunk.content)
+                  .join('\n---\n');
+                const candidateValidation = this.checkContentMatchWithConfidence(citationContext, candidateContent);
+
+                if (candidateValidation.confidence > bestValidation.confidence) {
+                  bestValidation = candidateValidation;
+                  bestIndex = candidateIndex;
+                  bestResult = candidateResult;
+                  bestPageNumber = candidatePage;
+                  bestPageGroup = candidatePageGroup;
+                  bestCombinedContent = candidateContent;
+                }
+              }
+
+              // Remap when best candidate is clearly stronger.
+              if (bestIndex !== correctedSourceIndex && bestValidation.confidence >= currentValidation.confidence + 0.15) {
+                console.warn('[SIMPLIFIED CITATION REMAP]', {
+                  citation: sourceIndex,
+                  from: correctedSourceIndex + 1,
+                  to: bestIndex + 1,
+                  fromConfidence: currentValidation.confidence,
+                  toConfidence: bestValidation.confidence
+                });
+                correctedSourceIndex = bestIndex;
+                result = bestResult;
+                pageNumber = bestPageNumber;
+                pageGroup = bestPageGroup;
+                combinedContent = bestCombinedContent;
+              }
+
+              isValidCitation = bestValidation.confidence >= 0.35;
+              validationReason = bestValidation.reason;
               
               console.log(`[CITATION VALIDATION [${sourceIndex}]]`, {
                 isValid: isValidCitation,
-                confidence: validation.confidence,
-                reason: validation.reason,
+                confidence: bestValidation.confidence,
+                reason: bestValidation.reason,
                 contextPreview: citationContext.substring(0, 80) + '...',
                 sourcePreview: combinedContent.substring(0, 80) + '...'
               });
@@ -1144,13 +1226,13 @@ export class CitationService {
                 document: result.document.title || result.document.fileName,
                 page: pageNumber,
                 combinedContent,
-                sourceIndex,
+                sourceIndex: correctedSourceIndex + 1,
                 chunkIds: pageGroup.chunks.map(chunk => chunk.id),
                 similarity: Math.max(...pageGroup.chunks.map(chunk => chunk.similarity))
               };
               
               validCitations.push(simplifiedCitation);
-              usedSourceIndices.add(sourceIndex);
+              usedSourceIndices.add(correctedSourceIndex + 1);
               
               console.log(`[VALID CITATION ADDED [${sourceIndex}]]`, {
                 document: simplifiedCitation.document,
@@ -1211,6 +1293,160 @@ export class CitationService {
       usedSourceIndices: Array.from(usedSourceIndices).sort((a, b) => a - b),
       validationWarnings
     };
+  }
+
+  /**
+   * Derive citations from response content when model didn't emit [n].
+   * This keeps answer text and references grounded to retrieved chunks/pages.
+   */
+  private deriveCitationsFromResponseContent(
+    response: string,
+    pageGroups: PageGroup[]
+  ): SimplifiedCitationGroup {
+    const candidates = pageGroups
+      .map((pg) => {
+        const combinedContent = pg.chunks.map((c) => c.content).join('\n---\n');
+        const maxSimilarity = Math.max(...pg.chunks.map((c) => c.similarity));
+        return {
+          pageGroup: pg,
+          combinedContent,
+          maxSimilarity,
+        };
+      })
+      .filter((c) => {
+        const text = c.combinedContent.replace(/\s+/g, ' ').trim();
+        const words = text.split(/\s+/).filter(Boolean);
+        const uniqueWords = new Set(words.map((w) => w.toLowerCase())).size;
+        return text.length >= 220 && words.length >= 35 && uniqueWords >= 18;
+      });
+
+    const lines = response.split('\n');
+    const taggedLines: string[] = [];
+    const markerOrder: number[] = [];
+
+    const pushMarkerOrder = (idx: number) => {
+      if (!markerOrder.includes(idx)) markerOrder.push(idx);
+    };
+
+    for (const originalLine of lines) {
+      const trimmed = originalLine.trim();
+      if (trimmed.length < 40) {
+        taggedLines.push(originalLine);
+        continue;
+      }
+
+      // Skip obvious headings/separators/code blocks.
+      if (/^#{1,6}\s/.test(trimmed) || /^[-*_]{3,}$/.test(trimmed) || /^```/.test(trimmed)) {
+        taggedLines.push(originalLine);
+        continue;
+      }
+
+      // Skip if line already has a citation-like marker.
+      if (/\[\s*\d+[^\]]*\]/.test(trimmed)) {
+        taggedLines.push(originalLine);
+        continue;
+      }
+
+      const lineForMatch = trimmed
+        .replace(/^[-*•]\s+/, '')
+        .replace(/^\d+\.\s+/, '')
+        .replace(/^\u2705\s+/, '')
+        .trim();
+
+      let bestIndex = -1;
+      let bestScore = 0;
+
+      for (let i = 0; i < candidates.length; i++) {
+        const score = this.quickLineSourceScore(lineForMatch, candidates[i].combinedContent);
+        if (score > bestScore) {
+          bestScore = score;
+          bestIndex = i;
+        }
+      }
+
+      if (bestIndex >= 0 && bestScore >= 0.12) {
+        pushMarkerOrder(bestIndex);
+        const marker = `[§${bestIndex}]`;
+        const lineWithMarker = /[.,;:!?]\s*$/.test(originalLine)
+          ? originalLine.replace(/([.,;:!?])\s*$/, ` ${marker}$1`)
+          : `${originalLine} ${marker}`;
+        taggedLines.push(lineWithMarker);
+      } else {
+        taggedLines.push(originalLine);
+      }
+    }
+
+    if (markerOrder.length === 0) {
+      return {
+        citations: [],
+        renumberedResponse: response,
+        usedSourceIndices: [],
+        validationWarnings: ['Could not derive citations from response content'],
+      };
+    }
+
+    const indexMap = new Map<number, number>();
+    markerOrder.forEach((candidateIdx, i) => indexMap.set(candidateIdx, i + 1));
+
+    const renumberedResponse = taggedLines
+      .join('\n')
+      .replace(/\[§(\d+)\]/g, (_m, g1: string) => {
+        const candidateIdx = parseInt(g1, 10);
+        const mapped = indexMap.get(candidateIdx);
+        return mapped ? `[${mapped}]` : '';
+      })
+      .replace(/ +([.,;:!])/g, '$1')
+      .trim();
+
+    const citations: SimplifiedCitation[] = markerOrder.map((candidateIdx, i) => {
+      const candidate = candidates[candidateIdx];
+      return {
+        document: candidate.pageGroup.documentTitle,
+        page: candidate.pageGroup.page,
+        combinedContent: candidate.combinedContent,
+        sourceIndex: i + 1,
+        chunkIds: candidate.pageGroup.chunks.map((c) => c.id),
+        similarity: candidate.maxSimilarity,
+      };
+    });
+
+    return {
+      citations,
+      renumberedResponse,
+      usedSourceIndices: citations.map((c) => c.sourceIndex),
+      validationWarnings: [],
+    };
+  }
+
+  /**
+   * Fast line-to-source relevance score for fallback citation assignment.
+   */
+  private quickLineSourceScore(line: string, sourceContent: string): number {
+    const a = this.normalizeTextForComparison(line);
+    const b = this.normalizeTextForComparison(sourceContent);
+    if (!a || !b) return 0;
+
+    const wordsA = new Set(a.split(/\s+/).filter((w) => w.length > 2));
+    const wordsB = new Set(b.split(/\s+/).filter((w) => w.length > 2));
+    if (wordsA.size === 0 || wordsB.size === 0) return 0;
+
+    let intersection = 0;
+    wordsA.forEach((w) => {
+      if (wordsB.has(w)) intersection++;
+    });
+
+    const cosineLike = intersection / Math.sqrt(wordsA.size * wordsB.size);
+
+    // Small phrase bonus.
+    let phraseBonus = 0;
+    const longTokens = Array.from(wordsA).filter((w) => w.length >= 6);
+    for (const token of longTokens.slice(0, 6)) {
+      if (b.includes(token)) {
+        phraseBonus += 0.02;
+      }
+    }
+
+    return Math.min(1, cosineLike + phraseBonus);
   }
 
   /**
@@ -1334,10 +1570,10 @@ export class CitationService {
     });
 
     // Replace citation groups [1, 2, 3]
-    const citationGroupPattern = /\[([\d,\s]+)\]/g;
+    const citationGroupPattern = /\[([^\]]+)\]/g;
     
     renumbered = renumbered.replace(citationGroupPattern, (match, innerContent) => {
-        const indices = innerContent.split(',').map((s: string) => parseInt(s.trim(), 10));
+        const indices = this.parseCitationIndices(innerContent);
         
         const newIndices = indices
             .filter((idx: number) => validSourceIndices.has(idx))
