@@ -361,7 +361,10 @@ export class DocumentProcessor {
     sessionId: string,
     packageData: PreprocessedPackage,
     userId: string,
-    onProgress?: (progress: EmbeddingGenerationProgress) => void
+    onProgress?: (progress: EmbeddingGenerationProgress) => void,
+    options?: {
+      librarySourceId?: string;
+    }
   ): Promise<string> {
     console.log('🚀 DocumentProcessor: Starting preprocessed package processing');
 
@@ -372,14 +375,17 @@ export class DocumentProcessor {
       throw new Error(errorMsg);
     }
 
-    console.log('📋 DocumentProcessor: Package info:', {
-      sessionId,
-      userId,
-      formatVersion: packageData.format_version,
-      documentId: packageData.document_metadata?.id,
-      filename: packageData.document_metadata?.filename,
-      chunksCount: packageData.chunks?.length || 0
-    });
+      const librarySourcePath = options?.librarySourceId ? `library:${options.librarySourceId}` : undefined;
+
+      console.log('📋 DocumentProcessor: Package info:', {
+        sessionId,
+        userId,
+        formatVersion: packageData.format_version,
+        documentId: packageData.document_metadata?.id,
+        filename: packageData.document_metadata?.filename,
+        chunksCount: packageData.chunks?.length || 0,
+        librarySourcePath
+      });
 
     // Create progress tracking operation
     const operation = createDocumentIngestionOperation({
@@ -572,7 +578,8 @@ export class DocumentProcessor {
         // This fixes the session ID mismatch issue
         const metadataUpdate = {
           ...metadataExtractor.applyToDocument(document, metadataResult.metadata),
-          sessionId: currentSessionId // Force update to current session ID
+          sessionId: currentSessionId, // Force update to current session ID
+          ...(librarySourcePath ? { originalPath: librarySourcePath } : {})
         };
 
         console.log('🔍 SESSION ID DEBUG: Updating existing document with session ID:', currentSessionId);
@@ -604,6 +611,7 @@ export class DocumentProcessor {
           title: metadataResult.metadata.title,
           author: metadataResult.metadata.author,
           language: metadataResult.metadata.language,
+          originalPath: librarySourcePath,
         };
 
         console.log('🔍 DOCUMENT ID DEBUG: Document create data:', documentCreate);

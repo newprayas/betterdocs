@@ -32,6 +32,7 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
   const [error, setError] = useState<string | null>(null);
 
   const { userId, loadDocuments } = useDocumentStore();
+  const getLibrarySourcePath = (bookId: string) => `library:${bookId}`;
 
   // Fetch books on mount
   useEffect(() => {
@@ -121,59 +122,15 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
       // Get ALL documents for this user across ALL sessions
       const { documentService } = await getIndexedDBServices();
       const allDocuments = await documentService.getAllDocumentsForUser(userId);
+      const librarySourcePath = getLibrarySourcePath(book.id);
 
       console.log(`🔍 CACHE CHECK: Searching ${allDocuments.length} documents across all sessions`);
       console.log(`🔍 CACHE CHECK: Documents:`, allDocuments.map(d => ({ filename: d.filename, title: d.title, sessionId: d.sessionId })));
 
-      // 127: Extract keywords from book name for fuzzy matching (words with 4+ chars)
-      // Filter out common "noise" words to avoid false positive matches on titles like "5th edition copy"
-      const STOP_WORDS = ['edition', 'copy', 'book', 'textbook', 'volume', 'processed', 'manual', 'essential', 'illustrated', 'synopsis'];
-
-      const bookKeywords = book.name
-        .toLowerCase()
-        .split(/\s+/)
-        .filter(word => word.length >= 4 && !STOP_WORDS.includes(word))
-        .map(word => word.replace(/[^a-z0-9]/g, ''));
-
-      console.log(`🔍 CACHE CHECK: Book keywords for fuzzy match (after filtering stop words):`, bookKeywords);
-
-      // Find matching document using multiple strategies
-      let matchedDoc = null;
-
-      // Strategy 1: Exact filename match
-      matchedDoc = allDocuments.find(doc => doc.filename === book.filename);
-      if (matchedDoc) console.log(`🔍 CACHE CHECK: Matched by exact filename`);
-
-      // Strategy 2: Check if document filename/title contains book keywords
-      if (!matchedDoc && bookKeywords.length > 0) {
-        matchedDoc = allDocuments.find(doc => {
-          // Normalize both texts: remove special characters for better matching
-          const docText = `${doc.filename} ${doc.title || ''}`.toLowerCase().replace(/[^a-z0-9\s]/g, '');
-
-          // Count how many of our keywords appear in the document text
-          const keywordsFound = bookKeywords.filter(kw => docText.includes(kw));
-          const matchCount = keywordsFound.length;
-
-          // THRESHOLD LOGIC:
-          // Require ALL keywords to match (exact match)
-          const threshold = bookKeywords.length;
-          const isMatch = matchCount >= threshold;
-
-          if (isMatch) {
-            console.log(`🔍 CACHE CHECK: Fuzzy match found! Keywords matched: ${matchCount}/${bookKeywords.length} (${keywordsFound.join(', ')}) in "${docText}"`);
-          }
-          return isMatch;
-        });
-        if (matchedDoc) console.log(`🔍 CACHE CHECK: Matched by fuzzy keyword matching`);
-      }
-
-      // Strategy 3: Case-insensitive exact name match
-      if (!matchedDoc) {
-        matchedDoc = allDocuments.find(doc =>
-          doc.filename.toLowerCase() === book.name.toLowerCase() ||
-          (doc.title && doc.title.toLowerCase() === book.name.toLowerCase())
-        );
-        if (matchedDoc) console.log(`🔍 CACHE CHECK: Matched by case-insensitive name`);
+      // Strict cache key match by library source ID to avoid wrong cross-book matches.
+      const matchedDoc = allDocuments.find(doc => doc.originalPath === librarySourcePath);
+      if (matchedDoc) {
+        console.log(`🔍 CACHE CHECK: Matched by library source path: ${librarySourcePath}`);
       }
 
       if (matchedDoc) {
@@ -224,7 +181,7 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
       fileSize: sourceDoc.fileSize,
       pageCount: sourceDoc.pageCount,
       title: sourceDoc.title,
-      originalPath: sourceDoc.originalPath,
+      originalPath: getLibrarySourcePath(book.id),
     }, userId!);
 
     // Copy embeddings with new IDs pointing to new document
@@ -353,7 +310,8 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
               progress: Math.round((progress.processedChunks / progress.totalChunks) * 100)
             }
           }));
-        }
+        },
+        { librarySourceId: book.id }
       );
 
       console.log('🔍 PROCESSING DEBUG: Document processing completed for book:', {
@@ -442,9 +400,9 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
         // Fallback strategies for finding the document
         if (!document) {
           document = allDocs.find(doc =>
+            doc.originalPath === getLibrarySourcePath(book.id) ||
             doc.filename === book.name ||
-            doc.title === book.name ||
-            doc.id.includes(book.id)
+            doc.title === book.name
           );
 
           if (!document) {
