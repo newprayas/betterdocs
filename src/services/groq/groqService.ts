@@ -33,28 +33,31 @@ export class GroqService {
   }
 
   private loadEnvApiKeys(): string[] {
-    const keys: string[] = [];
-    for (let i = 1; i <= 6; i++) {
-      const key =
-        process.env[`NEXT_PUBLIC_CEREBRAS_API_${i}` as keyof NodeJS.ProcessEnv] ||
-        process.env[`CEREBRAS_API_${i}` as keyof NodeJS.ProcessEnv] ||
-        process.env[`Cerebras_API_${i}` as keyof NodeJS.ProcessEnv] ||
-        '';
-      const trimmed = String(key).trim();
-      if (trimmed) {
-        keys.push(trimmed);
-      }
-    }
-    return keys;
+    // Important: in Next.js client bundles, dynamic process.env[key] access can fail in production.
+    // Use explicit env references so values are statically inlined at build time.
+    const explicitKeys = [
+      process.env.NEXT_PUBLIC_CEREBRAS_API_1,
+      process.env.NEXT_PUBLIC_CEREBRAS_API_2,
+      process.env.NEXT_PUBLIC_CEREBRAS_API_3,
+      process.env.NEXT_PUBLIC_CEREBRAS_API_4,
+      process.env.NEXT_PUBLIC_CEREBRAS_API_5,
+      process.env.NEXT_PUBLIC_CEREBRAS_API_6,
+    ];
+
+    return explicitKeys
+      .map((k) => String(k || '').trim())
+      .filter((k) => k.length > 0);
   }
 
   private getAllAvailableKeys(): string[] {
-    const keys = [...this.envApiKeys];
-    if (this.apiKey.trim()) {
-      keys.push(this.apiKey.trim());
+    // If env keys exist, always use them only. This avoids old saved/manual keys
+    // causing random 401s during rotation.
+    if (this.envApiKeys.length > 0) {
+      return this.envApiKeys.filter((k, idx, arr) => arr.indexOf(k) === idx);
     }
-    // Deduplicate while preserving order
-    return keys.filter((k, idx) => keys.indexOf(k) === idx);
+
+    const manual = this.apiKey.trim();
+    return manual ? [manual] : [];
   }
 
   private getNextApiKey(): string {
