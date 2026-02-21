@@ -6,9 +6,10 @@ import { DocumentService } from './documentService';
 import { EmbeddingService } from './embeddingService';
 import { SettingsService } from './settingsService';
 import { AnnIndexService } from './annIndexService';
+import { RouteIndexService } from './routeIndexService';
 
 // Re-export services
-export { RAGDatabase, SessionService, MessageService, DocumentService, EmbeddingService, SettingsService, AnnIndexService };
+export { RAGDatabase, SessionService, MessageService, DocumentService, EmbeddingService, SettingsService, AnnIndexService, RouteIndexService };
 
 // Service factory for easy dependency injection
 export class IndexedDBServices {
@@ -20,6 +21,7 @@ export class IndexedDBServices {
   public embeddingService: EmbeddingService;
   public settingsService: SettingsService;
   public annIndexService: AnnIndexService;
+  public routeIndexService: RouteIndexService;
 
   constructor() {
     this.db = new RAGDatabase();
@@ -30,6 +32,7 @@ export class IndexedDBServices {
     this.embeddingService = new EmbeddingService();
     this.settingsService = new SettingsService();
     this.annIndexService = new AnnIndexService();
+    this.routeIndexService = new RouteIndexService();
   }
 
   /**

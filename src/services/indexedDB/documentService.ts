@@ -263,7 +263,7 @@ export class DocumentService {
       return;
     }
 
-    await db.transaction('rw', db.documents, db.embeddings, db.annIndexes, async () => {
+    await db.transaction('rw', db.documents, db.embeddings, db.annIndexes, db.routeIndexes, async () => {
       // Delete document
       await db!.documents.delete(id);
 
@@ -272,6 +272,9 @@ export class DocumentService {
 
       // Delete related ANN index assets
       await db!.annIndexes.where('documentId').equals(id).delete();
+
+      // Delete related route prefilter index assets
+      await db!.routeIndexes.where('documentId').equals(id).delete();
     });
 
     // Update session document count

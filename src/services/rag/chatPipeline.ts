@@ -5,10 +5,28 @@ import { vectorSearchService } from './vectorSearch';
 import { documentProcessor } from './documentProcessor';
 import { citationService } from './citationService';
 import { MessageSender, type MessageCreate, type Message } from '@/types';
+import type { Document, RouteIndexRecord } from '@/types';
 import type { ChatStreamEvent } from '../gemini/chatService';
 import type { SimplifiedCitationGroup } from '@/types/citation';
 import type { EmbeddingChunk, VectorSearchResult } from '@/types/embedding';
-import { cosineSimilarity } from '@/utils/vectorUtils';
+import { cosineSimilarity, calculateVectorNorm } from '@/utils/vectorUtils';
+
+interface RouteSectionCandidate {
+  score: number;
+  chunkIds: string[];
+}
+
+interface RouteDocumentCandidate {
+  documentId: string;
+  bookScore: number;
+  sourceBin?: string;
+  sections: RouteSectionCandidate[];
+}
+
+interface RoutePrefilterPlan {
+  documentIds?: string[];
+  allowedChunkIds?: string[];
+}
 
 export class ChatPipeline {
   private indexedDBServices = getIndexedDBServices();
@@ -215,6 +233,116 @@ export class ChatPipeline {
       content: keptBlocks.join('\n\n').replace(/\n{3,}/g, '\n\n').trim(),
       kept: keptBlocks.length,
       dropped,
+    };
+  }
+
+  private getRouteBookCap(): number {
+    if (typeof window !== 'undefined' && window.matchMedia) {
+      const isPhone = window.matchMedia('(max-width: 768px)').matches;
+      return isPhone ? 2 : 3;
+    }
+    return 3;
+  }
+
+  private scoreRouteSections(queryEmbedding: Float32Array, queryNorm: number, routeIndex: RouteIndexRecord): RouteSectionCandidate[] {
+    return routeIndex.sections
+      .filter((section) => section.vector.length === queryEmbedding.length && section.chunkIds.length > 0)
+      .map((section) => ({
+        score: cosineSimilarity(queryEmbedding, section.vector, queryNorm, 1),
+        chunkIds: section.chunkIds
+      }))
+      .sort((a, b) => b.score - a.score);
+  }
+
+  private async buildRoutePrefilterPlan(
+    enabledDocuments: Document[],
+    queryEmbedding: Float32Array
+  ): Promise<RoutePrefilterPlan> {
+    if (enabledDocuments.length === 0) {
+      return {};
+    }
+
+    const queryNorm = calculateVectorNorm(queryEmbedding);
+    if (!Number.isFinite(queryNorm) || queryNorm <= 0) {
+      return {};
+    }
+
+    const routeCandidates: RouteDocumentCandidate[] = [];
+    const unroutedDocIds: string[] = [];
+
+    for (const document of enabledDocuments) {
+      const routeIndex = await this.indexedDBServices.routeIndexService.loadRouteIndexForDocument(document.id);
+      if (!routeIndex || routeIndex.embeddingDimensions !== queryEmbedding.length) {
+        unroutedDocIds.push(document.id);
+        continue;
+      }
+
+      const bookScore = cosineSimilarity(queryEmbedding, routeIndex.bookVector, queryNorm, 1);
+      const sectionCandidates = this.scoreRouteSections(queryEmbedding, queryNorm, routeIndex);
+
+      routeCandidates.push({
+        documentId: document.id,
+        bookScore,
+        sourceBin: routeIndex.sourceBin,
+        sections: sectionCandidates
+      });
+    }
+
+    if (routeCandidates.length === 0) {
+      return {};
+    }
+
+    routeCandidates.sort((a, b) => b.bookScore - a.bookScore);
+    const topScore = routeCandidates[0].bookScore;
+    const secondScore = routeCandidates.length > 1 ? routeCandidates[1].bookScore : -1;
+    const lowConfidence = topScore < 0.2 || (secondScore >= 0 && topScore - secondScore < 0.035);
+
+    const baseCap = this.getRouteBookCap();
+    const selectedRouted = routeCandidates.slice(0, lowConfidence ? baseCap + 2 : baseCap);
+    const selectedDocIds = selectedRouted.map((candidate) => candidate.documentId);
+    const allDocIds = [...selectedDocIds, ...unroutedDocIds];
+
+    let allowedChunkIds: string[] | undefined;
+    if (unroutedDocIds.length === 0) {
+      const sectionCap = lowConfidence ? 8 : 5;
+      const chunkIdSet = new Set<string>();
+      for (const candidate of selectedRouted) {
+        for (const section of candidate.sections.slice(0, sectionCap)) {
+          for (const chunkId of section.chunkIds) {
+            chunkIdSet.add(chunkId);
+          }
+        }
+      }
+      if (chunkIdSet.size > 0) {
+        allowedChunkIds = Array.from(chunkIdSet);
+      }
+    }
+
+    console.log(
+      '[ROUTE PREFILTER] routedDocs=%d selectedDocs=%d unroutedDocs=%d lowConfidence=%s allowedChunks=%d',
+      routeCandidates.length,
+      allDocIds.length,
+      unroutedDocIds.length,
+      lowConfidence,
+      allowedChunkIds?.length || 0
+    );
+    console.log(
+      '[ROUTE PREFILTER DETAIL] selected=%o',
+      selectedRouted.map((candidate) => ({
+        documentId: candidate.documentId,
+        sourceBin: candidate.sourceBin || 'unknown',
+        bookScore: Number(candidate.bookScore.toFixed(4)),
+        topSectionScore: candidate.sections[0] ? Number(candidate.sections[0].score.toFixed(4)) : null,
+        sectionCount: candidate.sections.length
+      }))
+    );
+    if (unroutedDocIds.length > 0) {
+      console.log('[ROUTE PREFILTER DETAIL] unroutedDocs=%o (full-doc search fallback for these docs)', unroutedDocIds);
+    }
+
+    return {
+      documentIds: allDocIds.length > 0 ? allDocIds : undefined,
+      allowedChunkIds
     };
   }
 
@@ -682,6 +810,13 @@ ${normalizedOriginal}
       console.log('[EMBEDDING GENERATION]', 'Creating vector embedding for enhanced query...');
       const queryEmbedding = await embeddingService.generateEmbedding(retrievalQuery);
       console.log('[EMBEDDING GENERATED]', `Vector created with ${queryEmbedding.length} dimensions`);
+      const routePrefilter = await this.buildRoutePrefilterPlan(enabledDocuments, queryEmbedding);
+      console.log(
+        '[ANSWER ROUTING] companion-prefilter applied=%s docs=%d chunkAllowList=%d',
+        Boolean(routePrefilter.documentIds?.length),
+        routePrefilter.documentIds?.length || 0,
+        routePrefilter.allowedChunkIds?.length || 0
+      );
 
       // Update progress: Vector Search (75%)
       if (onStreamEvent) {
@@ -700,7 +835,9 @@ ${normalizedOriginal}
           textWeight: 0.3,
           vectorWeight: 0.7,
           retrievalMode,
-          userId: sessionForDocuments.userId // Ensure userId is passed
+          userId: sessionForDocuments.userId, // Ensure userId is passed
+          documentIds: routePrefilter.documentIds,
+          allowedChunkIds: routePrefilter.allowedChunkIds,
         }
       );
 
@@ -710,6 +847,13 @@ ${normalizedOriginal}
         const fallbackEnhancedQuery = await this.enhanceQueryWithContext(sessionId, content);
         const fallbackRetrievalQuery = fallbackEnhancedQuery;
         const fallbackEmbedding = await embeddingService.generateEmbedding(fallbackRetrievalQuery);
+        const fallbackRoutePrefilter = await this.buildRoutePrefilterPlan(enabledDocuments, fallbackEmbedding);
+        console.log(
+          '[ANSWER ROUTING][FALLBACK] companion-prefilter applied=%s docs=%d chunkAllowList=%d',
+          Boolean(fallbackRoutePrefilter.documentIds?.length),
+          fallbackRoutePrefilter.documentIds?.length || 0,
+          fallbackRoutePrefilter.allowedChunkIds?.length || 0
+        );
         const fallbackResults = await vectorSearchService.searchHybridEnhanced(
           fallbackEmbedding,
           sessionId,
@@ -720,7 +864,9 @@ ${normalizedOriginal}
             textWeight: 0.3,
             vectorWeight: 0.7,
             retrievalMode,
-            userId: sessionForDocuments.userId
+            userId: sessionForDocuments.userId,
+            documentIds: fallbackRoutePrefilter.documentIds,
+            allowedChunkIds: fallbackRoutePrefilter.allowedChunkIds,
           }
         );
         if (fallbackResults.length > 0) {

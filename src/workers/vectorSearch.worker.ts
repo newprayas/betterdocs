@@ -16,6 +16,7 @@ interface SearchOptions {
   maxResults?: number;
   similarityThreshold?: number;
   documentIds?: string[];
+  allowedChunkIds?: string[];
   userId?: string;
   retrievalMode?: RetrievalMode;
   annCandidateMultiplier?: number;
@@ -78,6 +79,7 @@ async function performVectorSearch(
     maxResults = 8,
     similarityThreshold = 0.7,
     documentIds,
+    allowedChunkIds,
     retrievalMode = 'legacy_hybrid',
     annCandidateMultiplier = 12
   } = options;
@@ -87,10 +89,12 @@ async function performVectorSearch(
   }
 
   console.log(
-    '[RETRIEVAL WORKER] mode=%s maxResults=%d threshold=%s',
+    '[RETRIEVAL WORKER] mode=%s maxResults=%d threshold=%s docsFilter=%d chunkFilter=%d',
     retrievalMode,
     maxResults,
-    similarityThreshold.toFixed(3)
+    similarityThreshold.toFixed(3),
+    documentIds?.length || 0,
+    allowedChunkIds?.length || 0
   );
 
   if (retrievalMode !== 'ann_rerank_v1') {
@@ -98,7 +102,8 @@ async function performVectorSearch(
     return bruteForceVectorSearch(queryEmbedding, sessionId, {
       maxResults,
       similarityThreshold,
-      documentIds
+      documentIds,
+      allowedChunkIds
     });
   }
 
@@ -108,6 +113,7 @@ async function performVectorSearch(
       maxResults,
       similarityThreshold,
       documentIds,
+      allowedChunkIds,
       annCandidateMultiplier
     });
   } catch (annError) {
@@ -115,7 +121,8 @@ async function performVectorSearch(
     return bruteForceVectorSearch(queryEmbedding, sessionId, {
       maxResults,
       similarityThreshold,
-      documentIds
+      documentIds,
+      allowedChunkIds
     });
   }
 }
@@ -127,6 +134,7 @@ async function annVectorSearch(
     maxResults: number;
     similarityThreshold: number;
     documentIds?: string[];
+    allowedChunkIds?: string[];
     annCandidateMultiplier: number;
   }
 ): Promise<VectorSearchResult[]> {
@@ -147,6 +155,14 @@ async function annVectorSearch(
   const queryNorm = calculateVectorNorm(queryEmbedding);
   const annCandidates: CandidateScore[] = [];
   const fallbackDocIds: string[] = [];
+  const allowedChunkIdsSet = options.allowedChunkIds && options.allowedChunkIds.length > 0
+    ? new Set(options.allowedChunkIds)
+    : undefined;
+  if (allowedChunkIdsSet) {
+    console.log('[ANN SEARCH] companion chunk allow-list active: %d ids', allowedChunkIdsSet.size);
+  } else {
+    console.log('[ANN SEARCH] companion chunk allow-list inactive');
+  }
   let annDocsUsed = 0;
 
   for (const documentId of enabledDocIds) {
@@ -168,7 +184,8 @@ async function annVectorSearch(
       annIndex,
       queryEmbedding,
       queryNorm,
-      perDocBudget
+      perDocBudget,
+      allowedChunkIdsSet
     );
 
     if (approxCandidates.length === 0) {
@@ -196,10 +213,22 @@ async function annVectorSearch(
     annCandidates.length,
     candidateIds.length
   );
-  const exactAnnScores = await scoreCandidatesExactly(queryEmbedding, queryNorm, candidateIds, options.similarityThreshold);
+  const exactAnnScores = await scoreCandidatesExactly(
+    queryEmbedding,
+    queryNorm,
+    candidateIds,
+    options.similarityThreshold,
+    allowedChunkIdsSet
+  );
 
   const fallbackScores = fallbackDocIds.length > 0
-    ? await bruteForceCandidateScores(queryEmbedding, queryNorm, fallbackDocIds, options.similarityThreshold)
+    ? await bruteForceCandidateScores(
+        queryEmbedding,
+        queryNorm,
+        fallbackDocIds,
+        options.similarityThreshold,
+        allowedChunkIdsSet
+      )
     : [];
   console.log(
     '[ANN SEARCH] exactMatches=%d fallbackMatches=%d',
@@ -234,15 +263,25 @@ async function bruteForceVectorSearch(
     maxResults: number;
     similarityThreshold: number;
     documentIds?: string[];
+    allowedChunkIds?: string[];
   }
 ): Promise<VectorSearchResult[]> {
   const queryNorm = calculateVectorNorm(queryEmbedding);
   const targetDocIds = await getEnabledDocumentIds(sessionId, options.documentIds);
+  const allowedChunkIdsSet = options.allowedChunkIds && options.allowedChunkIds.length > 0
+    ? new Set(options.allowedChunkIds)
+    : undefined;
+  console.log(
+    '[BRUTE SEARCH] docs=%d companion chunk allow-list=%s',
+    targetDocIds.length,
+    allowedChunkIdsSet ? `${allowedChunkIdsSet.size} ids` : 'inactive'
+  );
   const candidateScores = await bruteForceCandidateScores(
     queryEmbedding,
     queryNorm,
     targetDocIds,
-    options.similarityThreshold
+    options.similarityThreshold,
+    allowedChunkIdsSet
   );
 
   candidateScores.sort((a, b) => b.similarity - a.similarity);
@@ -264,7 +303,8 @@ async function bruteForceCandidateScores(
   queryEmbedding: Float32Array,
   queryNorm: number,
   documentIds: string[],
-  similarityThreshold: number
+  similarityThreshold: number,
+  allowedChunkIdsSet?: Set<string>
 ): Promise<CandidateScore[]> {
   const scores: CandidateScore[] = [];
   if (!db || documentIds.length === 0) {
@@ -272,6 +312,10 @@ async function bruteForceCandidateScores(
   }
 
   const processChunk = (chunk: any) => {
+    if (allowedChunkIdsSet && !allowedChunkIdsSet.has(chunk.id)) {
+      return;
+    }
+
     const effectiveEmbedding = chunk.embeddingQuantized
       ? decompressVector(chunk.embeddingQuantized)
       : chunk.embedding;
@@ -300,7 +344,8 @@ async function scoreCandidatesExactly(
   queryEmbedding: Float32Array,
   queryNorm: number,
   candidateIds: string[],
-  similarityThreshold: number
+  similarityThreshold: number,
+  allowedChunkIdsSet?: Set<string>
 ): Promise<CandidateScore[]> {
   if (!db || candidateIds.length === 0) {
     return [];
@@ -310,6 +355,10 @@ async function scoreCandidatesExactly(
   const scores: CandidateScore[] = [];
 
   for (const chunk of chunks) {
+    if (allowedChunkIdsSet && !allowedChunkIdsSet.has(chunk.id)) {
+      continue;
+    }
+
     const effectiveEmbedding = chunk.embeddingQuantized
       ? decompressVector(chunk.embeddingQuantized)
       : chunk.embedding;
@@ -461,7 +510,8 @@ function searchAnnGraph(
   index: ParsedAnnIndex,
   queryEmbedding: Float32Array,
   queryNorm: number,
-  docCandidateLimit: number
+  docCandidateLimit: number,
+  allowedChunkIdsSet?: Set<string>
 ): CandidateScore[] {
   const { graph, idMap } = index;
   const ef = Math.max(graph.efSearch, MAX_DOC_EF_FLOOR, docCandidateLimit);
@@ -503,12 +553,13 @@ function searchAnnGraph(
 
   const results = top
     .sort((a, b) => b.score - a.score)
-    .slice(0, docCandidateLimit)
     .map(item => ({
       id: idMap[item.node],
       similarity: item.score
     }))
-    .filter(item => !!item.id);
+    .filter(item => !!item.id)
+    .filter(item => !allowedChunkIdsSet || allowedChunkIdsSet.has(item.id))
+    .slice(0, docCandidateLimit);
 
   return results;
 }

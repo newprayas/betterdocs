@@ -155,7 +155,7 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
   ): Promise<string> => {
     console.log(`📋 CACHE COPY: Copying "${book.name}" from session ${sourceDoc.sessionId} to ${sessionId}`);
 
-    const { documentService, embeddingService, annIndexService } = await getIndexedDBServices();
+    const { documentService, embeddingService, annIndexService, routeIndexService } = await getIndexedDBServices();
 
     // Animate progress over 2 seconds (fake but satisfying UX)
     const animateProgress = async () => {
@@ -186,16 +186,28 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
 
     // Copy embeddings with new IDs pointing to new document
     if (sourceEmbeddings.length > 0) {
-      const newEmbeddings = sourceEmbeddings.map(emb => ({
-        ...emb,
-        id: crypto.randomUUID(),
-        documentId: newDocId,
-        sessionId: sessionId,
-        createdAt: new Date(),
-      }));
+      const chunkIdMap: Record<string, string> = {};
+      const newEmbeddings = sourceEmbeddings.map(emb => {
+        const newChunkId = crypto.randomUUID();
+        chunkIdMap[emb.id] = newChunkId;
+        return {
+          ...emb,
+          id: newChunkId,
+          documentId: newDocId,
+          sessionId: sessionId,
+          createdAt: new Date(),
+        };
+      });
 
       await embeddingService.addEmbeddingsDirectly(newEmbeddings);
       console.log(`📋 CACHE COPY: Copied ${newEmbeddings.length} embeddings`);
+
+      // Clone route prefilter index if present and remap chunk IDs to the copied chunk IDs.
+      try {
+        await routeIndexService.cloneRouteIndexForDocument(sourceDoc.id, newDocId, chunkIdMap);
+      } catch (routeCloneError) {
+        console.warn('📋 CACHE COPY: Route index clone failed, continuing without prefilter index', routeCloneError);
+      }
     }
 
     // Clone ANN index assets if available so copied books keep fast retrieval
@@ -273,12 +285,16 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
 
     try {
       console.log('🔍 DOWNLOAD DEBUG: Starting download for book:', book.name);
-      // Download & Decompress
-      const jsonData = await libraryService.downloadAndParseBook(book.url);
+      // Download main package and optional routing companion in parallel.
+      const [jsonData, routingCompanion] = await Promise.all([
+        libraryService.downloadAndParseBook(book.url),
+        libraryService.downloadRoutingCompanion(book.url),
+      ]);
       console.log('🔍 DOWNLOAD DEBUG: Successfully downloaded and parsed book:', {
         bookName: book.name,
         chunksCount: jsonData.chunks?.length || 0,
-        documentId: jsonData.document_metadata?.id
+        documentId: jsonData.document_metadata?.id,
+        hasRoutingCompanion: Boolean(routingCompanion)
       });
 
       // Process into Database with progress tracking
@@ -311,7 +327,10 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
             }
           }));
         },
-        { librarySourceId: book.id }
+        {
+          librarySourceId: book.id,
+          routingCompanion: routingCompanion ?? undefined
+        }
       );
 
       console.log('🔍 PROCESSING DEBUG: Document processing completed for book:', {

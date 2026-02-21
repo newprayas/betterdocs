@@ -2,6 +2,7 @@ import { calculateVectorNorm } from '@/utils/vectorUtils';
 import type { Document } from '@/types/document';
 import type { EmbeddingChunk, EmbeddingGenerationProgress } from '@/types/embedding';
 import type { PreprocessedPackage, PreprocessedChunk } from '@/types/preprocessed';
+import type { RouteCompanionPayload } from '@/types';
 import { embeddingService } from '../gemini';
 import { getIndexedDBServices } from '../indexedDB';
 import { packageValidator } from './packageValidator';
@@ -13,6 +14,7 @@ import { useDocumentStore } from '@/store';
 export class DocumentProcessor {
   private embeddingService = getIndexedDBServices().embeddingService;
   private annIndexService = getIndexedDBServices().annIndexService;
+  private routeIndexService = getIndexedDBServices().routeIndexService;
 
   private decodeBase64ToArrayBuffer(base64: string): ArrayBuffer {
     const binary = atob(base64);
@@ -364,6 +366,7 @@ export class DocumentProcessor {
     onProgress?: (progress: EmbeddingGenerationProgress) => void,
     options?: {
       librarySourceId?: string;
+      routingCompanion?: RouteCompanionPayload;
     }
   ): Promise<string> {
     console.log('🚀 DocumentProcessor: Starting preprocessed package processing');
@@ -697,6 +700,32 @@ export class DocumentProcessor {
         await this.persistAnnIndexIfPresent(packageData, actualDocId, chunks, needsNewId);
       } catch (annError) {
         console.warn('⚠️ ANN index persistence failed, continuing with legacy fallback:', annError);
+      }
+
+      if (options?.routingCompanion) {
+        try {
+          const routeRecord = await this.routeIndexService.saveRouteCompanionForDocument({
+            documentId: actualDocId,
+            companion: options.routingCompanion,
+            chunks,
+            needsNewId
+          });
+          if (routeRecord) {
+            console.log(
+              '✅ ROUTE PREFILTER: Companion route index saved',
+              {
+                documentId: actualDocId,
+                sourceBin: routeRecord.sourceBin || 'unknown',
+                sections: routeRecord.sections.length,
+                formatVersion: routeRecord.formatVersion
+              }
+            );
+          } else {
+            console.log('ℹ️ ROUTE PREFILTER: Companion was present but no valid route index was produced');
+          }
+        } catch (routeError) {
+          console.warn('⚠️ ROUTE PREFILTER: Companion persistence failed, continuing without route index:', routeError);
+        }
       }
 
       onProgress?.({

@@ -14,6 +14,7 @@ export class VectorSearchService {
       maxResults?: number;
       similarityThreshold?: number;
       documentIds?: string[];
+      allowedChunkIds?: string[];
       userId?: string;
       retrievalMode?: 'legacy_hybrid' | 'ann_rerank_v1';
       annCandidateMultiplier?: number;
@@ -43,10 +44,12 @@ export class VectorSearchService {
 
       // Send Request
       console.log(
-        '🚀 [MAIN THREAD] Offloading search to Worker... mode=%s maxResults=%s annMultiplier=%s',
+        '🚀 [MAIN THREAD] Offloading search to Worker... mode=%s maxResults=%s annMultiplier=%s docsFilter=%d chunkFilter=%d',
         options.retrievalMode || 'legacy_hybrid',
         options.maxResults ?? 'default',
-        options.annCandidateMultiplier ?? 'default'
+        options.annCandidateMultiplier ?? 'default',
+        options.documentIds?.length || 0,
+        options.allowedChunkIds?.length || 0
       );
       worker.postMessage({
         type: 'SEARCH',
@@ -375,6 +378,8 @@ export class VectorSearchService {
       similarityThreshold?: number;
       textWeight?: number;
       vectorWeight?: number;
+      documentIds?: string[];
+      allowedChunkIds?: string[];
       userId?: string;
       retrievalMode?: 'legacy_hybrid' | 'ann_rerank_v1';
     } = {}
@@ -391,13 +396,22 @@ export class VectorSearchService {
       const vectorResults = await this.searchSimilar(queryEmbedding, sessionId, {
         maxResults: maxResults * 2, // Get more to allow for text search
         similarityThreshold: similarityThreshold * 0.8, // Lower threshold for hybrid
+        documentIds: options.documentIds,
+        allowedChunkIds: options.allowedChunkIds,
         retrievalMode: options.retrievalMode || 'legacy_hybrid'
       });
 
       // In ANN mode, rerank only top vector candidates to avoid full second pass.
       const textResults = options.retrievalMode === 'ann_rerank_v1'
         ? this.textRerankCandidates(vectorResults, queryText, Math.min(maxResults * 2, 40))
-        : await this.textSearch(queryText, sessionId, maxResults * 2, options.userId);
+        : await this.textSearch(
+            queryText,
+            sessionId,
+            maxResults * 2,
+            options.userId,
+            options.documentIds,
+            options.allowedChunkIds
+          );
       console.log(
         '[RETRIEVAL HYBRID] mode=%s vectorResults=%d textResults=%d',
         options.retrievalMode || 'legacy_hybrid',
@@ -447,18 +461,33 @@ export class VectorSearchService {
     query: string,
     sessionId: string,
     maxResults: number,
-    userId?: string
+    userId?: string,
+    documentIds?: string[],
+    allowedChunkIds?: string[]
   ): Promise<VectorSearchResult[]> {
     try {
-      const embeddings = await this.embeddingService.getEnabledEmbeddingsBySession(sessionId, userId);
+      const embeddings = documentIds && documentIds.length > 0
+        ? await this.getEmbeddingsByDocumentIds(documentIds)
+        : await this.embeddingService.getEnabledEmbeddingsBySession(sessionId, userId);
       const queryLower = query.toLowerCase();
+      const allowedChunkSet = allowedChunkIds && allowedChunkIds.length > 0
+        ? new Set(allowedChunkIds)
+        : null;
 
       // Batch fetch all relevant documents to eliminate N+1 queries
-      const documentMap = await this.batchFetchDocuments(embeddings, undefined, sessionId, userId);
+      const documentMap = await this.batchFetchDocuments(embeddings, documentIds, sessionId, userId);
 
       const results: VectorSearchResult[] = [];
+      const allowedDocumentIdSet = documentIds && documentIds.length > 0 ? new Set(documentIds) : null;
 
       for (const embedding of embeddings) {
+        if (allowedDocumentIdSet && !allowedDocumentIdSet.has(embedding.documentId)) {
+          continue;
+        }
+        if (allowedChunkSet && !allowedChunkSet.has(embedding.id)) {
+          continue;
+        }
+
         const contentLower = embedding.content.toLowerCase();
 
         // Advanced text scoring
@@ -590,6 +619,8 @@ export class VectorSearchService {
       textWeight?: number;
       vectorWeight?: number;
       useDynamicWeighting?: boolean;
+      documentIds?: string[];
+      allowedChunkIds?: string[];
       userId?: string;
       retrievalMode?: 'legacy_hybrid' | 'ann_rerank_v1';
       annCandidateMultiplier?: number;
@@ -610,6 +641,8 @@ export class VectorSearchService {
       const vectorResults = await this.searchSimilar(queryEmbedding, sessionId, {
         maxResults: maxResults * 2,
         similarityThreshold: similarityThreshold * 0.8,
+        documentIds: options.documentIds,
+        allowedChunkIds: options.allowedChunkIds,
         retrievalMode,
         annCandidateMultiplier
       });
@@ -617,7 +650,14 @@ export class VectorSearchService {
       // In ANN mode, rerank only the vector candidates to avoid a full second pass.
       const textResults = retrievalMode === 'ann_rerank_v1'
         ? this.textRerankCandidates(vectorResults, queryText, Math.min(maxResults * 2, 40))
-        : await this.textSearch(queryText, sessionId, maxResults * 2, options.userId);
+        : await this.textSearch(
+            queryText,
+            sessionId,
+            maxResults * 2,
+            options.userId,
+            options.documentIds,
+            options.allowedChunkIds
+          );
       console.log(
         '[RETRIEVAL HYBRID ENHANCED] mode=%s vectorResults=%d textResults=%d',
         retrievalMode,

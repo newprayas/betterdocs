@@ -9,6 +9,7 @@ import type {
   EmbeddingChunk,
   AppSettings,
   AnnIndexRecord,
+  RouteIndexRecord,
 } from '@/types';
 
 export class RAGDatabase extends Dexie {
@@ -19,6 +20,7 @@ export class RAGDatabase extends Dexie {
   embeddings!: EntityTable<EmbeddingChunk>;
   settings!: EntityTable<AppSettings>;
   annIndexes!: EntityTable<AnnIndexRecord>;
+  routeIndexes!: EntityTable<RouteIndexRecord>;
 
   constructor() {
     super('RAGDatabase');
@@ -113,6 +115,17 @@ export class RAGDatabase extends Dexie {
       embeddings: '&id, documentId, sessionId, chunkIndex, content, source, page, embedding, tokenCount, embeddingNorm, createdAt',
       settings: '&id, userId, geminiApiKey, model, temperature, maxTokens, similarityThreshold, chunkSize, chunkOverlap, theme, fontSize, showSources, autoSave, dataRetention, enableAnalytics, crashReporting, debugMode, logLevel',
       annIndexes: '&id, documentId, algorithm, embeddingDimensions, state, updatedAt, [documentId+algorithm]'
+    });
+
+    // Version 82: Add route companion index table for fast prefilter routing
+    this.version(82).stores({
+      sessions: '&id, userId, name, description, systemPrompt, createdAt, updatedAt, documentCount',
+      messages: '&id, sessionId, role, content, timestamp, citationsJson, [sessionId+timestamp]',
+      documents: '&id, userId, sessionId, filename, fileSize, status, pageCount, processedAt, createdAt, enabled, originalPath, storedPath, mimeType, checksum, title, author, language, ingestError',
+      embeddings: '&id, documentId, sessionId, chunkIndex, content, source, page, embedding, tokenCount, embeddingNorm, createdAt',
+      settings: '&id, userId, geminiApiKey, model, temperature, maxTokens, similarityThreshold, chunkSize, chunkOverlap, theme, fontSize, showSources, autoSave, dataRetention, enableAnalytics, crashReporting, debugMode, logLevel',
+      annIndexes: '&id, documentId, algorithm, embeddingDimensions, state, updatedAt, [documentId+algorithm]',
+      routeIndexes: '&id, documentId, updatedAt'
     });
   }
 }

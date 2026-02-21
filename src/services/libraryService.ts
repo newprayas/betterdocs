@@ -1,4 +1,5 @@
 import { LibraryItem } from '@/types/library';
+import type { RouteCompanionPayload } from '@/types';
 
 // ---------------- CONFIGURATION ----------------
 /*
@@ -34,6 +35,24 @@ const getMirrorUrl = (index: number) => {
   return MIRRORS[index % MIRRORS.length];
 };
 // -----------------------------------------------
+
+const parseGzipJsonResponse = async (response: Response): Promise<any> => {
+  if (!response.body) {
+    throw new Error("ReadableStream not supported by browser");
+  }
+
+  const ds = new DecompressionStream('gzip');
+  const decompressedStream = response.body.pipeThrough(ds);
+  const jsonResponse = new Response(decompressedStream);
+  return jsonResponse.json();
+};
+
+const getCompanionFilename = (filenameOrUrl: string): string => {
+  const baseFilename = filenameOrUrl.split('/').pop() || filenameOrUrl;
+  const dotIndex = baseFilename.lastIndexOf('.');
+  const stem = dotIndex > 0 ? baseFilename.slice(0, dotIndex) : baseFilename;
+  return `${stem}_comp.bin`;
+};
 
 const arrayBufferToBase64 = (buffer: ArrayBuffer): string => {
   let binary = '';
@@ -144,21 +163,8 @@ export const libraryService = {
         if (!response.ok) {
           throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
-        if (!response.body) {
-          throw new Error("ReadableStream not supported by browser");
-        }
-
-        // 1. Create a stream for decompression
-        const ds = new DecompressionStream('gzip');
-
-        // 2. Pipe the download stream through the decompressor
-        const decompressedStream = response.body.pipeThrough(ds);
-
-        // 3. Convert the stream into a Response object to easily parse JSON
-        const jsonResponse = new Response(decompressedStream);
-
         console.log(`[Library] ✅ Decompression complete, parsing JSON...`);
-        const result = await jsonResponse.json();
+        const result = await parseGzipJsonResponse(response);
 
         // Try to hydrate ANN payload if metadata exists (non-blocking)
         if (result?.ann_index && !result.ann_index.artifact_base64) {
@@ -202,5 +208,45 @@ export const libraryService = {
         console.log(`[Library] 🔄 Switching to next mirror...`);
       }
     }
+  },
+
+  /**
+   * Best-effort download of optional routing companion (<stem>_comp.bin).
+   * This is intentionally silent to users; retrieval simply falls back if unavailable.
+   */
+  async downloadRoutingCompanion(filenameOrUrl: string): Promise<RouteCompanionPayload | null> {
+    const companionFilename = getCompanionFilename(filenameOrUrl);
+
+    for (let attempt = 0; attempt < MIRRORS.length; attempt++) {
+      const mirrorIndex = (currentMirrorIndex + attempt) % MIRRORS.length;
+      const mirrorBaseUrl = getMirrorUrl(mirrorIndex);
+      const companionUrl = `${mirrorBaseUrl}/${companionFilename}`;
+
+      try {
+        const response = await fetch(companionUrl);
+        if (response.status === 404) {
+          console.log(`[Library] ℹ️ No companion file found for "${companionFilename}" on mirror ${mirrorIndex + 1}`);
+          continue;
+        }
+        if (!response.ok) {
+          console.warn(`[Library] ⚠️ Companion fetch error ${response.status} on mirror ${mirrorIndex + 1}`);
+          continue;
+        }
+
+        const result = await parseGzipJsonResponse(response) as RouteCompanionPayload;
+        if (!result || typeof result !== 'object' || !Array.isArray(result.books)) {
+          console.warn('[Library] ⚠️ Companion file downloaded but format is invalid. Ignoring.');
+          return null;
+        }
+
+        console.log(`[Library] ✅ Companion loaded: ${companionFilename}`);
+        return result;
+      } catch (error) {
+        console.warn(`[Library] ⚠️ Companion fetch failed on mirror ${mirrorIndex + 1}:`, error);
+      }
+    }
+
+    console.log(`[Library] ℹ️ Proceeding without companion for "${filenameOrUrl}"`);
+    return null;
   }
 };
