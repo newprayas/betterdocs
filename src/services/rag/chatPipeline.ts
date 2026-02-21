@@ -4,7 +4,6 @@ import { groqService } from '../groq/groqService';
 import { vectorSearchService } from './vectorSearch';
 import { documentProcessor } from './documentProcessor';
 import { citationService } from './citationService';
-import { ResponseFormatter } from './responseFormatter';
 import { MessageSender, type MessageCreate, type Message } from '@/types';
 import type { ChatStreamEvent } from '../gemini/chatService';
 import type { SimplifiedCitationGroup } from '@/types/citation';
@@ -91,6 +90,22 @@ export class ChatPipeline {
       .trim();
   }
 
+  private isLikelyContextContinuation(query: string): boolean {
+    const normalized = query.toLowerCase().replace(/\s+/g, ' ').trim();
+    if (!normalized) return false;
+
+    // Clear continuation signals (pronouns / referential phrases).
+    if (/\b(it|its|this|that|these|those|they|them|their|same|above|previous|former|latter)\b/.test(normalized)) {
+      return true;
+    }
+
+    if (/^(and|also)\b/.test(normalized)) return true;
+    if (/\b(of it|for it|about it)\b/.test(normalized)) return true;
+    if (/^(what about|how about)\b/.test(normalized)) return true;
+
+    return false;
+  }
+
   private isInsufficientEvidenceResponse(text: string): boolean {
     const normalized = text.toLowerCase().replace(/\s+/g, ' ').trim();
     if (!normalized) return false;
@@ -100,6 +115,32 @@ export class ChatPipeline {
       normalized.includes('insufficient information in the provided documents') ||
       normalized.includes('not enough information in the provided documents')
     );
+  }
+
+  private extractRateLimitNotice(text: string): string | null {
+    const normalized = (text || '').replace(/\s+/g, ' ').trim();
+    if (!normalized) return null;
+
+    const looksRateLimited =
+      /too many questions too fast/i.test(normalized) ||
+      /high traffic/i.test(normalized) ||
+      /please wait for \d+\s*seconds?/i.test(normalized) ||
+      /try again soon/i.test(normalized) ||
+      /\b429\b/i.test(normalized);
+
+    if (!looksRateLimited) return null;
+
+    // Keep provider wait-time if present.
+    const waitMatch = normalized.match(/please wait for \d+\s*seconds?/i);
+    if (waitMatch) {
+      return `⚠️ ${waitMatch[0].charAt(0).toUpperCase()}${waitMatch[0].slice(1)} before asking again.`;
+    }
+
+    if (/high traffic/i.test(normalized) || /try again soon/i.test(normalized)) {
+      return '⚠️ We are experiencing high traffic right now. Please try again in a few seconds.';
+    }
+
+    return '⚠️ You are asking too many questions too fast. Please wait for a few seconds and try again.';
   }
 
   private hasInlineCitations(text: string): boolean {
@@ -334,6 +375,8 @@ export class ChatPipeline {
     history: any[]
   ): Promise<string> {
     const normalizedOriginal = this.normalizeCommonMedicalTypos(content.trim().replace(/\s+/g, ' '));
+    const originalWordCount = normalizedOriginal.split(/\s+/).filter(Boolean).length;
+    const likelyContinuation = this.isLikelyContextContinuation(normalizedOriginal);
     const recentHistory = (history || []).slice(-6).map(msg =>
       `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}`
     ).join('\n');
@@ -343,15 +386,14 @@ Task: Rewrite the user's latest query into ONE standalone medical search query.
 
 Rules:
 1) Keep the user's intent exactly.
-2) Resolve pronouns using conversation history (it/this/that/they).
-3) Fix spelling/typos (medical and non-medical).
-4) If query has fewer than 3 words, expand it into a clear natural query.
-5) Normalize common short forms when useful:
-   - rx/tx -> treatment/management
-   - dx -> diagnosis
-   - inv -> investigations
-6) Do NOT answer the question.
-7) Output ONLY the rewritten query text in one line.
+2) This is a MINIMAL rewrite task: preserve original wording as much as possible.
+3) Fix spelling/typos (medical and non-medical) and only tiny grammar fixes if needed.
+4) Resolve pronouns ONLY when the latest query clearly refers to previous chat context (it/this/that/these/those/they).
+5) If latest query is unrelated to previous topic, keep it independent (do not carry old topic).
+6) NEVER auto-expand short queries into long/natural questions.
+7) Do NOT add new qualifiers, diagnoses, assumptions, or medical details.
+8) Do NOT answer the question.
+9) Output ONLY the rewritten query text in one line.
 
 Conversation History:
 ${recentHistory || 'No prior history'}
@@ -373,11 +415,30 @@ ${normalizedOriginal}
 
       const cleanedQuery = this.sanitizeRewriterOutput(rewrittenQuery);
 
+      const rewriterRateLimitNotice = this.extractRateLimitNotice(cleanedQuery);
+      if (rewriterRateLimitNotice) {
+        console.warn('[QUERY REWRITER]', `Rate-limited rewrite response detected. Falling back to original query.`);
+        return normalizedOriginal;
+      }
+
       // Tiny guardrail #1: reject empty/1-word rewrite.
       const wordCount = cleanedQuery.split(/\s+/).filter(Boolean).length;
       if (!cleanedQuery || wordCount <= 1) {
         console.warn('[QUERY REWRITER]', `Rejected weak rewrite "${cleanedQuery}". Falling back to "${normalizedOriginal}"`);
         return normalizedOriginal;
+      }
+
+      // Tiny guardrail #2: when there are no clear continuation signals, prevent query expansion drift.
+      if (!likelyContinuation) {
+        const expandedTooMuchByWords = wordCount > originalWordCount + 1;
+        const expandedTooMuchByLength = cleanedQuery.length > Math.max(18, Math.round(normalizedOriginal.length * 1.35));
+        if (expandedTooMuchByWords || expandedTooMuchByLength) {
+          console.warn(
+            '[QUERY REWRITER]',
+            `Rejected expanded rewrite "${cleanedQuery}" (original="${normalizedOriginal}"). Falling back to minimal query.`
+          );
+          return normalizedOriginal;
+        }
       }
 
       console.log('[QUERY REWRITER]', `Original: "${normalizedOriginal}" -> Rewritten: "${cleanedQuery}"`);
@@ -766,13 +827,16 @@ ${normalizedOriginal}
     `;
 
     try {
+      const cappedTemperature = Math.min(settings?.temperature ?? 0.7, 0.2);
+      const maxTokens = settings?.maxTokens || 2048;
+
       await groqService.generateStreamingResponse(
         groqPrompt,
         systemPrompt,
         groqModel,
         {
-          temperature: settings?.temperature || 0.7,
-          maxTokens: settings?.maxTokens || 2048,
+          temperature: cappedTemperature,
+          maxTokens,
           onChunk: (chunk: string) => {
             fullResponse += chunk;
           }
@@ -781,53 +845,107 @@ ${normalizedOriginal}
 
       console.log('[SIMPLIFIED RESPONSE COMPLETE]', `Generated ${fullResponse.length} characters`);
 
-      // Format response to bullet points before processing citations
-      const settingsForFormatting = settings || {
-        userId: session.userId,
-        geminiApiKey: '',
-        groqApiKey: '',
-        groqModel: 'gpt-oss-120b',
-        model: 'gemma-3-27b-it',
-        geminiModel: 'gemma-3-27b-it',
-        temperature: 0.7,
-        maxTokens: 2048,
-        similarityThreshold: 0.7,
-        chunkSize: 1000,
-        chunkOverlap: 200,
-        retrievalMode: 'legacy_hybrid' as const,
-        theme: 'dark' as const,
-        fontSize: 'medium' as const,
-        showSources: true,
-        autoSave: true,
-        dataRetention: 'never' as const,
-        enableAnalytics: false,
-        crashReporting: false,
-        debugMode: false,
-        logLevel: 'error' as const
-      };
+      let responseForCitation = fullResponse.trim();
+      const firstPassRateLimitNotice = this.extractRateLimitNotice(responseForCitation);
+      if (firstPassRateLimitNotice) {
+        console.warn('[RATE LIMIT SURFACE]', 'Returning rate-limit notice directly (skipping citation pipeline).');
 
-      if (onStreamEvent) {
-        onStreamEvent({ type: 'status', message: 'Response Formatting' });
+        const assistantMessage: MessageCreate = {
+          sessionId,
+          content: firstPassRateLimitNotice,
+          role: MessageSender.ASSISTANT,
+        };
+        await this.indexedDBServices.messageService.createMessage(assistantMessage);
+
+        if (onStreamEvent) {
+          onStreamEvent({
+            type: 'done',
+            content: firstPassRateLimitNotice,
+            citations: undefined
+          });
+        }
+
+        console.log('=== SIMPLIFIED CONTEXTUAL RESPONSE MODE END ===\n');
+        return;
       }
 
-      const formattedResponse = await ResponseFormatter.formatToBulletPoints(fullResponse, settingsForFormatting);
-      console.log('[BULLET FORMATTING]', `Converted to bullet points: ${formattedResponse.length} characters`);
-
-      const formattedHasCitations = this.hasInlineCitations(formattedResponse);
-      const rawHasCitations = this.hasInlineCitations(fullResponse);
-      const citationInputResponse = !formattedHasCitations && rawHasCitations ? fullResponse : formattedResponse;
-      if (!formattedHasCitations && rawHasCitations) {
-        console.warn('[CITATION FORMATTER GUARD]', 'Formatted response lost citation markers; using raw model response for citation processing.');
-      }
-
-      const isNoEvidenceResponse = this.isInsufficientEvidenceResponse(citationInputResponse || fullResponse);
-
-      // Process citations using simplified system
-      const citationResult: SimplifiedCitationGroup = citationService.processSimplifiedCitations(citationInputResponse, searchResults);
+      let isNoEvidenceResponse = this.isInsufficientEvidenceResponse(responseForCitation);
+      let citationResult: SimplifiedCitationGroup = citationService.processSimplifiedCitations(responseForCitation, searchResults);
 
       // Convert simplified citations to message citation format for storage
       let citationMetadata = citationService.convertSimplifiedToMessageCitations(citationResult.citations);
       let responseForCitationConsistency = citationResult.renumberedResponse;
+
+      // Retry once with stronger citation instructions when output has no verifiable citations.
+      if (!isNoEvidenceResponse && citationMetadata.length === 0) {
+        console.warn('[CITATION RETRY]', 'Initial response had no verifiable citations. Retrying once with strict citation instructions.');
+
+        let retryResponse = '';
+        const retryPrompt = `
+Context from documents:
+---
+${context}
+---
+
+Conversation History:
+${recentMessages}
+
+New Question: ${content}
+
+IMPORTANT RETRY RULES:
+- Regenerate the answer using ONLY the context above.
+- Every factual paragraph or bullet MUST end with at least one citation marker like [1] or [2].
+- Do NOT use "Citation:" labels. Use inline [n] markers only.
+- If a point cannot be supported by context, do not include that point.
+- Keep output well formatted with short headings and bullets.
+`.trim();
+
+        await groqService.generateStreamingResponse(
+          retryPrompt,
+          systemPrompt,
+          groqModel,
+          {
+            temperature: 0.1,
+            maxTokens,
+            onChunk: (chunk: string) => {
+              retryResponse += chunk;
+            }
+          }
+        );
+
+        console.log('[CITATION RETRY COMPLETE]', `Generated ${retryResponse.length} characters`);
+
+        if (retryResponse.trim()) {
+          responseForCitation = retryResponse.trim();
+          const retryRateLimitNotice = this.extractRateLimitNotice(responseForCitation);
+          if (retryRateLimitNotice) {
+            console.warn('[RATE LIMIT SURFACE]', 'Retry hit rate limit. Returning rate-limit notice directly.');
+
+            const assistantMessage: MessageCreate = {
+              sessionId,
+              content: retryRateLimitNotice,
+              role: MessageSender.ASSISTANT,
+            };
+            await this.indexedDBServices.messageService.createMessage(assistantMessage);
+
+            if (onStreamEvent) {
+              onStreamEvent({
+                type: 'done',
+                content: retryRateLimitNotice,
+                citations: undefined
+              });
+            }
+
+            console.log('=== SIMPLIFIED CONTEXTUAL RESPONSE MODE END ===\n');
+            return;
+          }
+
+          isNoEvidenceResponse = this.isInsufficientEvidenceResponse(responseForCitation);
+          citationResult = citationService.processSimplifiedCitations(responseForCitation, searchResults);
+          citationMetadata = citationService.convertSimplifiedToMessageCitations(citationResult.citations);
+          responseForCitationConsistency = citationResult.renumberedResponse;
+        }
+      }
 
       // If model explicitly says evidence is insufficient, do not attach normal source cards.
       if (isNoEvidenceResponse) {
@@ -899,65 +1017,35 @@ ${normalizedOriginal}
   private getSimplifiedSystemPrompt(searchResults?: any[]): string {
     const availableSources = searchResults?.length || 0;
 
-    return `You are a helpful AI assistant that answers questions based on the provided document context.
+    return `You are a medical RAG assistant.
 
-CRITICAL CONSTRAINT - READ CAREFULLY:
-- You MUST ONLY use information from the provided context documents
-- You are FORBIDDEN from using any general knowledge, external information, or knowledge from your training data
-- If the context does not contain the answer, you MUST respond with "I cannot answer this question based on the provided documents."
-- Do NOT attempt to answer questions about topics not covered in the context (e.g., "who is the president", current events, general knowledge)
-- Every single statement you make must be supported by the provided context
-- NEVER answer questions about politics, current events, celebrities, sports, or any topic not in the documents
+You MUST follow these rules:
+1) Use ONLY the provided context sources. No external knowledge.
+2) If context is insufficient, say: "I cannot answer this question based on the provided documents."
+3) Every factual paragraph or bullet MUST end with inline citations like [1], [2].
+4) Use only citation numbers from 1 to ${availableSources}.
+5) Do not invent citation numbers.
+6) Do not use "Citation:" labels; use inline [n] markers only.
+7) If a statement cannot be cited, do not include it.
 
-CONTEXT USAGE:
-- Use ONLY the provided context to inform your answers
-- Base your responses ENTIRELY on the given documents
-- Don't mention "according to the context" or similar phrases
+Output format requirements:
+- Never use markdown tables.
+- Use section headers plus bullet points only.
+- Do not use long plain paragraphs.
+- Keep each section focused and scannable.
 
-MEDICAL ABBREVIATIONS AND TERMINOLOGY:
-When processing medical queries, understand and use these common medical terms and abbreviations:
-- "rx" or "Rx" means treatment of a certain condition
-- "Tx" or "tx" means treatment
-- "Dx" or "dx" means diagnosis (you should search for history, clinical features, and investigations of the condition)
-- "inv" or "Inv" means investigations or diagnostic tests
-- "Give details about": means Give ALL the information you can find about the given query from the sources in a summarized way
-- "Features" or "Clinical Features": means ONLY History and Clinical Examination findings of that disease or condition. This EXCLUDES investigation/lab findings. Focus on symptoms (what patient reports) and signs (what doctor finds on examination)
-- "Management" or "Treatment": means the therapeutic approach - treatment guidelines, protocols, drugs/medications given, dosages, and any surgical or invasive interventions. Focus on HOW to treat the condition
+Coverage requirements:
+- Include all relevant details present in the provided context for the user’s question.
+- Do not omit important points when the source contains them.
+- Be complete and specific, while staying grounded to the cited text.
 
-RESPONSE DEPTH INSTRUCTIONS:
-- Provide COMPREHENSIVE, IN-DEPTH, and DETAILED answers. Do not be overly concise.
-- When discussing classifications, types, or clinical features, provide FULL details from the context, including descriptions, causes, and distinguishing characteristics.
-- Use paragraphs for detailed explanations and bullet points for lists.
-- Do NOT summarize if detailed information is available in the documents.
-- If the context provides specific clinical details (like "healing ulcer" vs "spreading ulcer"), you MUST include all those details.
+Medical shorthand:
+- rx/tx => treatment or management
+- dx => diagnosis
+- inv => investigations
+- "clinical features" => history + examination (not investigations)
 
-SIMPLIFIED VANCOUVER CITATION REQUIREMENTS:
-- ALWAYS cite your sources using Vancouver style: [1], [2], [3] format
-- Each citation represents a PAGE from a document that contains the information you're citing
-- All chunks from the same page are already combined into a single citation
-- Use citations for ALL factual claims, statistics, quotes, and specific information
-- Citations are MANDATORY - every factual statement must have a citation
-- Place citations immediately after the information they support
-- Citations must be numbered sequentially in the order they appear in your response
-- CRITICAL: Only use citation numbers that correspond to the provided context sources (1 through ${availableSources})
-- NEVER invent citation numbers or use numbers outside of available range
-- Every factual paragraph or bullet must include at least one citation marker [n]
-
-RESPONSE GUIDELINES:
-- Be accurate and helpful
-- Provide comprehensive, detailed answers
-- Handle unit conversions for medical/technical data
-- Maintain a professional but conversational tone
-- If multiple documents provide conflicting information, acknowledge the discrepancy
-- Do NOT use markdown tables unless the user explicitly asks for a table
-- Prefer headings, short paragraphs, and bullet lists for better mobile readability
-
-ANSWER STRUCTURE:
-1. Direct answer to the question
-2. Supporting details with VERIFIED page-based citations (Use paragraphs for details)
-3. Additional relevant context if available
-
-Remember: Your goal is to provide accurate, well-cited responses based SOLELY on the provided document context. CITATION ACCURACY IS YOUR HIGHEST PRIORITY.`;
+Goal: accurate, readable, source-grounded answer with correct citations.`;
   }
 
   /**
