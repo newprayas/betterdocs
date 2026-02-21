@@ -4,11 +4,11 @@ import React, { useEffect, useState } from 'react';
 import { useSessionStore, useChatStore } from '../../store';
 
 interface GlobalLoadingScreenProps {
-    minDisplayTime?: number; // Minimum time to show the screen in ms (default 1500)
+    minDisplayTime?: number; // Minimum time to show the screen in ms (default 1000)
 }
 
 export const GlobalLoadingScreen: React.FC<GlobalLoadingScreenProps> = ({
-    minDisplayTime = 2000
+    minDisplayTime = 1000
 }) => {
     const [isVisible, setIsVisible] = useState(true);
     const [minTimerExpired, setMinTimerExpired] = useState(false);
@@ -101,12 +101,12 @@ export const GlobalLoadingScreen: React.FC<GlobalLoadingScreenProps> = ({
     if (!isVisible) return null;
 
     return (
-        <div className="fixed inset-0 z-[9999] bg-white dark:bg-gray-950 flex flex-col items-center justify-center transition-opacity duration-300">
+        <div className="fixed inset-0 z-[9999] bg-gray-950 flex flex-col items-center justify-center transition-opacity duration-300">
             <div className="flex flex-col items-center space-y-8 animate-in fade-in zoom-in duration-300">
                 {/* Logo or App Name */}
                 <div className="relative mb-4">
                     <svg
-                        className="h-20 w-20 text-blue-600 dark:text-blue-500"
+                        className="h-20 w-20 text-blue-500"
                         fill="none"
                         viewBox="0 0 24 24"
                         stroke="currentColor"
@@ -121,17 +121,17 @@ export const GlobalLoadingScreen: React.FC<GlobalLoadingScreenProps> = ({
                 </div>
 
                 <div className="text-center space-y-2">
-                    <h1 className="text-2xl font-bold text-gray-900 dark:text-white tracking-tight">
+                    <h1 className="text-2xl font-bold text-white tracking-tight">
                         MEDDY
                     </h1>
-                    <p className="text-sm text-gray-500 dark:text-gray-400 font-medium">
+                    <p className="text-sm text-gray-400 font-medium">
                         Preparing your workspace...
                     </p>
                 </div>
 
                 {/* Progress Bar */}
                 <div className="w-64 space-y-2">
-                    <div className="h-1.5 w-full bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
+                    <div className="h-1.5 w-full bg-gray-800 rounded-full overflow-hidden">
                         <div
                             className="h-full bg-blue-600 rounded-full transition-all duration-300 ease-out"
                             style={{
@@ -139,7 +139,7 @@ export const GlobalLoadingScreen: React.FC<GlobalLoadingScreenProps> = ({
                             }}
                         />
                     </div>
-                    <p className="text-xs text-center text-gray-400 dark:text-gray-500">
+                    <p className="text-xs text-center text-gray-500">
                         {Math.round(Math.max(progress, isPreloading ? preloadingProgress : 0))}%
                     </p>
                 </div>

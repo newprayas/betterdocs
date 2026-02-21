@@ -7,7 +7,6 @@ import { useRouter } from 'next/navigation';
 import { useSettingsStore } from '../../store';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
-import { Switch } from '../../components/ui/Switch';
 import { Header } from '../../components/layout/Header';
 
 export default function SettingsPage() {
@@ -77,17 +76,12 @@ export default function SettingsPage() {
                 <div className="flex items-center justify-between">
                   <div className="flex-1">
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Dark Mode
+                      Theme
                     </label>
                     <p className="text-sm text-gray-500 dark:text-gray-400">
-                      Switch between light and dark themes
+                      Dark mode is always enabled.
                     </p>
                   </div>
-                  <Switch
-                    checked={settings?.theme === 'dark'}
-                    onCheckedChange={(checked) => updateSettings({ theme: checked ? 'dark' : 'light' })}
-                    size="md"
-                  />
                 </div>
 
                 <div className="pt-4 border-t border-gray-200 dark:border-slate-700">

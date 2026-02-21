@@ -46,8 +46,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
-      <body className={`${inter.className} bg-gray-50 dark:bg-slate-950 text-slate-900 dark:text-slate-200 antialiased`}>
+    <html lang="en" className="dark">
+      <body className={`${inter.className} bg-slate-950 text-slate-200 antialiased`}>
         <Script
           id="error-suppression"
           strategy="beforeInteractive"
@@ -57,7 +57,7 @@ export default function RootLayout({
         <RouteErrorBoundary>
           <div id="root" className="min-h-screen flex flex-col">
             <AppInitializer />
-            <GlobalLoadingScreen minDisplayTime={2000} />
+            <GlobalLoadingScreen minDisplayTime={1000} />
             <ServiceWorkerRegister />
             <SubscriptionModal />
             <InstallPrompt />
