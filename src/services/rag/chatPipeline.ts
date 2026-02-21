@@ -116,28 +116,78 @@ export class ChatPipeline {
     baseResults: VectorSearchResult[],
     sessionEmbeddings: EmbeddingChunk[],
     queryEmbedding: Float32Array,
-    maxAdditional: number = 4
+    minSimilarity: number = 0.6
   ): VectorSearchResult[] {
-    if (baseResults.length === 0 || sessionEmbeddings.length === 0 || maxAdditional <= 0) {
+    if (baseResults.length === 0 || sessionEmbeddings.length === 0) {
+      console.log(
+        '[NEIGHBOR PAGES] Skipped (insufficient input): baseResults=%d embeddings=%d',
+        baseResults.length,
+        sessionEmbeddings.length
+      );
       return baseResults;
     }
 
     const existingChunkIds = new Set(baseResults.map((r) => r.chunk.id));
     const docInfoById = new Map(baseResults.map((r) => [r.document.id, r.document]));
+    const pagesByDoc = new Map<string, number[]>();
     const targetNeighborPages = new Set<string>();
 
     for (const result of baseResults) {
       const page = this.getChunkPageNumber(result.chunk);
       if (!page) continue;
-      if (page > 1) targetNeighborPages.add(`${result.document.id}:${page - 1}`);
-      targetNeighborPages.add(`${result.document.id}:${page + 1}`);
+      const current = pagesByDoc.get(result.document.id) || [];
+      current.push(page);
+      pagesByDoc.set(result.document.id, current);
     }
 
+    for (const [documentId, pages] of pagesByDoc.entries()) {
+      if (pages.length === 0) continue;
+
+      const uniqueSortedPages = Array.from(new Set(pages)).sort((a, b) => a - b);
+      let blockStart = uniqueSortedPages[0];
+      let previous = uniqueSortedPages[0];
+
+      for (let i = 1; i < uniqueSortedPages.length; i++) {
+        const current = uniqueSortedPages[i];
+        if (current === previous + 1) {
+          previous = current;
+          continue;
+        }
+
+        // Close previous contiguous block [blockStart..previous]
+        if (blockStart > 1) {
+          targetNeighborPages.add(`${documentId}:${blockStart - 1}`);
+        }
+        targetNeighborPages.add(`${documentId}:${previous + 1}`);
+
+        // Start a new block.
+        blockStart = current;
+        previous = current;
+      }
+
+      // Close final block.
+      if (blockStart > 1) {
+        targetNeighborPages.add(`${documentId}:${blockStart - 1}`);
+      }
+      targetNeighborPages.add(`${documentId}:${previous + 1}`);
+    }
+
+    const targetNeighborPageList = Array.from(targetNeighborPages).sort();
+    console.log(
+      '[NEIGHBOR PAGES] Candidate edge pages=%d threshold=%.2f pages=%o',
+      targetNeighborPageList.length,
+      minSimilarity,
+      targetNeighborPageList
+    );
+
     if (targetNeighborPages.size === 0) {
+      console.log('[NEIGHBOR PAGES] No candidate edge pages from retrieved blocks.');
       return baseResults;
     }
 
     const bestCandidateByPage = new Map<string, { chunk: EmbeddingChunk; similarity: number }>();
+    let matchedNeighborPageChunks = 0;
+    let passedThresholdChunks = 0;
     for (const chunk of sessionEmbeddings) {
       if (existingChunkIds.has(chunk.id)) continue;
 
@@ -146,8 +196,12 @@ export class ChatPipeline {
 
       const pageKey = `${chunk.documentId}:${page}`;
       if (!targetNeighborPages.has(pageKey)) continue;
+      matchedNeighborPageChunks += 1;
 
       const similarity = cosineSimilarity(queryEmbedding, chunk.embedding);
+      if (similarity < minSimilarity) continue;
+      passedThresholdChunks += 1;
+
       const current = bestCandidateByPage.get(pageKey);
       if (!current || similarity > current.similarity) {
         bestCandidateByPage.set(pageKey, { chunk, similarity });
@@ -156,7 +210,6 @@ export class ChatPipeline {
 
     const additions = Array.from(bestCandidateByPage.values())
       .sort((a, b) => b.similarity - a.similarity)
-      .slice(0, maxAdditional)
       .map(({ chunk, similarity }) => {
         const existingDocInfo = docInfoById.get(chunk.documentId);
         const title = existingDocInfo?.title || chunk.metadata?.documentTitle || chunk.source || 'Document';
@@ -174,14 +227,23 @@ export class ChatPipeline {
 
     if (additions.length > 0) {
       console.log(
-        '[NEIGHBOR PAGES] Added %d neighbor-page chunk(s): %o',
+        '[NEIGHBOR PAGES] Added %d edge-neighbor chunk(s) [threshold=%.2f]: %o',
         additions.length,
+        minSimilarity,
         additions.map((r) => ({
           chunkId: r.chunk.id,
           documentId: r.document.id,
           page: this.getChunkPageNumber(r.chunk),
           similarity: r.similarity
         }))
+      );
+    } else {
+      console.log(
+        '[NEIGHBOR PAGES] Attempted but added 0 chunk(s): candidatePages=%d matchedChunks=%d passedThreshold=%d threshold=%.2f',
+        targetNeighborPages.size,
+        matchedNeighborPageChunks,
+        passedThresholdChunks,
+        minSimilarity
       );
     }
 
@@ -394,7 +456,7 @@ ${normalizedOriginal}
       }
 
       // Neighbor-page inclusion: include page N-1 / N+1 chunks to preserve section continuity.
-      searchResults = this.includeNeighborPageChunks(searchResults, embeddings, queryEmbedding, 4);
+      searchResults = this.includeNeighborPageChunks(searchResults, embeddings, queryEmbedding, 0.6);
 
       console.log('[SEARCH RESULTS]', `${searchResults.length} relevant chunks found`);
       console.log('✅ CHUNKS USED =', searchResults.length);
