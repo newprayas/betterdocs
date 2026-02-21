@@ -87,26 +87,20 @@ const downloadIdMap = async (url: string): Promise<string[]> => {
 
 // Embedded library catalog (not hosted externally for obscurity)
 const LIBRARY_CATALOG = [
-  {
-    "id": "newdoc_voyage",
-    "name": "voyage_masud",
-    "filename": "shard_4a8.bin",
-    "size": "2.9 MB",
-    "category": "Ophthalmology"
-  },
-  {
-    "id": "bailey_love_27ed",
-    "name": "27 ED Bailey love practice of surgery",
-    "filename": "shard_2t3.bin",
-    "size": "43 MB",
-    "category": "Surgery"
-  },
+
   {
     "id": "youtube_lectures_prof_masud_sir22",
     "name": "Youtube lectures Prof Masud sir",
     "filename": "shard_9z8.bin",
     "size": "2.7 MB",
-    "category": "Medical Traducation"
+    "category": "🎉 Special notes"
+  },
+  {
+    "id": "bailey_love_28ed",
+    "name": "Bailey - Love Short Practice of Surgery 28th Edition",
+    "filename": "shard_5x6.bin",
+    "size": "46.5 MB",
+    "category": "Surgery"
   }
 ];
 
