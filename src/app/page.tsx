@@ -27,23 +27,9 @@ export default function HomePage() {
     setIsMounted(true);
   }, []);
 
-  // Check for onboarding completion - redirect if not done
-  useEffect(() => {
-    if (isMounted) {
-      const onboarded = localStorage.getItem('onboarding_completed');
-      if (onboarded !== 'true') {
-        router.replace('/onboarding');
-      }
-    }
-  }, [isMounted, router]);
-
   // Load sessions and preload messages on mount (client-side only)
   useEffect(() => {
     const initApp = async () => {
-      // Only proceed if onboarding is complete
-      const onboarded = localStorage.getItem('onboarding_completed');
-      if (onboarded !== 'true') return;
-
       if (isMounted && userId) {
         // 0. Check for PWA Resume (Removed as per user request)
         // We now always land on the home page, but keep global preloading active.
