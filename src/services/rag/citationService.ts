@@ -1098,15 +1098,19 @@ export class CitationService {
       console.log(`[CONTEXT ${index}]`, context.substring(0, 100) + (context.length > 100 ? '...' : ''));
     });
 
-    // If model output has no citations, derive citations from answer content and retrieved sources.
+    // Strict fail-closed behavior:
+    // If the model did not emit explicit [n] citations, do NOT auto-derive references.
+    // This avoids presenting unsupported statements as sourced.
     if (citationMatches.length === 0) {
-      const derived = this.deriveCitationsFromResponseContent(response, pageGroups);
-      console.log('[SIMPLIFIED DERIVED RESULT]', {
-        derivedCitations: derived.citations.length,
-        usedSourceIndices: derived.usedSourceIndices,
-      });
+      const warning = 'No explicit inline citations found in model output; skipping derived citations to avoid unsupported references.';
+      console.warn('[SIMPLIFIED NO EXPLICIT CITATIONS]', warning);
       console.log('=== SIMPLIFIED CITATION PROCESSING END ===\n');
-      return derived;
+      return {
+        citations: [],
+        renumberedResponse: response,
+        usedSourceIndices: [],
+        validationWarnings: [warning],
+      };
     }
 
     // Filter valid citations and create simplified citations

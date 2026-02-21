@@ -102,6 +102,81 @@ export class ChatPipeline {
     );
   }
 
+  private hasInlineCitations(text: string): boolean {
+    if (!text) return false;
+    return /\[\s*\d+(?:\s*,\s*\d+)*[^\]]*\]/.test(text);
+  }
+
+  private removeUncitedSubstantiveLines(text: string): { content: string; kept: number; dropped: number } {
+    const blocks = text
+      .split(/\n\s*\n/g)
+      .map((b) => b.trim())
+      .filter((b) => b.length > 0);
+
+    const keptBlocks: string[] = [];
+    let dropped = 0;
+
+    const isStructuralBlock = (block: string): boolean => {
+      const lines = block.split('\n').map((l) => l.trim()).filter(Boolean);
+      if (lines.length === 0) return true;
+
+      return lines.every((line) =>
+        /^#{1,6}\s/.test(line) ||
+        /^\*\*[^*]+\*\*:?\s*$/.test(line) ||
+        /^✅\s+\*\*.+\*\*:?\s*$/.test(line) ||
+        /^[-*•]\s*$/.test(line) ||
+        /^\d+\.\s*$/.test(line) ||
+        /^---+$/.test(line) ||
+        line.endsWith(':')
+      );
+    };
+
+    const isCitationOnlyBlock = (block: string): boolean => {
+      const compact = block.replace(/\s+/g, ' ').trim();
+      if (!compact) return false;
+      if (!/\[[^\]]+\]/.test(compact)) return false;
+
+      const withoutCitations = compact
+        .replace(/citation\s*:/gi, '')
+        .replace(/\[[^\]]+\]/g, '')
+        .replace(/[,\s]/g, '')
+        .trim();
+
+      return withoutCitations.length === 0;
+    };
+
+    for (let i = 0; i < blocks.length; i++) {
+      const block = blocks[i];
+      const hasCitation = this.hasInlineCitations(block);
+      const structural = isStructuralBlock(block);
+
+      const textWithoutCitations = block
+        .replace(/\[[^\]]+\]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+      const wordCount = textWithoutCitations.split(/\s+/).filter(Boolean).length;
+      const isSubstantive = textWithoutCitations.length >= 80 && wordCount >= 12;
+
+      // Keep substantive blocks when a neighboring citation-only block supports them.
+      const neighborHasCitationOnly =
+        (i > 0 && isCitationOnlyBlock(blocks[i - 1])) ||
+        (i < blocks.length - 1 && isCitationOnlyBlock(blocks[i + 1]));
+
+      if (isSubstantive && !hasCitation && !structural && !neighborHasCitationOnly) {
+        dropped += 1;
+        continue;
+      }
+
+      keptBlocks.push(block);
+    }
+
+    return {
+      content: keptBlocks.join('\n\n').replace(/\n{3,}/g, '\n\n').trim(),
+      kept: keptBlocks.length,
+      dropped,
+    };
+  }
+
   private getChunkPageNumber(chunk: EmbeddingChunk): number | null {
     if (chunk.page && chunk.page > 0) return chunk.page;
     if (chunk.metadata?.pageNumber && chunk.metadata.pageNumber > 0) return chunk.metadata.pageNumber;
@@ -738,28 +813,49 @@ ${normalizedOriginal}
       const formattedResponse = await ResponseFormatter.formatToBulletPoints(fullResponse, settingsForFormatting);
       console.log('[BULLET FORMATTING]', `Converted to bullet points: ${formattedResponse.length} characters`);
 
-      const isNoEvidenceResponse = this.isInsufficientEvidenceResponse(formattedResponse || fullResponse);
+      const formattedHasCitations = this.hasInlineCitations(formattedResponse);
+      const rawHasCitations = this.hasInlineCitations(fullResponse);
+      const citationInputResponse = !formattedHasCitations && rawHasCitations ? fullResponse : formattedResponse;
+      if (!formattedHasCitations && rawHasCitations) {
+        console.warn('[CITATION FORMATTER GUARD]', 'Formatted response lost citation markers; using raw model response for citation processing.');
+      }
+
+      const isNoEvidenceResponse = this.isInsufficientEvidenceResponse(citationInputResponse || fullResponse);
 
       // Process citations using simplified system
-      const citationResult: SimplifiedCitationGroup = citationService.processSimplifiedCitations(formattedResponse, searchResults);
+      const citationResult: SimplifiedCitationGroup = citationService.processSimplifiedCitations(citationInputResponse, searchResults);
 
       // Convert simplified citations to message citation format for storage
       let citationMetadata = citationService.convertSimplifiedToMessageCitations(citationResult.citations);
+      let responseForCitationConsistency = citationResult.renumberedResponse;
 
       // If model explicitly says evidence is insufficient, do not attach normal source cards.
       if (isNoEvidenceResponse) {
         citationMetadata = [];
       }
 
-      // Reliability fallback: if inline [n] citations are missing, still show source references.
-      if (!isNoEvidenceResponse && citationMetadata.length === 0 && searchResults.length > 0) {
-        console.warn('[CITATION FALLBACK]', `No parsed inline citations found. Attaching fallback references from top ${Math.min(searchResults.length, 6)} results.`);
-        citationMetadata = this.buildFallbackCitationsFromSearchResults(searchResults, 6);
+      // Strict grounding gate:
+      // remove substantial lines that have no inline citations and fail closed if no verifiable citations remain.
+      if (!isNoEvidenceResponse) {
+        const groundingPass = this.removeUncitedSubstantiveLines(responseForCitationConsistency);
+        responseForCitationConsistency = groundingPass.content;
+        if (groundingPass.dropped > 0) {
+          console.warn(
+            '[GROUNDING FILTER]',
+            `Removed ${groundingPass.dropped} uncited substantive line(s).`
+          );
+        }
+      }
+
+      if (!isNoEvidenceResponse && (citationMetadata.length === 0 || !this.hasInlineCitations(responseForCitationConsistency))) {
+        console.warn('[STRICT CITATION MODE]', 'No explicit verifiable citations found after validation. Returning grounded insufficiency response.');
+        responseForCitationConsistency = 'I cannot provide a fully grounded answer from the provided documents because explicit, verifiable citations were not found.';
+        citationMetadata = [];
       }
 
       // Final hard guard: ensure text citation markers and reference panel are always in sync.
       const consistentCitationOutput = this.enforceCitationConsistency(
-        citationResult.renumberedResponse,
+        responseForCitationConsistency,
         citationMetadata
       );
       const responseWithQueryHeader = this.prependAnsweredQueryHeader(
