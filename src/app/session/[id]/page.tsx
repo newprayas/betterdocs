@@ -518,6 +518,7 @@ export default function SessionPage() {
                       event.currentTarget.blur();
                     }}
                     className="
+                      answer-scroll-button
                       absolute bottom-full right-2 mb-2 z-20
                       inline-flex items-center justify-center
                       px-3 py-2 sm:px-4 sm:py-2

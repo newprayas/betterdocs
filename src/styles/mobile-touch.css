@@ -42,6 +42,28 @@ button,
   [role="button"]:active {
     background-color: rgba(0, 0, 0, 0.05);
   }
+
+  /* Keep Answer button color stable after tap/focus on mobile */
+  button.answer-scroll-button,
+  button.answer-scroll-button:hover,
+  button.answer-scroll-button:active,
+  button.answer-scroll-button:focus,
+  button.answer-scroll-button:focus-visible {
+    background-color: rgb(75 85 99) !important;
+    color: rgb(255 255 255) !important;
+    border-color: rgb(255 255 255) !important;
+  }
+
+  /* Keep selected library category pills readable on mobile dark mode */
+  .dark button.library-category-pill[data-selected="true"],
+  .dark button.library-category-pill[data-selected="true"]:hover,
+  .dark button.library-category-pill[data-selected="true"]:active,
+  .dark button.library-category-pill[data-selected="true"]:focus,
+  .dark button.library-category-pill[data-selected="true"]:focus-visible {
+    background-color: rgb(255 255 255) !important;
+    color: rgb(0 0 0) !important;
+    border-color: rgb(255 255 255) !important;
+  }
 }
 
 /* Improve input focus on mobile */

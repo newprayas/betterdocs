@@ -505,7 +505,9 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
                     <button
                       key={category}
                       onClick={() => setSelectedCategory(category)}
+                      data-selected={isSelected}
                       className={`
+                        library-category-pill
                         px-4 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-all duration-200 border
                         ${isSelected
                           ? 'bg-gray-900 dark:bg-white text-white dark:text-black border-gray-900 dark:border-white'
