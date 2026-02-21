@@ -366,6 +366,144 @@ export class ChatPipeline {
     return [...baseResults, ...additions].sort((a, b) => b.similarity - a.similarity);
   }
 
+  private getEffectiveChunkIndex(chunk: EmbeddingChunk): number | null {
+    if (Number.isFinite(chunk.chunkIndex)) return chunk.chunkIndex;
+    if (Number.isFinite(chunk.metadata?.chunkIndex)) return chunk.metadata.chunkIndex;
+    return null;
+  }
+
+  private includeTopChunkAdjacentChunks(
+    baseResults: VectorSearchResult[],
+    sessionEmbeddings: EmbeddingChunk[],
+    queryEmbedding: Float32Array,
+    minSimilarity: number = 0.4,
+    maxTotal: number = 12
+  ): VectorSearchResult[] {
+    if (baseResults.length === 0 || sessionEmbeddings.length === 0) {
+      console.log(
+        '[TOP CHUNK CONTEXT] Skipped (insufficient input): baseResults=%d embeddings=%d',
+        baseResults.length,
+        sessionEmbeddings.length
+      );
+      return baseResults;
+    }
+
+    const availableSlots = Math.max(0, maxTotal - baseResults.length);
+    if (availableSlots <= 0) {
+      console.log(
+        '[TOP CHUNK CONTEXT] Skipped (no space): current=%d maxTotal=%d',
+        baseResults.length,
+        maxTotal
+      );
+      return baseResults;
+    }
+
+    const existingChunkIds = new Set(baseResults.map((r) => r.chunk.id));
+    const topResult = baseResults.reduce((best, current) =>
+      current.similarity > best.similarity ? current : best
+    );
+    const topChunkIndex = this.getEffectiveChunkIndex(topResult.chunk);
+
+    if (topChunkIndex === null) {
+      console.log(
+        '[TOP CHUNK CONTEXT] Skipped (top chunk index unavailable): chunkId=%s',
+        topResult.chunk.id
+      );
+      return baseResults;
+    }
+
+    const targetIndices = [topChunkIndex - 1, topChunkIndex + 1].filter((idx) => idx >= 0);
+    const docId = topResult.document.id;
+    const docInfo = topResult.document;
+
+    console.log(
+      '[TOP CHUNK CONTEXT] Top chunk=%s doc=%s idx=%d sim=%.3f slots=%d threshold=%.2f targetNeighborIdx=%o',
+      topResult.chunk.id,
+      docId,
+      topChunkIndex,
+      topResult.similarity,
+      availableSlots,
+      minSimilarity,
+      targetIndices
+    );
+
+    const candidates: Array<{ chunk: EmbeddingChunk; similarity: number; relation: 'above' | 'below' }> = [];
+    const missedTargets: number[] = [];
+
+    for (const idx of targetIndices) {
+      const neighborChunk = sessionEmbeddings.find((chunk) => {
+        if (chunk.documentId !== docId) return false;
+        const chunkIdx = this.getEffectiveChunkIndex(chunk);
+        return chunkIdx === idx;
+      });
+
+      if (!neighborChunk) {
+        missedTargets.push(idx);
+        continue;
+      }
+
+      if (existingChunkIds.has(neighborChunk.id)) {
+        continue;
+      }
+
+      const sim = cosineSimilarity(queryEmbedding, neighborChunk.embedding);
+      if (sim < minSimilarity) {
+        console.log(
+          '[TOP CHUNK CONTEXT] Candidate rejected (below threshold): chunkId=%s idx=%d sim=%.3f threshold=%.2f',
+          neighborChunk.id,
+          idx,
+          sim,
+          minSimilarity
+        );
+        continue;
+      }
+
+      candidates.push({
+        chunk: neighborChunk,
+        similarity: sim,
+        relation: idx < topChunkIndex ? 'above' : 'below'
+      });
+    }
+
+    if (missedTargets.length > 0) {
+      console.log('[TOP CHUNK CONTEXT] Missing neighbor chunk(s) for target idx=%o', missedTargets);
+    }
+
+    if (candidates.length === 0) {
+      console.log('[TOP CHUNK CONTEXT] Attempted but added 0 chunk(s).');
+      return baseResults;
+    }
+
+    const additions = candidates
+      .sort((a, b) => b.similarity - a.similarity)
+      .slice(0, availableSlots)
+      .map(({ chunk, similarity, relation }) => ({
+        chunk,
+        similarity,
+        document: docInfo,
+        relation
+      }));
+
+    console.log(
+      '[TOP CHUNK CONTEXT] Added %d adjacent chunk(s): %o',
+      additions.length,
+      additions.map((a) => ({
+        chunkId: a.chunk.id,
+        relation: a.relation,
+        chunkIndex: this.getEffectiveChunkIndex(a.chunk),
+        page: this.getChunkPageNumber(a.chunk),
+        similarity: a.similarity
+      }))
+    );
+
+    // Keep original ranked retrieval order, append adjacency context at the end.
+    return [...baseResults, ...additions.map(({ chunk, similarity, document }) => ({
+      chunk,
+      similarity,
+      document
+    }))];
+  }
+
   /**
    * Rewrites the user query based on chat history to make it standalone.
    * Solves the "What are its causes?" problem.
@@ -593,6 +731,8 @@ ${normalizedOriginal}
 
       // Neighbor-page inclusion: include page N-1 / N+1 chunks to preserve section continuity.
       searchResults = this.includeNeighborPageChunks(searchResults, embeddings, queryEmbedding, 0.6);
+      // Top-chunk continuity: include above/below chunks for the highest-similarity hit when slots remain.
+      searchResults = this.includeTopChunkAdjacentChunks(searchResults, embeddings, queryEmbedding, 0.4, 12);
 
       console.log('[SEARCH RESULTS]', `${searchResults.length} relevant chunks found`);
       console.log('✅ CHUNKS USED =', searchResults.length);
@@ -1035,9 +1175,12 @@ Output format requirements:
 - Keep each section focused and scannable.
 
 Coverage requirements:
-- Include all relevant details present in the provided context for the user’s question.
-- Do not omit important points when the source contains them.
-- Be complete and specific, while staying grounded to the cited text.
+- Do NOT summarize when the source contains detailed points.
+- Reorganize and present the provided information; do not compress it into a short summary.
+- Include all relevant classifications, subtypes, criteria, and key notes that appear in the retrieved context.
+- Do not omit important source points for brevity.
+- If the question asks for "types", "classification", "features", "management", or "investigations", include the full set of relevant points from context.
+- Prefer completeness over brevity while staying strictly grounded to cited text.
 
 Medical shorthand:
 - rx/tx => treatment or management
@@ -1045,7 +1188,7 @@ Medical shorthand:
 - inv => investigations
 - "clinical features" => history + examination (not investigations)
 
-Goal: accurate, readable, source-grounded answer with correct citations.`;
+Goal: accurate, full-detail, source-grounded answer with correct citations.`;
   }
 
   /**
