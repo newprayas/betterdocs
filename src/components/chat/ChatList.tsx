@@ -70,6 +70,7 @@ export const ChatList: React.FC<ChatListProps> = ({
     <div
       ref={containerRef}
       onScroll={handleScroll}
+      data-chat-scroll-container="true"
       className={`
         flex-1 overflow-y-auto px-3 sm:px-4 py-4 sm:py-6
         bg-gray-50 dark:bg-gray-900
@@ -90,7 +91,12 @@ export const ChatList: React.FC<ChatListProps> = ({
               {showDateDivider && (
                 <DateDivider date={message.timestamp || new Date()} />
               )}
-              <MessageBubble message={message} />
+              <div
+                data-chat-message-id={message.id}
+                data-chat-message-role={message.role}
+              >
+                <MessageBubble message={message} />
+              </div>
             </React.Fragment>
           );
         })}

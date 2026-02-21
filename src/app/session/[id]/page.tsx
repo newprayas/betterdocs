@@ -203,6 +203,136 @@ export default function SessionPage() {
     }
   };
 
+  const handleScrollToLatestQuestion = () => {
+    const debugPrefix = '[AnswerScroll]';
+    console.groupCollapsed(`${debugPrefix} Button tapped`);
+
+    const chatRegion = document.querySelector('[data-chat-scroll-container="true"]') as HTMLElement | null;
+    if (!chatRegion) {
+      console.warn(`${debugPrefix} chatRegion not found`);
+      console.groupEnd();
+      return;
+    }
+
+    const messageElements = Array.from(
+      chatRegion.querySelectorAll('[data-chat-message-id]')
+    ) as HTMLElement[];
+    console.log(`${debugPrefix} chatRegion metrics`, {
+      scrollTop: chatRegion.scrollTop,
+      scrollHeight: chatRegion.scrollHeight,
+      clientHeight: chatRegion.clientHeight,
+      messageElementCount: messageElements.length,
+      storeMessagesCount: messages.length,
+    });
+
+    const latestUserMessageId = [...messages]
+      .reverse()
+      .find((message) => String(message.role).toLowerCase() === 'user')
+      ?.id;
+    console.log(`${debugPrefix} latest user id from store`, latestUserMessageId);
+
+    const latestUserMessageElement = latestUserMessageId
+      ? messageElements.find(
+        (element) => element.getAttribute('data-chat-message-id') === latestUserMessageId
+      ) || null
+      : null;
+
+    const latestUserMessageByRole = [...messageElements]
+      .reverse()
+      .find((element) => element.getAttribute('data-chat-message-role') === 'user') || null;
+
+    const latestMessageElement = messageElements.length > 0
+      ? messageElements[messageElements.length - 1]
+      : null;
+
+    const targetElement = latestUserMessageElement || latestUserMessageByRole || latestMessageElement;
+    if (!targetElement) {
+      console.warn(`${debugPrefix} no target element found`);
+      console.groupEnd();
+      return;
+    }
+    console.log(`${debugPrefix} selected target`, {
+      targetId: targetElement.getAttribute('data-chat-message-id'),
+      targetRole: targetElement.getAttribute('data-chat-message-role'),
+      hasStoreMatchedElement: Boolean(latestUserMessageElement),
+      hasRoleMatchedElement: Boolean(latestUserMessageByRole),
+    });
+
+    const findScrollableParent = (element: HTMLElement): HTMLElement | null => {
+      let parent = element.parentElement;
+
+      while (parent) {
+        const style = window.getComputedStyle(parent);
+        const isScrollable = /(auto|scroll)/.test(style.overflowY);
+        const canScroll = parent.scrollHeight > parent.clientHeight;
+
+        if (isScrollable && canScroll) return parent;
+        parent = parent.parentElement;
+      }
+
+      return null;
+    };
+
+    const scrollParent = findScrollableParent(targetElement);
+
+    if (!scrollParent) {
+      const targetTopOnPage = targetElement.getBoundingClientRect().top + window.scrollY;
+      const stickyHeaderOffset = 140;
+      const nextWindowScrollTop = Math.max(0, targetTopOnPage - stickyHeaderOffset);
+
+      console.warn(`${debugPrefix} scrollParent not found, using window scroll fallback`, {
+        targetTopOnPage,
+        stickyHeaderOffset,
+        currentWindowScrollY: window.scrollY,
+        nextWindowScrollTop,
+      });
+
+      window.scrollTo({
+        top: nextWindowScrollTop,
+        behavior: 'smooth',
+      });
+
+      window.setTimeout(() => {
+        console.log(`${debugPrefix} after window scroll`, {
+          finalWindowScrollY: window.scrollY,
+        });
+        console.groupEnd();
+      }, 250);
+      return;
+    }
+
+    const containerRect = scrollParent.getBoundingClientRect();
+    const targetRect = targetElement.getBoundingClientRect();
+    const currentScrollTop = scrollParent.scrollTop;
+    const targetTopInContainer = targetRect.top - containerRect.top + currentScrollTop;
+    const queryTopPadding = 96;
+    const maxScrollTop = scrollParent.scrollHeight - scrollParent.clientHeight;
+    const nextScrollTop = Math.min(Math.max(0, targetTopInContainer - queryTopPadding), maxScrollTop);
+    console.log(`${debugPrefix} computed scroll`, {
+      currentScrollTop,
+      targetTopInContainer,
+      queryTopPadding,
+      maxScrollTop,
+      nextScrollTop,
+      delta: nextScrollTop - currentScrollTop,
+      scrollParentTag: scrollParent.tagName,
+      scrollParentClass: scrollParent.className,
+      scrollParentOverflowY: window.getComputedStyle(scrollParent).overflowY,
+    });
+
+    scrollParent.scrollTo({
+      top: nextScrollTop,
+      behavior: 'smooth',
+    });
+
+    window.setTimeout(() => {
+      console.log(`${debugPrefix} after scroll`, {
+        finalScrollTop: scrollParent.scrollTop,
+      });
+      console.groupEnd();
+    }, 250);
+  };
+
 
   if (isInitialLoad && !currentSession) {
     return (
@@ -377,7 +507,45 @@ export default function SessionPage() {
                 </div>
 
                 {/* Phrase Pills */}
-                <div className="flex-shrink-0 mt-4 max-w-4xl mx-auto w-full">
+                <div className="relative flex-shrink-0 mt-4 max-w-4xl mx-auto w-full">
+                  <button
+                    type="button"
+                    onClick={handleScrollToLatestQuestion}
+                    onMouseUp={(event) => {
+                      event.currentTarget.blur();
+                    }}
+                    onTouchEnd={(event) => {
+                      event.currentTarget.blur();
+                    }}
+                    className="
+                      absolute bottom-full right-2 mb-2 z-20
+                      inline-flex items-center justify-center
+                      px-3 py-2 sm:px-4 sm:py-2
+                      text-xs sm:text-sm font-medium rounded-full
+                      bg-gray-600 text-white border border-white
+                      hover:bg-gray-600 active:bg-gray-600
+                      transition-none
+                      focus:outline-none focus:ring-0 focus:ring-offset-0
+                    "
+                    style={{ WebkitTapHighlightColor: 'transparent' }}
+                    aria-label="Scroll to latest answer"
+                    title="Answer"
+                  >
+                    <svg
+                      className="w-3 h-3 mr-1.5"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M7 14l5-5 5 5"
+                      />
+                    </svg>
+                    Answer
+                  </button>
                   <PhrasePills
                     onPhraseSelect={handlePhraseSelect}
                     className="bg-gray-100 dark:bg-gray-800 rounded-lg"
