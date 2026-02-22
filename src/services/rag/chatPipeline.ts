@@ -124,6 +124,93 @@ export class ChatPipeline {
     return false;
   }
 
+  private extractPreviousUserQuery(
+    history: any[],
+    currentQuery: string
+  ): string | null {
+    const normalizedCurrent = currentQuery.toLowerCase().replace(/\s+/g, ' ').trim();
+    const userMessages = (history || [])
+      .filter((msg) => msg?.role === 'user' && typeof msg?.content === 'string')
+      .map((msg) => msg.content.trim())
+      .filter((text) => text.length > 0);
+
+    for (let i = userMessages.length - 1; i >= 0; i--) {
+      const normalizedCandidate = userMessages[i].toLowerCase().replace(/\s+/g, ' ').trim();
+      if (normalizedCandidate !== normalizedCurrent) {
+        return userMessages[i];
+      }
+    }
+
+    return null;
+  }
+
+  private extractTopicFromQuery(query: string): string | null {
+    const cleaned = query
+      .replace(/\s+/g, ' ')
+      .replace(/[?!.]+$/g, '')
+      .trim();
+    if (!cleaned) return null;
+
+    const ofPattern = /\b(?:types?|classification|histological\s+types?|indications?|causes?|features?|management|treatment|diagnosis|investigations?|definition|details)\s+of\s+(.+)$/i;
+    const ofMatch = cleaned.match(ofPattern);
+    if (ofMatch?.[1]) {
+      return ofMatch[1]
+        .replace(/^(the|a|an)\s+/i, '')
+        .trim();
+    }
+
+    const definePattern = /\b(?:what\s+is|define|explain)\s+(.+)$/i;
+    const defineMatch = cleaned.match(definePattern);
+    if (defineMatch?.[1]) {
+      return defineMatch[1]
+        .replace(/^(the|a|an)\s+/i, '')
+        .trim();
+    }
+
+    return null;
+  }
+
+  private isLikelyFacetFollowUp(query: string): boolean {
+    const normalized = query.toLowerCase().replace(/\s+/g, ' ').trim();
+    if (!normalized) return false;
+    const wordCount = normalized.split(' ').filter(Boolean).length;
+    if (wordCount > 5) return false;
+
+    const facetPattern = /\b(types?|classification|histolog(?:y|ical)|causes?|features?|signs?|symptoms?|management|treatment|indications?|diagnosis|investigations?|definition|complications?)\b/;
+    return facetPattern.test(normalized);
+  }
+
+  private applyContinuationFallback(
+    rewrittenQuery: string,
+    originalQuery: string,
+    previousUserQuery: string | null
+  ): string {
+    if (!previousUserQuery) return rewrittenQuery;
+
+    const topic = this.extractTopicFromQuery(previousUserQuery);
+    if (!topic) return rewrittenQuery;
+
+    const normalizedRewritten = rewrittenQuery.toLowerCase();
+    const normalizedTopic = topic.toLowerCase();
+
+    // If topic already present, keep as-is.
+    if (normalizedRewritten.includes(normalizedTopic)) {
+      return rewrittenQuery;
+    }
+
+    // If query explicitly names another subject using "of ...", do not override.
+    if (/\bof\s+[a-z0-9]/i.test(rewrittenQuery)) {
+      return rewrittenQuery;
+    }
+
+    const shouldApply = this.isLikelyContextContinuation(originalQuery) || this.isLikelyFacetFollowUp(originalQuery);
+    if (!shouldApply) return rewrittenQuery;
+
+    const resolved = `${rewrittenQuery} of ${topic}`.replace(/\s+/g, ' ').trim();
+    console.log('[QUERY REWRITER CONTEXT]', `Continuation fallback applied: "${rewrittenQuery}" -> "${resolved}"`);
+    return resolved;
+  }
+
   private isInsufficientEvidenceResponse(text: string): boolean {
     const normalized = text.toLowerCase().replace(/\s+/g, ' ').trim();
     if (!normalized) return false;
@@ -643,6 +730,8 @@ export class ChatPipeline {
     const normalizedOriginal = this.normalizeCommonMedicalTypos(content.trim().replace(/\s+/g, ' '));
     const originalWordCount = normalizedOriginal.split(/\s+/).filter(Boolean).length;
     const likelyContinuation = this.isLikelyContextContinuation(normalizedOriginal);
+    const previousUserQuery = this.extractPreviousUserQuery(history, normalizedOriginal);
+    const previousTopic = previousUserQuery ? this.extractTopicFromQuery(previousUserQuery) : null;
     const recentHistory = (history || []).slice(-6).map(msg =>
       `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}`
     ).join('\n');
@@ -659,10 +748,14 @@ Rules:
 6) NEVER auto-expand short queries into long/natural questions.
 7) Do NOT add new qualifiers, diagnoses, assumptions, or medical details.
 8) Do NOT answer the question.
-9) Output ONLY the rewritten query text in one line.
+9) If the latest query is short/elliptical facet text (like "histological types", "management", "causes"), inherit the disease/topic from the most recent related user query.
+10) Output ONLY the rewritten query text in one line.
 
 Conversation History:
 ${recentHistory || 'No prior history'}
+
+Most recent prior user topic (if available):
+${previousTopic || 'None'}
 
 Latest User Query:
 ${normalizedOriginal}
@@ -707,8 +800,10 @@ ${normalizedOriginal}
         }
       }
 
-      console.log('[QUERY REWRITER]', `Original: "${normalizedOriginal}" -> Rewritten: "${cleanedQuery}"`);
-      return cleanedQuery;
+      const finalRewritten = this.applyContinuationFallback(cleanedQuery, normalizedOriginal, previousUserQuery);
+
+      console.log('[QUERY REWRITER]', `Original: "${normalizedOriginal}" -> Rewritten: "${finalRewritten}"`);
+      return finalRewritten;
 
     } catch (error) {
       console.error('[QUERY REWRITER ERROR]', error);
@@ -1313,6 +1408,7 @@ You MUST follow these rules:
 5) Do not invent citation numbers.
 6) Do not use "Citation:" labels; use inline [n] markers only.
 7) If a statement cannot be cited, do not include it.
+8) Conversation continuity rule: if the new question is a short follow-up that is clearly related to the previous user question, continue with the same medical topic/condition unless the user explicitly changes topic.
 
 Output format requirements:
 - Never use markdown tables.
@@ -1612,6 +1708,7 @@ CONTEXT USAGE:
 - Base your responses ENTIRELY on the given documents
 - Don't mention "according to the context" or similar phrases
 - If context doesn't contain relevant information, say so clearly
+- Conversation continuity: if the latest user query is a short follow-up and clearly related to the previous user query, continue with the same disease/topic unless user explicitly switches topics
 
 MEDICAL ABBREVIATIONS AND TERMINOLOGY:
 When processing medical queries, understand and use these common medical terms and abbreviations:

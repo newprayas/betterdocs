@@ -23,6 +23,21 @@ export interface ProcessedCitations {
 
 export class CitationService {
   /**
+   * Normalize citation marker variants to a single parseable form.
+   * Examples: 【1】 -> [1], ［2］ -> [2], １ -> 1, ， -> ,
+   */
+  private normalizeCitationSyntax(text: string): string {
+    if (!text) return '';
+    return text
+      .replace(/[【［]/g, '[')
+      .replace(/[】］]/g, ']')
+      .replace(/[，、]/g, ',')
+      .replace(/[\uFF10-\uFF19]/g, (char) =>
+        String.fromCharCode(char.charCodeAt(0) - 0xFF10 + 0x30)
+      );
+  }
+
+  /**
    * Parse citation indices from bracket content.
    * Supports:
    * - [1]
@@ -32,7 +47,7 @@ export class CitationService {
   private parseCitationIndices(innerContent: string): number[] {
     const indices: number[] = [];
     const seen = new Set<number>();
-    const segments = innerContent.split(',');
+    const segments = this.normalizeCitationSyntax(innerContent).split(',');
 
     for (const segment of segments) {
       const m = segment.match(/^\s*(\d+)/);
@@ -57,11 +72,12 @@ export class CitationService {
     response: string,
     searchResults: VectorSearchResult[]
   ): ProcessedCitations {
+    const normalizedResponse = this.normalizeCitationSyntax(response);
     console.log('\n=== CITATION PROCESSING DEBUG START ===');
     console.log('[CITATION INPUT]', `Processing citations for response with ${searchResults.length} search results`);
     
     // Extract all citation references from response
-    const citationMatches = this.extractCitationReferences(response);
+    const citationMatches = this.extractCitationReferences(normalizedResponse);
     console.log('[CITATION MATCHES]', `Found ${citationMatches.length} citation references:`, citationMatches.map(m => `[${m.index}] at position ${m.position}`));
     
     const usedSourceIndices = new Set<number>();
@@ -193,7 +209,7 @@ export class CitationService {
     });
 
     // Renumber citations in response and remove invalid ones
-    const renumberedResponse = this.renumberCitationsAndRemoveInvalid(response, validatedCitations, validationWarnings);
+    const renumberedResponse = this.renumberCitationsAndRemoveInvalid(normalizedResponse, validatedCitations, validationWarnings);
 
     console.log('[CITATION RESULT]', {
       originalCitations: citationMatches.length,
@@ -223,12 +239,13 @@ export class CitationService {
    * Handles both normal and noisy citation notations.
    */
   private extractCitationReferences(text: string): Array<{ index: number; position: number }> {
+    const normalizedText = this.normalizeCitationSyntax(text);
     // Match any bracket group, then parse supported citation formats.
     const citationPattern = /\[([^\]]+)\]/g;
     const matches: Array<{ index: number; position: number }> = [];
     let match;
 
-    while ((match = citationPattern.exec(text)) !== null) {
+    while ((match = citationPattern.exec(normalizedText)) !== null) {
       const indices = this.parseCitationIndices(match[1]);
       
       for (const index of indices) {
@@ -370,7 +387,7 @@ export class CitationService {
     citations: Citation[],
     validationWarnings: string[]
   ): string {
-    let renumbered = response;
+    let renumbered = this.normalizeCitationSyntax(response);
     
     // Create set of valid source indices
     const validSourceIndices = new Set(citations.map(c => c.sourceIndex));
@@ -741,22 +758,23 @@ export class CitationService {
    * FIXED: Handles comma-separated citations by associating text with ALL citations in the group
    */
   private extractCitationContexts(response: string): Map<number, string> {
+    const normalizedResponse = this.normalizeCitationSyntax(response);
     console.log('\n=== CITATION CONTEXT EXTRACTION START ===');
-    console.log('[CONTEXT EXTRACTION]', `Extracting contexts from response of ${response.length} characters`);
+    console.log('[CONTEXT EXTRACTION]', `Extracting contexts from response of ${normalizedResponse.length} characters`);
     
     const citationContexts = new Map<number, string>();
     const citationPattern = /\[([^\]]+)\]/g;
     let match;
     let lastIndex = 0;
 
-    while ((match = citationPattern.exec(response)) !== null) {
+    while ((match = citationPattern.exec(normalizedResponse)) !== null) {
       const citationPosition = match.index;
       
       // Parse all indices in this group (supports noisy forms like [5+L1-L3])
       const indices = this.parseCitationIndices(match[1]);
       
       // Extract text from last position to this citation group
-      const textSegment = response.substring(lastIndex, citationPosition).replace(/[ \t]+/g, ' ').trim();
+      const textSegment = normalizedResponse.substring(lastIndex, citationPosition).replace(/[ \t]+/g, ' ').trim();
       
       /*
       console.log(`[CONTEXT EXTRACTION MATCH]`, {
@@ -1076,13 +1094,14 @@ export class CitationService {
     response: string,
     searchResults: VectorSearchResult[]
   ): SimplifiedCitationGroup {
+    const normalizedResponse = this.normalizeCitationSyntax(response);
     console.log('\n=== SIMPLIFIED CITATION PROCESSING START ===');
     console.log('[SIMPLIFIED INPUT]', `Processing ${searchResults.length} search results for simplified citations`);
-    console.log('[RESPONSE ANALYSIS]', `LLM Response length: ${response.length} characters`);
-    console.log('[RESPONSE PREVIEW]', response.substring(0, 200) + (response.length > 200 ? '...' : ''));
+    console.log('[RESPONSE ANALYSIS]', `LLM Response length: ${normalizedResponse.length} characters`);
+    console.log('[RESPONSE PREVIEW]', normalizedResponse.substring(0, 200) + (normalizedResponse.length > 200 ? '...' : ''));
     
     // Extract citation references from response
-    const citationMatches = this.extractCitationReferences(response);
+    const citationMatches = this.extractCitationReferences(normalizedResponse);
     console.log('[CITATION MATCHES]', `Found ${citationMatches.length} citation references:`, citationMatches.map(m => `[${m.index}] at position ${m.position}`));
     
     const usedSourceIndices = new Set<number>();
@@ -1092,7 +1111,7 @@ export class CitationService {
     console.log('[PAGE GROUPS]', `Created ${pageGroups.length} page groups`);
     
     // Extract citation contexts for validation
-    const citationContexts = this.extractCitationContexts(response);
+    const citationContexts = this.extractCitationContexts(normalizedResponse);
     console.log('[CITATION CONTEXTS]', `Extracted contexts for ${citationContexts.size} citations`);
     citationContexts.forEach((context, index) => {
       console.log(`[CONTEXT ${index}]`, context.substring(0, 100) + (context.length > 100 ? '...' : ''));
@@ -1107,7 +1126,7 @@ export class CitationService {
       console.log('=== SIMPLIFIED CITATION PROCESSING END ===\n');
       return {
         citations: [],
-        renumberedResponse: response,
+        renumberedResponse: normalizedResponse,
         usedSourceIndices: [],
         validationWarnings: [warning],
       };
@@ -1274,7 +1293,7 @@ export class CitationService {
       .sort((a, b) => a.sourceIndex - b.sourceIndex);
     
     // Renumber citations in response
-    const renumberedResponse = this.renumberSimplifiedCitations(response, uniqueCitations);
+    const renumberedResponse = this.renumberSimplifiedCitations(normalizedResponse, uniqueCitations);
     
     console.log('[SIMPLIFIED RESULT]', {
       originalCitations: citationMatches.length,
@@ -1562,7 +1581,7 @@ export class CitationService {
       firstFewLines: response.split('\n').slice(0, 5)
     });
     
-    let renumbered = response;
+    let renumbered = this.normalizeCitationSyntax(response);
     
     // Create set of valid source indices
     const validSourceIndices = new Set(citations.map(c => c.sourceIndex));
