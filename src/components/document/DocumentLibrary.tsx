@@ -5,7 +5,7 @@ import { libraryService } from '@/services/libraryService';
 import type { LibraryItem } from '@/types/library';
 import { documentProcessor } from '@/services/rag';
 import { useDocumentStore } from '@/store';
-import { Button, Card, Loading } from '@/components/ui';
+import { Button, Loading } from '@/components/ui';
 import { getIndexedDBServices } from '@/services/indexedDB';
 
 interface DocumentLibraryProps {
@@ -478,23 +478,10 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-      <Card className="w-full max-w-5xl h-[85vh] flex flex-col bg-gray-50 dark:bg-slate-900 shadow-2xl relative">
-
-        {/* Absolute Close Button */}
-        <button
-          onClick={onClose}
-          disabled={isBatchProcessing}
-          className="absolute top-4 right-4 p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-slate-800 rounded-full transition-colors z-30 disabled:opacity-50"
-          aria-label="Close"
-        >
-          <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </button>
-
+    <div className="fixed inset-0 z-50 bg-gray-50 dark:bg-slate-900">
+      <div className="h-full w-full flex flex-col">
         {/* Header */}
-        <div className="p-6 border-b border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 rounded-t-lg">
+        <div className="p-6 border-b border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900">
           <div className="flex flex-col mb-4">
             <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Medical Library</h2>
             <p className="text-sm text-gray-500 dark:text-gray-400">
@@ -512,7 +499,7 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
         </div>
 
         {/* Content Area */}
-        <div className="flex-1 overflow-y-auto p-6 pb-24 relative z-10">
+        <div className="flex-1 overflow-y-auto p-6 relative z-10">
           {/* Controls Row - Moved inside scrollable area */}
           <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between mb-6">
             {/* Category Filter Pills */}
@@ -574,7 +561,7 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
               <p className="text-sm">Try selecting a different category</p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div className="space-y-3">
               {filteredBooks.map((book) => {
                 const isSelected = selectedBooks.has(book.id);
                 const status = processingStatus[book.id];
@@ -586,17 +573,37 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
                   <div
                     key={book.id}
                     className={`
-                      relative bg-white dark:bg-slate-800 p-5 rounded-xl border
+                      bg-white dark:bg-slate-800 px-4 py-3 rounded-lg border
                       ${isProcessing ? 'border-blue-500 ring-1 ring-blue-500' :
                         isCompleted ? 'border-green-500 ring-1 ring-green-500' :
                           hasError ? 'border-red-500 ring-1 ring-red-500' :
                             'border-gray-200 dark:border-slate-700'}
                       ${isSelected ? 'ring-2 ring-blue-500' : ''}
-                      shadow-sm hover:shadow-md transition-all duration-200 flex flex-col
+                      shadow-sm hover:shadow-md transition-all duration-200
                     `}
                   >
-                    {/* Selection Checkbox */}
-                    <div className="absolute top-5 left-5">
+                    <div className="flex items-start gap-3">
+                      <div className="flex-1 min-w-0">
+                        <h3 className="font-semibold text-base text-gray-900 dark:text-white leading-tight">
+                          {book.name}
+                        </h3>
+                        <div className="mt-1 flex items-center gap-2">
+                          <span className="text-xs text-gray-500 dark:text-gray-400">
+                            {book.size}
+                          </span>
+                          {isCompleted && (
+                            <span className="text-xs font-medium text-green-600 dark:text-green-400">
+                              Added
+                            </span>
+                          )}
+                          {hasError && (
+                            <span className="text-xs font-medium text-red-600 dark:text-red-400">
+                              Error
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
                       <input
                         type="checkbox"
                         checked={isSelected}
@@ -606,36 +613,16 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
                       />
                     </div>
 
-                    {/* Category Badge */}
-                    <div className="absolute top-5 right-5">
-                      <span className="px-2 py-1 text-[10px] uppercase tracking-wider font-bold bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-gray-300 rounded-md">
-                        {book.category}
-                      </span>
-                    </div>
-
-                    {/* Icon & Info */}
-                    <div className="mb-4 ml-8">
-                      <div className="w-12 h-12 bg-blue-100 dark:bg-blue-900/30 rounded-lg flex items-center justify-center mb-4 text-2xl">
-                        📚
-                      </div>
-                      <h3 className="font-bold text-lg text-gray-900 dark:text-white leading-tight mb-2">
-                        {book.name}
-                      </h3>
-                      <p className="text-sm text-gray-500 dark:text-gray-400 line-clamp-2 min-h-[2.5rem]">
-                        File: {book.filename}
-                      </p>
-                    </div>
-
                     {/* Progress Status */}
-                    {status && (
-                      <div className="mb-4 ml-8">
+                    {status && isProcessing && (
+                      <div className="mt-2">
                         {isProcessing && (
                           <div className="space-y-2">
                             <div className="flex justify-between text-xs">
-                              <span className="text-white dark:text-white">Processing...</span>
-                              <span className="text-white dark:text-white">{status.progress}%</span>
+                              <span className="text-gray-600 dark:text-gray-300">Processing...</span>
+                              <span className="text-gray-600 dark:text-gray-300">{status.progress}%</span>
                             </div>
-                            <div className="w-full bg-gray-200 rounded-full h-1.5">
+                            <div className="w-full bg-gray-200 dark:bg-slate-700 rounded-full h-1.5">
                               <div
                                 className="bg-blue-600 h-1.5 rounded-full transition-all duration-300"
                                 style={{ width: `${status.progress}%` }}
@@ -643,31 +630,8 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
                             </div>
                           </div>
                         )}
-                        {isCompleted && (
-                          <div className="flex items-center gap-2 text-green-600 text-sm">
-                            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                            </svg>
-                            <span>Completed</span>
-                          </div>
-                        )}
-                        {hasError && (
-                          <div className="flex items-center gap-2 text-red-600 text-sm">
-                            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-                            </svg>
-                            <span>Error: {status.error}</span>
-                          </div>
-                        )}
                       </div>
                     )}
-
-                    {/* Meta Info */}
-                    <div className="mt-auto pt-4 border-t border-gray-100 dark:border-slate-700/50">
-                      <span className="text-xs font-mono text-gray-400">
-                        {book.size}
-                      </span>
-                    </div>
                   </div>
                 );
               })}
@@ -677,7 +641,7 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
 
         {/* Fixed Footer with Add Selected Button */}
         {selectedBooks.size > 0 && (
-          <div className="absolute bottom-0 left-0 right-0 p-6 bg-gray-50 dark:bg-slate-900 border-t border-gray-200 dark:border-slate-700 rounded-t-xl z-20">
+          <div className="shrink-0 p-6 bg-gray-50 dark:bg-slate-900 border-t border-gray-200 dark:border-slate-700 z-20">
             <div className="flex flex-col items-center gap-3 mx-auto max-w-sm">
               <Button
                 onClick={handleBatchDownload}
@@ -719,7 +683,7 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
             </div>
           </div>
         )}
-      </Card>
+      </div>
     </div>
   );
 };

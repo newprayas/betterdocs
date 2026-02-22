@@ -696,7 +696,10 @@ export default function SessionPage() {
       {isLibraryOpen && (
         <DocumentLibrary
           sessionId={sessionId}
-          onClose={() => setIsLibraryOpen(false)}
+          onClose={() => {
+            setIsLibraryOpen(false);
+            setActiveTab('documents');
+          }}
         />
       )}
     </div>
