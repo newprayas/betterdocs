@@ -847,9 +847,7 @@ ${normalizedOriginal}
         sessionForDocuments.userId
       );
 
-      // Get Settings for model info
-      const settings = await this.indexedDBServices.settingsService.getSettings(sessionForDocuments.userId);
-      const retrievalMode = settings?.retrievalMode || 'legacy_hybrid';
+      const retrievalMode: 'ann_rerank_v1' = 'ann_rerank_v1';
       console.log('[RETRIEVAL MODE]', retrievalMode);
 
       // 2. GENERATE STANDALONE QUERY (NEW STEP)

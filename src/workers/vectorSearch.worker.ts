@@ -80,7 +80,7 @@ async function performVectorSearch(
     similarityThreshold = 0.7,
     documentIds,
     allowedChunkIds,
-    retrievalMode = 'legacy_hybrid',
+    retrievalMode = 'ann_rerank_v1',
     annCandidateMultiplier = 12
   } = options;
 

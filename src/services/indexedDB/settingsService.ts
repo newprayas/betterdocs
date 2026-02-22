@@ -23,8 +23,8 @@ export class SettingsService {
 
     const id = this.getSettingsId(userId);
     const settings = await db.settings.get(id);
-    if (settings && !settings.retrievalMode) {
-      settings.retrievalMode = 'legacy_hybrid';
+    if (settings && settings.retrievalMode !== 'ann_rerank_v1') {
+      settings.retrievalMode = 'ann_rerank_v1';
       await db.settings.put(settings);
     }
     console.log('[SETTINGS GET]', `Retrieved settings for user: ${userId}`);
@@ -48,7 +48,7 @@ export class SettingsService {
       similarityThreshold: 0.7,
       chunkSize: 1000,
       chunkOverlap: 200,
-      retrievalMode: 'legacy_hybrid',
+      retrievalMode: 'ann_rerank_v1',
       theme: 'dark' as const,
       fontSize: 'medium' as const,
       showSources: true,
@@ -81,6 +81,7 @@ export class SettingsService {
     // Ensure IDs match
     settings.id = this.getSettingsId(userId);
     settings.userId = userId;
+    settings.retrievalMode = 'ann_rerank_v1';
 
     if (!db) throw new Error('Database not available');
     await db.settings.put(settings);
@@ -265,7 +266,7 @@ export class SettingsService {
       similarityThreshold: settings.similarityThreshold,
       chunkSize: settings.chunkSize,
       chunkOverlap: settings.chunkOverlap,
-      retrievalMode: settings.retrievalMode || 'legacy_hybrid',
+      retrievalMode: settings.retrievalMode || 'ann_rerank_v1',
       theme: settings.theme,
       fontSize: settings.fontSize,
       showSources: settings.showSources,
@@ -307,7 +308,7 @@ export class SettingsService {
       if (typeof imported.chunkOverlap === 'number' && imported.chunkOverlap >= 0) {
         validUpdates.chunkOverlap = imported.chunkOverlap;
       }
-      if (imported.retrievalMode === 'legacy_hybrid' || imported.retrievalMode === 'ann_rerank_v1') {
+      if (imported.retrievalMode === 'ann_rerank_v1') {
         validUpdates.retrievalMode = imported.retrievalMode;
       }
       if (typeof imported.maxTokens === 'number' && imported.maxTokens > 0) {

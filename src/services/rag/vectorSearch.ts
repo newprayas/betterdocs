@@ -21,6 +21,7 @@ export class VectorSearchService {
     } = {}
   ): Promise<VectorSearchResult[]> {
     return new Promise((resolve, reject) => {
+      const effectiveRetrievalMode = options.retrievalMode || 'ann_rerank_v1';
       // Initialize Worker
       const worker = new Worker(new URL('../../workers/vectorSearch.worker.ts', import.meta.url));
 
@@ -45,7 +46,7 @@ export class VectorSearchService {
       // Send Request
       console.log(
         '🚀 [MAIN THREAD] Offloading search to Worker... mode=%s maxResults=%s annMultiplier=%s docsFilter=%d chunkFilter=%d',
-        options.retrievalMode || 'legacy_hybrid',
+        effectiveRetrievalMode,
         options.maxResults ?? 'default',
         options.annCandidateMultiplier ?? 'default',
         options.documentIds?.length || 0,
@@ -56,7 +57,10 @@ export class VectorSearchService {
         payload: {
           queryEmbedding,
           sessionId,
-          options
+          options: {
+            ...options,
+            retrievalMode: effectiveRetrievalMode,
+          }
         }
       });
     });
@@ -391,30 +395,34 @@ export class VectorSearchService {
         textWeight = 0.3,
         vectorWeight = 0.7
       } = options;
+      const retrievalMode = options.retrievalMode || 'ann_rerank_v1';
+      const vectorSearchLimit = retrievalMode === 'ann_rerank_v1'
+        ? Math.max(maxResults * 2, 40)
+        : maxResults * 2;
 
       // Get vector search results
       const vectorResults = await this.searchSimilar(queryEmbedding, sessionId, {
-        maxResults: maxResults * 2, // Get more to allow for text search
+        maxResults: vectorSearchLimit,
         similarityThreshold: similarityThreshold * 0.8, // Lower threshold for hybrid
         documentIds: options.documentIds,
         allowedChunkIds: options.allowedChunkIds,
-        retrievalMode: options.retrievalMode || 'legacy_hybrid'
+        retrievalMode
       });
 
       // In ANN mode, rerank only top vector candidates to avoid full second pass.
-      const textResults = options.retrievalMode === 'ann_rerank_v1'
-        ? this.textRerankCandidates(vectorResults, queryText, Math.min(maxResults * 2, 40))
+      const textResults = retrievalMode === 'ann_rerank_v1'
+        ? this.textRerankCandidates(vectorResults, queryText, Math.min(40, vectorResults.length))
         : await this.textSearch(
             queryText,
             sessionId,
-            maxResults * 2,
+            vectorSearchLimit,
             options.userId,
             options.documentIds,
             options.allowedChunkIds
           );
       console.log(
         '[RETRIEVAL HYBRID] mode=%s vectorResults=%d textResults=%d',
-        options.retrievalMode || 'legacy_hybrid',
+        retrievalMode,
         vectorResults.length,
         textResults.length
       );
@@ -633,13 +641,16 @@ export class VectorSearchService {
         textWeight = 0.3,
         vectorWeight = 0.7,
         useDynamicWeighting = true,
-        retrievalMode = 'legacy_hybrid',
+        retrievalMode = 'ann_rerank_v1',
         annCandidateMultiplier = 12
       } = options;
+      const vectorSearchLimit = retrievalMode === 'ann_rerank_v1'
+        ? Math.max(maxResults * 2, 40)
+        : maxResults * 2;
 
       // Get vector search results
       const vectorResults = await this.searchSimilar(queryEmbedding, sessionId, {
-        maxResults: maxResults * 2,
+        maxResults: vectorSearchLimit,
         similarityThreshold: similarityThreshold * 0.8,
         documentIds: options.documentIds,
         allowedChunkIds: options.allowedChunkIds,
@@ -649,11 +660,11 @@ export class VectorSearchService {
 
       // In ANN mode, rerank only the vector candidates to avoid a full second pass.
       const textResults = retrievalMode === 'ann_rerank_v1'
-        ? this.textRerankCandidates(vectorResults, queryText, Math.min(maxResults * 2, 40))
+        ? this.textRerankCandidates(vectorResults, queryText, Math.min(40, vectorResults.length))
         : await this.textSearch(
             queryText,
             sessionId,
-            maxResults * 2,
+            vectorSearchLimit,
             options.userId,
             options.documentIds,
             options.allowedChunkIds
