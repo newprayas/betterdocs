@@ -91,7 +91,48 @@ export class ChatPipeline {
       .replace(/\btretment\b/gi, 'treatment')
       .replace(/\buclers\b/gi, 'ulcers')
       .replace(/\bulser\b/gi, 'ulcer')
+      .replace(/\bsings\b/gi, 'signs')
+      .replace(/\binflammed\b/gi, 'inflamed')
+      .replace(/\bpiotiosnt\b/gi, 'positions')
+      .replace(/\bpiotiosnts\b/gi, 'positions')
+      .replace(/\bpotisions\b/gi, 'positions')
+      .replace(/\bpoistions\b/gi, 'positions')
+      .replace(/\bopistions\b/gi, 'positions')
+      .replace(/\bliek\b/gi, 'like')
+      .replace(/\boft\s+he\b/gi, 'of the')
+      .replace(/\bchoelcytitisi\b/gi, 'cholecystitis')
+      .replace(/\bchoelcystitis\b/gi, 'cholecystitis')
+      .replace(/\bcholecytitis\b/gi, 'cholecystitis')
+      .replace(/\bposiitiosn\b/gi, 'positions')
+      .replace(/\bposiitiosns\b/gi, 'positions')
+      .replace(/\bposiitoin\b/gi, 'position')
       .replace(/\bdiffren(?:t|ti)ate\b/gi, 'differentiate');
+  }
+
+  private isLikelyTruncatedRewrite(rewritten: string, original: string): boolean {
+    const rewrittenNorm = (rewritten || '').trim().toLowerCase();
+    const originalNorm = (original || '').trim().toLowerCase();
+    if (!rewrittenNorm || !originalNorm) return false;
+
+    // Reject obvious clipped endings like "types of ch".
+    if (/\bof\s+[a-z]{1,2}$/.test(rewrittenNorm)) {
+      return true;
+    }
+
+    // If rewrite is much shorter and ends with a tiny token, treat as truncation.
+    const rewrittenWords = rewrittenNorm.split(/\s+/).filter(Boolean);
+    const originalWords = originalNorm.split(/\s+/).filter(Boolean);
+    const lastWord = rewrittenWords[rewrittenWords.length - 1] || '';
+    if (
+      rewrittenWords.length >= 2 &&
+      originalWords.length >= 3 &&
+      rewrittenNorm.length < Math.max(10, Math.floor(originalNorm.length * 0.7)) &&
+      lastWord.length <= 2
+    ) {
+      return true;
+    }
+
+    return false;
   }
 
   private sanitizeRewriterOutput(raw: string): string {
@@ -106,6 +147,112 @@ export class ChatPipeline {
       .replace(/^[-*]\s+/, '')
       .replace(/^["'`]|["'`]$/g, '')
       .trim();
+  }
+
+  private isPronounTopic(topic: string): boolean {
+    const normalized = topic.trim().toLowerCase();
+    return ['it', 'this', 'that', 'these', 'those', 'them', 'they', 'their', 'its'].includes(normalized);
+  }
+
+  private sanitizeExtractedTopic(rawTopic: string): string | null {
+    const topic = rawTopic
+      .replace(/^(the|a|an)\s+/i, '')
+      .replace(/\s+(?:and|with)\s+(?:their|its|the)\b.*$/i, '')
+      .replace(/[?!.]+$/g, '')
+      .trim();
+
+    if (!topic) return null;
+    if (this.isPronounTopic(topic)) return null;
+    return topic;
+  }
+
+  private normalizeStandaloneQueryShape(query: string): string {
+    let normalized = (query || '').replace(/\s+/g, ' ').trim();
+    if (!normalized) return normalized;
+
+    normalized = this.normalizeCommonMedicalTypos(normalized);
+
+    // Remove dangling truncated punctuation from model outputs.
+    while (/[([{<"'`]\s*$/.test(normalized)) {
+      normalized = normalized.slice(0, -1).trim();
+    }
+    normalized = normalized.replace(/[:;,\-]\s*$/g, '').trim();
+
+    // Common anatomy phrasing cleanup.
+    normalized = normalized.replace(/\bo\s*clock\s+pos(?:ition|itions)\b/gi, 'positions');
+    normalized = normalized.replace(/\blike\s+o\s*clock\b/gi, 'in o clock positions');
+    normalized = normalized.replace(/\bo\s*clock\b/gi, 'o clock positions');
+    normalized = normalized.replace(/\bpositions?\s+of\s+the\s+appendix\b/gi, 'positions of appendix');
+    normalized = normalized.replace(/\bpositions?\s+of\s+appendix\s+in\s+o\s*clock\s+positions\b/gi, 'positions of appendix');
+    normalized = normalized.replace(
+      /^locations?\s+of\s+(.+?)\s+as\s+in\s+positions$/i,
+      'positions of $1'
+    );
+    normalized = normalized.replace(
+      /^what\s+are\s+(?:the\s+)?positions?\s+of\s+appendix(?:\s+in\s+o\s*clock\s+positions)?$/i,
+      'what are the positions of appendix'
+    );
+
+    return normalized.replace(/\s+/g, ' ').trim();
+  }
+
+  private extractMostRecentClarifiedQuery(history: any[]): string | null {
+    const assistantMessages = (history || [])
+      .filter((msg) => msg?.role === 'assistant' && typeof msg?.content === 'string')
+      .map((msg) => msg.content as string);
+
+    for (let i = assistantMessages.length - 1; i >= 0; i--) {
+      const content = assistantMessages[i];
+      const match = content.match(/\*\*Answer for:\*\*\s*"([^"]+)"/i)
+        || content.match(/Answer for:\s*"([^"]+)"/i);
+      const clarified = match?.[1]?.trim();
+      const normalizedClarified = clarified ? this.normalizeStandaloneQueryShape(clarified) : '';
+      if (normalizedClarified) {
+        return normalizedClarified;
+      }
+    }
+
+    return null;
+  }
+
+  private extractMostRecentAnswerForLine(history: any[]): string | null {
+    const assistantMessages = (history || [])
+      .filter((msg) => msg?.role === 'assistant' && typeof msg?.content === 'string')
+      .map((msg) => msg.content as string);
+
+    for (let i = assistantMessages.length - 1; i >= 0; i--) {
+      const content = assistantMessages[i];
+      const match = content.match(/(?:\*\*Answer for:\*\*|Answer for:)\s*"[^"\n]*"/i);
+      if (match?.[0]) {
+        return match[0].replace(/\*\*/g, '').trim();
+      }
+    }
+
+    return null;
+  }
+
+  private extractMostRecentTopicClarifiedQuery(history: any[]): string | null {
+    const assistantMessages = (history || [])
+      .filter((msg) => msg?.role === 'assistant' && typeof msg?.content === 'string')
+      .map((msg) => msg.content as string);
+
+    for (let i = assistantMessages.length - 1; i >= 0; i--) {
+      const content = assistantMessages[i];
+      const match = content.match(/\*\*Answer for:\*\*\s*"([^"]+)"/i)
+        || content.match(/Answer for:\s*"([^"]+)"/i);
+      const clarified = match?.[1]?.trim();
+      if (!clarified) continue;
+
+      const normalizedClarified = this.normalizeStandaloneQueryShape(clarified);
+      if (!normalizedClarified) continue;
+
+      const topic = this.extractTopicFromClarifiedQuery(normalizedClarified);
+      if (topic) {
+        return normalizedClarified;
+      }
+    }
+
+    return null;
   }
 
   private isLikelyContextContinuation(query: string): boolean {
@@ -154,20 +301,101 @@ export class ChatPipeline {
     const ofPattern = /\b(?:types?|classification|histological\s+types?|indications?|causes?|features?|management|treatment|diagnosis|investigations?|definition|details)\s+of\s+(.+)$/i;
     const ofMatch = cleaned.match(ofPattern);
     if (ofMatch?.[1]) {
-      return ofMatch[1]
-        .replace(/^(the|a|an)\s+/i, '')
-        .trim();
+      return this.sanitizeExtractedTopic(ofMatch[1]);
     }
 
     const definePattern = /\b(?:what\s+is|define|explain)\s+(.+)$/i;
     const defineMatch = cleaned.match(definePattern);
     if (defineMatch?.[1]) {
-      return defineMatch[1]
-        .replace(/^(the|a|an)\s+/i, '')
-        .trim();
+      return this.sanitizeExtractedTopic(defineMatch[1]);
     }
 
     return null;
+  }
+
+  private extractTopicFromClarifiedQuery(clarifiedQuery: string): string | null {
+    const fromKnownPatterns = this.extractTopicFromQuery(clarifiedQuery);
+    if (fromKnownPatterns) return fromKnownPatterns;
+
+    const cleaned = clarifiedQuery
+      .replace(/\s+/g, ' ')
+      .replace(/[?!.]+$/g, '')
+      .trim();
+    if (!cleaned) return null;
+
+    const genericOfMatch = cleaned.match(/\bof\s+(.+)$/i);
+    if (genericOfMatch?.[1]) {
+      return this.sanitizeExtractedTopic(genericOfMatch[1]);
+    }
+
+    const betweenMatch = cleaned.match(/\bbetween\s+(.+?)\s+and\s+(.+)$/i);
+    if (betweenMatch?.[1] && betweenMatch?.[2]) {
+      return this.sanitizeExtractedTopic(`${betweenMatch[1]} and ${betweenMatch[2]}`);
+    }
+
+    // Heuristic for noun-phrase clarified queries without "of", e.g.
+    // "appendix anatomical positions relative to colon" -> "appendix".
+    const normalized = cleaned
+      .toLowerCase()
+      .replace(/\b(relative to|regarding|about|in relation to)\b.*$/i, '')
+      .replace(/\b(anatomical|clinical|different|common|major|normal|abnormal)\b/gi, ' ')
+      .replace(/\b(positions?|location|locations?|position|types?|classification|signs?|symptoms?|causes?|management|treatment|diagnosis|pathophysiology|components?|features?|characteristics?)\b/gi, ' ')
+      .replace(/[^\w\s-]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    if (normalized) {
+      const stopwords = new Set([
+        'the', 'a', 'an', 'of', 'for', 'to', 'with', 'and', 'or', 'in', 'on', 'at', 'by', 'from',
+        'what', 'is', 'are', 'if', 'it', 'this', 'that', 'these', 'those'
+      ]);
+      const tokens = normalized.split(' ').filter((token) => token.length > 1 && !stopwords.has(token));
+      if (tokens.length > 0) {
+        return this.sanitizeExtractedTopic(tokens[0]);
+      }
+    }
+
+    return null;
+  }
+
+  private buildContextualRewriteFallback(
+    originalQuery: string,
+    mostRecentClarifiedQuery: string | null
+  ): string | null {
+    if (!mostRecentClarifiedQuery) return null;
+
+    const topic = this.extractTopicFromClarifiedQuery(mostRecentClarifiedQuery);
+    if (!topic) return null;
+
+    const normalizedOriginal = originalQuery
+      .replace(/\s+/g, ' ')
+      .replace(/[?!.]+$/g, '')
+      .trim();
+    if (!normalizedOriginal) return null;
+
+    const isContinuation =
+      this.isLikelyContextContinuation(normalizedOriginal) ||
+      this.isLikelyFacetFollowUp(normalizedOriginal);
+    if (!isContinuation) return null;
+
+    // If the user already specifies a concrete topic, do not override.
+    if (/\bof\s+(?!it\b|this\b|that\b|these\b|those\b|them\b)[a-z0-9]/i.test(normalizedOriginal)) {
+      return null;
+    }
+
+    const replacedPronouns = normalizedOriginal
+      .replace(/\bof\s+(it|this|that|these|those|them)\b/gi, `of ${topic}`)
+      .replace(/\b(for|about)\s+(it|this|that|these|those|them)\b/gi, `$1 ${topic}`)
+      .replace(/\b(it|this|that|these|those|them)\b/gi, topic)
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    const containsTopic = replacedPronouns.toLowerCase().includes(topic.toLowerCase());
+    const fallback = containsTopic
+      ? replacedPronouns
+      : `${replacedPronouns} of ${topic}`.replace(/\s+/g, ' ').trim();
+
+    return this.normalizeStandaloneQueryShape(fallback);
   }
 
   private isLikelyFacetFollowUp(query: string): boolean {
@@ -728,86 +956,136 @@ export class ChatPipeline {
     history: any[]
   ): Promise<string> {
     const normalizedOriginal = this.normalizeCommonMedicalTypos(content.trim().replace(/\s+/g, ' '));
-    const originalWordCount = normalizedOriginal.split(/\s+/).filter(Boolean).length;
-    const likelyContinuation = this.isLikelyContextContinuation(normalizedOriginal);
-    const previousUserQuery = this.extractPreviousUserQuery(history, normalizedOriginal);
-    const previousTopic = previousUserQuery ? this.extractTopicFromQuery(previousUserQuery) : null;
-    const recentHistory = (history || []).slice(-6).map(msg =>
-      `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}`
-    ).join('\n');
+    const mostRecentClarifiedQuery = this.extractMostRecentClarifiedQuery(history);
+    const mostRecentAnswerForLine = this.extractMostRecentAnswerForLine(history);
+    const rewriterSystemPrompt =
+      'You rewrite medical user input into one high-quality standalone retrieval query. Expand shorthand into a clear, natural query while preserving intent.';
+    const rewriterSystemPromptStrict =
+      'Return exactly one non-empty standalone medical search query line. Expand shorthand, fix typos, preserve intent. No explanations, labels, or quotes.';
 
     const prompt = `
-Task: Rewrite the user's latest query into ONE standalone medical search query.
+Rewrite the latest user query into one standalone retrieval query.
 
-Rules:
-1) Keep the user's intent exactly.
-2) This is a MINIMAL rewrite task: preserve original wording as much as possible.
-3) Fix spelling/typos (medical and non-medical) and only tiny grammar fixes if needed.
-4) Resolve pronouns ONLY when the latest query clearly refers to previous chat context (it/this/that/these/those/they).
-5) If latest query is unrelated to previous topic, keep it independent (do not carry old topic).
-6) NEVER auto-expand short queries into long/natural questions.
-7) Do NOT add new qualifiers, diagnoses, assumptions, or medical details.
-8) Do NOT answer the question.
-9) If the latest query is short/elliptical facet text (like "histological types", "management", "causes"), inherit the disease/topic from the most recent related user query.
-10) Output ONLY the rewritten query text in one line.
+Goals:
+1) Understand user intent and express it as a clearer, more complete query.
+2) Expand short/fragmented wording into natural phrasing that improves retrieval.
+3) Correct spelling/grammar.
+4) If the latest query is a follow-up, use prior context to resolve meaning.
+5) If it is unrelated, ignore prior context.
+6) Keep meaning faithful to user intent; do not invent a new topic.
+7) Output exactly one line: only the rewritten query.
 
-Conversation History:
-${recentHistory || 'No prior history'}
+Most Recent Clarified Query:
+${mostRecentClarifiedQuery || 'None'}
 
-Most recent prior user topic (if available):
-${previousTopic || 'None'}
+Most Recent Answer Header Line (optional):
+${mostRecentAnswerForLine || 'None'}
 
 Latest User Query:
 ${normalizedOriginal}
 `.trim();
 
+    const strictPrompt = `
+Return exactly one non-empty standalone medical retrieval query.
+Make it clear and explicit from user intent.
+Fix spelling and grammar.
+Use prior clarified context only when query is a continuation.
+If context is insufficient, rewrite the latest user query into the clearest possible standalone form.
+Output exactly one line and nothing else.
+
+Most Recent Clarified Query:
+${mostRecentClarifiedQuery || 'None'}
+
+Most Recent Answer Header Line (optional):
+${mostRecentAnswerForLine || 'None'}
+
+Latest User Query:
+${normalizedOriginal}
+`.trim();
+
+    console.log('[QUERY REWRITER CONTEXT]', {
+      latestUserQuery: normalizedOriginal,
+      mostRecentClarifiedQuery: mostRecentClarifiedQuery || null,
+      mostRecentAnswerForLine: mostRecentAnswerForLine || null,
+      historyMessages: Array.isArray(history) ? history.length : 0,
+    });
+    console.log('[QUERY REWRITER PROMPT][SYSTEM][PRIMARY]', rewriterSystemPrompt);
+    console.log('[QUERY REWRITER PROMPT][USER][PRIMARY]', prompt);
+
     try {
-      const rewrittenQuery = await groqService.generateResponse(
+      let rewrittenQuery = await groqService.generateResponse(
         prompt,
-        "You rewrite medical search queries for retrieval.",
-        'llama3.1-8b',
+        rewriterSystemPrompt,
+        'gpt-oss-120b',
         {
-          temperature: 0.1,
-          maxTokens: 80,
+          temperature: 0.2,
+          maxTokens: 128,
         }
       );
+      console.log('[QUERY REWRITER RAW][PRIMARY]', rewrittenQuery);
 
-      const cleanedQuery = this.sanitizeRewriterOutput(rewrittenQuery);
+      let cleanedQuery = this.sanitizeRewriterOutput(rewrittenQuery);
+
+      // Hard retry once with stricter prompt if primary output is empty.
+      if (!cleanedQuery) {
+        console.warn('[QUERY REWRITER]', 'Primary rewrite was empty. Retrying with strict prompt.');
+        console.log('[QUERY REWRITER PROMPT][SYSTEM][STRICT]', rewriterSystemPromptStrict);
+        console.log('[QUERY REWRITER PROMPT][USER][STRICT]', strictPrompt);
+        rewrittenQuery = await groqService.generateResponse(
+          strictPrompt,
+          rewriterSystemPromptStrict,
+          'gpt-oss-120b',
+          {
+            temperature: 0,
+            maxTokens: 128,
+          }
+        );
+        console.log('[QUERY REWRITER RAW][STRICT]', rewrittenQuery);
+        cleanedQuery = this.sanitizeRewriterOutput(rewrittenQuery);
+      }
+
+      // If gpt-oss still returns empty, use a backup model once.
+      if (!cleanedQuery) {
+        console.warn('[QUERY REWRITER]', 'Strict rewrite was empty. Retrying with backup model llama3.1-8b.');
+        rewrittenQuery = await groqService.generateResponse(
+          strictPrompt,
+          rewriterSystemPromptStrict,
+          'llama3.1-8b',
+          {
+            temperature: 0,
+            maxTokens: 128,
+          }
+        );
+        console.log('[QUERY REWRITER RAW][FALLBACK_MODEL]', rewrittenQuery);
+        cleanedQuery = this.sanitizeRewriterOutput(rewrittenQuery);
+      }
 
       const rewriterRateLimitNotice = this.extractRateLimitNotice(cleanedQuery);
       if (rewriterRateLimitNotice) {
         console.warn('[QUERY REWRITER]', `Rate-limited rewrite response detected. Falling back to original query.`);
-        return normalizedOriginal;
+        return this.normalizeStandaloneQueryShape(normalizedOriginal);
       }
 
-      // Tiny guardrail #1: reject empty/1-word rewrite.
+      // Keep fallback simple: only reject empty output.
       const wordCount = cleanedQuery.split(/\s+/).filter(Boolean).length;
-      if (!cleanedQuery || wordCount <= 1) {
+      if (!cleanedQuery || wordCount === 0) {
         console.warn('[QUERY REWRITER]', `Rejected weak rewrite "${cleanedQuery}". Falling back to "${normalizedOriginal}"`);
-        return normalizedOriginal;
+        return this.normalizeStandaloneQueryShape(normalizedOriginal);
       }
 
-      // Tiny guardrail #2: when there are no clear continuation signals, prevent query expansion drift.
-      if (!likelyContinuation) {
-        const expandedTooMuchByWords = wordCount > originalWordCount + 1;
-        const expandedTooMuchByLength = cleanedQuery.length > Math.max(18, Math.round(normalizedOriginal.length * 1.35));
-        if (expandedTooMuchByWords || expandedTooMuchByLength) {
-          console.warn(
-            '[QUERY REWRITER]',
-            `Rejected expanded rewrite "${cleanedQuery}" (original="${normalizedOriginal}"). Falling back to minimal query.`
-          );
-          return normalizedOriginal;
-        }
+      if (this.isLikelyTruncatedRewrite(cleanedQuery, normalizedOriginal)) {
+        console.warn('[QUERY REWRITER]', `Rejected truncated rewrite "${cleanedQuery}". Falling back to "${normalizedOriginal}"`);
+        return this.normalizeStandaloneQueryShape(normalizedOriginal);
       }
 
-      const finalRewritten = this.applyContinuationFallback(cleanedQuery, normalizedOriginal, previousUserQuery);
+      const finalRewritten = this.normalizeStandaloneQueryShape(cleanedQuery);
 
       console.log('[QUERY REWRITER]', `Original: "${normalizedOriginal}" -> Rewritten: "${finalRewritten}"`);
       return finalRewritten;
 
     } catch (error) {
       console.error('[QUERY REWRITER ERROR]', error);
-      return normalizedOriginal;
+      return this.normalizeStandaloneQueryShape(normalizedOriginal);
     }
   }
 
