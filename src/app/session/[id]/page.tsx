@@ -73,6 +73,45 @@ export default function SessionPage() {
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const messageInputRef = useRef<HTMLTextAreaElement>(null);
 
+  const clearActiveElementFocus = () => {
+    if (typeof document === 'undefined') return;
+    const blurActive = () => {
+      const activeEl = document.activeElement as HTMLElement | null;
+      activeEl?.blur();
+    };
+    blurActive();
+    requestAnimationFrame(blurActive);
+    setTimeout(blurActive, 0);
+  };
+
+  const handleLibraryOpen = () => {
+    setActiveTab('documents');
+    setIsLibraryOpen(true);
+
+    if (typeof window !== 'undefined') {
+      const currentState = window.history.state ?? {};
+      if (!currentState.__libraryOverlay) {
+        window.history.pushState(
+          { ...currentState, __libraryOverlay: true },
+          '',
+          window.location.href
+        );
+      }
+    }
+  };
+
+  const handleLibraryClose = () => {
+    clearActiveElementFocus();
+
+    if (typeof window !== 'undefined' && window.history.state?.__libraryOverlay) {
+      window.history.back();
+      return;
+    }
+
+    setIsLibraryOpen(false);
+    setActiveTab('documents');
+  };
+
   // Load session data on mount (client-side only)
   useEffect(() => {
     let isMounted = true;
@@ -155,6 +194,22 @@ export default function SessionPage() {
       // Commented out to prevent accidental redirects during loading
     }
   }, [currentSession, sessionLoading, router, isInitialLoad]);
+
+  // When library is open, browser/device back should close it first.
+  useEffect(() => {
+    const handlePopState = () => {
+      if (isLibraryOpen) {
+        setIsLibraryOpen(false);
+        setActiveTab('documents');
+        clearActiveElementFocus();
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+    };
+  }, [isLibraryOpen]);
 
   const handleSendMessage = async (content: string) => {
     if (!sessionId) return;
@@ -596,9 +651,9 @@ export default function SessionPage() {
                 <div className="flex flex-col items-center gap-4 mb-4">
                   <Button
                     variant="primary"
-                    onClick={() => setIsLibraryOpen(true)}
+                    onClick={handleLibraryOpen}
                     size="lg"
-                    className="text-lg px-8 py-3"
+                    className="text-lg px-8 py-3 !bg-blue-600 hover:!bg-blue-700 active:!bg-blue-700 !border-transparent !ring-0 !ring-offset-0 focus:!ring-0 focus:!ring-offset-0 focus-visible:!ring-0 focus-visible:!ring-offset-0"
                   >
                     <span className="mr-2">🏥</span> Library
                   </Button>
@@ -696,10 +751,7 @@ export default function SessionPage() {
       {isLibraryOpen && (
         <DocumentLibrary
           sessionId={sessionId}
-          onClose={() => {
-            setIsLibraryOpen(false);
-            setActiveTab('documents');
-          }}
+          onClose={handleLibraryClose}
         />
       )}
     </div>
