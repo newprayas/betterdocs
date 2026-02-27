@@ -110,7 +110,7 @@ const LIBRARY_CATALOG = [
   {
     "id": "youtube_lectures_prof_masud_sir22",
     "name": "Youtube lectures Prof Masud sir",
-    "filename": "shard_9z8.bin",
+    "filename": "shard_7x3.bin",
     "size": "2.7 MB",
     "category": "🎉 Special notes"
   },
