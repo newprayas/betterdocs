@@ -120,6 +120,13 @@ const LIBRARY_CATALOG = [
     "filename": "shard_5x6.bin",
     "size": "46.5 MB",
     "category": "Surgery"
+  },
+  {
+    "id": "davidson_medicine_24th",
+    "name": "DavidsonMedicine24th",
+    "filename": "shard_3a1.bin",
+    "size": "50.1 MB",
+    "category": "Medicine"
   }
 ];
 
