@@ -28,6 +28,14 @@ interface RoutePrefilterPlan {
   allowedChunkIds?: string[];
 }
 
+interface RetrievedChunkDebugInfo {
+  origin: 'base_retrieval' | 'neighbor_added';
+  isNeighborChunk: boolean;
+  neighborType: 'none' | 'top_chunk_adjacent' | 'page_neighbor' | 'neighbor_unknown';
+  neighborOfChunkId?: string;
+  neighborRelation?: 'above' | 'below';
+}
+
 export class ChatPipeline {
   private indexedDBServices = getIndexedDBServices();
 
@@ -671,6 +679,139 @@ export class ChatPipeline {
     return null;
   }
 
+  private classifyRetrievedChunkForDebug(
+    result: VectorSearchResult,
+    baseChunkIds: Set<string>,
+    topBaseResult: VectorSearchResult | null,
+    basePagesByDocument: Map<string, Array<{ chunkId: string; page: number; similarity: number }>>
+  ): RetrievedChunkDebugInfo {
+    if (baseChunkIds.has(result.chunk.id)) {
+      return {
+        origin: 'base_retrieval',
+        isNeighborChunk: false,
+        neighborType: 'none'
+      };
+    }
+
+    if (topBaseResult && result.document.id === topBaseResult.document.id) {
+      const topChunkIndex = this.getEffectiveChunkIndex(topBaseResult.chunk);
+      const candidateChunkIndex = this.getEffectiveChunkIndex(result.chunk);
+      if (
+        topChunkIndex !== null &&
+        candidateChunkIndex !== null &&
+        Math.abs(candidateChunkIndex - topChunkIndex) === 1
+      ) {
+        return {
+          origin: 'neighbor_added',
+          isNeighborChunk: true,
+          neighborType: 'top_chunk_adjacent',
+          neighborOfChunkId: topBaseResult.chunk.id,
+          neighborRelation: candidateChunkIndex < topChunkIndex ? 'above' : 'below'
+        };
+      }
+    }
+
+    const candidatePage = this.getChunkPageNumber(result.chunk);
+    if (candidatePage !== null) {
+      const basePageEntries = basePagesByDocument.get(result.document.id) || [];
+      const adjacentBasePages = basePageEntries
+        .filter((entry) => Math.abs(entry.page - candidatePage) === 1)
+        .sort((a, b) => b.similarity - a.similarity);
+
+      if (adjacentBasePages.length > 0) {
+        const bestNeighbor = adjacentBasePages[0];
+        return {
+          origin: 'neighbor_added',
+          isNeighborChunk: true,
+          neighborType: 'page_neighbor',
+          neighborOfChunkId: bestNeighbor.chunkId,
+          neighborRelation: candidatePage < bestNeighbor.page ? 'above' : 'below'
+        };
+      }
+    }
+
+    return {
+      origin: 'neighbor_added',
+      isNeighborChunk: true,
+      neighborType: 'neighbor_unknown'
+    };
+  }
+
+  private logRetrievedChunkDetails(
+    searchResults: VectorSearchResult[],
+    baseSearchResults: VectorSearchResult[]
+  ): void {
+    if (searchResults.length === 0) {
+      console.log('[RETRIEVAL CHUNK DEBUG] No chunks were fed to the model.');
+      return;
+    }
+
+    const baseChunkIds = new Set(baseSearchResults.map((result) => result.chunk.id));
+    const topBaseResult = baseSearchResults.length > 0
+      ? baseSearchResults.reduce((best, current) => (current.similarity > best.similarity ? current : best))
+      : null;
+    const basePagesByDocument = new Map<string, Array<{ chunkId: string; page: number; similarity: number }>>();
+
+    for (const baseResult of baseSearchResults) {
+      const page = this.getChunkPageNumber(baseResult.chunk);
+      if (page === null) continue;
+      const current = basePagesByDocument.get(baseResult.document.id) || [];
+      current.push({
+        chunkId: baseResult.chunk.id,
+        page,
+        similarity: baseResult.similarity
+      });
+      basePagesByDocument.set(baseResult.document.id, current);
+    }
+
+    const rankedResults = [...searchResults].sort((a, b) => b.similarity - a.similarity);
+    const chunkNumberById = new Map<string, number>(
+      rankedResults.map((result, index) => [result.chunk.id, index + 1])
+    );
+
+    console.log('\n=== RETRIEVAL CHUNK DEBUG START ===');
+    console.log('[MODEL INPUT SUMMARY]', {
+      totalChunksFedToModel: searchResults.length,
+      baseRetrievedChunks: baseSearchResults.length,
+      neighborChunksAdded: Math.max(0, searchResults.length - baseSearchResults.length),
+      sortedBySimilarityForDebugView: true
+    });
+
+    console.log('\n=== RETRIEVAL CHUNK CONTENT START ===');
+    rankedResults.forEach((result, index) => {
+      const rank = index + 1;
+      const modelInputOrder = searchResults.findIndex((item) => item.chunk.id === result.chunk.id) + 1;
+      const debugInfo = this.classifyRetrievedChunkForDebug(
+        result,
+        baseChunkIds,
+        topBaseResult,
+        basePagesByDocument
+      );
+      const chunkPage = this.getChunkPageNumber(result.chunk);
+      const rawChunkContent = result.chunk.content || '';
+      const chunkContentParagraph = rawChunkContent.replace(/\s+/g, ' ').trim();
+      const neighborChunkNumber = debugInfo.neighborOfChunkId
+        ? chunkNumberById.get(debugInfo.neighborOfChunkId)
+        : undefined;
+
+      console.log('--------------------------------------------------');
+      if (debugInfo.isNeighborChunk) {
+        const neighborOffset = debugInfo.neighborRelation === 'above' ? '-1' : '+1';
+        const neighborChunkLabel = neighborChunkNumber ? `Chunk ${neighborChunkNumber}` : 'Chunk ?';
+        console.log(`${neighborOffset} Neighbor chunk ${neighborChunkLabel} | Similarity score: ${result.similarity.toFixed(3)}`);
+      } else {
+        console.log(`Chunk ${rank} | Similarity score: ${result.similarity.toFixed(3)}`);
+      }
+      console.log(`Page: ${chunkPage ?? 'N/A'} | Document title: ${result.document.title}`);
+      console.log('Content:');
+      console.log(chunkContentParagraph);
+    });
+    console.log('--------------------------------------------------');
+    console.log('=== RETRIEVAL CHUNK CONTENT END ===');
+
+    console.log('=== RETRIEVAL CHUNK DEBUG END ===\n');
+  }
+
   private includeNeighborPageChunks(
     baseResults: VectorSearchResult[],
     sessionEmbeddings: EmbeddingChunk[],
@@ -1245,6 +1386,7 @@ ${normalizedOriginal}
           searchResults = fallbackResults;
         }
       }
+      const baseSearchResults = [...searchResults];
 
       // Neighbor-page inclusion: include page N-1 / N+1 chunks to preserve section continuity.
       searchResults = this.includeNeighborPageChunks(searchResults, embeddings, queryEmbedding, 0.6);
@@ -1258,22 +1400,6 @@ ${normalizedOriginal}
       if (onStreamEvent) {
         onStreamEvent({ type: 'status', message: 'Response Generation' });
       }
-
-      // Log detailed search results for debugging
-      console.log('[SEARCH RESULTS DETAIL]', 'Detailed search results:');
-      searchResults.forEach((result, index) => {
-        console.log(`[SEARCH RESULT ${index}]`, {
-          chunkId: result.chunk.id,
-          documentTitle: result.document.title,
-          similarity: result.similarity,
-          chunkPage: result.chunk.page,
-          metadataPageNumber: result.chunk.metadata?.pageNumber,
-          isCombined: result.chunk.metadata?.isCombined,
-          originalChunkCount: result.chunk.metadata?.originalChunkCount,
-          combinedChunkIds: result.chunk.metadata?.combinedChunkIds,
-          contentPreview: result.chunk.content.substring(0, 150) + '...'
-        });
-      });
 
       // Build context from search results
       console.log('[CONTEXT BUILDING]', 'Constructing context from search results...');
@@ -1291,6 +1417,9 @@ ${normalizedOriginal}
         searchResults,
         onStreamEvent
       );
+
+      // Log exact chunk content passed to the model at the end of the pipeline.
+      this.logRetrievedChunkDetails(searchResults, baseSearchResults);
 
       console.log('=== CHAT PIPELINE PROCESS END ===\n');
 
