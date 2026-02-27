@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react'; // Added useMemo
+import React, { useMemo, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
@@ -21,6 +21,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(({
   className,
 }) => {
   const isUser = message.role === 'user';
+  const [isCopied, setIsCopied] = useState(false);
   
   // 2. Memoize the content processing so it only runs when content/citations change
   const processedContent = useMemo(() => {
@@ -52,6 +53,20 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(({
     
     return processed;
   }, [message.content, message.citations, isUser]);
+
+  const handleCopyResponse = async () => {
+    if (isUser || !processedContent || isStreaming) {
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(processedContent);
+      setIsCopied(true);
+      window.setTimeout(() => setIsCopied(false), 1800);
+    } catch (error) {
+      console.error('Failed to copy response:', error);
+    }
+  };
 
   // 3. REMOVED: All IndentationAnalyzer calls and console.logs
   // These were running heavy regex on every render, causing the lag.
@@ -214,6 +229,27 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(({
           {/* Citations */}
           {message.citations && message.citations.length > 0 && !isUser && (
             <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700">
+              <div className="mb-2">
+                <button
+                  type="button"
+                  onClick={handleCopyResponse}
+                  disabled={isStreaming}
+                  className="inline-flex items-center gap-2 rounded-md border border-gray-200 dark:border-gray-700 px-2.5 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+                  aria-label="Copy response"
+                >
+                  <svg
+                    className="w-3.5 h-3.5"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                  >
+                    <rect x="9" y="9" width="13" height="13" rx="2" />
+                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                  </svg>
+                  <span>{isCopied ? 'Copied' : 'Copy response'}</span>
+                </button>
+              </div>
               <CitationPanel citations={message.citations} />
             </div>
           )}
