@@ -1353,6 +1353,10 @@ export class CitationService {
 
     for (const originalLine of lines) {
       const trimmed = originalLine.trim();
+      if (/^-\s*not found in provided sources\.?$/i.test(trimmed)) {
+        taggedLines.push(originalLine);
+        continue;
+      }
       if (trimmed.length < 40) {
         taggedLines.push(originalLine);
         continue;

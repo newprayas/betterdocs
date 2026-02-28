@@ -4,6 +4,15 @@ import { groqService } from '../groq/groqService';
 import { vectorSearchService } from './vectorSearch';
 import { documentProcessor } from './documentProcessor';
 import { citationService } from './citationService';
+import { classifyQueryIntent, type QueryIntent } from './queryIntent';
+import {
+  applyAnswerContract,
+  buildContractFallbackResponse,
+  buildContractPromptInstructions,
+  getAnswerContract,
+  type AnswerContract,
+} from './answerContract';
+import { postProcessRetrievalResults } from './retrievalPostprocess';
 import { MessageSender, type MessageCreate, type Message } from '@/types';
 import type { Document, RouteIndexRecord } from '@/types';
 import type { ChatStreamEvent } from '../gemini/chatService';
@@ -34,6 +43,14 @@ interface RetrievedChunkDebugInfo {
   neighborType: 'none' | 'top_chunk_adjacent' | 'page_neighbor' | 'neighbor_unknown';
   neighborOfChunkId?: string;
   neighborRelation?: 'above' | 'below';
+}
+
+interface SimplifiedGenerationMetrics {
+  postprocessMs: number;
+  contractPassBeforeFix: boolean;
+  contractPassAfterFix: boolean;
+  hadNumberingFix: boolean;
+  hadMissingSectionFill: boolean;
 }
 
 export class ChatPipeline {
@@ -1240,6 +1257,12 @@ ${normalizedOriginal}
     userMessage?: MessageCreate
   ): Promise<void> {
     try {
+      const pipelineStartMs = Date.now();
+      let rewriteMs = 0;
+      let retrievalMs = 0;
+      let generationMs = 0;
+      let postprocessMs = 0;
+
       console.log('\n=== CHAT PIPELINE PROCESS START ===');
       console.log('[USER INPUT]', `Session: ${sessionId}, Query: "${content}"`);
 
@@ -1272,7 +1295,13 @@ ${normalizedOriginal}
       // 2. GENERATE STANDALONE QUERY (NEW STEP)
       // This converts "What are its causes?" -> "What are the causes of cataract?"
       console.log('[REWRITING]', 'Generating standalone query...');
+      const rewriteStartMs = Date.now();
       const standaloneQuery = await this.generateStandaloneQuery(content, history);
+      rewriteMs = Date.now() - rewriteStartMs;
+      const queryIntent = classifyQueryIntent(standaloneQuery);
+      const answerContract = getAnswerContract(queryIntent);
+      const contractInstruction = buildContractPromptInstructions(answerContract);
+      console.log('[INTENT DETECTED]', queryIntent);
 
       // 🔴 PROMINENT LOG: Show the converted query for tracking
       console.log('🔴 Converted query -:', `"${standaloneQuery}"`);
@@ -1319,6 +1348,7 @@ ${normalizedOriginal}
       }
 
       // 4. GENERATE EMBEDDING USING THE REWRITTEN QUERY
+      const retrievalStartMs = Date.now();
       console.log('[EMBEDDING GENERATION]', 'Creating vector embedding for enhanced query...');
       const queryEmbedding = await embeddingService.generateEmbedding(retrievalQuery);
       console.log('[EMBEDDING GENERATED]', `Vector created with ${queryEmbedding.length} dimensions`);
@@ -1392,6 +1422,16 @@ ${normalizedOriginal}
       searchResults = this.includeNeighborPageChunks(searchResults, embeddings, queryEmbedding, 0.6);
       // Top-chunk continuity: include above/below chunks for the highest-similarity hit when slots remain.
       searchResults = this.includeTopChunkAdjacentChunks(searchResults, embeddings, queryEmbedding, 0.4, 12);
+      const retrievalPostprocess = postProcessRetrievalResults(searchResults, { maxResults: 12 });
+      searchResults = retrievalPostprocess.results;
+      retrievalMs = Date.now() - retrievalStartMs;
+
+      console.log('[RETRIEVAL QUALITY METRICS]', {
+        dedup_removed_count: retrievalPostprocess.telemetry.dedupRemovedCount,
+        near_duplicate_removed_count: retrievalPostprocess.telemetry.nearDuplicateRemovedCount,
+        diversity_removed_count: retrievalPostprocess.telemetry.diversityRemovedCount,
+        source_mix_distribution: retrievalPostprocess.telemetry.sourceMixDistribution,
+      });
 
       console.log('[SEARCH RESULTS]', `${searchResults.length} relevant chunks found`);
       console.log('✅ CHUNKS USED =', searchResults.length);
@@ -1410,16 +1450,36 @@ ${normalizedOriginal}
       // IMPORTANT: The final LLM call (generateSimplifiedContextualResponse)
       // should use the standalone query for better context understanding
 
-      await this.generateSimplifiedContextualResponse(
+      const generationStartMs = Date.now();
+      const generationMetrics = await this.generateSimplifiedContextualResponse(
         sessionId,
         standaloneQuery, // Use the rewritten query instead of original content
-        this.buildContext(searchResults),
+        context,
         searchResults,
+        answerContract,
+        contractInstruction,
+        queryIntent,
         onStreamEvent
       );
+      generationMs = Date.now() - generationStartMs;
+      postprocessMs = generationMetrics?.postprocessMs ?? 0;
 
       // Log exact chunk content passed to the model at the end of the pipeline.
       this.logRetrievedChunkDetails(searchResults, baseSearchResults);
+      console.log('[QUALITY METRICS]', {
+        intent_detected: queryIntent,
+        contract_pass_before_fix: generationMetrics?.contractPassBeforeFix ?? true,
+        contract_pass_after_fix: generationMetrics?.contractPassAfterFix ?? true,
+        had_numbering_fix: generationMetrics?.hadNumberingFix ?? false,
+        had_missing_section_fill: generationMetrics?.hadMissingSectionFill ?? false,
+      });
+      console.log('[LATENCY BREAKDOWN]', {
+        rewrite_ms: rewriteMs,
+        retrieval_ms: retrievalMs,
+        generation_ms: generationMs,
+        postprocess_ms: postprocessMs,
+        total_ms: Date.now() - pipelineStartMs,
+      });
 
       console.log('=== CHAT PIPELINE PROCESS END ===\n');
 
@@ -1569,8 +1629,11 @@ ${normalizedOriginal}
     content: string,
     context: string,
     searchResults: any[],
+    answerContract: AnswerContract,
+    contractInstruction: string,
+    queryIntent: QueryIntent,
     onStreamEvent?: (event: ChatStreamEvent) => void
-  ): Promise<void> {
+  ): Promise<SimplifiedGenerationMetrics | null> {
     console.log('\n=== SIMPLIFIED CONTEXTUAL RESPONSE MODE (WITH RAG) ===');
     console.log('[SIMPLIFIED RAG MODE]', 'Generating response with simplified page-based citations');
     console.log('[SIMPLIFIED CONTEXT]', `Providing ${searchResults.length} context sources to LLM`);
@@ -1581,7 +1644,7 @@ ${normalizedOriginal}
     if (!session) {
       throw new Error('Session not found');
     }
-    const systemPrompt = this.getSimplifiedSystemPrompt(searchResults);
+    const systemPrompt = this.getSimplifiedSystemPrompt(searchResults, contractInstruction);
     console.log('[SIMPLIFIED SYSTEM PROMPT]', 'Using default simplified system prompt');
 
     const settings = await this.indexedDBServices.settingsService.getSettings(session.userId);
@@ -1601,18 +1664,25 @@ ${normalizedOriginal}
     ).join('\n');
 
     const groqPrompt = `
-      Context from documents:
-      ---
+      <CONTEXT_SOURCES>
       ${context}
-      ---
-      
+      </CONTEXT_SOURCES>
+
+      Answer Intent: ${queryIntent}
+
       Conversation History:
       ${recentMessages}
-      
+
       New Question: ${content}
     `;
 
     try {
+      let postprocessMs = 0;
+      let contractPassBeforeFix = true;
+      let contractPassAfterFix = true;
+      let hadNumberingFix = false;
+      let hadMissingSectionFill = false;
+
       const cappedTemperature = Math.min(settings?.temperature ?? 0.7, 0.2);
       const maxTokens = settings?.maxTokens || 2048;
 
@@ -1631,7 +1701,15 @@ ${normalizedOriginal}
 
       console.log('[SIMPLIFIED RESPONSE COMPLETE]', `Generated ${fullResponse.length} characters`);
 
-      let responseForCitation = fullResponse.trim();
+      const firstContractStartMs = Date.now();
+      const firstContractPass = applyAnswerContract(fullResponse.trim(), answerContract);
+      postprocessMs += Date.now() - firstContractStartMs;
+      contractPassBeforeFix = firstContractPass.passBeforeFix;
+      contractPassAfterFix = firstContractPass.passAfterFix;
+      hadNumberingFix = firstContractPass.hadNumberingFix;
+      hadMissingSectionFill = firstContractPass.hadMissingSectionFill;
+
+      let responseForCitation = firstContractPass.content;
       const firstPassRateLimitNotice = this.extractRateLimitNotice(responseForCitation);
       if (firstPassRateLimitNotice) {
         console.warn('[RATE LIMIT SURFACE]', 'Returning rate-limit notice directly (skipping citation pipeline).');
@@ -1652,7 +1730,13 @@ ${normalizedOriginal}
         }
 
         console.log('=== SIMPLIFIED CONTEXTUAL RESPONSE MODE END ===\n');
-        return;
+        return {
+          postprocessMs,
+          contractPassBeforeFix,
+          contractPassAfterFix,
+          hadNumberingFix,
+          hadMissingSectionFill,
+        };
       }
 
       let isNoEvidenceResponse = this.isInsufficientEvidenceResponse(responseForCitation);
@@ -1668,15 +1752,16 @@ ${normalizedOriginal}
 
         let retryResponse = '';
         const retryPrompt = `
-Context from documents:
----
+<CONTEXT_SOURCES>
 ${context}
----
+</CONTEXT_SOURCES>
 
 Conversation History:
 ${recentMessages}
 
 New Question: ${content}
+
+Answer Intent: ${queryIntent}
 
 IMPORTANT RETRY RULES:
 - Regenerate the answer using ONLY the context above.
@@ -1684,6 +1769,9 @@ IMPORTANT RETRY RULES:
 - Do NOT use "Citation:" labels. Use inline [n] markers only.
 - If a point cannot be supported by context, do not include that point.
 - Keep output well formatted with short headings and bullets.
+- No horizontal rules (\`---\`) and no skipped numbering.
+- Follow this contract exactly:
+${contractInstruction}
 `.trim();
 
         await groqService.generateStreamingResponse(
@@ -1702,7 +1790,15 @@ IMPORTANT RETRY RULES:
         console.log('[CITATION RETRY COMPLETE]', `Generated ${retryResponse.length} characters`);
 
         if (retryResponse.trim()) {
-          responseForCitation = retryResponse.trim();
+          const retryContractStartMs = Date.now();
+          const retryContractPass = applyAnswerContract(retryResponse.trim(), answerContract);
+          postprocessMs += Date.now() - retryContractStartMs;
+          contractPassBeforeFix = retryContractPass.passBeforeFix;
+          contractPassAfterFix = retryContractPass.passAfterFix;
+          hadNumberingFix = hadNumberingFix || retryContractPass.hadNumberingFix;
+          hadMissingSectionFill = hadMissingSectionFill || retryContractPass.hadMissingSectionFill;
+
+          responseForCitation = retryContractPass.content;
           const retryRateLimitNotice = this.extractRateLimitNotice(responseForCitation);
           if (retryRateLimitNotice) {
             console.warn('[RATE LIMIT SURFACE]', 'Retry hit rate limit. Returning rate-limit notice directly.');
@@ -1723,7 +1819,13 @@ IMPORTANT RETRY RULES:
             }
 
             console.log('=== SIMPLIFIED CONTEXTUAL RESPONSE MODE END ===\n');
-            return;
+            return {
+              postprocessMs,
+              contractPassBeforeFix,
+              contractPassAfterFix,
+              hadNumberingFix,
+              hadMissingSectionFill,
+            };
           }
 
           isNoEvidenceResponse = this.isInsufficientEvidenceResponse(responseForCitation);
@@ -1753,7 +1855,10 @@ IMPORTANT RETRY RULES:
 
       if (!isNoEvidenceResponse && (citationMetadata.length === 0 || !this.hasInlineCitations(responseForCitationConsistency))) {
         console.warn('[STRICT CITATION MODE]', 'No explicit verifiable citations found after validation. Returning grounded insufficiency response.');
-        responseForCitationConsistency = 'I cannot provide a fully grounded answer from the provided documents because explicit, verifiable citations were not found.';
+        responseForCitationConsistency = buildContractFallbackResponse(
+          answerContract,
+          'I cannot provide a fully grounded answer from the provided documents because explicit, verifiable citations were not found.'
+        );
         citationMetadata = [];
       }
 
@@ -1784,6 +1889,14 @@ IMPORTANT RETRY RULES:
           citations: consistentCitationOutput.citations
         });
       }
+
+      return {
+        postprocessMs,
+        contractPassBeforeFix,
+        contractPassAfterFix,
+        hadNumberingFix,
+        hadMissingSectionFill,
+      };
     } catch (error) {
       console.error('[SIMPLIFIED RAG MODE ERROR]', 'Inference provider error:', error);
       if (onStreamEvent) {
@@ -1795,12 +1908,13 @@ IMPORTANT RETRY RULES:
     }
 
     console.log('=== SIMPLIFIED CONTEXTUAL RESPONSE MODE END ===\n');
+    return null;
   }
 
   /**
    * Get simplified system prompt for page-based citation system
    */
-  private getSimplifiedSystemPrompt(searchResults?: any[]): string {
+  private getSimplifiedSystemPrompt(searchResults?: any[], contractInstruction?: string): string {
     const availableSources = searchResults?.length || 0;
 
     return `You are a medical RAG assistant.
@@ -1820,6 +1934,10 @@ Output format requirements:
 - Use section headers plus bullet points only.
 - Do not use long plain paragraphs.
 - Keep each section focused and scannable.
+- Do NOT use horizontal separators like ---.
+- Do NOT skip numbering in ordered lists.
+- Do NOT leave empty section headers.
+- If a required section is not present in sources, keep the section and write: "Not found in provided sources."
 
 Coverage requirements:
 - Do NOT summarize when the source contains detailed points.
@@ -1834,6 +1952,8 @@ Medical shorthand:
 - dx => diagnosis
 - inv => investigations
 - "clinical features" => history + examination (not investigations)
+
+${contractInstruction ? `\n${contractInstruction}\n` : ''}
 
 Goal: accurate, full-detail, source-grounded answer with correct citations.`;
   }
@@ -1902,13 +2022,15 @@ Goal: accurate, full-detail, source-grounded answer with correct citations.`;
         originalChunkCount: chunk.metadata?.originalChunkCount
       });
 
-      contextParts.push(`[${i + 1}] ${document.title}${pageInfo}${similarityScore}`);
+      contextParts.push(`<SOURCE ${i + 1}>`);
+      contextParts.push(`Source ID: [${i + 1}]`);
+      contextParts.push(`Document: ${document.title}${pageInfo}${similarityScore}`);
       contextParts.push(`Preview: ${contentPreview}`);
       contextParts.push('');
-      contextParts.push(`Full Content:`);
+      contextParts.push('Full Content:');
       contextParts.push(chunk.content.trim());
       contextParts.push('');
-      contextParts.push('---');
+      contextParts.push(`</SOURCE>`);
       contextParts.push('');
     }
 

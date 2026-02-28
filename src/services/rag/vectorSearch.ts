@@ -2,6 +2,7 @@ import type { EmbeddingChunk, VectorSearchResult } from '@/types/embedding';
 import type { PageGroup } from '@/types/citation';
 import { getIndexedDBServices } from '../indexedDB';
 import { cosineSimilarity, calculateVectorNorm } from '@/utils/vectorUtils';
+import { postProcessRetrievalResults } from './retrievalPostprocess';
 
 export class VectorSearchService {
   private embeddingService = getIndexedDBServices().embeddingService;
@@ -456,9 +457,13 @@ export class VectorSearchService {
       });
 
       // Sort and return top results
-      return Array.from(combinedResults.values())
+      const rankedResults = Array.from(combinedResults.values())
         .sort((a, b) => b.similarity - a.similarity)
         .slice(0, maxResults);
+
+      const postProcessed = postProcessRetrievalResults(rankedResults, { maxResults });
+      console.log('[RETRIEVAL POSTPROCESS][HYBRID]', postProcessed.telemetry);
+      return postProcessed.results;
     } catch (error) {
       console.error('Error in hybrid search:', error);
       throw new Error('Failed to perform hybrid search');
@@ -700,8 +705,9 @@ export class VectorSearchService {
         finalVectorWeight,
         finalTextWeight
       );
-
-      return combinedResults.slice(0, maxResults);
+      const postProcessed = postProcessRetrievalResults(combinedResults, { maxResults });
+      console.log('[RETRIEVAL POSTPROCESS][HYBRID_ENHANCED]', postProcessed.telemetry);
+      return postProcessed.results;
     } catch (error) {
       console.error('Error in enhanced hybrid search:', error);
       throw new Error('Failed to perform enhanced hybrid search');
