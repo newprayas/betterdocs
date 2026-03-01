@@ -1,4 +1,5 @@
 const CEREBRAS_BASE_URL = 'https://api.cerebras.ai/v1';
+const GROQ_BASE_URL = 'https://api.groq.com/openai/v1';
 const DEFAULT_MODEL = 'gpt-oss-120b';
 
 type ChatMessage = {
@@ -26,10 +27,14 @@ export class GroqService {
   private apiKey: string = '';
   private envApiKeys: string[] = [];
   private keyRotationIndex: number = 0;
+  private groqEnvApiKeys: string[] = [];
+  private groqKeyRotationIndex: number = 0;
 
   constructor() {
     this.envApiKeys = this.loadEnvApiKeys();
+    this.groqEnvApiKeys = this.loadGroqEnvApiKeys();
     console.log('[CEREBRAS SERVICE]', `Loaded ${this.envApiKeys.length} env API key(s)`);
+    console.log('[GROQ SERVICE]', `Loaded ${this.groqEnvApiKeys.length} env API key(s)`);
   }
 
   private loadEnvApiKeys(): string[] {
@@ -42,6 +47,23 @@ export class GroqService {
       process.env.NEXT_PUBLIC_CEREBRAS_API_4,
       process.env.NEXT_PUBLIC_CEREBRAS_API_5,
       process.env.NEXT_PUBLIC_CEREBRAS_API_6,
+    ];
+
+    return explicitKeys
+      .map((k) => String(k || '').trim())
+      .filter((k) => k.length > 0);
+  }
+
+  private loadGroqEnvApiKeys(): string[] {
+    // Important: in Next.js client bundles, dynamic process.env[key] access can fail in production.
+    // Use explicit env references so values are statically inlined at build time.
+    const explicitKeys = [
+      process.env.NEXT_PUBLIC_GROQ_API_1,
+      process.env.NEXT_PUBLIC_GROQ_API_2,
+      process.env.NEXT_PUBLIC_GROQ_API_3,
+      process.env.NEXT_PUBLIC_GROQ_API_4,
+      process.env.NEXT_PUBLIC_GROQ_API_5,
+      process.env.NEXT_PUBLIC_GROQ_API_6,
     ];
 
     return explicitKeys
@@ -70,6 +92,23 @@ export class GroqService {
     return key;
   }
 
+  private getAllAvailableGroqKeys(): string[] {
+    if (this.groqEnvApiKeys.length > 0) {
+      return this.groqEnvApiKeys.filter((k, idx, arr) => arr.indexOf(k) === idx);
+    }
+    return [];
+  }
+
+  private getNextGroqApiKey(): string {
+    const keys = this.getAllAvailableGroqKeys();
+    if (keys.length === 0) {
+      throw new Error('Groq service has no env keys configured');
+    }
+    const key = keys[this.groqKeyRotationIndex % keys.length];
+    this.groqKeyRotationIndex = (this.groqKeyRotationIndex + 1) % Math.max(keys.length, 1);
+    return key;
+  }
+
   initialize(apiKey: string) {
     // Optional manual key (legacy settings path). Env keys remain primary and are rotated.
     if (!apiKey || apiKey === this.apiKey) return;
@@ -87,6 +126,10 @@ export class GroqService {
 
   private isRateLimitStatus(status: number): boolean {
     return status === 429;
+  }
+
+  private isRetriableStatus(status: number): boolean {
+    return status === 429 || (status >= 500 && status < 600);
   }
 
   private extractWaitTime(message: string): number {
@@ -213,6 +256,56 @@ export class GroqService {
     }
   }
 
+  async generateResponseWithGroq(
+    prompt: string,
+    systemPrompt?: string,
+    model?: string,
+    options?: { temperature?: number; maxTokens?: number }
+  ): Promise<string> {
+    const keys = this.getAllAvailableGroqKeys();
+    if (keys.length === 0) {
+      throw new Error('Groq service has no env keys configured');
+    }
+
+    const modelToUse = this.getModel(model);
+    console.log('[GROQ SERVICE]', 'Generating response with model:', modelToUse);
+
+    try {
+      const response = await fetch(`${GROQ_BASE_URL}/chat/completions`, {
+        method: 'POST',
+        headers: this.buildHeaders(this.getNextGroqApiKey()),
+        body: JSON.stringify({
+          model: modelToUse,
+          stream: false,
+          messages: this.buildMessages(prompt, systemPrompt),
+          temperature: options?.temperature ?? 0.7,
+          max_tokens: options?.maxTokens ?? 4096,
+          top_p: 1,
+        }),
+      });
+
+      if (!response.ok) {
+        const errMessage = await this.parseErrorBody(response);
+        console.error('[GROQ SERVICE ERROR]', errMessage);
+
+        if (this.isRateLimitStatus(response.status)) {
+          const waitTime = this.extractWaitTime(errMessage);
+          return `⚠️ You are asking too many questions too fast. Please wait for ${waitTime} seconds before asking again.`;
+        }
+        throw new Error(errMessage);
+      }
+
+      const completion = (await response.json()) as CerebrasChatResponse;
+      return completion.choices?.[0]?.message?.content || '';
+    } catch (error) {
+      if (error instanceof Error && /429|rate limit/i.test(error.message)) {
+        const waitTime = this.extractWaitTime(error.message);
+        return `⚠️ You are asking too many questions too fast. Please wait for ${waitTime} seconds before asking again.`;
+      }
+      throw error;
+    }
+  }
+
   async generateStreamingResponse(
     prompt: string,
     systemPrompt?: string,
@@ -221,6 +314,8 @@ export class GroqService {
       temperature?: number;
       maxTokens?: number;
       onChunk?: (chunk: string) => void;
+      maxFailoverRetries?: number;
+      retryBackoffMs?: number;
     }
   ): Promise<void> {
     if (!this.isInitialized()) {
@@ -229,70 +324,102 @@ export class GroqService {
 
     const modelToUse = this.getModel(model);
     console.log('[CEREBRAS SERVICE]', 'Generating streaming response with model:', modelToUse);
+    const maxFailoverRetries = Math.max(0, options?.maxFailoverRetries ?? 0);
+    const retryBackoffMs = Math.max(0, options?.retryBackoffMs ?? 250);
 
-    const response = await fetch(`${CEREBRAS_BASE_URL}/chat/completions`, {
-      method: 'POST',
-      headers: this.buildHeaders(this.getNextApiKey()),
-      body: JSON.stringify({
-        model: modelToUse,
-        stream: true,
-        messages: this.buildMessages(prompt, systemPrompt),
-        temperature: options?.temperature ?? 0.7,
-        max_tokens: options?.maxTokens ?? 4096,
-        top_p: 1,
-      }),
-    });
+    let attempt = 0;
+    while (attempt <= maxFailoverRetries) {
+      const attemptNumber = attempt + 1;
+      let streamStarted = false;
 
-    if (!response.ok) {
-      const errMessage = await this.parseErrorBody(response);
-      console.error('[CEREBRAS SERVICE STREAM ERROR]', errMessage);
+      try {
+        const response = await fetch(`${CEREBRAS_BASE_URL}/chat/completions`, {
+          method: 'POST',
+          headers: this.buildHeaders(this.getNextApiKey()),
+          body: JSON.stringify({
+            model: modelToUse,
+            stream: true,
+            messages: this.buildMessages(prompt, systemPrompt),
+            temperature: options?.temperature ?? 0.7,
+            max_tokens: options?.maxTokens ?? 4096,
+            top_p: 1,
+          }),
+        });
 
-      if (this.isRateLimitStatus(response.status) && options?.onChunk) {
-        const waitTime = this.extractWaitTime(errMessage);
-        options.onChunk(`⚠️ You are asking too many questions too fast. Please wait for ${waitTime} seconds before asking again.`);
-        return;
-      }
-      throw new Error(errMessage);
-    }
+        if (!response.ok) {
+          const errMessage = await this.parseErrorBody(response);
+          const shouldRetry = this.isRetriableStatus(response.status) && attempt < maxFailoverRetries;
+          console.error('[CEREBRAS SERVICE STREAM ERROR]', `attempt=${attemptNumber} status=${response.status} message=${errMessage}`);
 
-    if (!response.body) {
-      throw new Error('Streaming response body is not available');
-    }
-
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder('utf-8');
-    let buffer = '';
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) {
-        break;
-      }
-
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
-
-      for (const rawLine of lines) {
-        const line = rawLine.trim();
-        if (!line || !line.startsWith('data:')) {
-          continue;
-        }
-
-        const data = line.slice(5).trim();
-        if (!data || data === '[DONE]') {
-          continue;
-        }
-
-        try {
-          const parsed = JSON.parse(data) as CerebrasChatResponse;
-          const content = parsed.choices?.[0]?.delta?.content || parsed.choices?.[0]?.message?.content || '';
-          if (content && options?.onChunk) {
-            options.onChunk(content);
+          if (shouldRetry) {
+            const delayMs = retryBackoffMs * attemptNumber;
+            console.warn('[CEREBRAS SERVICE STREAM RETRY]', `Retrying with next key in ${delayMs}ms`);
+            await new Promise((resolve) => setTimeout(resolve, delayMs));
+            attempt += 1;
+            continue;
           }
-        } catch {
-          // Ignore non-JSON SSE lines.
+
+          if (this.isRateLimitStatus(response.status) && options?.onChunk) {
+            const waitTime = this.extractWaitTime(errMessage);
+            options.onChunk(`⚠️ You are asking too many questions too fast. Please wait for ${waitTime} seconds before asking again.`);
+            return;
+          }
+          throw new Error(errMessage);
         }
+
+        if (!response.body) {
+          throw new Error('Streaming response body is not available');
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder('utf-8');
+        let buffer = '';
+        streamStarted = true;
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) {
+            break;
+          }
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          for (const rawLine of lines) {
+            const line = rawLine.trim();
+            if (!line || !line.startsWith('data:')) {
+              continue;
+            }
+
+            const data = line.slice(5).trim();
+            if (!data || data === '[DONE]') {
+              continue;
+            }
+
+            try {
+              const parsed = JSON.parse(data) as CerebrasChatResponse;
+              const content = parsed.choices?.[0]?.delta?.content || parsed.choices?.[0]?.message?.content || '';
+              if (content && options?.onChunk) {
+                options.onChunk(content);
+              }
+            } catch {
+              // Ignore non-JSON SSE lines.
+            }
+          }
+        }
+
+        return;
+      } catch (error) {
+        const canRetry = !streamStarted && attempt < maxFailoverRetries;
+        if (canRetry) {
+          const delayMs = retryBackoffMs * attemptNumber;
+          console.warn('[CEREBRAS SERVICE STREAM RETRY]', `attempt=${attemptNumber} error="${error instanceof Error ? error.message : String(error)}" next=${delayMs}ms`);
+          await new Promise((resolve) => setTimeout(resolve, delayMs));
+          attempt += 1;
+          continue;
+        }
+        throw error;
       }
     }
   }

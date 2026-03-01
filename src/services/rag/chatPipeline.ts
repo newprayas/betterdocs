@@ -1171,10 +1171,10 @@ ${normalizedOriginal}
     console.log('[QUERY REWRITER PROMPT][USER][PRIMARY]', prompt);
 
     try {
-      let rewrittenQuery = await groqService.generateResponse(
+      let rewrittenQuery = await groqService.generateResponseWithGroq(
         prompt,
         rewriterSystemPrompt,
-        'gpt-oss-120b',
+        'openai/gpt-oss-120b',
         {
           temperature: 0.2,
           maxTokens: 128,
@@ -1189,10 +1189,10 @@ ${normalizedOriginal}
         console.warn('[QUERY REWRITER]', 'Primary rewrite was empty. Retrying with strict prompt.');
         console.log('[QUERY REWRITER PROMPT][SYSTEM][STRICT]', rewriterSystemPromptStrict);
         console.log('[QUERY REWRITER PROMPT][USER][STRICT]', strictPrompt);
-        rewrittenQuery = await groqService.generateResponse(
+        rewrittenQuery = await groqService.generateResponseWithGroq(
           strictPrompt,
           rewriterSystemPromptStrict,
-          'gpt-oss-120b',
+          'openai/gpt-oss-120b',
           {
             temperature: 0,
             maxTokens: 128,
@@ -1204,11 +1204,11 @@ ${normalizedOriginal}
 
       // If gpt-oss still returns empty, use a backup model once.
       if (!cleanedQuery) {
-        console.warn('[QUERY REWRITER]', 'Strict rewrite was empty. Retrying with backup model llama3.1-8b.');
-        rewrittenQuery = await groqService.generateResponse(
+        console.warn('[QUERY REWRITER]', 'Strict rewrite was empty. Retrying with backup request on the same Groq model.');
+        rewrittenQuery = await groqService.generateResponseWithGroq(
           strictPrompt,
           rewriterSystemPromptStrict,
-          'llama3.1-8b',
+          'openai/gpt-oss-120b',
           {
             temperature: 0,
             maxTokens: 128,
@@ -1539,6 +1539,8 @@ ${normalizedOriginal}
       {
         temperature,
         maxTokens,
+        maxFailoverRetries: 2,
+        retryBackoffMs: 300,
         onChunk: (chunk: string) => {
           fullResponse += chunk;
         }
@@ -1612,6 +1614,8 @@ ${normalizedOriginal}
       {
         temperature: settings?.temperature || 0.7,
         maxTokens: settings?.maxTokens || 2048,
+        maxFailoverRetries: 2,
+        retryBackoffMs: 300,
         onChunk: (chunk: string) => {
           fullResponse += chunk;
         }
@@ -1693,6 +1697,8 @@ ${normalizedOriginal}
         {
           temperature: cappedTemperature,
           maxTokens,
+          maxFailoverRetries: 2,
+          retryBackoffMs: 300,
           onChunk: (chunk: string) => {
             fullResponse += chunk;
           }
@@ -1781,6 +1787,8 @@ ${contractInstruction}
           {
             temperature: 0.1,
             maxTokens,
+            maxFailoverRetries: 2,
+            retryBackoffMs: 300,
             onChunk: (chunk: string) => {
               retryResponse += chunk;
             }
