@@ -7,6 +7,9 @@ import { chatPipeline } from '../services/rag/chatPipeline';
 import { useSessionStore } from './sessionStore';
 import { userIdLogger } from '../utils/userIdDebugLogger';
 
+const PRELOAD_SESSION_TIMEOUT_MS = 4000;
+const PIPELINE_TIMEOUT_MS = 90000;
+
 // Helper function to get services (client-side only)
 const getMessageService = () => {
   if (typeof window !== 'undefined') {
@@ -14,6 +17,27 @@ const getMessageService = () => {
     return services.messageService;
   }
   return null;
+};
+
+const withTimeout = async <T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  timeoutMessage: string
+): Promise<T> => {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timer = setTimeout(() => {
+          reject(new Error(timeoutMessage));
+        }, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 };
 
 export const useChatStore = create<ChatStore>()(
@@ -101,7 +125,10 @@ export const useChatStore = create<ChatStore>()(
         preloadMessages: async (sessionIds: string[]) => {
           const { userId: currentUserId } = useSessionStore.getState();
           const messageService = getMessageService();
-          if (!messageService || !currentUserId) return;
+          if (!messageService || !currentUserId) {
+            set({ isPreloading: false, preloadingProgress: 0 });
+            return;
+          }
 
           // Filter out sessions that are already cached
           const { messageCache } = get();
@@ -124,7 +151,11 @@ export const useChatStore = create<ChatStore>()(
             const results = await Promise.all(
               sessionsToFetch.map(async (sessionId) => {
                 try {
-                  const messages = await messageService.getMessagesBySession(sessionId, currentUserId, 20);
+                  const messages = await withTimeout(
+                    messageService.getMessagesBySession(sessionId, currentUserId, 20),
+                    PRELOAD_SESSION_TIMEOUT_MS,
+                    `Preload timeout for session ${sessionId}`
+                  );
 
                   // Update progress
                   completedCount++;
@@ -163,6 +194,21 @@ export const useChatStore = create<ChatStore>()(
         sendMessage: async (sessionId: string, content: string) => {
           const { userId: currentUserId } = useSessionStore.getState();
           const operationId = userIdLogger.logOperationStart('ChatStore', 'sendMessage', currentUserId);
+          let isSettled = false;
+
+          const failPipeline = (message: string) => {
+            if (isSettled) return;
+            isSettled = true;
+            set({
+              error: message,
+              isStreaming: false,
+              streamingContent: '',
+              streamingCitations: [],
+              isReadingSources: false,
+              progressPercentage: 0,
+              currentProgressStep: '',
+            });
+          };
 
           const userMessage: Message = {
             id: crypto.randomUUID(),
@@ -201,41 +247,49 @@ export const useChatStore = create<ChatStore>()(
 
             // Update session timestamp to move it to the top
             const services = getIndexedDBServices();
-            await services.sessionService.updateSession(sessionId, { updatedAt: new Date() }, currentUserId || undefined);
+            services.sessionService
+              .updateSession(sessionId, { updatedAt: new Date() }, currentUserId || undefined)
+              .catch((error) => {
+                console.warn('[ChatStore] Non-blocking session timestamp update failed:', error);
+              });
 
             // Use the actual chat pipeline to generate response
             // Pass the already created userMessage to avoid duplication
-            await chatPipeline.sendMessage(
-              sessionId,
-              content,
-              (event) => {
-                if (event.type === 'status') {
-                  // Update progress based on status message
-                  console.log('Chat status:', event.message);
-                  const { setProgressState } = get();
+            await withTimeout(
+              chatPipeline.sendMessage(
+                sessionId,
+                content,
+                (event) => {
+                  if (isSettled) return;
 
-                  switch (event.message) {
-                    case 'Query Rewriting':
-                      setProgressState(25, 'Query Rewriting');
-                      break;
-                    case 'Embedding Generation':
-                      setProgressState(50, 'Embedding Generation');
-                      break;
-                    case 'Vector Search':
-                      setProgressState(75, 'Vector Search');
-                      break;
-                    case 'Response Generation':
-                      setProgressState(90, 'Response Generation');
-                      break;
-                    case 'Response Formatting':
-                      setProgressState(95, 'Response Formatting');
-                      break;
-                    default:
-                      // For other status messages, don't update progress
-                      break;
-                  }
-                } else if (event.type === 'done') {
-                  const { content: finalContent, citations: finalCitations } = event;
+                  if (event.type === 'status') {
+                    // Update progress based on status message
+                    console.log('Chat status:', event.message);
+                    const { setProgressState } = get();
+
+                    switch (event.message) {
+                      case 'Query Rewriting':
+                        setProgressState(25, 'Query Rewriting');
+                        break;
+                      case 'Embedding Generation':
+                        setProgressState(50, 'Embedding Generation');
+                        break;
+                      case 'Vector Search':
+                        setProgressState(75, 'Vector Search');
+                        break;
+                      case 'Response Generation':
+                        setProgressState(90, 'Response Generation');
+                        break;
+                      case 'Response Formatting':
+                        setProgressState(95, 'Response Formatting');
+                        break;
+                      default:
+                        // For other status messages, don't update progress
+                        break;
+                    }
+                  } else if (event.type === 'done') {
+                    isSettled = true;
+                    const { content: finalContent, citations: finalCitations } = event;
 
                   // Reload messages to get the final response
                   // Get session to verify ownership and get userId
@@ -332,27 +386,33 @@ export const useChatStore = create<ChatStore>()(
                       }
                     }
                   })();
-                } else if (event.type === 'error') {
-                  userIdLogger.logError('ChatStore.sendMessage (pipeline error)', event.message || 'Unknown error', currentUserId);
-                  set({
-                    error: event.message || 'Failed to generate response',
-                    isStreaming: false,
-                    streamingContent: '',
-                    streamingCitations: [],
-                    isReadingSources: false,
-                    progressPercentage: 0,
-                    currentProgressStep: '',
-                  });
-                }
-              },
-              userMessage // Pass the already created userMessage
+                  } else if (event.type === 'error') {
+                    isSettled = true;
+                    userIdLogger.logError('ChatStore.sendMessage (pipeline error)', event.message || 'Unknown error', currentUserId);
+                    set({
+                      error: event.message || 'Failed to generate response',
+                      isStreaming: false,
+                      streamingContent: '',
+                      streamingCitations: [],
+                      isReadingSources: false,
+                      progressPercentage: 0,
+                      currentProgressStep: '',
+                    });
+                  }
+                },
+                userMessage // Pass the already created userMessage
+              ),
+              PIPELINE_TIMEOUT_MS,
+              'Request timed out. Please try again.'
             );
+
+            // Defensive fallback: pipeline returned but never emitted done/error.
+            if (!isSettled) {
+              failPipeline('Request ended unexpectedly. Please try again.');
+            }
           } catch (error) {
             userIdLogger.logError('ChatStore.sendMessage', error instanceof Error ? error : String(error), currentUserId);
-            set({
-              error: error instanceof Error ? error.message : 'Failed to send message',
-              isStreaming: false,
-            });
+            failPipeline(error instanceof Error ? error.message : 'Failed to send message');
           }
         },
 

@@ -1,6 +1,9 @@
 const CEREBRAS_BASE_URL = 'https://api.cerebras.ai/v1';
 const GROQ_BASE_URL = 'https://api.groq.com/openai/v1';
 const DEFAULT_MODEL = 'gpt-oss-120b';
+const REQUEST_TIMEOUT_MS = 30000;
+const STREAM_CONNECT_TIMEOUT_MS = 30000;
+const STREAM_CHUNK_TIMEOUT_MS = 45000;
 
 type ChatMessage = {
   role: 'system' | 'user' | 'assistant';
@@ -179,9 +182,54 @@ export class GroqService {
     return messages;
   }
 
+  private isAbortError(error: unknown): boolean {
+    return error instanceof DOMException && error.name === 'AbortError';
+  }
+
+  private async fetchWithTimeout(
+    url: string,
+    init: RequestInit,
+    timeoutMs: number
+  ): Promise<Response> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      controller.abort();
+    }, timeoutMs);
+
+    try {
+      return await fetch(url, { ...init, signal: controller.signal });
+    } catch (error) {
+      if (this.isAbortError(error)) {
+        throw new Error(`Request timeout after ${timeoutMs}ms`);
+      }
+      throw error;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  private async readStreamChunkWithTimeout<T>(
+    readPromise: Promise<T>,
+    timeoutMs: number
+  ): Promise<T> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        readPromise,
+        new Promise<T>((_, reject) => {
+          timer = setTimeout(() => {
+            reject(new Error(`Stream stalled for ${timeoutMs}ms`));
+          }, timeoutMs);
+        }),
+      ]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+
   async validateApiKey(apiKey: string): Promise<boolean> {
     try {
-      const response = await fetch(`${CEREBRAS_BASE_URL}/chat/completions`, {
+      const response = await this.fetchWithTimeout(`${CEREBRAS_BASE_URL}/chat/completions`, {
         method: 'POST',
         headers: this.buildHeaders(apiKey),
         body: JSON.stringify({
@@ -192,7 +240,7 @@ export class GroqService {
           max_tokens: 1,
           top_p: 1,
         }),
-      });
+      }, REQUEST_TIMEOUT_MS);
 
       if (!response.ok) {
         const msg = await this.parseErrorBody(response);
@@ -221,7 +269,7 @@ export class GroqService {
     console.log('[CEREBRAS SERVICE]', 'Generating response with model:', modelToUse);
 
     try {
-      const response = await fetch(`${CEREBRAS_BASE_URL}/chat/completions`, {
+      const response = await this.fetchWithTimeout(`${CEREBRAS_BASE_URL}/chat/completions`, {
         method: 'POST',
         headers: this.buildHeaders(this.getNextApiKey()),
         body: JSON.stringify({
@@ -232,7 +280,7 @@ export class GroqService {
           max_tokens: options?.maxTokens ?? 4096,
           top_p: 1,
         }),
-      });
+      }, REQUEST_TIMEOUT_MS);
 
       if (!response.ok) {
         const errMessage = await this.parseErrorBody(response);
@@ -271,7 +319,7 @@ export class GroqService {
     console.log('[GROQ SERVICE]', 'Generating response with model:', modelToUse);
 
     try {
-      const response = await fetch(`${GROQ_BASE_URL}/chat/completions`, {
+      const response = await this.fetchWithTimeout(`${GROQ_BASE_URL}/chat/completions`, {
         method: 'POST',
         headers: this.buildHeaders(this.getNextGroqApiKey()),
         body: JSON.stringify({
@@ -282,7 +330,7 @@ export class GroqService {
           max_tokens: options?.maxTokens ?? 4096,
           top_p: 1,
         }),
-      });
+      }, REQUEST_TIMEOUT_MS);
 
       if (!response.ok) {
         const errMessage = await this.parseErrorBody(response);
@@ -333,7 +381,7 @@ export class GroqService {
       let streamStarted = false;
 
       try {
-        const response = await fetch(`${CEREBRAS_BASE_URL}/chat/completions`, {
+        const response = await this.fetchWithTimeout(`${CEREBRAS_BASE_URL}/chat/completions`, {
           method: 'POST',
           headers: this.buildHeaders(this.getNextApiKey()),
           body: JSON.stringify({
@@ -344,7 +392,7 @@ export class GroqService {
             max_tokens: options?.maxTokens ?? 4096,
             top_p: 1,
           }),
-        });
+        }, STREAM_CONNECT_TIMEOUT_MS);
 
         if (!response.ok) {
           const errMessage = await this.parseErrorBody(response);
@@ -377,7 +425,10 @@ export class GroqService {
         streamStarted = true;
 
         while (true) {
-          const { done, value } = await reader.read();
+          const { done, value } = await this.readStreamChunkWithTimeout(
+            reader.read(),
+            STREAM_CHUNK_TIMEOUT_MS
+          );
           if (done) {
             break;
           }

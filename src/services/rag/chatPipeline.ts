@@ -1485,6 +1485,7 @@ ${normalizedOriginal}
 
     } catch (error) {
       console.error('[PIPELINE ERROR]', 'Error in chat pipeline:', error);
+      const errorMessageText = error instanceof Error ? error.message : 'Failed to process message';
 
       // Save error message
       const errorMessage: MessageCreate = {
@@ -1493,9 +1494,22 @@ ${normalizedOriginal}
         role: MessageSender.ASSISTANT,
       };
 
-      await this.indexedDBServices.messageService.createMessage(errorMessage);
-      console.log('[ERROR HANDLED]', 'Error message saved to database');
+      try {
+        await this.indexedDBServices.messageService.createMessage(errorMessage);
+        console.log('[ERROR HANDLED]', 'Error message saved to database');
+      } catch (dbError) {
+        console.error('[PIPELINE ERROR]', 'Failed to persist pipeline error message:', dbError);
+      }
+
+      if (onStreamEvent) {
+        onStreamEvent({
+          type: 'error',
+          message: errorMessageText || 'Failed to process message'
+        });
+      }
+
       console.log('=== CHAT PIPELINE PROCESS END (WITH ERROR) ===\n');
+      throw (error instanceof Error ? error : new Error(errorMessageText));
     }
   }
 

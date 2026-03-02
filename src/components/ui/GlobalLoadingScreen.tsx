@@ -1,11 +1,13 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useSessionStore, useChatStore } from '../../store';
 
 interface GlobalLoadingScreenProps {
     minDisplayTime?: number; // Minimum time to show the screen in ms (default 1000)
 }
+
+const MAX_SPLASH_WAIT_MS = 5000;
 
 export const GlobalLoadingScreen: React.FC<GlobalLoadingScreenProps> = ({
     minDisplayTime = 1000
@@ -15,10 +17,46 @@ export const GlobalLoadingScreen: React.FC<GlobalLoadingScreenProps> = ({
 
     // Store state
     const { isLoading: isSessionLoading } = useSessionStore();
-    const { isPreloading, preloadingProgress, preloadMessages } = useChatStore();
-    const { sessions } = useSessionStore();
+    const { isPreloading, preloadingProgress } = useChatStore();
+    const minTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const hardTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-    // 1. Handle Visibility Change (App Resume) & Initial Mount
+    const clearSplashTimers = useCallback(() => {
+        if (minTimerRef.current) {
+            clearTimeout(minTimerRef.current);
+            minTimerRef.current = null;
+        }
+        if (hardTimeoutRef.current) {
+            clearTimeout(hardTimeoutRef.current);
+            hardTimeoutRef.current = null;
+        }
+    }, []);
+
+    // Helper to reset timer and show screen
+    const showSplashScreen = useCallback(() => {
+        clearSplashTimers();
+        setIsVisible(true);
+        setMinTimerExpired(false);
+
+        // Trigger preloading again on resume to ensure freshness
+        const topSessionIds = useSessionStore.getState().sessions.slice(0, 5).map(s => s.id);
+        if (topSessionIds.length > 0) {
+            useChatStore.getState().preloadMessages(topSessionIds);
+        }
+
+        minTimerRef.current = setTimeout(() => {
+            setMinTimerExpired(true);
+        }, minDisplayTime);
+
+        // Hard failsafe: never block the app behind splash forever.
+        hardTimeoutRef.current = setTimeout(() => {
+            console.warn('[GlobalLoading] Force closing splash due to timeout');
+            setProgress(100);
+            useChatStore.setState({ isPreloading: false });
+            setIsVisible(false);
+        }, Math.max(MAX_SPLASH_WAIT_MS, minDisplayTime + 2000));
+    }, [clearSplashTimers, minDisplayTime]);
+
     useEffect(() => {
         const handleVisibilityChange = () => {
             if (document.visibilityState === 'visible') {
@@ -31,25 +69,11 @@ export const GlobalLoadingScreen: React.FC<GlobalLoadingScreenProps> = ({
         showSplashScreen();
 
         document.addEventListener('visibilitychange', handleVisibilityChange);
-        return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-    }, []);
-
-    // Helper to reset timer and show screen
-    const showSplashScreen = () => {
-        setIsVisible(true);
-        setMinTimerExpired(false);
-
-        // Trigger preloading again on resume to ensure freshness
-        const topSessionIds = useSessionStore.getState().sessions.slice(0, 5).map(s => s.id);
-        if (topSessionIds.length > 0) {
-            useChatStore.getState().preloadMessages(topSessionIds);
-        }
-
-        // Start timer
-        setTimeout(() => {
-            setMinTimerExpired(true);
-        }, minDisplayTime);
-    };
+        return () => {
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
+            clearSplashTimers();
+        };
+    }, [clearSplashTimers, showSplashScreen]);
 
     /* Simulated Progress Logic */
     const [progress, setProgress] = useState(0);
@@ -92,11 +116,12 @@ export const GlobalLoadingScreen: React.FC<GlobalLoadingScreenProps> = ({
 
             // Small buffer to ensure smooth transition
             const timeout = setTimeout(() => {
+                clearSplashTimers();
                 setIsVisible(false);
             }, 300); // 300ms to let the bar finish filling visual
             return () => clearTimeout(timeout);
         }
-    }, [minTimerExpired, isSessionLoading, isPreloading]);
+    }, [clearSplashTimers, minTimerExpired, isSessionLoading, isPreloading]);
 
     if (!isVisible) return null;
 
