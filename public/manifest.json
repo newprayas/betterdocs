@@ -1,8 +1,10 @@
 {
   "name": "MEDDY",
   "short_name": "Meddy",
+  "id": "/",
   "description": "Private RAG chat application for documents",
   "start_url": "/",
+  "display_override": ["standalone", "minimal-ui"],
   "display": "standalone",
   "background_color": "#020617",
   "theme_color": "#020617",

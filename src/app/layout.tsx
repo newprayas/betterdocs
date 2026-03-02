@@ -15,6 +15,14 @@ export const metadata: Metadata = {
   title: 'Meddy - Chat with your books!',
   description: 'App to chat with textbooks, guidelines and lecture notes',
   manifest: '/manifest.json',
+  appleWebApp: {
+    capable: true,
+    title: 'Meddy',
+    statusBarStyle: 'black-translucent',
+  },
+  formatDetection: {
+    telephone: false,
+  },
   icons: {
     icon: [
       { url: '/favicon-32.png', sizes: '32x32', type: 'image/png' },
