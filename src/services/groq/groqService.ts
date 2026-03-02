@@ -259,7 +259,7 @@ export class GroqService {
     prompt: string,
     systemPrompt?: string,
     model?: string,
-    options?: { temperature?: number; maxTokens?: number }
+    options?: { temperature?: number; maxTokens?: number; timeoutMs?: number }
   ): Promise<string> {
     if (!this.isInitialized()) {
       throw new Error('Cerebras service not initialized');
@@ -280,7 +280,7 @@ export class GroqService {
           max_tokens: options?.maxTokens ?? 4096,
           top_p: 1,
         }),
-      }, REQUEST_TIMEOUT_MS);
+      }, options?.timeoutMs ?? REQUEST_TIMEOUT_MS);
 
       if (!response.ok) {
         const errMessage = await this.parseErrorBody(response);
@@ -308,7 +308,7 @@ export class GroqService {
     prompt: string,
     systemPrompt?: string,
     model?: string,
-    options?: { temperature?: number; maxTokens?: number }
+    options?: { temperature?: number; maxTokens?: number; timeoutMs?: number }
   ): Promise<string> {
     const keys = this.getAllAvailableGroqKeys();
     if (keys.length === 0) {
@@ -330,7 +330,7 @@ export class GroqService {
           max_tokens: options?.maxTokens ?? 4096,
           top_p: 1,
         }),
-      }, REQUEST_TIMEOUT_MS);
+      }, options?.timeoutMs ?? REQUEST_TIMEOUT_MS);
 
       if (!response.ok) {
         const errMessage = await this.parseErrorBody(response);

@@ -89,8 +89,19 @@ export async function middleware(request: NextRequest) {
             data: { user },
         } = await supabase.auth.getUser()
 
+        const hasSupabaseAuthCookie = request.cookies
+            .getAll()
+            .some((cookie) => cookie.name.includes('sb-') && cookie.name.includes('auth-token'))
+
         // If no user and not on login page, redirect to login
         if (!user && !request.nextUrl.pathname.startsWith('/login')) {
+            // PWA resume can temporarily fail user restoration even with auth cookies present.
+            // Allow one request through so the client can recover the session gracefully.
+            if (hasSupabaseAuthCookie) {
+                console.warn('⚠️ [MIDDLEWARE] Auth cookie present but user unavailable. Allowing client recovery for:', request.nextUrl.pathname)
+                return response
+            }
+
             console.log('🔍 [MIDDLEWARE] No user detected, redirecting to login from:', request.nextUrl.pathname)
             const redirectUrl = new URL('/login', request.url)
             redirectUrl.searchParams.set('redirectedFrom', request.nextUrl.pathname)

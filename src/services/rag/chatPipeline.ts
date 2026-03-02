@@ -53,6 +53,32 @@ interface SimplifiedGenerationMetrics {
   hadMissingSectionFill: boolean;
 }
 
+const STAGE_TIMEOUT_MS = {
+  sessionLookup: 8000,
+  historyLookup: 8000,
+};
+
+const withStageTimeout = async <T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  stageName: string
+): Promise<T> => {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timer = setTimeout(() => {
+          reject(new Error(`${stageName} timed out after ${timeoutMs}ms`));
+        }, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+};
+
 export class ChatPipeline {
   private indexedDBServices = getIndexedDBServices();
 
@@ -1113,6 +1139,7 @@ export class ChatPipeline {
     content: string,
     history: any[]
   ): Promise<string> {
+    const REWRITE_TIMEOUT_MS = 10000;
     const normalizedOriginal = this.normalizeCommonMedicalTypos(content.trim().replace(/\s+/g, ' '));
     const mostRecentClarifiedQuery = this.extractMostRecentClarifiedQuery(history);
     const mostRecentAnswerForLine = this.extractMostRecentAnswerForLine(history);
@@ -1171,6 +1198,23 @@ ${normalizedOriginal}
     console.log('[QUERY REWRITER PROMPT][USER][PRIMARY]', prompt);
 
     try {
+      const requestRewrite = async (
+        rewritePrompt: string,
+        systemPrompt: string,
+        temperature: number
+      ) => {
+        return await groqService.generateResponseWithGroq(
+          rewritePrompt,
+          systemPrompt,
+          'openai/gpt-oss-120b',
+          {
+            temperature,
+            maxTokens: 128,
+            timeoutMs: REWRITE_TIMEOUT_MS,
+          }
+        );
+      };
+
       let rewrittenQuery = await groqService.generateResponseWithGroq(
         prompt,
         rewriterSystemPrompt,
@@ -1178,6 +1222,7 @@ ${normalizedOriginal}
         {
           temperature: 0.2,
           maxTokens: 128,
+          timeoutMs: REWRITE_TIMEOUT_MS,
         }
       );
       console.log('[QUERY REWRITER RAW][PRIMARY]', rewrittenQuery);
@@ -1189,32 +1234,12 @@ ${normalizedOriginal}
         console.warn('[QUERY REWRITER]', 'Primary rewrite was empty. Retrying with strict prompt.');
         console.log('[QUERY REWRITER PROMPT][SYSTEM][STRICT]', rewriterSystemPromptStrict);
         console.log('[QUERY REWRITER PROMPT][USER][STRICT]', strictPrompt);
-        rewrittenQuery = await groqService.generateResponseWithGroq(
+        rewrittenQuery = await requestRewrite(
           strictPrompt,
           rewriterSystemPromptStrict,
-          'openai/gpt-oss-120b',
-          {
-            temperature: 0,
-            maxTokens: 128,
-          }
+          0
         );
         console.log('[QUERY REWRITER RAW][STRICT]', rewrittenQuery);
-        cleanedQuery = this.sanitizeRewriterOutput(rewrittenQuery);
-      }
-
-      // If gpt-oss still returns empty, use a backup model once.
-      if (!cleanedQuery) {
-        console.warn('[QUERY REWRITER]', 'Strict rewrite was empty. Retrying with backup request on the same Groq model.');
-        rewrittenQuery = await groqService.generateResponseWithGroq(
-          strictPrompt,
-          rewriterSystemPromptStrict,
-          'openai/gpt-oss-120b',
-          {
-            temperature: 0,
-            maxTokens: 128,
-          }
-        );
-        console.log('[QUERY REWRITER RAW][FALLBACK_MODEL]', rewrittenQuery);
         cleanedQuery = this.sanitizeRewriterOutput(rewrittenQuery);
       }
 
@@ -1276,7 +1301,11 @@ ${normalizedOriginal}
       // Note: We'll update the store progress in the chatStore's sendMessage function
 
       // Get enabled documents for the session
-      const sessionForDocuments = await this.indexedDBServices.sessionService.getSession(sessionId);
+      const sessionForDocuments = await withStageTimeout(
+        this.indexedDBServices.sessionService.getSession(sessionId),
+        STAGE_TIMEOUT_MS.sessionLookup,
+        'Session lookup'
+      );
       if (!sessionForDocuments) {
         throw new Error('Session not found');
       }
@@ -1284,9 +1313,13 @@ ${normalizedOriginal}
       // 1. FETCH HISTORY (NEW STEP)
       // We need the history BEFORE we do the search
       console.log('[HISTORY]', 'Fetching chat history for context awareness...');
-      const history = await this.indexedDBServices.messageService.getMessagesBySession(
-        sessionId,
-        sessionForDocuments.userId
+      const history = await withStageTimeout(
+        this.indexedDBServices.messageService.getMessagesBySession(
+          sessionId,
+          sessionForDocuments.userId
+        ),
+        STAGE_TIMEOUT_MS.historyLookup,
+        'History lookup'
       );
 
       const retrievalMode: 'ann_rerank_v1' = 'ann_rerank_v1';

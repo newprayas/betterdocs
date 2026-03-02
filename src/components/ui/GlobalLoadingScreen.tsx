@@ -38,7 +38,7 @@ export const GlobalLoadingScreen: React.FC<GlobalLoadingScreenProps> = ({
         setIsVisible(true);
         setMinTimerExpired(false);
 
-        // Trigger preloading again on resume to ensure freshness
+        // Trigger top-session preloading once during startup
         const topSessionIds = useSessionStore.getState().sessions.slice(0, 5).map(s => s.id);
         if (topSessionIds.length > 0) {
             useChatStore.getState().preloadMessages(topSessionIds);
@@ -58,19 +58,10 @@ export const GlobalLoadingScreen: React.FC<GlobalLoadingScreenProps> = ({
     }, [clearSplashTimers, minDisplayTime]);
 
     useEffect(() => {
-        const handleVisibilityChange = () => {
-            if (document.visibilityState === 'visible') {
-                console.log('📱 [GlobalLoading] App resumed/visible - Triggering splash screen');
-                showSplashScreen();
-            }
-        };
-
-        // Initial show
+        // Initial startup splash only.
         showSplashScreen();
 
-        document.addEventListener('visibilitychange', handleVisibilityChange);
         return () => {
-            document.removeEventListener('visibilitychange', handleVisibilityChange);
             clearSplashTimers();
         };
     }, [clearSplashTimers, showSplashScreen]);

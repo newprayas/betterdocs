@@ -1,6 +1,8 @@
-const CACHE_VERSION = 'v2';
+const CACHE_VERSION = 'v3';
 const STATIC_CACHE = `meddy-static-${CACHE_VERSION}`;
 const RUNTIME_CACHE = `meddy-runtime-${CACHE_VERSION}`;
+const NAVIGATION_FETCH_TIMEOUT_MS = 8000;
+const ASSET_FETCH_TIMEOUT_MS = 8000;
 
 const APP_SHELL = [
   '/',
@@ -58,6 +60,17 @@ self.addEventListener('fetch', (event) => {
   }
 });
 
+async function fetchWithTimeout(request, timeoutMs) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(request, { signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 function isStaticAsset(pathname) {
   if (pathname.startsWith('/_next/static/')) return true;
   return /\.(?:js|css|png|jpg|jpeg|gif|svg|webp|ico|woff|woff2)$/i.test(pathname);
@@ -70,16 +83,9 @@ async function handleNavigationRequest(event) {
       return preloadResponse;
     }
 
-    const networkResponse = await fetch(event.request);
-    if (networkResponse && networkResponse.ok) {
-      const cache = await caches.open(RUNTIME_CACHE);
-      cache.put(event.request, networkResponse.clone());
-    }
+    const networkResponse = await fetchWithTimeout(event.request, NAVIGATION_FETCH_TIMEOUT_MS);
     return networkResponse;
   } catch (_error) {
-    const cachedPage = await caches.match(event.request);
-    if (cachedPage) return cachedPage;
-
     const offlinePage = await caches.match('/offline.html');
     return offlinePage || Response.error();
   }
@@ -89,7 +95,7 @@ async function staleWhileRevalidate(request) {
   const cache = await caches.open(RUNTIME_CACHE);
   const cached = await cache.match(request);
 
-  const networkPromise = fetch(request)
+  const networkPromise = fetchWithTimeout(request, ASSET_FETCH_TIMEOUT_MS)
     .then((response) => {
       if (response && response.ok && response.type === 'basic') {
         cache.put(request, response.clone());

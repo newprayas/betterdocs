@@ -10,10 +10,17 @@ import { storageManager } from '../services/storage/storageManager';
 
 const RESUME_STALE_HIDDEN_MS = 15000;
 const STALE_PIPELINE_AGE_MS = 90000;
+const AUTH_RECOVERY_RETRIES = 3;
+const AUTH_RECOVERY_BASE_DELAY_MS = 400;
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export function AppInitializer() {
   const [isClient, setIsClient] = useState(false);
   const lastHiddenAtRef = useRef<number | null>(null);
+  const supabaseRef = useRef(createClient());
+  const hydratedUserIdRef = useRef<string | null>(null);
+  const hydratingUserIdRef = useRef<string | null>(null);
 
   // Ensure we only run client-side code on the client
   useEffect(() => {
@@ -22,11 +29,68 @@ export function AppInitializer() {
   const { settings, loadSettings, setUserId: setSettingsUserId, clearSettings, updateSettings } = useSettingsStore();
   const { loadSessions, setUserId: setSessionUserId, clearSessions } = useSessionStore();
   const { setUserId: setDocumentUserId, clearDocuments } = useDocumentStore();
-  const supabase = createClient();
+  const supabase = supabaseRef.current;
 
   useEffect(() => {
     // Only run on client side
     if (!isClient) return;
+
+    const setStoreUserIds = (userId: string, reason: string) => {
+      userIdLogger.logStoreUpdate('SettingsStore', userId, `setUserId (${reason})`);
+      setSettingsUserId(userId);
+
+      userIdLogger.logStoreUpdate('SessionStore', userId, `setUserId (${reason})`);
+      setSessionUserId(userId);
+
+      userIdLogger.logStoreUpdate('DocumentStore', userId, `setUserId (${reason})`);
+      setDocumentUserId(userId);
+    };
+
+    const hydrateUserData = async (userId: string, reason: string) => {
+      if (hydratingUserIdRef.current === userId) {
+        console.log('[APP INIT]', `Skipping duplicate hydrate for user ${userId} (${reason})`);
+        return;
+      }
+
+      hydratingUserIdRef.current = userId;
+      userIdLogger.logAuthChange('AppInitializer', userId, reason);
+      setStoreUserIds(userId, reason);
+
+      const settingsOpId = userIdLogger.logOperationStart('AppInitializer', `loadSettings (${reason})`, userId);
+      const sessionsOpId = userIdLogger.logOperationStart('AppInitializer', `loadSessions (${reason})`, userId);
+
+      try {
+        await Promise.all([
+          loadSettings(userId).finally(() => {
+            userIdLogger.logOperationEnd('AppInitializer', settingsOpId, userId);
+          }),
+          loadSessions(userId).then(async () => {
+            userIdLogger.logOperationEnd('AppInitializer', sessionsOpId, userId);
+            const currentSessions = useSessionStore.getState().sessions;
+            if (currentSessions.length > 0) {
+              const topSessionIds = currentSessions.slice(0, 5).map(s => s.id);
+              useChatStore.getState().preloadMessages(topSessionIds);
+            }
+          })
+        ]);
+
+        hydratedUserIdRef.current = userId;
+      } finally {
+        if (hydratingUserIdRef.current === userId) {
+          hydratingUserIdRef.current = null;
+        }
+      }
+    };
+
+    const redirectToLoginIfNeeded = () => {
+      if (typeof window === 'undefined') return;
+      const pathname = window.location.pathname;
+      if (pathname.startsWith('/login') || pathname.startsWith('/auth/')) return;
+
+      const redirectUrl = new URL('/login', window.location.origin);
+      redirectUrl.searchParams.set('redirectedFrom', pathname);
+      window.location.replace(redirectUrl.toString());
+    };
 
     // Listen for auth state changes
     const {
@@ -40,30 +104,13 @@ export function AppInitializer() {
       userIdLogger.logAuthChange('AppInitializer', userId, event);
 
       if (session?.user && userId) {
-        // Set User ID in stores
-        userIdLogger.logStoreUpdate('SettingsStore', userId, 'setUserId');
-        setSettingsUserId(userId);
+        // For token refresh on the same user, keep it lightweight to avoid resume-time DB contention.
+        if (event === 'TOKEN_REFRESHED' && hydratedUserIdRef.current === userId) {
+          setStoreUserIds(userId, event);
+          return;
+        }
 
-        userIdLogger.logStoreUpdate('SessionStore', userId, 'setUserId');
-        setSessionUserId(userId);
-
-        userIdLogger.logStoreUpdate('DocumentStore', userId, 'setUserId');
-        setDocumentUserId(userId); // Set DocumentStore user ID
-
-        // Load user-specific data
-        const settingsOpId = userIdLogger.logOperationStart('AppInitializer', 'loadSettings', userId);
-        const sessionsOpId = userIdLogger.logOperationStart('AppInitializer', 'loadSessions', userId);
-
-        await Promise.all([
-          loadSettings(userId).finally(() => {
-            userIdLogger.logOperationEnd('AppInitializer', settingsOpId, userId);
-          }),
-          loadSessions(userId).finally(() => {
-            userIdLogger.logOperationEnd('AppInitializer', sessionsOpId, userId);
-          })
-          // Documents are loaded per session, so we don't load them here directly
-        ]);
-
+        await hydrateUserData(userId, event);
         console.log('[APP INIT]', 'User data loaded for:', userId);
       } else if (event === 'SIGNED_OUT') {
         // Clear stores on sign out
@@ -76,6 +123,8 @@ export function AppInitializer() {
         userIdLogger.logStoreUpdate('DocumentStore', null, 'clearDocuments');
         clearDocuments(); // Clear DocumentStore
 
+        hydratedUserIdRef.current = null;
+        hydratingUserIdRef.current = null;
         console.log('[APP INIT]', 'User data cleared');
       }
     });
@@ -83,51 +132,29 @@ export function AppInitializer() {
     // Initial check for session
     const checkSession = async () => {
       if (!isClient) return;
-      const { data: { session } } = await supabase.auth.getSession();
-      const userId = session?.user?.id || null;
 
-      if (session?.user && userId) {
-        // userId is already defined above as session?.user?.id || null
-        // No need to redeclare it here
+      for (let attempt = 0; attempt <= AUTH_RECOVERY_RETRIES; attempt++) {
+        const { data: { session } } = await supabase.auth.getSession();
+        const userId = session?.user?.id || null;
+        if (session?.user && userId) {
+          await hydrateUserData(userId, 'INITIAL_SESSION_CHECK');
+          return;
+        }
 
-        userIdLogger.logAuthChange('AppInitializer', userId, 'INITIAL_SESSION_CHECK');
+        // Explicit refresh can recover transient PWA resume state.
+        const { data: userData } = await supabase.auth.getUser();
+        if (userData.user?.id) {
+          await hydrateUserData(userData.user.id, 'INITIAL_USER_REFRESH');
+          return;
+        }
 
-        userIdLogger.logStoreUpdate('SettingsStore', userId, 'setUserId (initial)');
-        setSettingsUserId(userId);
-
-        userIdLogger.logStoreUpdate('SessionStore', userId, 'setUserId (initial)');
-        setSessionUserId(userId);
-
-        userIdLogger.logStoreUpdate('DocumentStore', userId, 'setUserId (initial)');
-        setDocumentUserId(userId); // Set DocumentStore user ID for initial check
-
-        const settingsOpId = userIdLogger.logOperationStart('AppInitializer', 'loadSettings (initial)', userId);
-        const sessionsOpId = userIdLogger.logOperationStart('AppInitializer', 'loadSessions (initial)', userId);
-
-        await Promise.all([
-          loadSettings(userId).finally(() => {
-            userIdLogger.logOperationEnd('AppInitializer', settingsOpId, userId);
-          }),
-          loadSessions(userId).then(async () => {
-            userIdLogger.logOperationEnd('AppInitializer', sessionsOpId, userId);
-            // Preload messages for top 5 sessions immediately after loading sessions
-            const currentSessions = useSessionStore.getState().sessions;
-            if (currentSessions.length > 0) {
-              const topSessionIds = currentSessions.slice(0, 5).map(s => s.id);
-              console.log('[APP INIT] 🚀 Triggering global preload for', topSessionIds.length, 'sessions');
-              // We import the store directly to avoid hook rules in this async callback if needed, 
-              // but since we are in a component, we can use the hook's method if we extracted it.
-              // However, to be safe and clean, we'll use the store instance method if available or just the hook.
-              // Since we are inside useEffect, we can't use the hook *inside* the callback easily without closure issues.
-              // Better to use the store's getState() method for actions if possible, or just call the method we got from the hook.
-              // We'll use the method from the hook which we need to add to the component scope.
-              useChatStore.getState().preloadMessages(topSessionIds);
-            }
-          })
-        ]);
-      } else {
-        userIdLogger.logAuthChange('AppInitializer', null, 'INITIAL_SESSION_CHECK (no session)');
+        if (attempt < AUTH_RECOVERY_RETRIES) {
+          await sleep(AUTH_RECOVERY_BASE_DELAY_MS * (attempt + 1));
+        }
       }
+
+      userIdLogger.logAuthChange('AppInitializer', null, 'INITIAL_SESSION_CHECK (no session after retry)');
+      redirectToLoginIfNeeded();
     };
 
     checkSession();
@@ -135,7 +162,7 @@ export function AppInitializer() {
     return () => {
       subscription.unsubscribe();
     };
-  }, [loadSettings, loadSessions, setSettingsUserId, setSessionUserId, setDocumentUserId, clearSettings, clearSessions, clearDocuments, isClient, supabase]);
+  }, [loadSettings, loadSessions, setSettingsUserId, setSessionUserId, setDocumentUserId, clearSettings, clearSessions, clearDocuments, isClient]);
 
   // Special Migration: Force update legacy models to Gemma 3 27B
   useEffect(() => {
