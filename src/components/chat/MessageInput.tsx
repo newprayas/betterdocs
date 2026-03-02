@@ -264,7 +264,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
               disabled={disabled || isStreaming || isWaiting}
               rows={1}
               className={`
-                w-full px-3 py-2 sm:px-4 sm:py-3 pr-10 sm:pr-12
+                w-full min-h-12 sm:min-h-0 px-3 py-2 sm:px-4 sm:py-3 pr-10 sm:pr-12
                 border rounded-lg
                 bg-white dark:bg-gray-800
                 text-gray-900 dark:text-gray-100
@@ -295,7 +295,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
             onClick={handleSend}
             disabled={isDisabled}
             loading={isStreaming}
-            className={`self-center px-3 sm:px-4 ${isWaiting ? 'bg-yellow-500 hover:bg-yellow-600' : ''}`}
+            className={`h-12 sm:h-auto self-center px-3 sm:px-4 ${isWaiting ? 'bg-yellow-500 hover:bg-yellow-600' : ''}`}
           >
             {isWaiting ? (
               <span className="font-mono">{waitCountdown}s</span>
