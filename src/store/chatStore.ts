@@ -57,6 +57,7 @@ export const useChatStore = create<ChatStore>()(
         currentProgressStep: '',
         isPreloading: false,
         preloadingProgress: 0,
+        pipelineStartedAt: null,
 
         // Rate limiting state
         questionTimestamps: [],
@@ -207,6 +208,7 @@ export const useChatStore = create<ChatStore>()(
               isReadingSources: false,
               progressPercentage: 0,
               currentProgressStep: '',
+              pipelineStartedAt: null,
             });
           };
 
@@ -227,6 +229,7 @@ export const useChatStore = create<ChatStore>()(
               isReadingSources: true, // Show "Reading sources" instead
               progressPercentage: 0,
               currentProgressStep: 'Query Rewriting',
+              pipelineStartedAt: Date.now(),
               // Update cache immediately
               messageCache: {
                 ...state.messageCache,
@@ -323,6 +326,7 @@ export const useChatStore = create<ChatStore>()(
                         isReadingSources: false,
                         progressPercentage: 100,
                         currentProgressStep: 'Complete',
+                        pipelineStartedAt: null,
                         // Update cache immediately
                         messageCache: {
                           ...state.messageCache,
@@ -360,6 +364,7 @@ export const useChatStore = create<ChatStore>()(
                         streamingContent: '',
                         streamingCitations: [],
                         isReadingSources: false,
+                        pipelineStartedAt: null,
                         // Update cache with final messages
                         messageCache: {
                           ...state.messageCache,
@@ -380,6 +385,7 @@ export const useChatStore = create<ChatStore>()(
                           streamingContent: '',
                           streamingCitations: [],
                           isReadingSources: false,
+                          pipelineStartedAt: null,
                           // Don't clear messages, just stop loading state
                           error: 'Response generated, but failed to refresh chat history. Pull to refresh.',
                         });
@@ -392,13 +398,14 @@ export const useChatStore = create<ChatStore>()(
                     set({
                       error: event.message || 'Failed to generate response',
                       isStreaming: false,
-                      streamingContent: '',
-                      streamingCitations: [],
-                      isReadingSources: false,
-                      progressPercentage: 0,
-                      currentProgressStep: '',
-                    });
-                  }
+                    streamingContent: '',
+                    streamingCitations: [],
+                    isReadingSources: false,
+                    progressPercentage: 0,
+                    currentProgressStep: '',
+                    pipelineStartedAt: null,
+                  });
+                }
                 },
                 userMessage // Pass the already created userMessage
               ),
@@ -473,6 +480,19 @@ export const useChatStore = create<ChatStore>()(
           set({
             progressPercentage: percentage,
             currentProgressStep: step
+          });
+        },
+
+        resetTransientState: (errorMessage?: string) => {
+          set({
+            isStreaming: false,
+            streamingContent: '',
+            streamingCitations: [],
+            isReadingSources: false,
+            progressPercentage: 0,
+            currentProgressStep: '',
+            pipelineStartedAt: null,
+            error: errorMessage || null,
           });
         },
 

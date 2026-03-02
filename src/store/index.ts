@@ -49,6 +49,7 @@ export const useChat = () => {
     streamingContent: chatStore.streamingContent,
     streamingCitations: chatStore.streamingCitations,
     error: chatStore.error,
+    pipelineStartedAt: chatStore.pipelineStartedAt,
     loadMessages: chatStore.loadMessages,
     sendMessage: chatStore.sendMessage,
     clearHistory: chatStore.clearHistory,
@@ -61,6 +62,7 @@ export const useChat = () => {
     checkRateLimit: chatStore.checkRateLimit,
     setRateLimitState: chatStore.setRateLimitState,
     recordQuestion: chatStore.recordQuestion,
+    resetTransientState: chatStore.resetTransientState,
   };
 };
 

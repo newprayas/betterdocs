@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { geminiService } from '../services/gemini';
 import { groqService } from '../services/groq/groqService';
 import { useSettingsStore, useSessionStore, useDocumentStore, useChatStore } from '../store';
@@ -8,8 +8,12 @@ import { createClient } from '../utils/supabase/client';
 import { userIdLogger } from '../utils/userIdDebugLogger';
 import { storageManager } from '../services/storage/storageManager';
 
+const RESUME_STALE_HIDDEN_MS = 15000;
+const STALE_PIPELINE_AGE_MS = 90000;
+
 export function AppInitializer() {
   const [isClient, setIsClient] = useState(false);
+  const lastHiddenAtRef = useRef<number | null>(null);
 
   // Ensure we only run client-side code on the client
   useEffect(() => {
@@ -202,6 +206,51 @@ export function AppInitializer() {
 
     initializeGroqAndStorage();
   }, [isClient, settings?.groqApiKey]);
+
+  // Hybrid stale-guard: keep fast resume, but reset only stale in-progress chat state.
+  useEffect(() => {
+    if (!isClient) return;
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        lastHiddenAtRef.current = Date.now();
+        return;
+      }
+
+      if (document.visibilityState !== 'visible') return;
+
+      const now = Date.now();
+      const hiddenDuration = lastHiddenAtRef.current ? now - lastHiddenAtRef.current : 0;
+      lastHiddenAtRef.current = null;
+
+      const chatState = useChatStore.getState();
+      const pipelineAge = chatState.pipelineStartedAt ? now - chatState.pipelineStartedAt : 0;
+      const hasActivePipelineUi = chatState.isReadingSources || chatState.isStreaming;
+      const isOverAgedPipeline = Boolean(chatState.pipelineStartedAt && pipelineAge > STALE_PIPELINE_AGE_MS);
+      const isStaleByResume = hasActivePipelineUi && hiddenDuration > RESUME_STALE_HIDDEN_MS;
+
+      if (!isOverAgedPipeline && !isStaleByResume) return;
+
+      console.warn('[APP INIT] Resetting stale in-progress chat state after resume', {
+        hiddenDurationMs: hiddenDuration,
+        pipelineAgeMs: pipelineAge,
+      });
+
+      chatState.resetTransientState('Previous in-progress request was reset after app resume. Please send again.');
+
+      const { currentSessionId } = useSessionStore.getState();
+      if (currentSessionId) {
+        chatState.loadMessages(currentSessionId).catch((error) => {
+          console.warn('[APP INIT] Failed to refresh messages after stale reset:', error);
+        });
+      }
+    };
+
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+  }, [isClient]);
 
   // Global Storage Check
   useEffect(() => {

@@ -38,6 +38,7 @@ export interface ChatStore {
   currentProgressStep: string;
   isPreloading: boolean;
   preloadingProgress: number;
+  pipelineStartedAt: number | null;
 
   // Rate limiting state
   questionTimestamps: number[];
@@ -54,6 +55,7 @@ export interface ChatStore {
   setError: (error: string | null) => void;
   setReadingSourcesState: (isReadingSources: boolean) => void;
   setProgressState: (percentage: number, step: string) => void;
+  resetTransientState: (errorMessage?: string) => void;
 
   // Rate limiting actions
   checkRateLimit: () => number; // Returns wait time in seconds, 0 if OK
