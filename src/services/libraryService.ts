@@ -150,13 +150,6 @@ const LIBRARY_CATALOG = [
     "category": "Obs and Gyne"
   },
   {
-    "id": "ent_dingra_7th",
-    "name": "ENT dingra 7th Ed.pdf",
-    "filename": "shard_5j5.bin",
-    "size": "11.4 MB",
-    "category": "ENT"
-  },
-  {
     "id": "dermatology_std_synopsis",
     "name": "Illustrated-Synopsis-of-Dermatology-and-Sexually-Transmitted-Diseases.pdf",
     "filename": "shard_6i5.bin",
@@ -183,6 +176,13 @@ const LIBRARY_CATALOG = [
     "filename": "shard_2l1.bin",
     "size": "2.0 MB",
     "category": "Obs and Gyne"
+  },
+  {
+    "id": "combined_ward_notes_2026",
+    "name": "Whole Year Wards and Block Posting Notes",
+    "filename": "shard_0o8.bin",
+    "size": "9.8 MB",
+    "category": "Medicine"
   },
   {
     "id": "oxford_handbook_medicine_11ed",
