@@ -178,7 +178,7 @@ const LIBRARY_CATALOG = [
     "category": "Obs and Gyne"
   },
   {
-    "id": "combined_ward_notes_2026",
+    "id": "combined_ward_notes_2025",
     "name": "Whole Year Wards and Block Posting Notes",
     "filename": "shard_0o8.bin",
     "size": "9.8 MB",
