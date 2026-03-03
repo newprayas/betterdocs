@@ -141,6 +141,55 @@ const LIBRARY_CATALOG = [
     "filename": "shard_0v8.bin",
     "size": "29.1 MB",
     "category": "Surgery"
+  },
+  {
+    "id": "dc_dutta_obs",
+    "name": "DC dutta obs.pdf",
+    "filename": "shard_8x9.bin",
+    "size": "19.9 MB",
+    "category": "Obstetrics & Gynecology"
+  },
+  {
+    "id": "ent_dingra_7th",
+    "name": "ENT dingra 7th Ed.pdf",
+    "filename": "shard_5j5.bin",
+    "size": "11.4 MB",
+    "category": "ENT"
+  },
+  {
+    "id": "dermatology_std_synopsis",
+    "name": "Illustrated-Synopsis-of-Dermatology-and-Sexually-Transmitted-Diseases.pdf",
+    "filename": "shard_6i5.bin",
+    "size": "7.1 MB",
+    "category": "Dermatology"
+  },
+  {
+    "id": "kanski_ophthal_10ed",
+    "name": "Kanski's_Clinical_Ophthalmology_A_Systematic_Approach_10tE_2025.pdf",
+    "filename": "shard_0z9.bin",
+    "size": "18.6 MB",
+    "category": "Ophthalmology"
+  },
+  {
+    "id": "macleod_15ed_medicine",
+    "name": "Maceod 15h ed medicine.pdf",
+    "filename": "shard_5a3.bin",
+    "size": "9.1 MB",
+    "category": "Medicine"
+  },
+  {
+    "id": "ogsb_2021_guidelines",
+    "name": "OGSB 2021 guidelines.pdf",
+    "filename": "shard_2l1.bin",
+    "size": "2.0 MB",
+    "category": "Obstetrics & Gynecology"
+  },
+  {
+    "id": "oxford_handbook_medicine_11ed",
+    "name": "Oxford Handbook of Clinical Medicine 11th Edition.pdf",
+    "filename": "shard_8o8.bin",
+    "size": "18.8 MB",
+    "category": "Medicine"
   }
 ];
 
