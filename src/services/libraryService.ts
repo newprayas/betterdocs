@@ -158,7 +158,7 @@ const LIBRARY_CATALOG = [
   },
   {
     "id": "kanski_ophthal_10ed",
-    "name": "Kanski's_Clinical_Ophthalmology_A_Systematic_Approach 10th ed",
+    "name": "Kanski's Clinical Ophthalmology A Systematic Approach 10th ed",
     "filename": "shard_0z9.bin",
     "size": "18.6 MB",
     "category": "Ophthalmology"
@@ -182,7 +182,7 @@ const LIBRARY_CATALOG = [
     "name": "Whole Year Wards and Block Posting Notes",
     "filename": "shard_0o8.bin",
     "size": "9.8 MB",
-    "category": "Medicine"
+    "category": "🎉 Special notes"
   },
   {
     "id": "oxford_handbook_medicine_11ed",
