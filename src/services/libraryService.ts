@@ -127,6 +127,20 @@ const LIBRARY_CATALOG = [
     "filename": "shard_3a1.bin",
     "size": "50.1 MB",
     "category": "Medicine"
+  },
+  {
+    "id": "gynae_dutta_9ed",
+    "name": "Gynae DC Dutta's 9th Edition Textbook of Gynecology",
+    "filename": "shard_9v4.bin",
+    "size": "17.8 MB",
+    "category": "Gynecology"
+  },
+  {
+    "id": "srb_manual_surgery_6ed",
+    "name": "SRB Manual of Surgery 6th Edition",
+    "filename": "shard_0v8.bin",
+    "size": "29.1 MB",
+    "category": "Surgery"
   }
 ];
 
