@@ -123,7 +123,7 @@ const LIBRARY_CATALOG = [
   },
   {
     "id": "davidson_medicine_24th",
-    "name": "DavidsonMedicine24th",
+    "name": "Davidson Medicine 24th edition",
     "filename": "shard_3a1.bin",
     "size": "50.1 MB",
     "category": "Medicine"
@@ -133,7 +133,7 @@ const LIBRARY_CATALOG = [
     "name": "Gynae DC Dutta's 9th Edition Textbook of Gynecology",
     "filename": "shard_9v4.bin",
     "size": "17.8 MB",
-    "category": "Gynecology"
+    "category": "Obs and Gyne"
   },
   {
     "id": "srb_manual_surgery_6ed",
@@ -144,10 +144,10 @@ const LIBRARY_CATALOG = [
   },
   {
     "id": "dc_dutta_obs",
-    "name": "DC dutta obs.pdf",
+    "name": "DC dutta Textbook of Obstetrics 10th edition",
     "filename": "shard_8x9.bin",
     "size": "19.9 MB",
-    "category": "Obstetrics & Gynecology"
+    "category": "Obs and Gyne"
   },
   {
     "id": "ent_dingra_7th",
@@ -165,28 +165,28 @@ const LIBRARY_CATALOG = [
   },
   {
     "id": "kanski_ophthal_10ed",
-    "name": "Kanski's_Clinical_Ophthalmology_A_Systematic_Approach_10tE_2025.pdf",
+    "name": "Kanski's_Clinical_Ophthalmology_A_Systematic_Approach 10th ed",
     "filename": "shard_0z9.bin",
     "size": "18.6 MB",
     "category": "Ophthalmology"
   },
   {
     "id": "macleod_15ed_medicine",
-    "name": "Maceod 15h ed medicine.pdf",
+    "name": "Maceod 15h ed medicine",
     "filename": "shard_5a3.bin",
     "size": "9.1 MB",
     "category": "Medicine"
   },
   {
     "id": "ogsb_2021_guidelines",
-    "name": "OGSB 2021 guidelines.pdf",
+    "name": "OGSB 2021 guidelines",
     "filename": "shard_2l1.bin",
     "size": "2.0 MB",
-    "category": "Obstetrics & Gynecology"
+    "category": "Obs and Gyne"
   },
   {
     "id": "oxford_handbook_medicine_11ed",
-    "name": "Oxford Handbook of Clinical Medicine 11th Edition.pdf",
+    "name": "Oxford Handbook of Clinical Medicine 11th Edition",
     "filename": "shard_8o8.bin",
     "size": "18.8 MB",
     "category": "Medicine"
