@@ -73,6 +73,7 @@ export default function SessionPage() {
     sendMessage,
     clearHistory,
     isStreaming,
+    isReadingSources,
     loadMessages,
   } = useChatStore();
 
@@ -646,32 +647,34 @@ export default function SessionPage() {
 
                 {/* Phrase Pills */}
                 <div className="relative flex-shrink-0 mt-4 max-w-4xl mx-auto w-full">
-                  <button
-                    type="button"
-                    onClick={handleSourcesPanelOpen}
-                    onMouseUp={(event) => {
-                      event.currentTarget.blur();
-                    }}
-                    onTouchEnd={(event) => {
-                      event.currentTarget.blur();
-                    }}
-                    className="
-                      sources-scroll-button
-                      absolute bottom-full right-2 mb-2 z-20
-                      inline-flex items-center justify-center
-                      px-3 py-2 sm:px-4 sm:py-2
-                      text-xs sm:text-sm font-medium rounded-full
-                      bg-blue-600 text-white shadow-sm
-                      hover:bg-blue-700 active:bg-blue-700
-                      transition-none
-                      focus:outline-none focus:ring-0 focus:ring-offset-0
-                    "
-                    style={{ WebkitTapHighlightColor: 'transparent' }}
-                    aria-label="Manage active sources"
-                    title="Sources"
-                  >
-                    Sources {activeDocumentCount}
-                  </button>
+                  {!isReadingSources && (
+                    <button
+                      type="button"
+                      onClick={handleSourcesPanelOpen}
+                      onMouseUp={(event) => {
+                        event.currentTarget.blur();
+                      }}
+                      onTouchEnd={(event) => {
+                        event.currentTarget.blur();
+                      }}
+                      className="
+                        sources-scroll-button
+                        absolute bottom-full right-2 mb-2 z-20
+                        inline-flex items-center justify-center
+                        px-3 py-2 sm:px-4 sm:py-2
+                        text-xs sm:text-sm font-medium rounded-full
+                        bg-blue-600 text-white shadow-sm
+                        hover:bg-blue-700 active:bg-blue-700
+                        transition-none
+                        focus:outline-none focus:ring-0 focus:ring-offset-0
+                      "
+                      style={{ WebkitTapHighlightColor: 'transparent' }}
+                      aria-label="Manage active sources"
+                      title="Sources"
+                    >
+                      Sources {activeDocumentCount}
+                    </button>
+                  )}
                   <PhrasePills
                     onPhraseSelect={handlePhraseSelect}
                     className="bg-gray-100 dark:bg-gray-800 rounded-lg"
@@ -705,71 +708,73 @@ export default function SessionPage() {
 
                 {/* Phrase Pills */}
                 <div className="relative flex-shrink-0 mt-4 max-w-4xl mx-auto w-full">
-                  <div className="absolute bottom-full right-2 mb-2 z-20 flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={handleSourcesPanelOpen}
-                      onMouseUp={(event) => {
-                        event.currentTarget.blur();
-                      }}
-                      onTouchEnd={(event) => {
-                        event.currentTarget.blur();
-                      }}
-                      className="
-                        sources-scroll-button
-                        inline-flex items-center justify-center
-                        px-3 py-2 sm:px-4 sm:py-2
-                        text-xs sm:text-sm font-medium rounded-full
-                        bg-blue-600 text-white shadow-sm
-                        hover:bg-blue-700 active:bg-blue-700
-                        transition-none
-                        focus:outline-none focus:ring-0 focus:ring-offset-0
-                      "
-                      style={{ WebkitTapHighlightColor: 'transparent' }}
-                      aria-label="Manage active sources"
-                      title="Sources"
-                    >
-                      Sources {activeDocumentCount}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleScrollToLatestQuestion}
-                      onMouseUp={(event) => {
-                        event.currentTarget.blur();
-                      }}
-                      onTouchEnd={(event) => {
-                        event.currentTarget.blur();
-                      }}
-                      className="
-                        answer-scroll-button
-                        inline-flex items-center justify-center
-                        px-3 py-2 sm:px-4 sm:py-2
-                        text-xs sm:text-sm font-medium rounded-full
-                        bg-gray-600 text-white border border-white
-                        hover:bg-gray-600 active:bg-gray-600
-                        transition-none
-                        focus:outline-none focus:ring-0 focus:ring-offset-0
-                      "
-                      style={{ WebkitTapHighlightColor: 'transparent' }}
-                      aria-label="Scroll to latest answer"
-                      title="Answer"
-                    >
-                      <svg
-                        className="w-3 h-3 mr-1.5"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
+                  {!isReadingSources && (
+                    <div className="absolute bottom-full right-2 mb-2 z-20 flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={handleSourcesPanelOpen}
+                        onMouseUp={(event) => {
+                          event.currentTarget.blur();
+                        }}
+                        onTouchEnd={(event) => {
+                          event.currentTarget.blur();
+                        }}
+                        className="
+                          sources-scroll-button
+                          inline-flex items-center justify-center
+                          px-3 py-2 sm:px-4 sm:py-2
+                          text-xs sm:text-sm font-medium rounded-full
+                          bg-blue-600 text-white shadow-sm
+                          hover:bg-blue-700 active:bg-blue-700
+                          transition-none
+                          focus:outline-none focus:ring-0 focus:ring-offset-0
+                        "
+                        style={{ WebkitTapHighlightColor: 'transparent' }}
+                        aria-label="Manage active sources"
+                        title="Sources"
                       >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M7 14l5-5 5 5"
-                        />
-                      </svg>
-                      Answer
-                    </button>
-                  </div>
+                        Sources {activeDocumentCount}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleScrollToLatestQuestion}
+                        onMouseUp={(event) => {
+                          event.currentTarget.blur();
+                        }}
+                        onTouchEnd={(event) => {
+                          event.currentTarget.blur();
+                        }}
+                        className="
+                          answer-scroll-button
+                          inline-flex items-center justify-center
+                          px-3 py-2 sm:px-4 sm:py-2
+                          text-xs sm:text-sm font-medium rounded-full
+                          bg-gray-600 text-white border border-white
+                          hover:bg-gray-600 active:bg-gray-600
+                          transition-none
+                          focus:outline-none focus:ring-0 focus:ring-offset-0
+                        "
+                        style={{ WebkitTapHighlightColor: 'transparent' }}
+                        aria-label="Scroll to latest answer"
+                        title="Answer"
+                      >
+                        <svg
+                          className="w-3 h-3 mr-1.5"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M7 14l5-5 5 5"
+                          />
+                        </svg>
+                        Answer
+                      </button>
+                    </div>
+                  )}
                   <PhrasePills
                     onPhraseSelect={handlePhraseSelect}
                     className="bg-gray-100 dark:bg-gray-800 rounded-lg"
