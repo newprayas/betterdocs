@@ -455,3 +455,27 @@
 .prose ul>li>ul>li>ul>li {
   list-style-type: square !important;
 }
+
+/* Defensive wrapping for chat markdown so long tokens never escape message bubbles. */
+.chat-markdown,
+.chat-markdown p,
+.chat-markdown li,
+.chat-markdown blockquote,
+.chat-markdown td,
+.chat-markdown th,
+.chat-markdown a,
+.chat-markdown span {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.chat-markdown code:not(pre code) {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.chat-markdown pre {
+  max-width: 100%;
+  overflow-x: auto;
+}

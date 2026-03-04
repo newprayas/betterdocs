@@ -28,7 +28,11 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(({
     const content = message.content;
     const citations = message.citations;
     // Normalize model-inserted HTML line break tags so users don't see literal "<br>" text.
-    const normalizedContent = content.replace(/<br\s*\/?>/gi, '\n');
+    const normalizedContent = content
+      .replace(/<br\s*\/?>/gi, '\n')
+      // Normalize non-breaking characters that can cause overflow in narrow message bubbles.
+      .replace(/[\u00A0\u2007\u202F]/g, ' ')
+      .replace(/\u2011/g, '-');
 
     if (!citations || citations.length === 0 || isUser) {
       return normalizedContent;
@@ -100,18 +104,18 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(({
 
       {/* Message Content */}
       <div className={clsx(
-        'max-w-[85%] sm:max-w-xs lg:max-w-md xl:max-w-lg',
+        'max-w-[85%] sm:max-w-xs lg:max-w-md xl:max-w-lg min-w-0',
         isUser && 'max-w-[85%] sm:max-w-xs lg:max-w-md'
       )}>
         <div className={clsx(
-          'rounded-lg px-3 py-2 sm:px-4 sm:py-3',
+          'rounded-lg px-3 py-2 sm:px-4 sm:py-3 min-w-0',
           isUser
             ? 'bg-blue-500 text-white ml-auto'
             : 'bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-700'
         )}>
           {/* Message Text */}
           <div className={clsx(
-            'prose prose-sm max-w-none',
+            'chat-markdown prose prose-sm max-w-none min-w-0 break-words [overflow-wrap:anywhere] [word-break:break-word]',
             isUser
               ? 'text-white prose-p:text-white prose-strong:text-white prose-li:text-white prose-headings:text-white'
               : 'text-gray-900 prose-p:text-gray-900 prose-li:text-gray-900 prose-strong:text-black prose-headings:text-black dark:text-gray-100 dark:prose-p:text-gray-200 dark:prose-li:text-gray-200 dark:prose-strong:text-white dark:prose-headings:text-white'
