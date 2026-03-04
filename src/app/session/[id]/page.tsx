@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 export const dynamic = 'force-dynamic';
 import { useParams, useRouter } from 'next/navigation';
@@ -8,12 +8,31 @@ import { useSessionStore, useChatStore, useDocumentStore } from '../../../store'
 import { TabBar, ChatTabs } from '../../../components/layout';
 import { ChatList, MessageInput, PhrasePills } from '../../../components/chat';
 import { DocumentList, JsonUpload, DocumentLibrary } from '../../../components/document';
-import { Button, DropdownMenu, DropdownMenuItem } from '../../../components/ui';
+import { Button, DropdownMenu, DropdownMenuItem, Switch } from '../../../components/ui';
 import { Loading } from '../../../components/ui';
 import { EmptyState } from '../../../components/common';
 import { Header } from '../../../components/layout';
 import { documentProcessor } from '../../../services/rag';
 import { useRouteErrorHandler } from '../../../components/common/RouteErrorBoundary';
+import { getLibraryBookNameById } from '../../../services/libraryService';
+import type { Document } from '../../../types';
+
+const getDocumentDisplayName = (document: Document): string => {
+  if (document.originalPath?.startsWith('library:')) {
+    const libraryBookId = document.originalPath.slice('library:'.length);
+    const libraryBookName = getLibraryBookNameById(libraryBookId);
+    if (libraryBookName) return libraryBookName;
+  }
+
+  return document.title || document.filename;
+};
+
+const isTextEntryElement = (target: EventTarget | null): boolean => {
+  if (!(target instanceof HTMLElement)) return false;
+  if (target.isContentEditable) return true;
+  const tagName = target.tagName.toLowerCase();
+  return tagName === 'input' || tagName === 'textarea';
+};
 
 export default function SessionPage() {
   const params = useParams();
@@ -61,6 +80,7 @@ export default function SessionPage() {
     documents,
     loadDocuments,
     isUploading: documentsLoading,
+    toggleDocumentEnabled,
   } = useDocumentStore();
 
   // ADD THIS VARIABLE
@@ -69,9 +89,28 @@ export default function SessionPage() {
   const [activeTab, setActiveTab] = useState('chat');
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isLibraryOpen, setIsLibraryOpen] = useState(false);
+  const [isSourcesPanelOpen, setIsSourcesPanelOpen] = useState(false);
   const [messageInput, setMessageInput] = useState('');
   const [isInitialLoad, setIsInitialLoad] = useState(true);
+  const [togglingDocumentIds, setTogglingDocumentIds] = useState<Set<string>>(new Set());
   const messageInputRef = useRef<HTMLTextAreaElement>(null);
+
+  const sortedDocuments = useMemo(
+    () =>
+      [...documents].sort((a, b) =>
+        getDocumentDisplayName(a).toLowerCase().localeCompare(getDocumentDisplayName(b).toLowerCase())
+      ),
+    [documents]
+  );
+  const activeDocuments = useMemo(
+    () => sortedDocuments.filter((document) => document.enabled),
+    [sortedDocuments]
+  );
+  const inactiveDocuments = useMemo(
+    () => sortedDocuments.filter((document) => !document.enabled),
+    [sortedDocuments]
+  );
+  const activeDocumentCount = activeDocuments.length;
 
   const clearActiveElementFocus = () => {
     if (typeof document === 'undefined') return;
@@ -110,6 +149,49 @@ export default function SessionPage() {
 
     setIsLibraryOpen(false);
     setActiveTab('documents');
+  };
+
+  const handleSourcesPanelOpen = () => {
+    setIsSourcesPanelOpen(true);
+
+    if (typeof window !== 'undefined') {
+      const currentState = window.history.state ?? {};
+      if (!currentState.__sourcesPanel) {
+        window.history.pushState(
+          { ...currentState, __sourcesPanel: true },
+          '',
+          window.location.href
+        );
+      }
+    }
+  };
+
+  const handleSourcesPanelClose = () => {
+    clearActiveElementFocus();
+
+    if (typeof window !== 'undefined' && window.history.state?.__sourcesPanel) {
+      window.history.back();
+      return;
+    }
+
+    setIsSourcesPanelOpen(false);
+  };
+
+  const handleToggleSource = async (documentId: string) => {
+    if (togglingDocumentIds.has(documentId)) return;
+
+    setTogglingDocumentIds((current) => new Set(current).add(documentId));
+    try {
+      await toggleDocumentEnabled(documentId);
+    } catch (error) {
+      console.error('Failed to toggle source from chat panel:', error);
+    } finally {
+      setTogglingDocumentIds((current) => {
+        const next = new Set(current);
+        next.delete(documentId);
+        return next;
+      });
+    }
   };
 
   // Load session data on mount (client-side only)
@@ -202,6 +284,12 @@ export default function SessionPage() {
         setIsLibraryOpen(false);
         setActiveTab('documents');
         clearActiveElementFocus();
+        return;
+      }
+
+      if (isSourcesPanelOpen) {
+        setIsSourcesPanelOpen(false);
+        clearActiveElementFocus();
       }
     };
 
@@ -209,7 +297,35 @@ export default function SessionPage() {
     return () => {
       window.removeEventListener('popstate', handlePopState);
     };
-  }, [isLibraryOpen]);
+  }, [isLibraryOpen, isSourcesPanelOpen]);
+
+  useEffect(() => {
+    if (activeTab !== 'chat' && isSourcesPanelOpen) {
+      setIsSourcesPanelOpen(false);
+    }
+  }, [activeTab, isSourcesPanelOpen]);
+
+  useEffect(() => {
+    if (!isSourcesPanelOpen) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        handleSourcesPanelClose();
+        return;
+      }
+
+      if (event.key === 'Backspace' && !isTextEntryElement(event.target)) {
+        event.preventDefault();
+        handleSourcesPanelClose();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isSourcesPanelOpen]);
 
   const handleSendMessage = async (content: string) => {
     if (!sessionId) return;
@@ -529,7 +645,33 @@ export default function SessionPage() {
                 </div>
 
                 {/* Phrase Pills */}
-                <div className="flex-shrink-0 mt-4 max-w-4xl mx-auto w-full">
+                <div className="relative flex-shrink-0 mt-4 max-w-4xl mx-auto w-full">
+                  <button
+                    type="button"
+                    onClick={handleSourcesPanelOpen}
+                    onMouseUp={(event) => {
+                      event.currentTarget.blur();
+                    }}
+                    onTouchEnd={(event) => {
+                      event.currentTarget.blur();
+                    }}
+                    className="
+                      sources-scroll-button
+                      absolute bottom-full right-2 mb-2 z-20
+                      inline-flex items-center justify-center
+                      px-3 py-2 sm:px-4 sm:py-2
+                      text-xs sm:text-sm font-medium rounded-full
+                      bg-blue-600 text-white shadow-sm
+                      hover:bg-blue-700 active:bg-blue-700
+                      transition-none
+                      focus:outline-none focus:ring-0 focus:ring-offset-0
+                    "
+                    style={{ WebkitTapHighlightColor: 'transparent' }}
+                    aria-label="Manage active sources"
+                    title="Sources"
+                  >
+                    Sources {activeDocumentCount}
+                  </button>
                   <PhrasePills
                     onPhraseSelect={handlePhraseSelect}
                     className="bg-gray-100 dark:bg-gray-800 rounded-lg"
@@ -563,45 +705,71 @@ export default function SessionPage() {
 
                 {/* Phrase Pills */}
                 <div className="relative flex-shrink-0 mt-4 max-w-4xl mx-auto w-full">
-                  <button
-                    type="button"
-                    onClick={handleScrollToLatestQuestion}
-                    onMouseUp={(event) => {
-                      event.currentTarget.blur();
-                    }}
-                    onTouchEnd={(event) => {
-                      event.currentTarget.blur();
-                    }}
-                    className="
-                      answer-scroll-button
-                      absolute bottom-full right-2 mb-2 z-20
-                      inline-flex items-center justify-center
-                      px-3 py-2 sm:px-4 sm:py-2
-                      text-xs sm:text-sm font-medium rounded-full
-                      bg-gray-600 text-white border border-white
-                      hover:bg-gray-600 active:bg-gray-600
-                      transition-none
-                      focus:outline-none focus:ring-0 focus:ring-offset-0
-                    "
-                    style={{ WebkitTapHighlightColor: 'transparent' }}
-                    aria-label="Scroll to latest answer"
-                    title="Answer"
-                  >
-                    <svg
-                      className="w-3 h-3 mr-1.5"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
+                  <div className="absolute bottom-full right-2 mb-2 z-20 flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleSourcesPanelOpen}
+                      onMouseUp={(event) => {
+                        event.currentTarget.blur();
+                      }}
+                      onTouchEnd={(event) => {
+                        event.currentTarget.blur();
+                      }}
+                      className="
+                        sources-scroll-button
+                        inline-flex items-center justify-center
+                        px-3 py-2 sm:px-4 sm:py-2
+                        text-xs sm:text-sm font-medium rounded-full
+                        bg-blue-600 text-white shadow-sm
+                        hover:bg-blue-700 active:bg-blue-700
+                        transition-none
+                        focus:outline-none focus:ring-0 focus:ring-offset-0
+                      "
+                      style={{ WebkitTapHighlightColor: 'transparent' }}
+                      aria-label="Manage active sources"
+                      title="Sources"
                     >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M7 14l5-5 5 5"
-                      />
-                    </svg>
-                    Answer
-                  </button>
+                      Sources {activeDocumentCount}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleScrollToLatestQuestion}
+                      onMouseUp={(event) => {
+                        event.currentTarget.blur();
+                      }}
+                      onTouchEnd={(event) => {
+                        event.currentTarget.blur();
+                      }}
+                      className="
+                        answer-scroll-button
+                        inline-flex items-center justify-center
+                        px-3 py-2 sm:px-4 sm:py-2
+                        text-xs sm:text-sm font-medium rounded-full
+                        bg-gray-600 text-white border border-white
+                        hover:bg-gray-600 active:bg-gray-600
+                        transition-none
+                        focus:outline-none focus:ring-0 focus:ring-offset-0
+                      "
+                      style={{ WebkitTapHighlightColor: 'transparent' }}
+                      aria-label="Scroll to latest answer"
+                      title="Answer"
+                    >
+                      <svg
+                        className="w-3 h-3 mr-1.5"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M7 14l5-5 5 5"
+                        />
+                      </svg>
+                      Answer
+                    </button>
+                  </div>
                   <PhrasePills
                     onPhraseSelect={handlePhraseSelect}
                     className="bg-gray-100 dark:bg-gray-800 rounded-lg"
@@ -713,6 +881,123 @@ export default function SessionPage() {
           </div>
         )}
       </div>
+
+      {isSourcesPanelOpen && activeTab === 'chat' && (
+        <div className="fixed inset-0 z-50">
+          <button
+            type="button"
+            aria-label="Close sources panel"
+            onClick={handleSourcesPanelClose}
+            className="absolute inset-0 bg-black/40"
+          />
+
+          <div className="absolute inset-x-0 bottom-0 mx-auto w-full max-w-4xl rounded-t-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 shadow-2xl">
+            <div className="px-4 pt-3 pb-4 border-b border-gray-200 dark:border-gray-700">
+              <div className="mx-auto mb-3 h-1.5 w-12 rounded-full bg-gray-300 dark:bg-gray-600" />
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-base font-semibold text-gray-900 dark:text-white">
+                    Sources {activeDocumentCount}
+                  </h3>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    Changes apply to the next reply.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleSourcesPanelClose}
+                  className="p-2 rounded-full text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"
+                  aria-label="Close sources panel"
+                >
+                  <svg
+                    className="w-5 h-5"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M6 18L18 6M6 6l12 12"
+                    />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            <div className="max-h-[60vh] overflow-y-auto px-4 py-4 space-y-4">
+              {sortedDocuments.length === 0 && (
+                <div className="rounded-lg border border-dashed border-gray-300 dark:border-gray-700 p-4 text-sm text-gray-500 dark:text-gray-400">
+                  No books added yet. Add books to enable sources.
+                </div>
+              )}
+
+              {activeDocuments.length > 0 && (
+                <section>
+                  <h4 className="text-xs font-semibold uppercase tracking-wide text-green-700 dark:text-green-300 mb-2">
+                    Active ({activeDocuments.length})
+                  </h4>
+                  <div className="space-y-2">
+                    {activeDocuments.map((document) => (
+                      <div
+                        key={document.id}
+                        className="flex items-center justify-between gap-3 rounded-lg border border-gray-200 dark:border-gray-700 px-3 py-2"
+                      >
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                            {getDocumentDisplayName(document)}
+                          </p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400">
+                            {document.status}
+                          </p>
+                        </div>
+                        <Switch
+                          checked={document.enabled}
+                          onCheckedChange={() => handleToggleSource(document.id)}
+                          disabled={togglingDocumentIds.has(document.id)}
+                          size="sm"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
+
+              {inactiveDocuments.length > 0 && (
+                <section>
+                  <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300 mb-2">
+                    Inactive ({inactiveDocuments.length})
+                  </h4>
+                  <div className="space-y-2">
+                    {inactiveDocuments.map((document) => (
+                      <div
+                        key={document.id}
+                        className="flex items-center justify-between gap-3 rounded-lg border border-gray-200 dark:border-gray-700 px-3 py-2 opacity-80"
+                      >
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                            {getDocumentDisplayName(document)}
+                          </p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400">
+                            {document.status}
+                          </p>
+                        </div>
+                        <Switch
+                          checked={document.enabled}
+                          onCheckedChange={() => handleToggleSource(document.id)}
+                          disabled={togglingDocumentIds.has(document.id)}
+                          size="sm"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Delete Confirmation Dialog */}
       {isDeleteDialogOpen && (

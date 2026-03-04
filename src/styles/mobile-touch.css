@@ -54,6 +54,16 @@ button,
     border-color: rgb(255 255 255) !important;
   }
 
+  button.sources-scroll-button,
+  button.sources-scroll-button:hover,
+  button.sources-scroll-button:active,
+  button.sources-scroll-button:focus,
+  button.sources-scroll-button:focus-visible {
+    background-color: rgb(37 99 235) !important;
+    color: rgb(255 255 255) !important;
+    border-color: transparent !important;
+  }
+
   /* Keep selected library category pills readable on mobile dark mode */
   .dark button.library-category-pill[data-selected="true"],
   .dark button.library-category-pill[data-selected="true"]:hover,
