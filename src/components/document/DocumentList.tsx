@@ -4,6 +4,7 @@ import { DocumentCard, DocumentCardCompact } from './DocumentCard';
 import { EmptyState } from '../common/EmptyState';
 import { Input } from '../ui/Input';
 import { Button } from '../ui/Button';
+import { getLibraryBookNameById } from '@/services/libraryService';
 import clsx from 'clsx';
 
 interface DocumentListProps {
@@ -14,6 +15,16 @@ interface DocumentListProps {
   showSearch?: boolean;
   className?: string;
 }
+
+const getDisplayName = (document: Document): string => {
+  if (document.originalPath?.startsWith('library:')) {
+    const libraryBookId = document.originalPath.slice('library:'.length);
+    const libraryBookName = getLibraryBookNameById(libraryBookId);
+    if (libraryBookName) return libraryBookName;
+  }
+
+  return document.title || document.filename;
+};
 
 export const DocumentList: React.FC<DocumentListProps> = ({
   documents,
@@ -33,15 +44,16 @@ export const DocumentList: React.FC<DocumentListProps> = ({
     if (searchQuery) {
       result = documents.filter(doc =>
         doc.filename.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        doc.title?.toLowerCase().includes(searchQuery.toLowerCase())
+        doc.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        getDisplayName(doc).toLowerCase().includes(searchQuery.toLowerCase())
       );
     }
 
     // Sort: Alphabetical
     return [...result].sort((a, b) => {
-      // Alphabetical by title or filename
-      const titleA = (a.title || a.filename).toLowerCase();
-      const titleB = (b.title || b.filename).toLowerCase();
+      // Alphabetical by display name
+      const titleA = getDisplayName(a).toLowerCase();
+      const titleB = getDisplayName(b).toLowerCase();
       return titleA.localeCompare(titleB);
     });
   }, [documents, searchQuery]);

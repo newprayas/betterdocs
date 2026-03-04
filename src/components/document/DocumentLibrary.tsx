@@ -180,7 +180,7 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
       filename: sourceDoc.filename,
       fileSize: sourceDoc.fileSize,
       pageCount: sourceDoc.pageCount,
-      title: sourceDoc.title,
+      title: book.name,
       originalPath: getLibrarySourcePath(book.id),
     }, userId!);
 
@@ -329,6 +329,7 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
         },
         {
           librarySourceId: book.id,
+          libraryBookName: book.name,
           routingCompanion: routingCompanion ?? undefined
         }
       );

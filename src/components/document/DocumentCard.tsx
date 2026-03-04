@@ -7,6 +7,7 @@ import { useConfirmDialog } from '../common/ConfirmDialog';
 import { useTestModal } from '../ui/TestModal';
 import { useDocumentStore } from '../../store';
 import { formatFileSize } from '../../utils';
+import { getLibraryBookNameById } from '@/services/libraryService';
 import clsx from 'clsx';
 
 interface DocumentCardProps {
@@ -14,6 +15,16 @@ interface DocumentCardProps {
   onToggle?: (document: Document) => void;
   className?: string;
 }
+
+const getDisplayName = (document: Document): string => {
+  if (document.originalPath?.startsWith('library:')) {
+    const libraryBookId = document.originalPath.slice('library:'.length);
+    const libraryBookName = getLibraryBookNameById(libraryBookId);
+    if (libraryBookName) return libraryBookName;
+  }
+
+  return document.title || document.filename;
+};
 
 export const DocumentCard: React.FC<DocumentCardProps> = ({
   document,
@@ -25,6 +36,7 @@ export const DocumentCard: React.FC<DocumentCardProps> = ({
   const { deleteDocument, toggleDocumentEnabled } = useDocumentStore();
   const { confirm, ConfirmDialog } = useConfirmDialog();
   const { openModal: openTestModal, closeModal: closeTestModal, TestModal, isOpen: isTestModalOpen } = useTestModal();
+  const displayName = getDisplayName(document);
 
   const handleToggle = async (enabled: boolean) => {
     try {
@@ -56,14 +68,14 @@ export const DocumentCard: React.FC<DocumentCardProps> = ({
     try {
       console.log('🔍 DocumentCard: Calling confirm with options', {
         title: 'Delete Document',
-        message: `Are you sure you want to delete "${document.filename}"? This action cannot be undone.`,
+        message: `Are you sure you want to delete "${displayName}"? This action cannot be undone.`,
         timestamp: new Date().toISOString()
       });
       
       const confirmStartTime = Date.now();
       const confirmResult = await confirm({
         title: 'Delete Document',
-        message: `Are you sure you want to delete "${document.filename}"? This action cannot be undone.`,
+        message: `Are you sure you want to delete "${displayName}"? This action cannot be undone.`,
         onConfirm: async () => {
           console.log('✅ DocumentCard: User confirmed deletion, starting delete operation', {
             documentId: document.id,
@@ -223,7 +235,7 @@ export const DocumentCard: React.FC<DocumentCardProps> = ({
             <div className="flex-1 min-w-0 pr-2 sm:pr-3">
               <div className="flex items-center gap-2 mb-2">
                 <h3 className="font-medium text-sm sm:text-base text-gray-900 dark:text-white break-words">
-                  {document.filename}
+                  {displayName}
                 </h3>
                 {getStatusIcon()}
               </div>
@@ -316,6 +328,7 @@ export const DocumentCardCompact: React.FC<{
   className?: string;
 }> = ({ document, onToggle, className }) => {
   const { toggleDocumentEnabled } = useDocumentStore();
+  const displayName = getDisplayName(document);
 
   const handleToggle = async (enabled: boolean) => {
     try {
@@ -355,7 +368,7 @@ export const DocumentCardCompact: React.FC<{
           <div className="flex items-center gap-2">
             <div className={clsx('w-2 h-2 rounded-full', getStatusColor())} />
             <h4 className="font-medium text-xs sm:text-sm text-gray-900 dark:text-white break-words">
-              {document.filename}
+              {displayName}
             </h4>
           </div>
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">

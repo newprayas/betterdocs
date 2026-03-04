@@ -366,6 +366,7 @@ export class DocumentProcessor {
     onProgress?: (progress: EmbeddingGenerationProgress) => void,
     options?: {
       librarySourceId?: string;
+      libraryBookName?: string;
       routingCompanion?: RouteCompanionPayload;
     }
   ): Promise<string> {
@@ -379,6 +380,7 @@ export class DocumentProcessor {
     }
 
       const librarySourcePath = options?.librarySourceId ? `library:${options.librarySourceId}` : undefined;
+      const preferredLibraryName = options?.libraryBookName;
 
       console.log('📋 DocumentProcessor: Package info:', {
         sessionId,
@@ -581,6 +583,7 @@ export class DocumentProcessor {
         // This fixes the session ID mismatch issue
         const metadataUpdate = {
           ...metadataExtractor.applyToDocument(document, metadataResult.metadata),
+          ...(preferredLibraryName ? { title: preferredLibraryName } : {}),
           sessionId: currentSessionId, // Force update to current session ID
           ...(librarySourcePath ? { originalPath: librarySourcePath } : {})
         };
@@ -611,7 +614,7 @@ export class DocumentProcessor {
           filename: packageData.document_metadata.filename,
           fileSize: packageData.document_metadata.file_size,
           pageCount: packageData.document_metadata.page_count,
-          title: metadataResult.metadata.title,
+          title: preferredLibraryName || metadataResult.metadata.title,
           author: metadataResult.metadata.author,
           language: metadataResult.metadata.language,
           originalPath: librarySourcePath,

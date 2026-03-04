@@ -193,6 +193,10 @@ const LIBRARY_CATALOG = [
   }
 ];
 
+export const getLibraryBookNameById = (bookId: string): string | undefined => {
+  return LIBRARY_CATALOG.find((item) => item.id === bookId)?.name;
+};
+
 export const libraryService = {
   /**
    * Returns the embedded library catalog with full download URLs
