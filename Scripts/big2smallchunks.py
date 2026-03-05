@@ -16,10 +16,11 @@ No Voyage API calls are made.
 from __future__ import annotations
 
 import argparse
+import base64
 import copy
 import gzip
+import hashlib
 import json
-import math
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
@@ -28,6 +29,10 @@ MB = 1024 * 1024
 
 def format_mb(size_bytes: int) -> str:
     return f"{size_bytes / MB:.1f} MB"
+
+
+def sha256_hex(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
 
 
 def load_gzip_json(path: Path) -> Dict[str, Any]:
@@ -44,6 +49,55 @@ def load_gzip_json(path: Path) -> Dict[str, Any]:
 def dump_gzip_json(data: Dict[str, Any], level: int = 9) -> bytes:
     payload = json.dumps(data, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
     return gzip.compress(payload, compresslevel=level)
+
+
+def build_external_ann_assets(
+    package: Dict[str, Any],
+    output_stem: str,
+) -> Tuple[Dict[str, Any] | None, List[Tuple[str, bytes]]]:
+    ann = package.get("ann_index")
+    if not isinstance(ann, dict):
+        return None, []
+
+    artifact_bytes: bytes | None = None
+    artifact_inline = ann.get("artifact_base64")
+    if isinstance(artifact_inline, str) and artifact_inline.strip():
+        try:
+            artifact_bytes = base64.b64decode(artifact_inline, validate=True)
+        except Exception:
+            artifact_bytes = None
+
+    id_map_list: List[str] | None = None
+    raw_id_map = ann.get("id_map")
+    if isinstance(raw_id_map, list) and all(isinstance(v, str) for v in raw_id_map):
+        id_map_list = raw_id_map
+
+    if artifact_bytes is None and id_map_list is None:
+        return None, []
+
+    new_ann = copy.deepcopy(ann)
+    new_ann.pop("artifact_base64", None)
+    new_ann.pop("id_map", None)
+
+    assets: List[Tuple[str, bytes]] = []
+
+    if artifact_bytes is not None:
+        ann_name = f"{output_stem}_ann.bin"
+        assets.append((ann_name, artifact_bytes))
+        new_ann["artifact_name"] = ann_name
+        new_ann["artifact_size"] = len(artifact_bytes)
+        new_ann["artifact_checksum"] = sha256_hex(artifact_bytes)
+
+    if id_map_list is not None:
+        id_map_json = json.dumps(id_map_list, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        id_map_gz = gzip.compress(id_map_json, compresslevel=9)
+        id_map_name = f"{output_stem}_idmap.json.gz"
+        assets.append((id_map_name, id_map_gz))
+        new_ann["id_map_name"] = id_map_name
+        new_ann["id_map_size"] = len(id_map_json)
+        new_ann["id_map_checksum"] = sha256_hex(id_map_json)
+
+    return new_ann, assets
 
 
 def build_part_payload(base: Dict[str, Any], chunk_slice: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -87,10 +141,10 @@ def best_chunk_window(
 def split_large_bin(
     source: Path,
     target_bytes: int,
-    drop_ann_index: bool,
+    keep_ann_inline: bool,
     single_only: bool,
     max_decompressed_bytes: int,
-) -> Tuple[List[Path], int]:
+) -> Tuple[List[Path], List[Path], int]:
     original_size = source.stat().st_size
     package = load_gzip_json(source)
 
@@ -98,10 +152,19 @@ def split_large_bin(
     if not isinstance(chunks, list) or len(chunks) == 0:
         raise ValueError(f"{source.name}: missing or empty chunks array")
 
-    # Keep original metadata, but optionally remove ANN for size stability.
+    # Keep original metadata; by default externalize ANN to sidecar files.
     base = {k: v for k, v in package.items() if k != "chunks"}
-    if drop_ann_index:
-        base.pop("ann_index", None)
+    single_sidecar_assets: List[Tuple[str, bytes]] = []
+    if keep_ann_inline:
+        pass
+    else:
+        single_stem = f"Small_{source.stem}"
+        new_ann, assets = build_external_ann_assets(package, single_stem)
+        if new_ann is not None:
+            base["ann_index"] = new_ann
+            single_sidecar_assets = assets
+        else:
+            base.pop("ann_index", None)
 
     # Try single-file rewrite first.
     single_payload = build_part_payload(base, chunks)
@@ -111,6 +174,7 @@ def split_large_bin(
     single_blob = gzip.compress(single_json_bytes, compresslevel=9)
     single_decompressed_size = len(single_json_bytes)
     out_paths: List[Path] = []
+    sidecar_paths: List[Path] = []
 
     if single_only:
         if single_decompressed_size > max_decompressed_bytes:
@@ -122,20 +186,38 @@ def split_large_bin(
         out_name = f"Small_{source.name}"
         out_path = source.parent / out_name
         out_path.write_bytes(single_blob)
-        return [out_path], original_size
+        out_paths.append(out_path)
+
+        for filename, content in single_sidecar_assets:
+            path = source.parent / filename
+            path.write_bytes(content)
+            sidecar_paths.append(path)
+
+        return out_paths, sidecar_paths, original_size
 
     if len(single_blob) <= target_bytes and single_decompressed_size <= max_decompressed_bytes:
         out_name = f"Small_{source.name}"
         out_path = source.parent / out_name
         out_path.write_bytes(single_blob)
-        return [out_path], original_size
+        out_paths.append(out_path)
 
-    # Need true splitting.
+        for filename, content in single_sidecar_assets:
+            path = source.parent / filename
+            path.write_bytes(content)
+            sidecar_paths.append(path)
+
+        return out_paths, sidecar_paths, original_size
+
+    # Need true splitting. ANN references are removed because split chunks make
+    # original id_map/graph invalid for individual parts.
+    split_base = copy.deepcopy(base)
+    split_base.pop("ann_index", None)
+
     blobs: List[bytes] = []
     windows: List[Tuple[int, int]] = []
     start = 0
     while start < len(chunks):
-        end, blob = best_chunk_window(base, chunks, start, target_bytes)
+        end, blob = best_chunk_window(split_base, chunks, start, target_bytes)
         windows.append((start, end))
         blobs.append(blob)
         start = end
@@ -148,7 +230,7 @@ def split_large_bin(
         out_path.write_bytes(blob)
         out_paths.append(out_path)
 
-    return out_paths, original_size
+    return out_paths, sidecar_paths, original_size
 
 
 def main() -> None:
@@ -176,7 +258,7 @@ def main() -> None:
     parser.add_argument(
         "--keep-ann",
         action="store_true",
-        help="Keep ann_index in output (default: remove ann_index for smaller output)",
+        help="Keep inline ann_index payloads in output (default: externalize ANN into sidecar files when possible)",
     )
     parser.add_argument(
         "--single-only",
@@ -214,17 +296,17 @@ def main() -> None:
 
     print(f"Found {len(candidates)} oversized .bin file(s) in: {root}")
     print(f"Target output size: <= {args.target_mb} MB")
-    print(f"ANN handling: {'keep ann_index' if args.keep_ann else 'drop ann_index'}")
+    print(f"ANN handling: {'keep inline ann_index' if args.keep_ann else 'externalize ann_index to sidecars'}")
     print(f"Mode: {'single-only' if args.single_only else 'allow split'}")
     print(f"Decompressed safety ceiling: <= {args.max_decompressed_mb} MB")
 
     for src in candidates:
         print(f"\nProcessing {src.name} ({format_mb(src.stat().st_size)})")
         try:
-            outputs, original_size = split_large_bin(
+            outputs, sidecars, original_size = split_large_bin(
                 source=src,
                 target_bytes=target_bytes,
-                drop_ann_index=not args.keep_ann,
+                keep_ann_inline=args.keep_ann,
                 single_only=args.single_only,
                 max_decompressed_bytes=max_decompressed_bytes,
             )
@@ -232,10 +314,14 @@ def main() -> None:
             print(f"  FAILED: {exc}")
             continue
 
-        total_out = sum(p.stat().st_size for p in outputs)
+        total_out = sum(p.stat().st_size for p in outputs) + sum(p.stat().st_size for p in sidecars)
         print(f"  Created {len(outputs)} file(s):")
         for p in outputs:
             print(f"   - {p.name} ({format_mb(p.stat().st_size)})")
+        if sidecars:
+            print(f"  Created {len(sidecars)} ANN sidecar file(s):")
+            for p in sidecars:
+                print(f"   - {p.name} ({format_mb(p.stat().st_size)})")
         ratio = (total_out / original_size) if original_size else 0
         print(f"  Total output size: {format_mb(total_out)} ({ratio:.2f}x of original)")
 

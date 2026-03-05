@@ -250,7 +250,7 @@ const LIBRARY_CATALOG = [
   {
     "id": "goldman_cecil_medicine_2vol",
     "name": "Lee Goldman Kathleen A Cooney Goldman Medicine 2 Volume 22 edition",
-    "filename": "shard_2d6.bin",
+    "filename": "Small_shard_2d6.bin",
     "size": "179.5 MB",
     "category": "Medicine"
   },
