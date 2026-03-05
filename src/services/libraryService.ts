@@ -239,6 +239,34 @@ const LIBRARY_CATALOG = [
     "filename": "shard_6m4.bin",
     "size": "7.7 MB",
     "category": "Pediatrics"
+  },
+  {
+    "id": "passmedicine_high_yield_textbook",
+    "name": "All Passmedicine High Yield Textbook MRCP part 1 2025",
+    "filename": "shard_4v0.bin",
+    "size": "24.4 MB",
+    "category": "MRCP"
+  },
+  {
+    "id": "harrison_principles_internal_medicine_22ed",
+    "name": "Harrison Internal Medicine 22 edition",
+    "filename": "shard_9z2.bin",
+    "size": "197.3 MB",
+    "category": "Medicine"
+  },
+  {
+    "id": "goldman_cecil_medicine_2vol",
+    "name": "Lee Goldman Kathleen A Cooney Goldman Medicine 2 Volume 22 edition",
+    "filename": "shard_2d6.bin",
+    "size": "179.5 MB",
+    "category": "Medicine"
+  },
+  {
+    "id": "first_aid_usmle_step1_2025",
+    "name": "First Aid USMLE Step 1 2025 McGraw",
+    "filename": "shard_3k8.bin",
+    "size": "15.3 MB",
+    "category": "USMLE"
   }
 ];
 
