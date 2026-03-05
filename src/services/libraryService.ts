@@ -190,6 +190,55 @@ const LIBRARY_CATALOG = [
     "filename": "shard_8o8.bin",
     "size": "18.8 MB",
     "category": "Medicine"
+  },
+  {
+    "id": "basak_essentials_ophthalmology_6ed",
+    "name": "Basak Essentials of Ophthalmology 6 edition",
+    "filename": "shard_9r1.bin",
+    "size": "9.2 MB",
+    "category": "Ophthalmology"
+  },
+  {
+    "id": "joynal_sir_eye_notes",
+    "name": "Joynal Sir Eye Lecture Notes",
+    "filename": "shard_2o1.bin",
+    "size": "1.8 MB",
+    "category": "🎉 Special notes"
+  },
+  {
+    "id": "apleys_orthopaedics_10ed",
+    "name": "Apleys 10 edition",
+    "filename": "shard_5k3.bin",
+    "size": "25.0 MB",
+    "category": "Orthopedics"
+  },
+  {
+    "id": "dhingra_ent_diseases",
+    "name": "Diseases of the Ear Nose and Throat Dhingra X edition",
+    "filename": "shard_3j9.bin",
+    "size": "11.4 MB",
+    "category": "ENT"
+  },
+  {
+    "id": "ebnezar_rakesh_orthopedics",
+    "name": "Ebnezar and Rakesh Textbook of Orthopedics X edition",
+    "filename": "shard_9s6.bin",
+    "size": "14.4 MB",
+    "category": "Orthopedics"
+  },
+  {
+    "id": "gomellas_neonatology_8ed",
+    "name": "Gomellas Neonatology 8 edition",
+    "filename": "shard_9z5.bin",
+    "size": "33.7 MB",
+    "category": "Pediatrics"
+  },
+  {
+    "id": "step_to_paediatrics_mollah_5ed",
+    "name": "Step on to Paediatrics by Md Abid Hossain Mollah 5 edition",
+    "filename": "shard_6m4.bin",
+    "size": "7.7 MB",
+    "category": "Pediatrics"
   }
 ];
 
