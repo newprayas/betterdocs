@@ -213,15 +213,8 @@ const LIBRARY_CATALOG = [
     "category": "Orthopedics"
   },
   {
-    "id": "dhingra_ent_diseases",
-    "name": "Diseases of the Ear Nose and Throat Dhingra X edition",
-    "filename": "shard_3j9.bin",
-    "size": "11.4 MB",
-    "category": "ENT"
-  },
-  {
     "id": "ebnezar_rakesh_orthopedics",
-    "name": "Ebnezar and Rakesh Textbook of Orthopedics X edition",
+    "name": "Ebnezar and Rakesh Textbook of Orthopedics 5th edition",
     "filename": "shard_9s6.bin",
     "size": "14.4 MB",
     "category": "Orthopedics"
