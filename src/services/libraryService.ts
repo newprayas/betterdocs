@@ -241,13 +241,6 @@ const LIBRARY_CATALOG = [
     "category": "MRCP"
   },
   {
-    "id": "harrison_principles_internal_medicine_22ed",
-    "name": "Harrison Internal Medicine 22 edition",
-    "filename": "shard_9z2.bin",
-    "size": "197.3 MB",
-    "category": "Medicine"
-  },
-  {
     "id": "goldman_cecil_medicine_2vol",
     "name": "Lee Goldman Kathleen A Cooney Goldman Medicine 2 Volume 22 edition",
     "filename": "Small_shard_2d6.bin",
