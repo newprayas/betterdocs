@@ -1,25 +1,38 @@
-'use client';
+"use client";
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from "react";
 
-export const dynamic = 'force-dynamic';
-import { useParams, useRouter } from 'next/navigation';
-import { useSessionStore, useChatStore, useDocumentStore } from '../../../store';
-import { TabBar, ChatTabs } from '../../../components/layout';
-import { ChatList, MessageInput, PhrasePills } from '../../../components/chat';
-import { DocumentList, JsonUpload, DocumentLibrary } from '../../../components/document';
-import { Button, DropdownMenu, DropdownMenuItem, Switch } from '../../../components/ui';
-import { Loading } from '../../../components/ui';
-import { EmptyState } from '../../../components/common';
-import { Header } from '../../../components/layout';
-import { documentProcessor } from '../../../services/rag';
-import { useRouteErrorHandler } from '../../../components/common/RouteErrorBoundary';
-import { getLibraryBookNameById } from '../../../services/libraryService';
-import type { Document } from '../../../types';
+export const dynamic = "force-dynamic";
+import { useParams, useRouter } from "next/navigation";
+import {
+  useSessionStore,
+  useChatStore,
+  useDocumentStore,
+} from "../../../store";
+import { TabBar, ChatTabs } from "../../../components/layout";
+import { ChatList, MessageInput, PhrasePills } from "../../../components/chat";
+import {
+  DocumentList,
+  JsonUpload,
+  DocumentLibrary,
+} from "../../../components/document";
+import {
+  Button,
+  DropdownMenu,
+  DropdownMenuItem,
+  Switch,
+} from "../../../components/ui";
+import { Loading } from "../../../components/ui";
+import { EmptyState } from "../../../components/common";
+import { Header } from "../../../components/layout";
+import { documentProcessor } from "../../../services/rag";
+import { useRouteErrorHandler } from "../../../components/common/RouteErrorBoundary";
+import { getLibraryBookNameById } from "../../../services/libraryService";
+import type { Document } from "../../../types";
 
 const getDocumentDisplayName = (document: Document): string => {
-  if (document.originalPath?.startsWith('library:')) {
-    const libraryBookId = document.originalPath.slice('library:'.length);
+  if (document.originalPath?.startsWith("library:")) {
+    const libraryBookId = document.originalPath.slice("library:".length);
     const libraryBookName = getLibraryBookNameById(libraryBookId);
     if (libraryBookName) return libraryBookName;
   }
@@ -31,7 +44,7 @@ const isTextEntryElement = (target: EventTarget | null): boolean => {
   if (!(target instanceof HTMLElement)) return false;
   if (target.isContentEditable) return true;
   const tagName = target.tagName.toLowerCase();
-  return tagName === 'input' || tagName === 'textarea';
+  return tagName === "input" || tagName === "textarea";
 };
 
 export default function SessionPage() {
@@ -43,17 +56,20 @@ export default function SessionPage() {
   // Validate session ID format
   useEffect(() => {
     if (!sessionId) {
-      handleRouteError(new Error('Session ID is missing'), 'Session page load');
-      safeNavigate('/', 'Invalid session ID');
+      handleRouteError(new Error("Session ID is missing"), "Session page load");
+      safeNavigate("/", "Invalid session ID");
       return;
     }
 
     // Basic validation for session ID format (UUID or similar)
     const validIdPattern = /^[a-zA-Z0-9\-_]{10,}$/;
     if (!validIdPattern.test(sessionId)) {
-      console.error('🔍 [SESSION_PAGE] Invalid session ID format:', sessionId);
-      handleRouteError(new Error(`Invalid session ID format: ${sessionId}`), 'Session ID validation');
-      safeNavigate('/', 'Invalid session ID format');
+      console.error("🔍 [SESSION_PAGE] Invalid session ID format:", sessionId);
+      handleRouteError(
+        new Error(`Invalid session ID format: ${sessionId}`),
+        "Session ID validation",
+      );
+      safeNavigate("/", "Invalid session ID format");
       return;
     }
 
@@ -85,36 +101,41 @@ export default function SessionPage() {
   } = useDocumentStore();
 
   // ADD THIS VARIABLE
-  const hasDocuments = (currentSession?.documentCount || 0) > 0 || documents.length > 0;
+  const hasDocuments =
+    (currentSession?.documentCount || 0) > 0 || documents.length > 0;
 
-  const [activeTab, setActiveTab] = useState('chat');
+  const [activeTab, setActiveTab] = useState("chat");
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isLibraryOpen, setIsLibraryOpen] = useState(false);
   const [isSourcesPanelOpen, setIsSourcesPanelOpen] = useState(false);
-  const [messageInput, setMessageInput] = useState('');
+  const [messageInput, setMessageInput] = useState("");
   const [isInitialLoad, setIsInitialLoad] = useState(true);
-  const [togglingDocumentIds, setTogglingDocumentIds] = useState<Set<string>>(new Set());
+  const [togglingDocumentIds, setTogglingDocumentIds] = useState<Set<string>>(
+    new Set(),
+  );
   const messageInputRef = useRef<HTMLTextAreaElement>(null);
 
   const sortedDocuments = useMemo(
     () =>
       [...documents].sort((a, b) =>
-        getDocumentDisplayName(a).toLowerCase().localeCompare(getDocumentDisplayName(b).toLowerCase())
+        getDocumentDisplayName(a)
+          .toLowerCase()
+          .localeCompare(getDocumentDisplayName(b).toLowerCase()),
       ),
-    [documents]
+    [documents],
   );
   const activeDocuments = useMemo(
     () => sortedDocuments.filter((document) => document.enabled),
-    [sortedDocuments]
+    [sortedDocuments],
   );
   const inactiveDocuments = useMemo(
     () => sortedDocuments.filter((document) => !document.enabled),
-    [sortedDocuments]
+    [sortedDocuments],
   );
   const activeDocumentCount = activeDocuments.length;
 
   const clearActiveElementFocus = () => {
-    if (typeof document === 'undefined') return;
+    if (typeof document === "undefined") return;
     const blurActive = () => {
       const activeEl = document.activeElement as HTMLElement | null;
       activeEl?.blur();
@@ -125,16 +146,16 @@ export default function SessionPage() {
   };
 
   const handleLibraryOpen = () => {
-    setActiveTab('documents');
+    setActiveTab("documents");
     setIsLibraryOpen(true);
 
-    if (typeof window !== 'undefined') {
+    if (typeof window !== "undefined") {
       const currentState = window.history.state ?? {};
       if (!currentState.__libraryOverlay) {
         window.history.pushState(
           { ...currentState, __libraryOverlay: true },
-          '',
-          window.location.href
+          "",
+          window.location.href,
         );
       }
     }
@@ -143,25 +164,28 @@ export default function SessionPage() {
   const handleLibraryClose = () => {
     clearActiveElementFocus();
 
-    if (typeof window !== 'undefined' && window.history.state?.__libraryOverlay) {
+    if (
+      typeof window !== "undefined" &&
+      window.history.state?.__libraryOverlay
+    ) {
       window.history.back();
       return;
     }
 
     setIsLibraryOpen(false);
-    setActiveTab('documents');
+    setActiveTab("documents");
   };
 
   const handleSourcesPanelOpen = () => {
     setIsSourcesPanelOpen(true);
 
-    if (typeof window !== 'undefined') {
+    if (typeof window !== "undefined") {
       const currentState = window.history.state ?? {};
       if (!currentState.__sourcesPanel) {
         window.history.pushState(
           { ...currentState, __sourcesPanel: true },
-          '',
-          window.location.href
+          "",
+          window.location.href,
         );
       }
     }
@@ -170,7 +194,7 @@ export default function SessionPage() {
   const handleSourcesPanelClose = () => {
     clearActiveElementFocus();
 
-    if (typeof window !== 'undefined' && window.history.state?.__sourcesPanel) {
+    if (typeof window !== "undefined" && window.history.state?.__sourcesPanel) {
       window.history.back();
       return;
     }
@@ -185,7 +209,7 @@ export default function SessionPage() {
     try {
       await toggleDocumentEnabled(documentId);
     } catch (error) {
-      console.error('Failed to toggle source from chat panel:', error);
+      console.error("Failed to toggle source from chat panel:", error);
     } finally {
       setTogglingDocumentIds((current) => {
         const next = new Set(current);
@@ -205,23 +229,23 @@ export default function SessionPage() {
     useDocumentStore.getState().clearDocuments();
 
     const loadSessionData = async () => {
-      if (typeof window !== 'undefined' && sessionId) {
+      if (typeof window !== "undefined" && sessionId) {
         // Set the current session ID immediately (this will now be optimistic if cached)
         // We don't await this because we want to render immediately with the cached data
         // The store handles the DB fetch in the background
-        setCurrentSessionId(sessionId).catch(error => {
-          console.error('Failed to set current session:', error);
+        setCurrentSessionId(sessionId).catch((error) => {
+          console.error("Failed to set current session:", error);
         });
 
         // Load messages in background - don't await for UI render
-        loadMessages(sessionId).catch(error => {
-          console.error('Failed to load messages:', error);
+        loadMessages(sessionId).catch((error) => {
+          console.error("Failed to load messages:", error);
         });
 
         // IMPORTANT: Load documents on mount to ensure hasDocuments check works correctly
         // This fixes the race condition where Chat tab shows "Add books" even when books exist
-        loadDocuments(sessionId).catch(error => {
-          console.error('Failed to load documents:', error);
+        loadDocuments(sessionId).catch((error) => {
+          console.error("Failed to load documents:", error);
         });
 
         // We can show the UI immediately if we have the session
@@ -230,14 +254,16 @@ export default function SessionPage() {
 
           // Log performance metric if available
           try {
-            const clickDataStr = sessionStorage.getItem('session_click_time');
+            const clickDataStr = sessionStorage.getItem("session_click_time");
             if (clickDataStr) {
               const clickData = JSON.parse(clickDataStr);
               if (clickData.sessionId === sessionId) {
                 const duration = performance.now() - clickData.timestamp;
-                console.log(`⏱️ [Performance] Session ${sessionId} opened in ${duration.toFixed(2)}ms`);
+                console.log(
+                  `⏱️ [Performance] Session ${sessionId} opened in ${duration.toFixed(2)}ms`,
+                );
                 // Clear it so we don't log it again on refresh
-                sessionStorage.removeItem('session_click_time');
+                sessionStorage.removeItem("session_click_time");
               }
             }
           } catch (e) {
@@ -259,10 +285,10 @@ export default function SessionPage() {
 
   // Refresh documents when switching to Documents tab (in case new docs were added)
   useEffect(() => {
-    if (activeTab === 'documents' && sessionId) {
+    if (activeTab === "documents" && sessionId) {
       loadDocuments(sessionId);
       // Ensure the page starts from top when switching tabs
-      window.scrollTo({ top: 0, behavior: 'instant' });
+      window.scrollTo({ top: 0, behavior: "instant" });
     }
   }, [activeTab, sessionId, loadDocuments]);
 
@@ -271,9 +297,14 @@ export default function SessionPage() {
 
   // Redirect if session not found (client-side only)
   useEffect(() => {
-    if (typeof window !== 'undefined' && !sessionLoading && !currentSession && !isInitialLoad) {
+    if (
+      typeof window !== "undefined" &&
+      !sessionLoading &&
+      !currentSession &&
+      !isInitialLoad
+    ) {
       // Only redirect if we're done loading and still have no session
-      // router.push('/'); 
+      // router.push('/');
       // Commented out to prevent accidental redirects during loading
     }
   }, [currentSession, sessionLoading, router, isInitialLoad]);
@@ -283,7 +314,7 @@ export default function SessionPage() {
     const handlePopState = () => {
       if (isLibraryOpen) {
         setIsLibraryOpen(false);
-        setActiveTab('documents');
+        setActiveTab("documents");
         clearActiveElementFocus();
         return;
       }
@@ -294,14 +325,14 @@ export default function SessionPage() {
       }
     };
 
-    window.addEventListener('popstate', handlePopState);
+    window.addEventListener("popstate", handlePopState);
     return () => {
-      window.removeEventListener('popstate', handlePopState);
+      window.removeEventListener("popstate", handlePopState);
     };
   }, [isLibraryOpen, isSourcesPanelOpen]);
 
   useEffect(() => {
-    if (activeTab !== 'chat' && isSourcesPanelOpen) {
+    if (activeTab !== "chat" && isSourcesPanelOpen) {
       setIsSourcesPanelOpen(false);
     }
   }, [activeTab, isSourcesPanelOpen]);
@@ -310,21 +341,21 @@ export default function SessionPage() {
     if (!isSourcesPanelOpen) return;
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
+      if (event.key === "Escape") {
         event.preventDefault();
         handleSourcesPanelClose();
         return;
       }
 
-      if (event.key === 'Backspace' && !isTextEntryElement(event.target)) {
+      if (event.key === "Backspace" && !isTextEntryElement(event.target)) {
         event.preventDefault();
         handleSourcesPanelClose();
       }
     };
 
-    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener("keydown", handleKeyDown);
     return () => {
-      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener("keydown", handleKeyDown);
     };
   }, [isSourcesPanelOpen]);
 
@@ -333,15 +364,17 @@ export default function SessionPage() {
 
     try {
       await sendMessage(sessionId, content);
-      setMessageInput(''); // Clear the input after sending
+      setMessageInput(""); // Clear the input after sending
     } catch (error) {
-      console.error('Failed to send message:', error);
+      console.error("Failed to send message:", error);
     }
   };
 
   const handlePhraseSelect = (phrase: string) => {
     // Append the selected phrase to the current message input with an extra space
-    const newMessage = messageInput ? `${messageInput} ${phrase} ` : `${phrase} `;
+    const newMessage = messageInput
+      ? `${messageInput} ${phrase} `
+      : `${phrase} `;
     setMessageInput(newMessage);
 
     // Focus the input field and position cursor at the end
@@ -359,9 +392,9 @@ export default function SessionPage() {
 
     try {
       await deleteSession(sessionId);
-      router.push('/');
+      router.push("/");
     } catch (error) {
-      console.error('Failed to delete session:', error);
+      console.error("Failed to delete session:", error);
     }
   };
 
@@ -371,15 +404,17 @@ export default function SessionPage() {
     try {
       await clearHistory(sessionId);
     } catch (error) {
-      console.error('Failed to clear history:', error);
+      console.error("Failed to clear history:", error);
     }
   };
 
   const handleScrollToLatestQuestion = () => {
-    const debugPrefix = '[AnswerScroll]';
+    const debugPrefix = "[AnswerScroll]";
     console.groupCollapsed(`${debugPrefix} Button tapped`);
 
-    const chatRegion = document.querySelector('[data-chat-scroll-container="true"]') as HTMLElement | null;
+    const chatRegion = document.querySelector(
+      '[data-chat-scroll-container="true"]',
+    ) as HTMLElement | null;
     if (!chatRegion) {
       console.warn(`${debugPrefix} chatRegion not found`);
       console.groupEnd();
@@ -387,7 +422,7 @@ export default function SessionPage() {
     }
 
     const messageElements = Array.from(
-      chatRegion.querySelectorAll('[data-chat-message-id]')
+      chatRegion.querySelectorAll("[data-chat-message-id]"),
     ) as HTMLElement[];
     console.log(`${debugPrefix} chatRegion metrics`, {
       scrollTop: chatRegion.scrollTop,
@@ -399,33 +434,45 @@ export default function SessionPage() {
 
     const latestUserMessageId = [...messages]
       .reverse()
-      .find((message) => String(message.role).toLowerCase() === 'user')
-      ?.id;
-    console.log(`${debugPrefix} latest user id from store`, latestUserMessageId);
+      .find((message) => String(message.role).toLowerCase() === "user")?.id;
+    console.log(
+      `${debugPrefix} latest user id from store`,
+      latestUserMessageId,
+    );
 
     const latestUserMessageElement = latestUserMessageId
       ? messageElements.find(
-        (element) => element.getAttribute('data-chat-message-id') === latestUserMessageId
-      ) || null
+          (element) =>
+            element.getAttribute("data-chat-message-id") ===
+            latestUserMessageId,
+        ) || null
       : null;
 
-    const latestUserMessageByRole = [...messageElements]
-      .reverse()
-      .find((element) => element.getAttribute('data-chat-message-role') === 'user') || null;
+    const latestUserMessageByRole =
+      [...messageElements]
+        .reverse()
+        .find(
+          (element) =>
+            element.getAttribute("data-chat-message-role") === "user",
+        ) || null;
 
-    const latestMessageElement = messageElements.length > 0
-      ? messageElements[messageElements.length - 1]
-      : null;
+    const latestMessageElement =
+      messageElements.length > 0
+        ? messageElements[messageElements.length - 1]
+        : null;
 
-    const targetElement = latestUserMessageElement || latestUserMessageByRole || latestMessageElement;
+    const targetElement =
+      latestUserMessageElement ||
+      latestUserMessageByRole ||
+      latestMessageElement;
     if (!targetElement) {
       console.warn(`${debugPrefix} no target element found`);
       console.groupEnd();
       return;
     }
     console.log(`${debugPrefix} selected target`, {
-      targetId: targetElement.getAttribute('data-chat-message-id'),
-      targetRole: targetElement.getAttribute('data-chat-message-role'),
+      targetId: targetElement.getAttribute("data-chat-message-id"),
+      targetRole: targetElement.getAttribute("data-chat-message-role"),
       hasStoreMatchedElement: Boolean(latestUserMessageElement),
       hasRoleMatchedElement: Boolean(latestUserMessageByRole),
     });
@@ -448,20 +495,27 @@ export default function SessionPage() {
     const scrollParent = findScrollableParent(targetElement);
 
     if (!scrollParent) {
-      const targetTopOnPage = targetElement.getBoundingClientRect().top + window.scrollY;
+      const targetTopOnPage =
+        targetElement.getBoundingClientRect().top + window.scrollY;
       const stickyHeaderOffset = 140;
-      const nextWindowScrollTop = Math.max(0, targetTopOnPage - stickyHeaderOffset);
+      const nextWindowScrollTop = Math.max(
+        0,
+        targetTopOnPage - stickyHeaderOffset,
+      );
 
-      console.warn(`${debugPrefix} scrollParent not found, using window scroll fallback`, {
-        targetTopOnPage,
-        stickyHeaderOffset,
-        currentWindowScrollY: window.scrollY,
-        nextWindowScrollTop,
-      });
+      console.warn(
+        `${debugPrefix} scrollParent not found, using window scroll fallback`,
+        {
+          targetTopOnPage,
+          stickyHeaderOffset,
+          currentWindowScrollY: window.scrollY,
+          nextWindowScrollTop,
+        },
+      );
 
       window.scrollTo({
         top: nextWindowScrollTop,
-        behavior: 'smooth',
+        behavior: "smooth",
       });
 
       window.setTimeout(() => {
@@ -476,10 +530,14 @@ export default function SessionPage() {
     const containerRect = scrollParent.getBoundingClientRect();
     const targetRect = targetElement.getBoundingClientRect();
     const currentScrollTop = scrollParent.scrollTop;
-    const targetTopInContainer = targetRect.top - containerRect.top + currentScrollTop;
+    const targetTopInContainer =
+      targetRect.top - containerRect.top + currentScrollTop;
     const queryTopPadding = 96;
     const maxScrollTop = scrollParent.scrollHeight - scrollParent.clientHeight;
-    const nextScrollTop = Math.min(Math.max(0, targetTopInContainer - queryTopPadding), maxScrollTop);
+    const nextScrollTop = Math.min(
+      Math.max(0, targetTopInContainer - queryTopPadding),
+      maxScrollTop,
+    );
     console.log(`${debugPrefix} computed scroll`, {
       currentScrollTop,
       targetTopInContainer,
@@ -494,7 +552,7 @@ export default function SessionPage() {
 
     scrollParent.scrollTo({
       top: nextScrollTop,
-      behavior: 'smooth',
+      behavior: "smooth",
     });
 
     window.setTimeout(() => {
@@ -504,7 +562,6 @@ export default function SessionPage() {
       console.groupEnd();
     }, 250);
   };
-
 
   if (isInitialLoad && !currentSession) {
     return (
@@ -526,9 +583,7 @@ export default function SessionPage() {
             title="Session not found"
             description="The session you're looking for doesn't exist or has been deleted."
             action={
-              <Button onClick={() => router.push('/')}>
-                Go Back Home
-              </Button>
+              <Button onClick={() => router.push("/")}>Go Back Home</Button>
             }
           />
         </div>
@@ -558,7 +613,11 @@ export default function SessionPage() {
             actions={
               <DropdownMenu
                 trigger={
-                  <Button variant="ghost" size="sm" className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800"
+                  >
                     <svg
                       className="h-5 w-5 text-gray-500 dark:text-gray-400"
                       fill="none"
@@ -575,7 +634,10 @@ export default function SessionPage() {
                   </Button>
                 }
               >
-                <DropdownMenuItem onClick={handleClearHistory} disabled={messages.length === 0}>
+                <DropdownMenuItem
+                  onClick={handleClearHistory}
+                  disabled={messages.length === 0}
+                >
                   Clear History
                 </DropdownMenuItem>
                 <DropdownMenuItem
@@ -591,10 +653,8 @@ export default function SessionPage() {
       </div>
 
       {/* Tab Content with Swipe Support */}
-      <div
-        className="flex-1 container mx-auto px-4 pt-4 pb-0 overflow-hidden flex flex-col"
-      >
-        {activeTab === 'chat' && (
+      <div className="flex-1 container mx-auto px-4 pt-4 pb-0 overflow-hidden flex flex-col">
+        {activeTab === "chat" && (
           <div className="flex-1 flex flex-col min-h-0">
             {messagesLoading && !isInitialLoad ? (
               <div className="flex-1 flex items-center justify-center">
@@ -609,12 +669,10 @@ export default function SessionPage() {
                     <EmptyState
                       title="No books added, Add books to chat 🥳"
                       description=""
-                      icon={
-                        <div className="text-4xl mb-2">📚</div>
-                      }
+                      icon={<div className="text-4xl mb-2">📚</div>}
                       action={
                         <Button
-                          onClick={() => setActiveTab('documents')}
+                          onClick={() => setActiveTab("documents")}
                           variant="primary"
                           size="lg"
                         >
@@ -668,7 +726,7 @@ export default function SessionPage() {
                         transition-none
                         focus:outline-none focus:ring-0 focus:ring-offset-0
                       "
-                      style={{ WebkitTapHighlightColor: 'transparent' }}
+                      style={{ WebkitTapHighlightColor: "transparent" }}
                       aria-label="Manage active sources"
                       title="Sources"
                     >
@@ -688,8 +746,8 @@ export default function SessionPage() {
                     disabled={isStreaming || !hasDocuments}
                     placeholder={
                       !hasDocuments
-                        ? 'Please add a book FIRST to chat'
-                        : 'Ask a question about your documents...'
+                        ? "Please add a book FIRST to chat"
+                        : "Ask a question about your documents..."
                     }
                     value={messageInput}
                     onChange={setMessageInput}
@@ -729,7 +787,7 @@ export default function SessionPage() {
                           transition-none
                           focus:outline-none focus:ring-0 focus:ring-offset-0
                         "
-                        style={{ WebkitTapHighlightColor: 'transparent' }}
+                        style={{ WebkitTapHighlightColor: "transparent" }}
                         aria-label="Manage active sources"
                         title="Sources"
                       >
@@ -754,7 +812,7 @@ export default function SessionPage() {
                           transition-none
                           focus:outline-none focus:ring-0 focus:ring-offset-0
                         "
-                        style={{ WebkitTapHighlightColor: 'transparent' }}
+                        style={{ WebkitTapHighlightColor: "transparent" }}
                         aria-label="Scroll to latest answer"
                         title="Answer"
                       >
@@ -786,7 +844,7 @@ export default function SessionPage() {
                   {!hasDocuments && (
                     <div className="mb-4 flex justify-center">
                       <Button
-                        onClick={() => setActiveTab('documents')}
+                        onClick={() => setActiveTab("documents")}
                         variant="primary"
                         size="md"
                         className="shadow-lg"
@@ -800,8 +858,8 @@ export default function SessionPage() {
                     disabled={isStreaming || !hasDocuments}
                     placeholder={
                       !hasDocuments
-                        ? 'Please add a book FIRST to chat'
-                        : 'Ask a question about your documents...'
+                        ? "Please add a book FIRST to chat"
+                        : "Ask a question about your documents..."
                     }
                     value={messageInput}
                     onChange={setMessageInput}
@@ -813,7 +871,7 @@ export default function SessionPage() {
           </div>
         )}
 
-        {activeTab === 'documents' && (
+        {activeTab === "documents" && (
           <div className="max-w-6xl mx-auto flex-1 overflow-y-auto">
             <div className="space-y-6 pb-6">
               <div className="sticky top-0 bg-gray-50 dark:bg-gray-900 py-6 z-10">
@@ -834,7 +892,7 @@ export default function SessionPage() {
                   {documents.length > 0 && (
                     <Button
                       variant="ghost"
-                      onClick={() => setActiveTab('chat')}
+                      onClick={() => setActiveTab("chat")}
                       size="md"
                       className="text-sm px-4 py-2 bg-green-600 hover:bg-green-700 dark:bg-green-700 dark:hover:bg-green-800 text-white rounded-full shadow-sm transition-colors duration-200"
                     >
@@ -844,24 +902,37 @@ export default function SessionPage() {
                         viewBox="0 0 24 24"
                         stroke="currentColor"
                       >
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M10 19l-7-7m0 0l7-7m-7 7h18"
+                        />
                       </svg>
                       Start chatting
                     </Button>
                   )}
 
                   <div className="text-center">
-                    <p className="text-yellow-500 mb-2">Can't find the book in the library?</p>
-                    <p className="text-yellow-500 mb-4">No worries! 🥳</p>
+                    <p className="text-red-600 dark:text-yellow-500 mb-2">
+                      Can't find the book in the library?
+                    </p>
+                    <p className="text-red-600 dark:text-yellow-500 mb-4">
+                      No worries! 🥳
+                    </p>
                     <Button
                       variant="secondary"
-                      onClick={() => window.open('https://t.me/meddyapp', '_blank')}
+                      onClick={() =>
+                        window.open("https://t.me/meddyapp", "_blank")
+                      }
                       size="md"
                       className="text-sm px-4 py-2"
                     >
                       🎉 Request book 🎉
                     </Button>
-                    <p className="text-yellow-500 mt-4">We will try to add the resource you want to library ❤️</p>
+                    <p className="text-red-600 dark:text-yellow-500 mt-4">
+                      We will try to add the resource you want to library ❤️
+                    </p>
                   </div>
                 </div>
               </div>
@@ -871,7 +942,7 @@ export default function SessionPage() {
                   <p className="text-gray-500 dark:text-gray-400 text-lg mb-2">
                     No documents yet!
                   </p>
-                  <p className="text-yellow-500 text-lg">
+                  <p className="text-red-600 dark:text-yellow-500 text-lg">
                     Go to the library to add books 🎉
                   </p>
                 </div>
@@ -887,7 +958,7 @@ export default function SessionPage() {
         )}
       </div>
 
-      {isSourcesPanelOpen && activeTab === 'chat' && (
+      {isSourcesPanelOpen && activeTab === "chat" && (
         <div className="fixed inset-0 z-50">
           <button
             type="button"
@@ -959,7 +1030,9 @@ export default function SessionPage() {
                         </div>
                         <Switch
                           checked={document.enabled}
-                          onCheckedChange={() => handleToggleSource(document.id)}
+                          onCheckedChange={() =>
+                            handleToggleSource(document.id)
+                          }
                           disabled={togglingDocumentIds.has(document.id)}
                           size="sm"
                         />
@@ -990,7 +1063,9 @@ export default function SessionPage() {
                         </div>
                         <Switch
                           checked={document.enabled}
-                          onCheckedChange={() => handleToggleSource(document.id)}
+                          onCheckedChange={() =>
+                            handleToggleSource(document.id)
+                          }
                           disabled={togglingDocumentIds.has(document.id)}
                           size="sm"
                         />
@@ -1013,7 +1088,9 @@ export default function SessionPage() {
             </h3>
 
             <p className="text-sm sm:text-base text-gray-600 dark:text-gray-300 mb-4 sm:mb-6">
-              Are you sure you want to delete "{currentSession.name}"? This action cannot be undone and will remove all messages and documents.
+              Are you sure you want to delete "{currentSession.name}"? This
+              action cannot be undone and will remove all messages and
+              documents.
             </p>
 
             <div className="flex gap-2 sm:gap-3">
@@ -1039,10 +1116,7 @@ export default function SessionPage() {
 
       {/* Document Library Modal */}
       {isLibraryOpen && (
-        <DocumentLibrary
-          sessionId={sessionId}
-          onClose={handleLibraryClose}
-        />
+        <DocumentLibrary sessionId={sessionId} onClose={handleLibraryClose} />
       )}
     </div>
   );

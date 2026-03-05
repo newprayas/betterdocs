@@ -1,24 +1,24 @@
-import React, { useState, useMemo } from 'react';
-import { Document } from '../../types';
-import { DocumentCard, DocumentCardCompact } from './DocumentCard';
-import { EmptyState } from '../common/EmptyState';
-import { Input } from '../ui/Input';
-import { Button } from '../ui/Button';
-import { getLibraryBookNameById } from '@/services/libraryService';
-import clsx from 'clsx';
+import React, { useState, useMemo } from "react";
+import { Document } from "../../types";
+import { DocumentCard, DocumentCardCompact } from "./DocumentCard";
+import { EmptyState } from "../common/EmptyState";
+import { Input } from "../ui/Input";
+import { Button } from "../ui/Button";
+import { getLibraryBookNameById } from "@/services/libraryService";
+import clsx from "clsx";
 
 interface DocumentListProps {
   documents: Document[];
   loading?: boolean;
   onDocumentToggle?: (document: Document) => void;
-  variant?: 'grid' | 'list' | 'compact';
+  variant?: "grid" | "list" | "compact";
   showSearch?: boolean;
   className?: string;
 }
 
 const getDisplayName = (document: Document): string => {
-  if (document.originalPath?.startsWith('library:')) {
-    const libraryBookId = document.originalPath.slice('library:'.length);
+  if (document.originalPath?.startsWith("library:")) {
+    const libraryBookId = document.originalPath.slice("library:".length);
     const libraryBookName = getLibraryBookNameById(libraryBookId);
     if (libraryBookName) return libraryBookName;
   }
@@ -30,11 +30,11 @@ export const DocumentList: React.FC<DocumentListProps> = ({
   documents,
   loading = false,
   onDocumentToggle,
-  variant = 'grid',
+  variant = "grid",
   showSearch = true,
   className,
 }) => {
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState("");
 
   // Filter and sort documents
   const filteredDocuments = useMemo(() => {
@@ -42,10 +42,11 @@ export const DocumentList: React.FC<DocumentListProps> = ({
 
     // Filter by search query
     if (searchQuery) {
-      result = documents.filter(doc =>
-        doc.filename.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        doc.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        getDisplayName(doc).toLowerCase().includes(searchQuery.toLowerCase())
+      result = documents.filter(
+        (doc) =>
+          doc.filename.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          doc.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          getDisplayName(doc).toLowerCase().includes(searchQuery.toLowerCase()),
       );
     }
 
@@ -60,7 +61,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({
 
   if (loading) {
     return (
-      <div className={clsx('space-y-4', className)}>
+      <div className={clsx("space-y-4", className)}>
         {Array.from({ length: 3 }).map((_, index) => (
           <div key={index} className="animate-pulse">
             <div className="bg-gray-200 dark:bg-gray-700 rounded-lg h-24" />
@@ -76,11 +77,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({
         title="No documents uploaded"
         description="Upload documents to start asking questions about their content"
         icon={
-          <svg
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-          >
+          <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path
               strokeLinecap="round"
               strokeLinejoin="round"
@@ -120,9 +117,9 @@ export const DocumentList: React.FC<DocumentListProps> = ({
   }
 
   // Compact variant for sidebar
-  if (variant === 'compact') {
+  if (variant === "compact") {
     return (
-      <div className={clsx('space-y-1 sm:space-y-2', className)}>
+      <div className={clsx("space-y-1 sm:space-y-2", className)}>
         {filteredDocuments.map((document) => (
           <DocumentCardCompact
             key={document.id}
@@ -135,13 +132,17 @@ export const DocumentList: React.FC<DocumentListProps> = ({
   }
 
   return (
-    <div className={clsx('space-y-3 sm:space-y-4', className)}>
+    <div className={clsx("space-y-3 sm:space-y-4", className)}>
       {/* Pro Tip Disclaimer - Only show if more than 5 books are active */}
-      {documents.filter(d => d.enabled).length > 5 && (
-        <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-800 rounded-lg p-3 flex items-start sm:items-center gap-3">
+      {documents.filter((d) => d.enabled).length > 5 && (
+        <div className="bg-red-50 dark:bg-amber-900/20 border border-red-200 dark:border-amber-800 rounded-lg p-3 flex items-start sm:items-center gap-3">
           <div className="text-lg">💡</div>
-          <p className="text-sm text-amber-800 dark:text-amber-200">
-            Keep only <span className="font-semibold">4-5 most relevant books active</span> to get the best answers!
+          <p className="text-sm text-red-700 dark:text-amber-200">
+            Keep only{" "}
+            <span className="font-semibold">
+              4-5 most relevant books active
+            </span>{" "}
+            to get the best answers!
           </p>
         </div>
       )}
@@ -175,12 +176,13 @@ export const DocumentList: React.FC<DocumentListProps> = ({
 
       {/* Document Count */}
       <div className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">
-        {filteredDocuments.length} document{filteredDocuments.length !== 1 ? 's' : ''}
+        {filteredDocuments.length} document
+        {filteredDocuments.length !== 1 ? "s" : ""}
         {searchQuery && ` found for "${searchQuery}"`}
       </div>
 
       {/* Document Grid/List */}
-      {variant === 'grid' ? (
+      {variant === "grid" ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
           {filteredDocuments.map((document) => (
             <DocumentCard

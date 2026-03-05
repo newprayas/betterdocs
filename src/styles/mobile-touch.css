@@ -30,7 +30,6 @@ button,
 
 /* Remove hover effects on touch devices */
 @media (hover: none) and (pointer: coarse) {
-
   button:not([role="switch"]):hover,
   .btn:hover,
   [role="button"]:hover {
@@ -62,6 +61,17 @@ button,
     background-color: rgb(37 99 235) !important;
     color: rgb(255 255 255) !important;
     border-color: transparent !important;
+  }
+
+  /* Keep selected library category pills readable on touch in light mode */
+  .light button.library-category-pill[data-selected="true"],
+  .light button.library-category-pill[data-selected="true"]:hover,
+  .light button.library-category-pill[data-selected="true"]:active,
+  .light button.library-category-pill[data-selected="true"]:focus,
+  .light button.library-category-pill[data-selected="true"]:focus-visible {
+    background-color: rgb(17 24 39) !important;
+    color: rgb(255 255 255) !important;
+    border-color: rgb(17 24 39) !important;
   }
 
   /* Keep selected library category pills readable on mobile dark mode */
@@ -198,7 +208,6 @@ select:focus {
 
 /* Improve mobile keyboard handling */
 @media (max-width: 768px) {
-
   /* Only prevent viewport shrink when keyboard is active */
   html,
   body {
