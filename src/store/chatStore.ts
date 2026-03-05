@@ -80,6 +80,11 @@ export const useChatStore = create<ChatStore>()(
             set({ isLoading: true, error: null, messages: [] });
           }
 
+          // Background warm-up for retrieval path (non-blocking).
+          chatPipeline.preloadSessionRetrievalData(sessionId).catch((error) => {
+            console.warn('[ChatStore] Retrieval warm-up skipped:', error);
+          });
+
           try {
             const messageService = getMessageService();
             if (!messageService) {

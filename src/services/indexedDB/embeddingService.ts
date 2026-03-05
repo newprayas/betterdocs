@@ -147,6 +147,21 @@ export class EmbeddingService {
   }
 
   /**
+   * Fast existence check: returns true if any embedding exists for the given document IDs.
+   */
+  async hasAnyEmbeddingsForDocuments(documentIds: string[]): Promise<boolean> {
+    if (!db) throw new Error('Database not initialized');
+    if (!documentIds || documentIds.length === 0) return false;
+
+    const firstMatch = await db.embeddings
+      .where('documentId')
+      .anyOf(documentIds)
+      .first();
+
+    return Boolean(firstMatch);
+  }
+
+  /**
    * Get all embeddings for a session
    */
   async getEmbeddingsBySession(sessionId: string, userId?: string): Promise<EmbeddingChunk[]> {

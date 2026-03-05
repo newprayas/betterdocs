@@ -3,6 +3,7 @@ import { devtools, persist } from 'zustand/middleware';
 import type { DocumentStore } from './types';
 import { Document, DocumentUpdate, DocumentProgress } from '@/types/document';
 import { getIndexedDBServices } from '../services/indexedDB';
+import { chatPipeline } from '../services/rag/chatPipeline';
 import { userIdLogger } from '../utils/userIdDebugLogger';
 
 // Helper function to get services (client-side only)
@@ -33,8 +34,10 @@ export const useDocumentStore = create<DocumentStore>()(
 
         clearDocuments: () => {
           console.log('🧹 [DocumentStore] Clearing documents (Session switch/cleanup)');
-          const { userId } = get();
+          const { userId, documents } = get();
           userIdLogger.logStoreUpdate('DocumentStore', null, 'clearDocuments');
+          const sessionIds = new Set(documents.map(doc => doc.sessionId));
+          sessionIds.forEach((sessionId) => chatPipeline.invalidateSessionRetrievalCache(sessionId));
           // Preserve userId when clearing documents for session switch
           set({ documents: [], progressMap: {}, error: null, userId });
         },
@@ -160,6 +163,7 @@ export const useDocumentStore = create<DocumentStore>()(
             if (!documentService) {
               throw new Error('Document service not available');
             }
+            const currentDoc = get().documents.find(doc => doc.id === id);
             const { userId } = get();
             if (!userId) {
               const errorMsg = 'User ID not found. Please log in.';
@@ -178,6 +182,10 @@ export const useDocumentStore = create<DocumentStore>()(
                 doc.id === id ? { ...doc, ...data } : doc
               ),
             }));
+
+            if (currentDoc) {
+              chatPipeline.invalidateDocumentRetrievalCache(currentDoc.sessionId, currentDoc.id);
+            }
           } catch (error) {
             set({
               error: error instanceof Error ? error.message : 'Failed to update document',
@@ -217,6 +225,8 @@ export const useDocumentStore = create<DocumentStore>()(
                 doc.id === id ? { ...doc, enabled: newEnabledStatus } : doc
               ),
             }));
+
+            chatPipeline.invalidateDocumentRetrievalCache(currentDoc.sessionId, currentDoc.id);
           } catch (error) {
             set({
               error: error instanceof Error ? error.message : 'Failed to toggle document enabled status',
@@ -227,6 +237,7 @@ export const useDocumentStore = create<DocumentStore>()(
         deleteDocument: async (id: string) => {
           try {
             console.log('🗑️ DocumentStore: Starting deleteDocument with ID:', id);
+            const currentDoc = get().documents.find(doc => doc.id === id);
 
             const documentService = getDocumentService();
             if (!documentService) {
@@ -262,6 +273,9 @@ export const useDocumentStore = create<DocumentStore>()(
                 progressMap: newProgressMap
               };
             });
+            if (currentDoc) {
+              chatPipeline.invalidateDocumentRetrievalCache(currentDoc.sessionId, currentDoc.id);
+            }
             console.log('✅ DocumentStore: Document deletion process completed successfully');
           } catch (error) {
             console.error('❌ DocumentStore: Failed to delete document:', {

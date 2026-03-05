@@ -53,10 +53,24 @@ interface SimplifiedGenerationMetrics {
   hadMissingSectionFill: boolean;
 }
 
+interface SessionWarmCacheEntry {
+  enabledDocSignature: string;
+  hasAnyEmbeddings: boolean;
+  warmedAt: number;
+}
+
+interface DocumentEmbeddingCacheEntry {
+  embeddings: EmbeddingChunk[];
+  loadedAt: number;
+}
+
 const STAGE_TIMEOUT_MS = {
   sessionLookup: 8000,
   historyLookup: 8000,
 };
+const SESSION_WARM_CACHE_TTL_MS = 2 * 60 * 1000;
+const EMBEDDING_CACHE_TTL_MS = 10 * 60 * 1000;
+const MAX_EMBEDDING_CACHE_ENTRIES = 24;
 
 const withStageTimeout = async <T>(
   promise: Promise<T>,
@@ -81,6 +95,167 @@ const withStageTimeout = async <T>(
 
 export class ChatPipeline {
   private indexedDBServices = getIndexedDBServices();
+  private sessionWarmCache = new Map<string, SessionWarmCacheEntry>();
+  private documentEmbeddingCache = new Map<string, DocumentEmbeddingCacheEntry>();
+
+  private buildEnabledDocSignature(documentIds: string[]): string {
+    return [...documentIds].sort().join('|');
+  }
+
+  private isFresh(timestamp: number, ttlMs: number): boolean {
+    return Date.now() - timestamp < ttlMs;
+  }
+
+  private getEmbeddingCacheKey(sessionId: string, documentId: string): string {
+    return `${sessionId}:${documentId}`;
+  }
+
+  private pruneEmbeddingCache(maxEntries: number = MAX_EMBEDDING_CACHE_ENTRIES): void {
+    if (this.documentEmbeddingCache.size <= maxEntries) return;
+
+    const sorted = Array.from(this.documentEmbeddingCache.entries())
+      .sort((a, b) => a[1].loadedAt - b[1].loadedAt);
+    const overflow = this.documentEmbeddingCache.size - maxEntries;
+
+    for (let i = 0; i < overflow; i++) {
+      this.documentEmbeddingCache.delete(sorted[i][0]);
+    }
+  }
+
+  private async getCachedEmbeddingsForDocuments(sessionId: string, documentIds: string[]): Promise<EmbeddingChunk[]> {
+    const uniqueDocIds = Array.from(new Set(documentIds.filter(Boolean)));
+    if (uniqueDocIds.length === 0) return [];
+
+    const now = Date.now();
+    const combined: EmbeddingChunk[] = [];
+    const missingDocIds: string[] = [];
+
+    for (const documentId of uniqueDocIds) {
+      const key = this.getEmbeddingCacheKey(sessionId, documentId);
+      const cached = this.documentEmbeddingCache.get(key);
+
+      if (cached && this.isFresh(cached.loadedAt, EMBEDDING_CACHE_TTL_MS)) {
+        combined.push(...cached.embeddings);
+        continue;
+      }
+
+      if (cached) {
+        this.documentEmbeddingCache.delete(key);
+      }
+      missingDocIds.push(documentId);
+    }
+
+    if (missingDocIds.length > 0) {
+      const fetchedByDoc = await Promise.all(
+        missingDocIds.map(async (documentId) => {
+          const embeddings = await this.indexedDBServices.embeddingService.getEmbeddingsByDocument(documentId);
+          return { documentId, embeddings };
+        })
+      );
+
+      for (const { documentId, embeddings } of fetchedByDoc) {
+        const key = this.getEmbeddingCacheKey(sessionId, documentId);
+        this.documentEmbeddingCache.set(key, {
+          embeddings,
+          loadedAt: now,
+        });
+        combined.push(...embeddings);
+      }
+
+      this.pruneEmbeddingCache();
+    }
+
+    return combined;
+  }
+
+  private async getEmbeddingsForRetrievedDocs(
+    sessionId: string,
+    baseResults: VectorSearchResult[]
+  ): Promise<EmbeddingChunk[]> {
+    if (baseResults.length === 0) return [];
+    const docIds = baseResults.map((result) => result.document.id);
+    return this.getCachedEmbeddingsForDocuments(sessionId, docIds);
+  }
+
+  private async getHasEnabledEmbeddingsFast(sessionId: string, enabledDocuments: Document[]): Promise<boolean> {
+    if (enabledDocuments.length === 0) {
+      return false;
+    }
+
+    const enabledDocIds = enabledDocuments.map((doc) => doc.id);
+    const enabledDocSignature = this.buildEnabledDocSignature(enabledDocIds);
+    const warm = this.sessionWarmCache.get(sessionId);
+
+    if (
+      warm &&
+      warm.enabledDocSignature === enabledDocSignature &&
+      this.isFresh(warm.warmedAt, SESSION_WARM_CACHE_TTL_MS)
+    ) {
+      return warm.hasAnyEmbeddings;
+    }
+
+    const hasAnyEmbeddings = await this.indexedDBServices.embeddingService.hasAnyEmbeddingsForDocuments(enabledDocIds);
+    this.sessionWarmCache.set(sessionId, {
+      enabledDocSignature,
+      hasAnyEmbeddings,
+      warmedAt: Date.now(),
+    });
+    return hasAnyEmbeddings;
+  }
+
+  async preloadSessionRetrievalData(sessionId: string): Promise<void> {
+    if (!sessionId) return;
+
+    const warm = this.sessionWarmCache.get(sessionId);
+    if (warm && this.isFresh(warm.warmedAt, SESSION_WARM_CACHE_TTL_MS)) {
+      return;
+    }
+
+    const session = await this.indexedDBServices.sessionService.getSession(sessionId);
+    if (!session) return;
+
+    const enabledDocuments = await this.indexedDBServices.documentService.getEnabledDocumentsBySession(
+      sessionId,
+      session.userId
+    );
+    const enabledDocIds = enabledDocuments.map((doc) => doc.id);
+    const enabledDocSignature = this.buildEnabledDocSignature(enabledDocIds);
+    const hasAnyEmbeddings = enabledDocIds.length > 0
+      ? await this.indexedDBServices.embeddingService.hasAnyEmbeddingsForDocuments(enabledDocIds)
+      : false;
+
+    this.sessionWarmCache.set(sessionId, {
+      enabledDocSignature,
+      hasAnyEmbeddings,
+      warmedAt: Date.now(),
+    });
+
+    await Promise.all(
+      enabledDocIds.map(async (documentId) => {
+        try {
+          await this.indexedDBServices.routeIndexService.loadRouteIndexForDocument(documentId);
+        } catch (error) {
+          console.warn('[PRELOAD] Route index warm-up failed for document:', documentId, error);
+        }
+      })
+    );
+  }
+
+  invalidateSessionRetrievalCache(sessionId: string): void {
+    this.sessionWarmCache.delete(sessionId);
+
+    const prefix = `${sessionId}:`;
+    for (const key of this.documentEmbeddingCache.keys()) {
+      if (key.startsWith(prefix)) {
+        this.documentEmbeddingCache.delete(key);
+      }
+    }
+  }
+
+  invalidateDocumentRetrievalCache(sessionId: string, documentId: string): void {
+    this.sessionWarmCache.delete(sessionId);
+    this.documentEmbeddingCache.delete(this.getEmbeddingCacheKey(sessionId, documentId));
+  }
 
   /**
    * Enhance user query with context information
@@ -1362,17 +1537,10 @@ ${normalizedOriginal}
       const enabledDocuments = documents.filter(doc => doc.enabled);
       console.log('[DOCUMENT STATUS]', `${enabledDocuments.length}/${documents.length} documents enabled`);
 
-      // Also check if there are any embeddings available for enabled documents
-      const indexedDBEmbeddingService = this.indexedDBServices.embeddingService;
-      let embeddings: EmbeddingChunk[] = [];
+      const hasEnabledEmbeddings = await this.getHasEnabledEmbeddingsFast(sessionId, enabledDocuments);
+      console.log('[EMBEDDING STATUS]', `Embeddings available for enabled documents: ${hasEnabledEmbeddings ? 'YES' : 'NO'}`);
 
-      if (enabledDocuments.length > 0) {
-        embeddings = await indexedDBEmbeddingService.getEnabledEmbeddingsBySession(sessionId, sessionForDocuments.userId);
-      }
-
-      console.log('[EMBEDDING STATUS]', `${embeddings.length} embeddings found for enabled documents`);
-
-      if (enabledDocuments.length === 0 || embeddings.length === 0) {
+      if (enabledDocuments.length === 0 || !hasEnabledEmbeddings) {
         // No enabled documents or no embeddings available, just chat without context
         console.log('[PROCESSING MODE]', 'Direct response (no RAG context available)');
         await this.generateDirectResponse(sessionId, content, onStreamEvent);
@@ -1450,6 +1618,7 @@ ${normalizedOriginal}
         }
       }
       const baseSearchResults = [...searchResults];
+      const embeddings = await this.getEmbeddingsForRetrievedDocs(sessionId, baseSearchResults);
 
       // Neighbor-page inclusion: include page N-1 / N+1 chunks to preserve section continuity.
       searchResults = this.includeNeighborPageChunks(searchResults, embeddings, queryEmbedding, 0.6);
