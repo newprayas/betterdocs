@@ -22,6 +22,27 @@ interface ProcessingStatus {
   };
 }
 
+const parseSizeToMB = (sizeLabel: string): number | null => {
+  const match = sizeLabel.trim().match(/^([\d.]+)\s*(B|KB|MB|GB|TB)$/i);
+  if (!match) return null;
+
+  const value = Number.parseFloat(match[1]);
+  if (!Number.isFinite(value)) return null;
+
+  const unit = match[2].toUpperCase();
+  if (unit === 'B') return value / (1024 * 1024);
+  if (unit === 'KB') return value / 1024;
+  if (unit === 'MB') return value;
+  if (unit === 'GB') return value * 1024;
+  if (unit === 'TB') return value * 1024 * 1024;
+  return null;
+};
+
+const isLargeLibraryFile = (sizeLabel: string): boolean => {
+  const sizeMB = parseSizeToMB(sizeLabel);
+  return sizeMB !== null && sizeMB > 60;
+};
+
 export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onClose }) => {
   const [books, setBooks] = useState<LibraryItem[]>([]);
   const [isLoadingList, setIsLoadingList] = useState(true);
@@ -81,6 +102,11 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
     return Math.round(total / selectedBooks.size);
   }, [selectedBooks, processingStatus]);
 
+  const hasLargeSelectedFiles = useMemo(() => {
+    if (selectedBooks.size === 0) return false;
+    return books.some((book) => selectedBooks.has(book.id) && isLargeLibraryFile(book.size));
+  }, [books, selectedBooks]);
+
   // Handle individual book selection
   const handleBookSelection = (bookId: string) => {
     const newSelectedBooks = new Set(selectedBooks);
@@ -128,7 +154,12 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
       console.log(`🔍 CACHE CHECK: Documents:`, allDocuments.map(d => ({ filename: d.filename, title: d.title, sessionId: d.sessionId })));
 
       // Strict cache key match by library source ID to avoid wrong cross-book matches.
-      const matchedDoc = allDocuments.find(doc => doc.originalPath === librarySourcePath);
+      // Prefer current session match first so "already added here" is detected reliably.
+      const matchedDocs = allDocuments.filter(doc => doc.originalPath === librarySourcePath);
+      const matchedDoc =
+        matchedDocs.find(doc => doc.sessionId === sessionId)
+        || matchedDocs[0];
+
       if (matchedDoc) {
         console.log(`🔍 CACHE CHECK: Matched by library source path: ${librarySourcePath}`);
       }
@@ -147,15 +178,15 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
     }
   };
 
-  // Copy a book from another session to the current session (fast, no download)
+  // Link a cached library book into the current session (no embedding duplication).
   const copyBookFromCache = async (
     book: LibraryItem,
     sourceDoc: any,
     onProgress: (progress: number) => void
   ): Promise<string> => {
-    console.log(`📋 CACHE COPY: Copying "${book.name}" from session ${sourceDoc.sessionId} to ${sessionId}`);
+    console.log(`📋 CACHE LINK: Linking "${book.name}" from session ${sourceDoc.sessionId} to ${sessionId}`);
 
-    const { documentService, embeddingService, annIndexService, routeIndexService } = await getIndexedDBServices();
+    const { documentService } = await getIndexedDBServices();
 
     // Animate progress over 2 seconds (fake but satisfying UX)
     const animateProgress = async () => {
@@ -165,61 +196,34 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
       }
     };
 
-    // Start animation and copy in parallel
+    // Start animation and lightweight link operation in parallel
     const animationPromise = animateProgress();
 
-    // Get embeddings from source document
-    const sourceEmbeddings = await embeddingService.getEmbeddingsByDocument(sourceDoc.id);
-    console.log(`📋 CACHE COPY: Found ${sourceEmbeddings.length} embeddings to copy`);
-
-    // Create new document in current session (with new ID)
+    // Create a new document row in current session that points to same library source.
     const newDocId = crypto.randomUUID();
-    const newDocument = await documentService.createDocument({
+    await documentService.createDocument({
       id: newDocId,
       sessionId: sessionId,
       filename: sourceDoc.filename,
-      fileSize: sourceDoc.fileSize,
+      fileSize: sourceDoc.fileSize || 0,
       pageCount: sourceDoc.pageCount,
       title: book.name,
+      author: sourceDoc.author,
+      language: sourceDoc.language,
+      mimeType: sourceDoc.mimeType,
+      checksum: sourceDoc.checksum,
       originalPath: getLibrarySourcePath(book.id),
+      // Marker only; retrieval resolves via originalPath, not this value.
+      storedPath: `library-cache-ref:${sourceDoc.id}`,
     }, userId!);
 
-    // Copy embeddings with new IDs pointing to new document
-    if (sourceEmbeddings.length > 0) {
-      const chunkIdMap: Record<string, string> = {};
-      const newEmbeddings = sourceEmbeddings.map(emb => {
-        const newChunkId = crypto.randomUUID();
-        chunkIdMap[emb.id] = newChunkId;
-        return {
-          ...emb,
-          id: newChunkId,
-          documentId: newDocId,
-          sessionId: sessionId,
-          createdAt: new Date(),
-        };
-      });
-
-      await embeddingService.addEmbeddingsDirectly(newEmbeddings);
-      console.log(`📋 CACHE COPY: Copied ${newEmbeddings.length} embeddings`);
-
-      // Clone route prefilter index if present and remap chunk IDs to the copied chunk IDs.
-      try {
-        await routeIndexService.cloneRouteIndexForDocument(sourceDoc.id, newDocId, chunkIdMap);
-      } catch (routeCloneError) {
-        console.warn('📋 CACHE COPY: Route index clone failed, continuing without prefilter index', routeCloneError);
-      }
-    }
-
-    // Clone ANN index assets if available so copied books keep fast retrieval
-    await annIndexService.cloneIndexForDocument(sourceDoc.id, newDocId);
-
-    // Mark document as completed
+    // Mark lightweight linked document as completed.
     await documentService.updateDocumentStatus(newDocId, 'completed', undefined, userId ?? undefined);
 
     // Wait for animation to finish (ensures smooth UX)
     await animationPromise;
 
-    console.log(`📋 CACHE COPY: Successfully copied "${book.name}" to current session`);
+    console.log(`📋 CACHE LINK: Successfully linked "${book.name}" to current session`);
     return newDocId;
   };
 
@@ -569,6 +573,7 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
                 const isProcessing = status?.status === 'processing';
                 const isCompleted = status?.status === 'completed';
                 const hasError = status?.status === 'error';
+                const isLargeFile = isLargeLibraryFile(book.size);
 
                 return (
                   <div
@@ -592,6 +597,11 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
                           <span className="text-xs text-gray-500 dark:text-gray-400">
                             {book.size}
                           </span>
+                          {isLargeFile && (
+                            <span className="text-xs font-medium text-amber-600 dark:text-amber-400">
+                              ⚠️ Large
+                            </span>
+                          )}
                           {isCompleted && (
                             <span className="text-xs font-medium text-green-600 dark:text-green-400">
                               Added
@@ -678,6 +688,9 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ sessionId, onC
                 </div>
               )}
 
+              <p className="text-gray-500 dark:text-gray-400 text-xs text-center">
+                {isBatchProcessing && hasLargeSelectedFiles && "⚠️ Very large files - May take up to 5 minutes (Please keep app open)"}
+              </p>
               <p className="text-gray-500 dark:text-gray-400 text-xs text-center">
                 {isBatchProcessing && "Please wait, it can take up to 1 minute ❤️"}
               </p>

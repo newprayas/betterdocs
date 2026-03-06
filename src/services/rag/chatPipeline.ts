@@ -185,12 +185,11 @@ export class ChatPipeline {
     return this.getCachedEmbeddingsForDocuments(sessionId, docIds);
   }
 
-  private async getHasEnabledEmbeddingsFast(sessionId: string, enabledDocuments: Document[]): Promise<boolean> {
-    if (enabledDocuments.length === 0) {
+  private async getHasEnabledEmbeddingsFast(sessionId: string, enabledDocIds: string[]): Promise<boolean> {
+    if (enabledDocIds.length === 0) {
       return false;
     }
 
-    const enabledDocIds = enabledDocuments.map((doc) => doc.id);
     const enabledDocSignature = this.buildEnabledDocSignature(enabledDocIds);
     const warm = this.sessionWarmCache.get(sessionId);
 
@@ -209,6 +208,92 @@ export class ChatPipeline {
       warmedAt: Date.now(),
     });
     return hasAnyEmbeddings;
+  }
+
+  private isLibrarySourcePath(path?: string): boolean {
+    return typeof path === 'string' && path.startsWith('library:');
+  }
+
+  private isLibraryCacheLinkDocument(document: Document): boolean {
+    return typeof document.storedPath === 'string' && document.storedPath.startsWith('library-cache-ref:');
+  }
+
+  private async resolveRetrievalDocuments(
+    userId: string,
+    enabledDocuments: Document[]
+  ): Promise<Document[]> {
+    if (enabledDocuments.length === 0) return [];
+
+    const hasLibraryDocuments = enabledDocuments.some((doc) => this.isLibrarySourcePath(doc.originalPath));
+    if (!hasLibraryDocuments) {
+      return enabledDocuments;
+    }
+
+    const allUserDocuments = await this.indexedDBServices.documentService.getAllDocumentsForUser(userId);
+    const byLibrarySource = new Map<string, Document[]>();
+
+    for (const doc of allUserDocuments) {
+      if (!this.isLibrarySourcePath(doc.originalPath)) continue;
+      const key = doc.originalPath as string;
+      const existing = byLibrarySource.get(key);
+      if (existing) {
+        existing.push(doc);
+      } else {
+        byLibrarySource.set(key, [doc]);
+      }
+    }
+
+    const embeddingPresenceCache = new Map<string, boolean>();
+    const hasEmbeddings = async (documentId: string): Promise<boolean> => {
+      if (embeddingPresenceCache.has(documentId)) {
+        return embeddingPresenceCache.get(documentId) as boolean;
+      }
+      const present = await this.indexedDBServices.embeddingService.hasAnyEmbeddingsForDocuments([documentId]);
+      embeddingPresenceCache.set(documentId, present);
+      return present;
+    };
+
+    const resolvedById = new Map<string, Document>();
+
+    for (const enabledDoc of enabledDocuments) {
+      if (!this.isLibrarySourcePath(enabledDoc.originalPath)) {
+        resolvedById.set(enabledDoc.id, enabledDoc);
+        continue;
+      }
+
+      const libraryKey = enabledDoc.originalPath as string;
+      const candidates = byLibrarySource.get(libraryKey) || [enabledDoc];
+      const rankedCandidates = [...candidates].sort((a, b) => {
+        if (a.id === enabledDoc.id && b.id !== enabledDoc.id) return -1;
+        if (b.id === enabledDoc.id && a.id !== enabledDoc.id) return 1;
+        if (a.status === 'completed' && b.status !== 'completed') return -1;
+        if (b.status === 'completed' && a.status !== 'completed') return 1;
+        if (!this.isLibraryCacheLinkDocument(a) && this.isLibraryCacheLinkDocument(b)) return -1;
+        if (!this.isLibraryCacheLinkDocument(b) && this.isLibraryCacheLinkDocument(a)) return 1;
+        return a.createdAt.getTime() - b.createdAt.getTime();
+      });
+
+      let chosen: Document | null = null;
+      for (const candidate of rankedCandidates) {
+        if (await hasEmbeddings(candidate.id)) {
+          chosen = candidate;
+          break;
+        }
+      }
+
+      const fallback = rankedCandidates[0] || enabledDoc;
+      const selected = chosen || fallback;
+      resolvedById.set(selected.id, selected);
+    }
+
+    const resolved = Array.from(resolvedById.values());
+    console.log(
+      '[RETRIEVAL DOC RESOLUTION] enabled=%d resolved=%d libraryEnabled=%d',
+      enabledDocuments.length,
+      resolved.length,
+      enabledDocuments.filter((doc) => this.isLibrarySourcePath(doc.originalPath)).length
+    );
+    return resolved;
   }
 
   private async getWarmupEmbeddingVector(): Promise<Float32Array | null> {
@@ -245,7 +330,8 @@ export class ChatPipeline {
       sessionId,
       session.userId
     );
-    const enabledDocIds = enabledDocuments.map((doc) => doc.id);
+    const retrievalDocuments = await this.resolveRetrievalDocuments(session.userId, enabledDocuments);
+    const enabledDocIds = retrievalDocuments.map((doc) => doc.id);
     const enabledDocSignature = this.buildEnabledDocSignature(enabledDocIds);
     const hasAnyEmbeddings = enabledDocIds.length > 0
       ? await this.indexedDBServices.embeddingService.hasAnyEmbeddingsForDocuments(enabledDocIds)
@@ -1577,7 +1663,11 @@ ${normalizedOriginal}
       const enabledDocuments = documents.filter(doc => doc.enabled);
       console.log('[DOCUMENT STATUS]', `${enabledDocuments.length}/${documents.length} documents enabled`);
 
-      const hasEnabledEmbeddings = await this.getHasEnabledEmbeddingsFast(sessionId, enabledDocuments);
+      const retrievalDocuments = await this.resolveRetrievalDocuments(sessionForDocuments.userId, enabledDocuments);
+      const retrievalDocIds = retrievalDocuments.map((doc) => doc.id);
+      console.log('[DOCUMENT STATUS]', `Resolved ${retrievalDocIds.length} retrieval document(s)`);
+
+      const hasEnabledEmbeddings = await this.getHasEnabledEmbeddingsFast(sessionId, retrievalDocIds);
       console.log('[EMBEDDING STATUS]', `Embeddings available for enabled documents: ${hasEnabledEmbeddings ? 'YES' : 'NO'}`);
 
       if (enabledDocuments.length === 0 || !hasEnabledEmbeddings) {
@@ -1593,7 +1683,7 @@ ${normalizedOriginal}
       console.log('[EMBEDDING GENERATION]', 'Creating vector embedding for enhanced query...');
       const queryEmbedding = await embeddingService.generateEmbedding(retrievalQuery);
       console.log('[EMBEDDING GENERATED]', `Vector created with ${queryEmbedding.length} dimensions`);
-      const routePrefilter = await this.buildRoutePrefilterPlan(enabledDocuments, queryEmbedding);
+      const routePrefilter = await this.buildRoutePrefilterPlan(retrievalDocuments, queryEmbedding);
       console.log(
         '[ANSWER ROUTING] companion-prefilter applied=%s docs=%d chunkAllowList=%d',
         Boolean(routePrefilter.documentIds?.length),
@@ -1630,7 +1720,7 @@ ${normalizedOriginal}
         const fallbackEnhancedQuery = await this.enhanceQueryWithContext(sessionId, content);
         const fallbackRetrievalQuery = fallbackEnhancedQuery;
         const fallbackEmbedding = await embeddingService.generateEmbedding(fallbackRetrievalQuery);
-        const fallbackRoutePrefilter = await this.buildRoutePrefilterPlan(enabledDocuments, fallbackEmbedding);
+        const fallbackRoutePrefilter = await this.buildRoutePrefilterPlan(retrievalDocuments, fallbackEmbedding);
         console.log(
           '[ANSWER ROUTING][FALLBACK] companion-prefilter applied=%s docs=%d chunkAllowList=%d',
           Boolean(fallbackRoutePrefilter.documentIds?.length),
