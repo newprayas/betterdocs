@@ -7,6 +7,7 @@ import { useSettingsStore, useSessionStore, useDocumentStore, useChatStore } fro
 import { createClient } from '../utils/supabase/client';
 import { userIdLogger } from '../utils/userIdDebugLogger';
 import { storageManager } from '../services/storage/storageManager';
+import { getIndexedDBServices } from '../services/indexedDB';
 
 const RESUME_STALE_HIDDEN_MS = 15000;
 const STALE_PIPELINE_AGE_MS = 90000;
@@ -21,6 +22,7 @@ export function AppInitializer() {
   const supabaseRef = useRef(createClient());
   const hydratedUserIdRef = useRef<string | null>(null);
   const hydratingUserIdRef = useRef<string | null>(null);
+  const startupCleanupUserRef = useRef<string | null>(null);
 
   // Ensure we only run client-side code on the client
   useEffect(() => {
@@ -74,6 +76,19 @@ export function AppInitializer() {
           })
         ]);
 
+        if (startupCleanupUserRef.current !== userId) {
+          startupCleanupUserRef.current = userId;
+          setTimeout(async () => {
+            try {
+              const { sessionService } = getIndexedDBServices();
+              const cleanupSummary = await sessionService.cleanupOrphanedData();
+              console.log('[APP INIT] Startup orphan cleanup complete:', cleanupSummary);
+            } catch (cleanupError) {
+              console.warn('[APP INIT] Startup orphan cleanup failed:', cleanupError);
+            }
+          }, 1500);
+        }
+
         hydratedUserIdRef.current = userId;
       } finally {
         if (hydratingUserIdRef.current === userId) {
@@ -125,6 +140,7 @@ export function AppInitializer() {
 
         hydratedUserIdRef.current = null;
         hydratingUserIdRef.current = null;
+        startupCleanupUserRef.current = null;
         console.log('[APP INIT]', 'User data cleared');
       }
     });

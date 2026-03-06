@@ -150,7 +150,8 @@ export const useSessionStore = create<SessionStore>()(
             if (!sessionService) {
               throw new Error('Session service not available');
             }
-            await sessionService.deleteSession(id);
+            const { userId } = get();
+            await sessionService.deleteSession(id, userId || undefined);
 
             set(state => ({
               sessions: state.sessions.filter(session => session.id !== id),
