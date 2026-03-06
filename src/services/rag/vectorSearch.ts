@@ -4,9 +4,153 @@ import { getIndexedDBServices } from '../indexedDB';
 import { cosineSimilarity, calculateVectorNorm } from '@/utils/vectorUtils';
 import { postProcessRetrievalResults } from './retrievalPostprocess';
 
+type WorkerRequestType = 'SEARCH' | 'WARMUP' | 'INIT';
+
+interface PendingWorkerRequest {
+  resolve: (value: unknown) => void;
+  reject: (reason: unknown) => void;
+}
+
 export class VectorSearchService {
   private embeddingService = getIndexedDBServices().embeddingService;
   private documentService = getIndexedDBServices().documentService;
+  private worker: Worker | null = null;
+  private workerRequestCounter = 0;
+  private pendingWorkerRequests = new Map<string, PendingWorkerRequest>();
+  private warmupInFlight = new Map<string, Promise<void>>();
+
+  private buildWarmupKey(sessionId: string, documentIds?: string[]): string {
+    const signature = documentIds && documentIds.length > 0
+      ? [...documentIds].sort().join('|')
+      : 'all-enabled-docs';
+    return `${sessionId}:${signature}`;
+  }
+
+  private createWorker(): Worker {
+    const worker = new Worker(new URL('../../workers/vectorSearch.worker.ts', import.meta.url));
+
+    worker.onmessage = (event: MessageEvent<any>) => {
+      const { type, requestId, payload, error } = event.data || {};
+
+      if (type === 'ERROR') {
+        if (requestId) {
+          const pending = this.pendingWorkerRequests.get(requestId);
+          if (pending) {
+            this.pendingWorkerRequests.delete(requestId);
+            pending.reject(new Error(error || 'Unknown worker error'));
+          }
+        } else {
+          const unknownError = new Error(error || 'Unknown worker error');
+          for (const pending of this.pendingWorkerRequests.values()) {
+            pending.reject(unknownError);
+          }
+          this.pendingWorkerRequests.clear();
+        }
+        return;
+      }
+
+      if (!requestId) {
+        console.warn('[VectorWorker] Message missing requestId:', event.data);
+        return;
+      }
+
+      const pending = this.pendingWorkerRequests.get(requestId);
+      if (!pending) {
+        return;
+      }
+
+      this.pendingWorkerRequests.delete(requestId);
+      if (type === 'SEARCH_RESULT') {
+        pending.resolve(payload as VectorSearchResult[]);
+        return;
+      }
+
+      if (type === 'WARMUP_DONE' || type === 'INIT_DONE') {
+        pending.resolve(undefined);
+        return;
+      }
+
+      pending.reject(new Error(`Unknown worker response type: ${String(type)}`));
+    };
+
+    worker.onerror = (error) => {
+      console.error('[VectorWorker] Unexpected error:', error);
+      for (const pending of this.pendingWorkerRequests.values()) {
+        pending.reject(error);
+      }
+      this.pendingWorkerRequests.clear();
+      this.worker?.terminate();
+      this.worker = null;
+    };
+
+    return worker;
+  }
+
+  private getWorker(): Worker {
+    if (!this.worker) {
+      this.worker = this.createWorker();
+    }
+    return this.worker;
+  }
+
+  private sendWorkerRequest<T>(type: WorkerRequestType, payload?: unknown): Promise<T> {
+    const worker = this.getWorker();
+    const requestId = `${type.toLowerCase()}_${Date.now()}_${++this.workerRequestCounter}`;
+
+    return new Promise<T>((resolve, reject) => {
+      this.pendingWorkerRequests.set(requestId, {
+        resolve: (value) => resolve(value as T),
+        reject,
+      });
+
+      try {
+        if (typeof payload === 'undefined') {
+          worker.postMessage({ type, requestId });
+        } else {
+          worker.postMessage({ type, requestId, payload });
+        }
+      } catch (error) {
+        this.pendingWorkerRequests.delete(requestId);
+        reject(error);
+      }
+    });
+  }
+
+  async prewarmSessionRetrieval(
+    sessionId: string,
+    options: { documentIds?: string[]; warmupEmbedding?: Float32Array } = {}
+  ): Promise<void> {
+    if (!sessionId) return;
+
+    const warmupKey = this.buildWarmupKey(sessionId, options.documentIds);
+    const inFlight = this.warmupInFlight.get(warmupKey);
+    if (inFlight) {
+      return inFlight;
+    }
+
+    const warmupPromise = (async () => {
+      await this.sendWorkerRequest<void>('INIT');
+      await this.sendWorkerRequest<void>('WARMUP', {
+        sessionId,
+        documentIds: options.documentIds,
+        queryEmbedding: options.warmupEmbedding,
+      });
+      console.log(
+        '[RETRIEVAL WARMUP] worker prewarmed for session=%s docs=%d',
+        sessionId,
+        options.documentIds?.length || 0
+      );
+    })()
+      .catch((error) => {
+        console.warn('[RETRIEVAL WARMUP] Worker warm-up failed:', error);
+      })
+      .finally(() => {
+        this.warmupInFlight.delete(warmupKey);
+      });
+
+    this.warmupInFlight.set(warmupKey, warmupPromise);
+    return warmupPromise;
+  }
 
   async searchSimilar(
     queryEmbedding: Float32Array,
@@ -21,49 +165,23 @@ export class VectorSearchService {
       annCandidateMultiplier?: number;
     } = {}
   ): Promise<VectorSearchResult[]> {
-    return new Promise((resolve, reject) => {
-      const effectiveRetrievalMode = options.retrievalMode || 'ann_rerank_v1';
-      // Initialize Worker
-      const worker = new Worker(new URL('../../workers/vectorSearch.worker.ts', import.meta.url));
+    const effectiveRetrievalMode = options.retrievalMode || 'ann_rerank_v1';
+    console.log(
+      '🚀 [MAIN THREAD] Offloading search to Worker... mode=%s maxResults=%s annMultiplier=%s docsFilter=%d chunkFilter=%d',
+      effectiveRetrievalMode,
+      options.maxResults ?? 'default',
+      options.annCandidateMultiplier ?? 'default',
+      options.documentIds?.length || 0,
+      options.allowedChunkIds?.length || 0
+    );
 
-      worker.onmessage = (event) => {
-        const { type, payload, error } = event.data;
-        if (type === 'SEARCH_RESULT') {
-          resolve(payload);
-          worker.terminate(); // Clean up
-        } else if (type === 'ERROR') {
-          console.error('[VectorWorker] Error:', error);
-          reject(new Error(error));
-          worker.terminate();
-        }
-      };
-
-      worker.onerror = (error) => {
-        console.error('[VectorWorker] Unexpected error:', error);
-        reject(error);
-        worker.terminate();
-      };
-
-      // Send Request
-      console.log(
-        '🚀 [MAIN THREAD] Offloading search to Worker... mode=%s maxResults=%s annMultiplier=%s docsFilter=%d chunkFilter=%d',
-        effectiveRetrievalMode,
-        options.maxResults ?? 'default',
-        options.annCandidateMultiplier ?? 'default',
-        options.documentIds?.length || 0,
-        options.allowedChunkIds?.length || 0
-      );
-      worker.postMessage({
-        type: 'SEARCH',
-        payload: {
-          queryEmbedding,
-          sessionId,
-          options: {
-            ...options,
-            retrievalMode: effectiveRetrievalMode,
-          }
-        }
-      });
+    return this.sendWorkerRequest<VectorSearchResult[]>('SEARCH', {
+      queryEmbedding,
+      sessionId,
+      options: {
+        ...options,
+        retrievalMode: effectiveRetrievalMode,
+      }
     });
   }
 

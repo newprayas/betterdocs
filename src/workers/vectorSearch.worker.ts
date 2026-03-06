@@ -3,12 +3,15 @@ import { cosineSimilarity, calculateVectorNorm, decompressVector } from '../util
 import type { VectorSearchResult } from '../types';
 
 type WorkerMessage =
-  | { type: 'SEARCH', payload: { queryEmbedding: Float32Array; sessionId: string; options: SearchOptions } }
-  | { type: 'INIT' };
+  | { type: 'SEARCH'; requestId: string; payload: { queryEmbedding: Float32Array; sessionId: string; options: SearchOptions } }
+  | { type: 'WARMUP'; requestId: string; payload: WarmupOptions }
+  | { type: 'INIT'; requestId: string };
 
 type WorkerResponse =
-  | { type: 'SEARCH_RESULT', payload: VectorSearchResult[] }
-  | { type: 'ERROR', error: string };
+  | { type: 'SEARCH_RESULT'; requestId: string; payload: VectorSearchResult[] }
+  | { type: 'WARMUP_DONE'; requestId: string }
+  | { type: 'INIT_DONE'; requestId: string }
+  | { type: 'ERROR'; requestId?: string; error: string };
 
 type RetrievalMode = 'legacy_hybrid' | 'ann_rerank_v1';
 
@@ -20,6 +23,12 @@ interface SearchOptions {
   userId?: string;
   retrievalMode?: RetrievalMode;
   annCandidateMultiplier?: number;
+}
+
+interface WarmupOptions {
+  sessionId: string;
+  documentIds?: string[];
+  queryEmbedding?: Float32Array;
 }
 
 interface ParsedAnnGraph {
@@ -62,13 +71,88 @@ ctx.onmessage = async (event: MessageEvent<WorkerMessage>) => {
         data.payload.sessionId,
         data.payload.options
       );
-      ctx.postMessage({ type: 'SEARCH_RESULT', payload: results } satisfies WorkerResponse);
+      ctx.postMessage({ type: 'SEARCH_RESULT', requestId: data.requestId, payload: results } satisfies WorkerResponse);
+      return;
+    }
+
+    if (data.type === 'WARMUP') {
+      await performWarmup(data.payload);
+      ctx.postMessage({ type: 'WARMUP_DONE', requestId: data.requestId } satisfies WorkerResponse);
+      return;
+    }
+
+    if (data.type === 'INIT') {
+      await ensureDbReady();
+      ctx.postMessage({ type: 'INIT_DONE', requestId: data.requestId } satisfies WorkerResponse);
     }
   } catch (error: any) {
     console.error('Vector Search Worker Error:', error);
-    ctx.postMessage({ type: 'ERROR', error: error.message || 'Unknown worker error' } satisfies WorkerResponse);
+    ctx.postMessage({
+      type: 'ERROR',
+      requestId: (data as any)?.requestId,
+      error: error.message || 'Unknown worker error'
+    } satisfies WorkerResponse);
   }
 };
+
+async function ensureDbReady(): Promise<void> {
+  if (!db) {
+    throw new Error('Database not initialized in worker');
+  }
+
+  if (!db.isOpen()) {
+    await db.open();
+  }
+}
+
+async function performWarmup(options: WarmupOptions): Promise<void> {
+  if (!options?.sessionId) {
+    return;
+  }
+
+  await ensureDbReady();
+  const enabledDocIds = await getEnabledDocumentIds(options.sessionId, options.documentIds);
+  if (enabledDocIds.length === 0) {
+    return;
+  }
+
+  // Touch the embeddings table once to warm IndexedDB cursor paths.
+  await db!.embeddings
+    .where('documentId')
+    .anyOf(enabledDocIds.slice(0, Math.min(3, enabledDocIds.length)))
+    .limit(1)
+    .toArray();
+
+  const loadedIndexes: ParsedAnnIndex[] = [];
+  for (const documentId of enabledDocIds) {
+    try {
+      const index = await loadAnnIndex(documentId);
+      if (index) {
+        loadedIndexes.push(index);
+      }
+    } catch (error) {
+      console.warn('[WARMUP] ANN index warm-up failed for document:', documentId, error);
+    }
+  }
+
+  if (options.queryEmbedding && options.queryEmbedding.length > 0) {
+    const queryNorm = calculateVectorNorm(options.queryEmbedding);
+    if (queryNorm > 0) {
+      for (const index of loadedIndexes.slice(0, 3)) {
+        // Probe ANN traversal to warm scoring code paths and typed-array access.
+        searchAnnGraph(index, options.queryEmbedding, queryNorm, 12);
+      }
+    }
+  }
+
+  console.log(
+    '[WARMUP] session=%s docs=%d annIndexesLoaded=%d annCacheSize=%d',
+    options.sessionId,
+    enabledDocIds.length,
+    loadedIndexes.length,
+    ANN_CACHE.size
+  );
+}
 
 async function performVectorSearch(
   queryEmbedding: Float32Array,
@@ -84,9 +168,7 @@ async function performVectorSearch(
     annCandidateMultiplier = 12
   } = options;
 
-  if (!db) {
-    throw new Error('Database not initialized in worker');
-  }
+  await ensureDbReady();
 
   console.log(
     '[RETRIEVAL WORKER] mode=%s maxResults=%d threshold=%s docsFilter=%d chunkFilter=%d',

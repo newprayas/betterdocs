@@ -64,12 +64,19 @@ interface DocumentEmbeddingCacheEntry {
   loadedAt: number;
 }
 
+interface RetrievalWarmupEmbeddingCacheEntry {
+  embedding: Float32Array;
+  warmedAt: number;
+}
+
 const STAGE_TIMEOUT_MS = {
   sessionLookup: 8000,
   historyLookup: 8000,
 };
 const SESSION_WARM_CACHE_TTL_MS = 2 * 60 * 1000;
 const EMBEDDING_CACHE_TTL_MS = 10 * 60 * 1000;
+const RETRIEVAL_WARMUP_EMBEDDING_TTL_MS = 10 * 60 * 1000;
+const RETRIEVAL_WARMUP_PROBE_TEXT = 'retrieval warmup probe';
 const MAX_EMBEDDING_CACHE_ENTRIES = 24;
 
 const withStageTimeout = async <T>(
@@ -97,6 +104,7 @@ export class ChatPipeline {
   private indexedDBServices = getIndexedDBServices();
   private sessionWarmCache = new Map<string, SessionWarmCacheEntry>();
   private documentEmbeddingCache = new Map<string, DocumentEmbeddingCacheEntry>();
+  private retrievalWarmupEmbeddingCache: RetrievalWarmupEmbeddingCacheEntry | null = null;
 
   private buildEnabledDocSignature(documentIds: string[]): string {
     return [...documentIds].sort().join('|');
@@ -203,6 +211,25 @@ export class ChatPipeline {
     return hasAnyEmbeddings;
   }
 
+  private async getWarmupEmbeddingVector(): Promise<Float32Array | null> {
+    const cached = this.retrievalWarmupEmbeddingCache;
+    if (cached && this.isFresh(cached.warmedAt, RETRIEVAL_WARMUP_EMBEDDING_TTL_MS)) {
+      return cached.embedding;
+    }
+
+    try {
+      const embedding = await embeddingService.generateEmbedding(RETRIEVAL_WARMUP_PROBE_TEXT);
+      this.retrievalWarmupEmbeddingCache = {
+        embedding,
+        warmedAt: Date.now(),
+      };
+      return embedding;
+    } catch (error) {
+      console.warn('[PRELOAD] Embedding warm-up probe failed:', error);
+      return null;
+    }
+  }
+
   async preloadSessionRetrievalData(sessionId: string): Promise<void> {
     if (!sessionId) return;
 
@@ -230,7 +257,7 @@ export class ChatPipeline {
       warmedAt: Date.now(),
     });
 
-    await Promise.all(
+    const routeWarmupPromise = Promise.all(
       enabledDocIds.map(async (documentId) => {
         try {
           await this.indexedDBServices.routeIndexService.loadRouteIndexForDocument(documentId);
@@ -239,6 +266,18 @@ export class ChatPipeline {
         }
       })
     );
+
+    const retrievalWarmupPromise = hasAnyEmbeddings
+      ? (async () => {
+          const warmupEmbedding = await this.getWarmupEmbeddingVector();
+          await vectorSearchService.prewarmSessionRetrieval(sessionId, {
+            documentIds: enabledDocIds,
+            warmupEmbedding: warmupEmbedding || undefined,
+          });
+        })()
+      : Promise.resolve();
+
+    await Promise.all([routeWarmupPromise, retrievalWarmupPromise]);
   }
 
   invalidateSessionRetrievalCache(sessionId: string): void {
