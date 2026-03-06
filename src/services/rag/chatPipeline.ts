@@ -269,12 +269,12 @@ export class ChatPipeline {
 
     const retrievalWarmupPromise = hasAnyEmbeddings
       ? (async () => {
-          const warmupEmbedding = await this.getWarmupEmbeddingVector();
-          await vectorSearchService.prewarmSessionRetrieval(sessionId, {
-            documentIds: enabledDocIds,
-            warmupEmbedding: warmupEmbedding || undefined,
-          });
-        })()
+        const warmupEmbedding = await this.getWarmupEmbeddingVector();
+        await vectorSearchService.prewarmSessionRetrieval(sessionId, {
+          documentIds: enabledDocIds,
+          warmupEmbedding: warmupEmbedding || undefined,
+        });
+      })()
       : Promise.resolve();
 
     await Promise.all([routeWarmupPromise, retrievalWarmupPromise]);
@@ -1366,13 +1366,14 @@ export class ChatPipeline {
 Rewrite the latest user query into one standalone retrieval query.
 
 Goals:
-1) Understand user intent and express it as a clearer, more complete query.
+1) Understand user intent and express it as a clearer, more complete query. 
 2) Expand short/fragmented wording into natural phrasing that improves retrieval.
 3) Correct spelling/grammar.
 4) If the latest query is a follow-up, use prior context to resolve meaning.
-5) If it is unrelated, ignore prior context.
+5) If it is unrelated, ignore prior context. Treat the current query as a standalone query and rewrite it. 
 6) Keep meaning faithful to user intent; do not invent a new topic.
 7) Output exactly one line: only the rewritten query.
+8) If user asks for Rx or treatment in query - expand to mention BOTH surgical and medical treatment.
 
 Most Recent Clarified Query:
 ${mostRecentClarifiedQuery || 'None'}
@@ -2502,8 +2503,8 @@ CONTEXT USAGE:
 
 MEDICAL ABBREVIATIONS AND TERMINOLOGY:
 When processing medical queries, understand and use these common medical terms and abbreviations:
-- "rx" or "Rx" means treatment or prescription
-- "Tx" or "tx" means treatment
+- "rx" or "Rx" means complete treatment (both medical and surgical)
+- "Tx" or "tx" means complete treatment (both medical and surgical)
 - "Dx" or "dx" means diagnosis (you should search for history, clinical features, and investigations of the condition)
 - "inv" or "Inv" means investigations or diagnostic tests
 - "Features" or "Clinical Features": means ONLY History and Clinical Examination findings of that disease or condition. This EXCLUDES investigation/lab findings. Focus on symptoms (what patient reports) and signs (what doctor finds on examination)
