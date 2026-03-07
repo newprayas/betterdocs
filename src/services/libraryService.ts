@@ -143,6 +143,20 @@ const LIBRARY_CATALOG = [
     "category": "Surgery"
   },
   {
+    "id": "hamilton_bailey_physical_signs",
+    "name": "Hamilton Baileys Clinical Surgery 19 Edition",
+    "filename": "shard_9s1.bin",
+    "size": "14.3 MB",
+    "category": "Surgery"
+  },
+  {
+    "id": "norman_browse_6th_ed",
+    "name": "Norman Browse Sign Symptoms of Surgical Disease 6th Edition",
+    "filename": "shard_9q2.bin",
+    "size": "12.1 MB",
+    "category": "Surgery"
+  },
+  {
     "id": "dc_dutta_obs",
     "name": "DC dutta Textbook of Obstetrics 10th edition",
     "filename": "shard_8x9.bin",
