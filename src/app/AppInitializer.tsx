@@ -13,6 +13,7 @@ const RESUME_STALE_HIDDEN_MS = 15000;
 const STALE_PIPELINE_AGE_MS = 90000;
 const AUTH_RECOVERY_RETRIES = 3;
 const AUTH_RECOVERY_BASE_DELAY_MS = 400;
+const ORPHAN_CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -48,6 +49,35 @@ export function AppInitializer() {
       setDocumentUserId(userId);
     };
 
+    const maybeRunStartupCleanup = async (userId: string): Promise<void> => {
+      const cleanupKey = `orphan_cleanup_last_run_v1:${userId}`;
+      const now = Date.now();
+
+      const lastRunRaw = window.localStorage.getItem(cleanupKey);
+      const lastRun = lastRunRaw ? Number(lastRunRaw) : 0;
+      const dailyDue = !Number.isFinite(lastRun) || now - lastRun >= ORPHAN_CLEANUP_INTERVAL_MS;
+
+      if (!dailyDue) {
+        console.log('[APP INIT] Startup orphan cleanup skipped (not due)', {
+          lastRun,
+          hoursSinceLastRun: lastRun > 0 ? ((now - lastRun) / 3600000).toFixed(2) : 'n/a'
+        });
+        return;
+      }
+
+      try {
+        const { sessionService } = getIndexedDBServices();
+        const cleanupSummary = await sessionService.cleanupOrphanedData();
+        window.localStorage.setItem(cleanupKey, String(now));
+        console.log('[APP INIT] Startup orphan cleanup complete:', {
+          reason: 'daily',
+          ...cleanupSummary
+        });
+      } catch (cleanupError) {
+        console.warn('[APP INIT] Startup orphan cleanup failed:', cleanupError);
+      }
+    };
+
     const hydrateUserData = async (userId: string, reason: string) => {
       if (hydratingUserIdRef.current === userId) {
         console.log('[APP INIT]', `Skipping duplicate hydrate for user ${userId} (${reason})`);
@@ -79,13 +109,7 @@ export function AppInitializer() {
         if (startupCleanupUserRef.current !== userId) {
           startupCleanupUserRef.current = userId;
           setTimeout(async () => {
-            try {
-              const { sessionService } = getIndexedDBServices();
-              const cleanupSummary = await sessionService.cleanupOrphanedData();
-              console.log('[APP INIT] Startup orphan cleanup complete:', cleanupSummary);
-            } catch (cleanupError) {
-              console.warn('[APP INIT] Startup orphan cleanup failed:', cleanupError);
-            }
+            await maybeRunStartupCleanup(userId);
           }, 1500);
         }
 

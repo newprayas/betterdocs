@@ -21,6 +21,8 @@ export const useDocumentStore = create<DocumentStore>()(
       (set, get) => ({
         // State
         documents: [],
+        loadedSessionId: null,
+        isLoadingDocuments: false,
         progressMap: {},
         isUploading: false,
         error: null,
@@ -39,7 +41,7 @@ export const useDocumentStore = create<DocumentStore>()(
           const sessionIds = new Set(documents.map(doc => doc.sessionId));
           sessionIds.forEach((sessionId) => chatPipeline.invalidateSessionRetrievalCache(sessionId));
           // Preserve userId when clearing documents for session switch
-          set({ documents: [], progressMap: {}, error: null, userId });
+          set({ documents: [], loadedSessionId: null, isLoadingDocuments: false, progressMap: {}, error: null, userId });
         },
 
         loadDocuments: async (sessionId: string) => {
@@ -47,6 +49,8 @@ export const useDocumentStore = create<DocumentStore>()(
           if (typeof window === 'undefined') {
             return;
           }
+
+          set({ isLoadingDocuments: true });
 
           const { userId } = get();
 
@@ -59,7 +63,7 @@ export const useDocumentStore = create<DocumentStore>()(
             if (!userId) {
               const errorMsg = 'User ID not found. Please log in.';
               userIdLogger.logError('DocumentStore.loadDocuments', errorMsg, null);
-              set({ error: errorMsg });
+              set({ error: errorMsg, isLoadingDocuments: false });
               return;
             }
 
@@ -69,7 +73,7 @@ export const useDocumentStore = create<DocumentStore>()(
             const documents = await documentService.getDocumentsBySession(sessionId, userId);
 
             userIdLogger.logOperationEnd('DocumentStore', operationId, userId);
-            set({ documents });
+            set({ documents, loadedSessionId: sessionId, isLoadingDocuments: false });
 
             console.log(`📚 [DocumentStore] Loaded ${documents.length} documents for session ${sessionId}`);
           } catch (error) {
@@ -77,6 +81,7 @@ export const useDocumentStore = create<DocumentStore>()(
             console.error('[DocumentStore] Failed to load documents:', error);
             set({
               error: error instanceof Error ? error.message : 'Failed to load documents',
+              isLoadingDocuments: false,
             });
           }
         },

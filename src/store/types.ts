@@ -66,6 +66,8 @@ export interface ChatStore {
 export interface DocumentStore {
   // State
   documents: Document[];
+  loadedSessionId: string | null;
+  isLoadingDocuments: boolean;
   progressMap: Record<string, DocumentProgress>;
   isUploading: boolean;
   error: string | null;

@@ -95,14 +95,21 @@ export default function SessionPage() {
 
   const {
     documents,
+    loadedSessionId,
+    isLoadingDocuments,
     loadDocuments,
-    isUploading: documentsLoading,
     toggleDocumentEnabled,
   } = useDocumentStore();
 
-  // ADD THIS VARIABLE
+  const sessionDocuments = useMemo(
+    () => documents.filter((document) => document.sessionId === sessionId),
+    [documents, sessionId],
+  );
+  const hasDocumentDataForSession =
+    loadedSessionId === sessionId && !isLoadingDocuments;
+  const documentsLoading = isLoadingDocuments || loadedSessionId !== sessionId;
   const hasDocuments =
-    (currentSession?.documentCount || 0) > 0 || documents.length > 0;
+    (currentSession?.documentCount || 0) > 0 || sessionDocuments.length > 0;
 
   const [activeTab, setActiveTab] = useState("chat");
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
@@ -117,12 +124,12 @@ export default function SessionPage() {
 
   const sortedDocuments = useMemo(
     () =>
-      [...documents].sort((a, b) =>
+      [...sessionDocuments].sort((a, b) =>
         getDocumentDisplayName(a)
           .toLowerCase()
           .localeCompare(getDocumentDisplayName(b).toLowerCase()),
       ),
-    [documents],
+    [sessionDocuments],
   );
   const activeDocuments = useMemo(
     () => sortedDocuments.filter((document) => document.enabled),
@@ -223,11 +230,6 @@ export default function SessionPage() {
   useEffect(() => {
     let isMounted = true;
 
-    // Clear documents immediately when mounting a new session page
-    // This prevents "ghost documents" from previous sessions from showing up
-    // or incorrectly unlocking the chat
-    useDocumentStore.getState().clearDocuments();
-
     const loadSessionData = async () => {
       if (typeof window !== "undefined" && sessionId) {
         // Set the current session ID immediately (this will now be optimistic if cached)
@@ -278,8 +280,6 @@ export default function SessionPage() {
     // Cleanup function to prevent state updates on unmounted component
     return () => {
       isMounted = false;
-      // Also clear documents on unmount to be safe
-      useDocumentStore.getState().clearDocuments();
     };
   }, [sessionId, setCurrentSessionId, loadMessages, loadDocuments]);
 
@@ -665,7 +665,13 @@ export default function SessionPage() {
               <div className="flex flex-col flex-1 min-h-0">
                 {/* This wrapper grows to fill all available space */}
                 <div className="flex-1 flex items-center justify-center">
-                  {!hasDocuments ? (
+                  {documentsLoading ? (
+                    <EmptyState
+                      title="Loading books..."
+                      description="Please wait while sources are being prepared."
+                      icon={<div className="text-4xl mb-2">📚</div>}
+                    />
+                  ) : !hasDocuments ? (
                     <EmptyState
                       title="No books added, Add books to chat 🥳"
                       description=""
@@ -730,7 +736,7 @@ export default function SessionPage() {
                       aria-label="Manage active sources"
                       title="Sources"
                     >
-                      Sources {activeDocumentCount}
+                      Sources {documentsLoading ? "..." : activeDocumentCount}
                     </button>
                   )}
                   <PhrasePills
@@ -743,9 +749,13 @@ export default function SessionPage() {
                 <div className="flex-shrink-0 mt-4 max-w-4xl mx-auto w-full">
                   <MessageInput
                     sessionId={sessionId}
-                    disabled={isStreaming || !hasDocuments}
+                    disabled={
+                      isStreaming || !hasDocuments || !hasDocumentDataForSession
+                    }
                     placeholder={
-                      !hasDocuments
+                      documentsLoading
+                        ? "Loading books..."
+                        : !hasDocuments
                         ? "Please add a book FIRST to chat"
                         : "Ask a question about your documents..."
                     }
@@ -791,7 +801,7 @@ export default function SessionPage() {
                         aria-label="Manage active sources"
                         title="Sources"
                       >
-                        Sources {activeDocumentCount}
+                        Sources {documentsLoading ? "..." : activeDocumentCount}
                       </button>
                       <button
                         type="button"
@@ -841,7 +851,7 @@ export default function SessionPage() {
 
                 {/* Message Input */}
                 <div className="flex-shrink-0 mt-4 max-w-4xl mx-auto w-full">
-                  {!hasDocuments && (
+                  {!documentsLoading && !hasDocuments && (
                     <div className="mb-4 flex justify-center">
                       <Button
                         onClick={() => setActiveTab("documents")}
@@ -855,9 +865,13 @@ export default function SessionPage() {
                   )}
                   <MessageInput
                     sessionId={sessionId}
-                    disabled={isStreaming || !hasDocuments}
+                    disabled={
+                      isStreaming || !hasDocuments || !hasDocumentDataForSession
+                    }
                     placeholder={
-                      !hasDocuments
+                      documentsLoading
+                        ? "Loading books..."
+                        : !hasDocuments
                         ? "Please add a book FIRST to chat"
                         : "Ask a question about your documents..."
                     }
@@ -876,7 +890,7 @@ export default function SessionPage() {
             <div className="space-y-6 pb-6">
               <div className="sticky top-0 bg-gray-50 dark:bg-gray-900 py-6 z-10">
                 <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-                  Documents ({documents.length})
+                  Documents ({sessionDocuments.length})
                 </h2>
 
                 <div className="flex flex-col items-center gap-4 mb-4">
@@ -889,7 +903,7 @@ export default function SessionPage() {
                     <span className="mr-2">🏥</span> Library
                   </Button>
 
-                  {documents.length > 0 && (
+                  {sessionDocuments.length > 0 && (
                     <Button
                       variant="ghost"
                       onClick={() => setActiveTab("chat")}
@@ -937,7 +951,7 @@ export default function SessionPage() {
                 </div>
               </div>
 
-              {documents.length === 0 && !documentsLoading ? (
+              {sessionDocuments.length === 0 && !documentsLoading ? (
                 <div className="text-center py-12">
                   <p className="text-gray-500 dark:text-gray-400 text-lg mb-2">
                     No documents yet!
@@ -948,7 +962,7 @@ export default function SessionPage() {
                 </div>
               ) : (
                 <DocumentList
-                  documents={documents}
+                  documents={sessionDocuments}
                   loading={documentsLoading}
                   variant="grid"
                 />
@@ -973,7 +987,7 @@ export default function SessionPage() {
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <h3 className="text-base font-semibold text-gray-900 dark:text-white">
-                    Sources {activeDocumentCount}
+                    Sources {documentsLoading ? "..." : activeDocumentCount}
                   </h3>
                   <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                     Changes apply to the next reply.
@@ -1003,7 +1017,11 @@ export default function SessionPage() {
             </div>
 
             <div className="max-h-[60vh] overflow-y-auto px-4 py-4 space-y-4">
-              {sortedDocuments.length === 0 && (
+              {documentsLoading ? (
+                <div className="rounded-lg border border-dashed border-gray-300 dark:border-gray-700 p-4 text-sm text-gray-500 dark:text-gray-400">
+                  Loading books...
+                </div>
+              ) : sortedDocuments.length === 0 && (
                 <div className="rounded-lg border border-dashed border-gray-300 dark:border-gray-700 p-4 text-sm text-gray-500 dark:text-gray-400">
                   No books added yet. Add books to enable sources.
                 </div>
