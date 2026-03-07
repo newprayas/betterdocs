@@ -69,6 +69,29 @@ interface RetrievalWarmupEmbeddingCacheEntry {
   warmedAt: number;
 }
 
+interface StandaloneRewriteResult {
+  query: string;
+  wasRewritten: boolean;
+  usedImmediateContext: boolean;
+  mode: 'skipped_clear' | 'rewritten' | 'fallback_original';
+}
+
+interface RewriteTelemetry {
+  totalRequests: number;
+  skippedClear: number;
+  rewritten: number;
+  rewrittenWithImmediateContext: number;
+  fallbackToOriginal: number;
+  fallbackDueToError: number;
+  fallbackDueToRateLimit: number;
+  fallbackDueToWeak: number;
+  fallbackDueToTruncated: number;
+  structuredParseSuccess: number;
+  zeroHitAfterRewrite: number;
+  searchFallbackAttempts: number;
+  searchFallbackRecovered: number;
+}
+
 const STAGE_TIMEOUT_MS = {
   sessionLookup: 8000,
   historyLookup: 8000,
@@ -105,6 +128,21 @@ export class ChatPipeline {
   private sessionWarmCache = new Map<string, SessionWarmCacheEntry>();
   private documentEmbeddingCache = new Map<string, DocumentEmbeddingCacheEntry>();
   private retrievalWarmupEmbeddingCache: RetrievalWarmupEmbeddingCacheEntry | null = null;
+  private rewriteTelemetry: RewriteTelemetry = {
+    totalRequests: 0,
+    skippedClear: 0,
+    rewritten: 0,
+    rewrittenWithImmediateContext: 0,
+    fallbackToOriginal: 0,
+    fallbackDueToError: 0,
+    fallbackDueToRateLimit: 0,
+    fallbackDueToWeak: 0,
+    fallbackDueToTruncated: 0,
+    structuredParseSuccess: 0,
+    zeroHitAfterRewrite: 0,
+    searchFallbackAttempts: 0,
+    searchFallbackRecovered: 0,
+  };
 
   private buildEnabledDocSignature(documentIds: string[]): string {
     return [...documentIds].sort().join('|');
@@ -498,6 +536,110 @@ export class ChatPipeline {
       .replace(/^[-*]\s+/, '')
       .replace(/^["'`]|["'`]$/g, '')
       .trim();
+  }
+
+  private parseStructuredRewriteOutput(raw: string): string {
+    const trimmed = (raw || '').trim();
+    if (!trimmed) return '';
+
+    const directJson = this.tryParseRewriteJson(trimmed);
+    if (directJson) {
+      this.rewriteTelemetry.structuredParseSuccess += 1;
+      return directJson;
+    }
+
+    const fencedMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
+    if (fencedMatch?.[1]) {
+      const fencedJson = this.tryParseRewriteJson(fencedMatch[1].trim());
+      if (fencedJson) {
+        this.rewriteTelemetry.structuredParseSuccess += 1;
+        return fencedJson;
+      }
+    }
+
+    const objectMatch = trimmed.match(/\{[\s\S]*\}/);
+    if (objectMatch?.[0]) {
+      const objectJson = this.tryParseRewriteJson(objectMatch[0]);
+      if (objectJson) {
+        this.rewriteTelemetry.structuredParseSuccess += 1;
+        return objectJson;
+      }
+    }
+
+    // Fallback for non-JSON model outputs.
+    return this.sanitizeRewriterOutput(trimmed);
+  }
+
+  private tryParseRewriteJson(jsonText: string): string | null {
+    try {
+      const parsed = JSON.parse(jsonText) as { query?: unknown };
+      if (typeof parsed?.query !== 'string') return null;
+      const cleaned = this.sanitizeRewriterOutput(parsed.query);
+      return cleaned || null;
+    } catch {
+      return null;
+    }
+  }
+
+  private extractImmediatePreviousAssistantMessage(history: any[]): string | null {
+    if (!Array.isArray(history) || history.length === 0) return null;
+
+    for (let i = history.length - 1; i >= 0; i--) {
+      const msg = history[i];
+      if (msg?.role === 'assistant' && typeof msg?.content === 'string' && msg.content.trim()) {
+        return msg.content;
+      }
+    }
+
+    return null;
+  }
+
+  private extractAnswerForQueryFromAssistantMessage(content: string | null): string | null {
+    if (!content) return null;
+    const match = content.match(/\*\*Answer for:\*\*\s*"([^"]+)"/i)
+      || content.match(/Answer for:\s*"([^"]+)"/i);
+    const clarified = match?.[1]?.trim();
+    if (!clarified) return null;
+
+    const normalizedClarified = this.normalizeStandaloneQueryShape(clarified);
+    return normalizedClarified || null;
+  }
+
+  private shouldSkipRewriteForClearStandaloneQuery(query: string): boolean {
+    const normalized = this.normalizeStandaloneQueryShape(query);
+    if (!normalized) return true;
+    if (this.isLikelyContextContinuation(normalized)) return false;
+
+    const words = normalized.split(/\s+/).filter(Boolean);
+    if (words.length >= 6) return true;
+    if (words.length >= 4 && /\bof\s+[a-z0-9]/i.test(normalized)) return true;
+    if (words.length >= 4 && /^(what|which|how|why|when|where|define|explain)\b/i.test(normalized)) return true;
+
+    return false;
+  }
+
+  private logRewriteTelemetrySummary(): void {
+    const t = this.rewriteTelemetry;
+    const safePct = (num: number, den: number) => den > 0 ? Number(((num / den) * 100).toFixed(1)) : 0;
+
+    console.log('[QUERY REWRITER METRICS]', {
+      total_requests: t.totalRequests,
+      skipped_clear: t.skippedClear,
+      rewritten: t.rewritten,
+      rewritten_with_immediate_context: t.rewrittenWithImmediateContext,
+      fallback_to_original: t.fallbackToOriginal,
+      fallback_error: t.fallbackDueToError,
+      fallback_rate_limit: t.fallbackDueToRateLimit,
+      fallback_weak: t.fallbackDueToWeak,
+      fallback_truncated: t.fallbackDueToTruncated,
+      structured_parse_success: t.structuredParseSuccess,
+      zero_hit_after_rewrite: t.zeroHitAfterRewrite,
+      search_fallback_attempts: t.searchFallbackAttempts,
+      search_fallback_recovered: t.searchFallbackRecovered,
+      rewrite_fallback_rate_pct: safePct(t.fallbackToOriginal, t.totalRequests),
+      zero_hit_after_rewrite_rate_pct: safePct(t.zeroHitAfterRewrite, Math.max(1, t.rewritten)),
+      search_fallback_recovery_rate_pct: safePct(t.searchFallbackRecovered, Math.max(1, t.searchFallbackAttempts)),
+    });
   }
 
   private isPronounTopic(topic: string): boolean {
@@ -1438,52 +1580,61 @@ export class ChatPipeline {
   private async generateStandaloneQuery(
     content: string,
     history: any[]
-  ): Promise<string> {
+  ): Promise<StandaloneRewriteResult> {
     const REWRITE_TIMEOUT_MS = 10000;
-    const normalizedOriginal = this.normalizeCommonMedicalTypos(content.trim().replace(/\s+/g, ' '));
-    const mostRecentClarifiedQuery = this.extractMostRecentClarifiedQuery(history);
-    const mostRecentAnswerForLine = this.extractMostRecentAnswerForLine(history);
+    const normalizedOriginal = this.normalizeStandaloneQueryShape(
+      this.normalizeCommonMedicalTypos(content.trim().replace(/\s+/g, ' '))
+    );
+    this.rewriteTelemetry.totalRequests += 1;
+
+    if (this.shouldSkipRewriteForClearStandaloneQuery(normalizedOriginal)) {
+      this.rewriteTelemetry.skippedClear += 1;
+      this.logRewriteTelemetrySummary();
+      return {
+        query: normalizedOriginal,
+        wasRewritten: false,
+        usedImmediateContext: false,
+        mode: 'skipped_clear',
+      };
+    }
+
+    const immediateAssistantMessage = this.extractImmediatePreviousAssistantMessage(history);
+    const immediateAnswerForQuery = this.extractAnswerForQueryFromAssistantMessage(immediateAssistantMessage);
+    const hasImmediateContext = Boolean(immediateAnswerForQuery);
     const rewriterSystemPrompt =
-      'You rewrite medical user input into one high-quality standalone retrieval query. Expand shorthand into a clear, natural query while preserving intent.';
+      'You rewrite medical user input into one high-quality standalone retrieval query. Return strict JSON only.';
     const rewriterSystemPromptStrict =
-      'Return exactly one non-empty standalone medical search query line. Expand shorthand, fix typos, preserve intent. No explanations, labels, or quotes.';
+      'Return STRICT JSON ONLY in this exact schema: {"query":"<standalone medical retrieval query>"}. No markdown, no extra keys, no commentary.';
 
     const prompt = `
 Rewrite the latest user query into one standalone retrieval query.
+Return STRICT JSON ONLY:
+{"query":"..."}
 
 Goals:
-1) Understand user intent and express it as a clearer, more complete query. 
+1) Understand user intent and express it as a clearer, more complete query.
 2) Expand short/fragmented wording into natural phrasing that improves retrieval.
 3) Correct spelling/grammar.
-4) If the latest query is a follow-up, use prior context to resolve meaning.
-5) If it is unrelated, ignore prior context. Treat the current query as a standalone query and rewrite it. 
+4) Use ONLY the immediate previous assistant context below; ignore all other history.
+5) If context is unrelated/absent, rewrite current query standalone without context.
 6) Keep meaning faithful to user intent; do not invent a new topic.
-7) Output exactly one line: only the rewritten query.
-8) If user asks for Rx or treatment in query - expand to mention BOTH surgical and medical treatment.
+7) If user asks for Rx or treatment in query, include BOTH medical and surgical treatment wording.
 
-Most Recent Clarified Query:
-${mostRecentClarifiedQuery || 'None'}
-
-Most Recent Answer Header Line (optional):
-${mostRecentAnswerForLine || 'None'}
+Immediate Previous Assistant "Answer for" Query:
+${immediateAnswerForQuery || 'None'}
 
 Latest User Query:
 ${normalizedOriginal}
 `.trim();
 
     const strictPrompt = `
-Return exactly one non-empty standalone medical retrieval query.
-Make it clear and explicit from user intent.
-Fix spelling and grammar.
-Use prior clarified context only when query is a continuation.
-If context is insufficient, rewrite the latest user query into the clearest possible standalone form.
-Output exactly one line and nothing else.
+Return STRICT JSON ONLY:
+{"query":"<standalone medical retrieval query>"}
+Do not add markdown, code fences, labels, or extra keys.
+Use ONLY immediate context below when needed.
 
-Most Recent Clarified Query:
-${mostRecentClarifiedQuery || 'None'}
-
-Most Recent Answer Header Line (optional):
-${mostRecentAnswerForLine || 'None'}
+Immediate Previous Assistant "Answer for" Query:
+${immediateAnswerForQuery || 'None'}
 
 Latest User Query:
 ${normalizedOriginal}
@@ -1491,9 +1642,8 @@ ${normalizedOriginal}
 
     console.log('[QUERY REWRITER CONTEXT]', {
       latestUserQuery: normalizedOriginal,
-      mostRecentClarifiedQuery: mostRecentClarifiedQuery || null,
-      mostRecentAnswerForLine: mostRecentAnswerForLine || null,
-      historyMessages: Array.isArray(history) ? history.length : 0,
+      immediateAnswerForQuery: immediateAnswerForQuery || null,
+      usedImmediateContext: hasImmediateContext,
     });
     console.log('[QUERY REWRITER PROMPT][SYSTEM][PRIMARY]', rewriterSystemPrompt);
     console.log('[QUERY REWRITER PROMPT][USER][PRIMARY]', prompt);
@@ -1521,14 +1671,14 @@ ${normalizedOriginal}
         rewriterSystemPrompt,
         'openai/gpt-oss-120b',
         {
-          temperature: 0.2,
-          maxTokens: 128,
+          temperature: 0.1,
+          maxTokens: 180,
           timeoutMs: REWRITE_TIMEOUT_MS,
         }
       );
       console.log('[QUERY REWRITER RAW][PRIMARY]', rewrittenQuery);
 
-      let cleanedQuery = this.sanitizeRewriterOutput(rewrittenQuery);
+      let cleanedQuery = this.parseStructuredRewriteOutput(rewrittenQuery);
 
       // Hard retry once with stricter prompt if primary output is empty.
       if (!cleanedQuery) {
@@ -1541,35 +1691,80 @@ ${normalizedOriginal}
           0
         );
         console.log('[QUERY REWRITER RAW][STRICT]', rewrittenQuery);
-        cleanedQuery = this.sanitizeRewriterOutput(rewrittenQuery);
+        cleanedQuery = this.parseStructuredRewriteOutput(rewrittenQuery);
       }
 
       const rewriterRateLimitNotice = this.extractRateLimitNotice(cleanedQuery);
       if (rewriterRateLimitNotice) {
         console.warn('[QUERY REWRITER]', `Rate-limited rewrite response detected. Falling back to original query.`);
-        return this.normalizeStandaloneQueryShape(normalizedOriginal);
+        this.rewriteTelemetry.fallbackDueToRateLimit += 1;
+        this.rewriteTelemetry.fallbackToOriginal += 1;
+        this.logRewriteTelemetrySummary();
+        return {
+          query: this.normalizeStandaloneQueryShape(normalizedOriginal),
+          wasRewritten: false,
+          usedImmediateContext: hasImmediateContext,
+          mode: 'fallback_original',
+        };
       }
 
       // Keep fallback simple: only reject empty output.
       const wordCount = cleanedQuery.split(/\s+/).filter(Boolean).length;
       if (!cleanedQuery || wordCount === 0) {
         console.warn('[QUERY REWRITER]', `Rejected weak rewrite "${cleanedQuery}". Falling back to "${normalizedOriginal}"`);
-        return this.normalizeStandaloneQueryShape(normalizedOriginal);
+        this.rewriteTelemetry.fallbackDueToWeak += 1;
+        this.rewriteTelemetry.fallbackToOriginal += 1;
+        this.logRewriteTelemetrySummary();
+        return {
+          query: this.normalizeStandaloneQueryShape(normalizedOriginal),
+          wasRewritten: false,
+          usedImmediateContext: hasImmediateContext,
+          mode: 'fallback_original',
+        };
       }
 
       if (this.isLikelyTruncatedRewrite(cleanedQuery, normalizedOriginal)) {
         console.warn('[QUERY REWRITER]', `Rejected truncated rewrite "${cleanedQuery}". Falling back to "${normalizedOriginal}"`);
-        return this.normalizeStandaloneQueryShape(normalizedOriginal);
+        this.rewriteTelemetry.fallbackDueToTruncated += 1;
+        this.rewriteTelemetry.fallbackToOriginal += 1;
+        this.logRewriteTelemetrySummary();
+        return {
+          query: this.normalizeStandaloneQueryShape(normalizedOriginal),
+          wasRewritten: false,
+          usedImmediateContext: hasImmediateContext,
+          mode: 'fallback_original',
+        };
       }
 
       const finalRewritten = this.normalizeStandaloneQueryShape(cleanedQuery);
+      const wasRewritten = finalRewritten.toLowerCase() !== normalizedOriginal.toLowerCase();
+      if (wasRewritten) {
+        this.rewriteTelemetry.rewritten += 1;
+        if (hasImmediateContext) {
+          this.rewriteTelemetry.rewrittenWithImmediateContext += 1;
+        }
+      }
 
       console.log('[QUERY REWRITER]', `Original: "${normalizedOriginal}" -> Rewritten: "${finalRewritten}"`);
-      return finalRewritten;
+      this.logRewriteTelemetrySummary();
+      return {
+        query: finalRewritten,
+        wasRewritten,
+        usedImmediateContext: hasImmediateContext,
+        mode: 'rewritten',
+      };
 
     } catch (error) {
       console.error('[QUERY REWRITER ERROR]', error);
-      return this.normalizeStandaloneQueryShape(normalizedOriginal);
+      this.rewriteTelemetry.fallbackDueToError += 1;
+      this.rewriteTelemetry.fallbackToOriginal += 1;
+      this.logRewriteTelemetrySummary();
+      return {
+        query: this.normalizeStandaloneQueryShape(normalizedOriginal),
+        wasRewritten: false,
+        usedImmediateContext: hasImmediateContext,
+        mode: 'fallback_original',
+      };
     }
   }
 
@@ -1617,7 +1812,8 @@ ${normalizedOriginal}
       const history = await withStageTimeout(
         this.indexedDBServices.messageService.getMessagesBySession(
           sessionId,
-          sessionForDocuments.userId
+          sessionForDocuments.userId,
+          8
         ),
         STAGE_TIMEOUT_MS.historyLookup,
         'History lookup'
@@ -1630,12 +1826,18 @@ ${normalizedOriginal}
       // This converts "What are its causes?" -> "What are the causes of cataract?"
       console.log('[REWRITING]', 'Generating standalone query...');
       const rewriteStartMs = Date.now();
-      const standaloneQuery = await this.generateStandaloneQuery(content, history);
+      const standaloneRewrite = await this.generateStandaloneQuery(content, history);
+      const standaloneQuery = standaloneRewrite.query;
       rewriteMs = Date.now() - rewriteStartMs;
       const queryIntent = classifyQueryIntent(standaloneQuery);
       const answerContract = getAnswerContract(queryIntent);
       const contractInstruction = buildContractPromptInstructions(answerContract);
       console.log('[INTENT DETECTED]', queryIntent);
+      console.log('[QUERY REWRITER RESULT]', {
+        mode: standaloneRewrite.mode,
+        wasRewritten: standaloneRewrite.wasRewritten,
+        usedImmediateContext: standaloneRewrite.usedImmediateContext,
+      });
 
       // 🔴 PROMINENT LOG: Show the converted query for tracking
       console.log('🔴 Converted query -:', `"${standaloneQuery}"`);
@@ -1715,7 +1917,10 @@ ${normalizedOriginal}
       );
 
       // Safety net: if rewrite caused zero-hit retrieval, retry once with the original user query.
-      if (searchResults.length === 0 && standaloneQuery.trim().toLowerCase() !== content.trim().toLowerCase()) {
+      if (searchResults.length === 0 && standaloneRewrite.wasRewritten) {
+        this.rewriteTelemetry.zeroHitAfterRewrite += 1;
+        this.rewriteTelemetry.searchFallbackAttempts += 1;
+        this.logRewriteTelemetrySummary();
         console.warn('[SEARCH FALLBACK]', 'No results for rewritten query. Retrying with original query.');
         const fallbackEnhancedQuery = await this.enhanceQueryWithContext(sessionId, content);
         const fallbackRetrievalQuery = fallbackEnhancedQuery;
@@ -1743,6 +1948,8 @@ ${normalizedOriginal}
           }
         );
         if (fallbackResults.length > 0) {
+          this.rewriteTelemetry.searchFallbackRecovered += 1;
+          this.logRewriteTelemetrySummary();
           console.log('[SEARCH FALLBACK]', `Recovered ${fallbackResults.length} result(s) using original query.`);
           searchResults = fallbackResults;
         }
