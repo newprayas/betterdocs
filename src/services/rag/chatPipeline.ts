@@ -673,7 +673,8 @@ export class ChatPipeline {
       'what are the positions of appendix'
     );
 
-    return normalized.replace(/\s+/g, ' ').trim();
+    normalized = normalized.replace(/\s+/g, ' ').trim();
+    return normalized.charAt(0).toUpperCase() + normalized.slice(1);
   }
 
   private extractMostRecentClarifiedQuery(history: any[]): string | null {
