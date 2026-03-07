@@ -605,19 +605,6 @@ export class ChatPipeline {
     return normalizedClarified || null;
   }
 
-  private shouldSkipRewriteForClearStandaloneQuery(query: string): boolean {
-    const normalized = this.normalizeStandaloneQueryShape(query);
-    if (!normalized) return true;
-    if (this.isLikelyContextContinuation(normalized)) return false;
-
-    const words = normalized.split(/\s+/).filter(Boolean);
-    if (words.length >= 6) return true;
-    if (words.length >= 4 && /\bof\s+[a-z0-9]/i.test(normalized)) return true;
-    if (words.length >= 4 && /^(what|which|how|why|when|where|define|explain)\b/i.test(normalized)) return true;
-
-    return false;
-  }
-
   private logRewriteTelemetrySummary(): void {
     const t = this.rewriteTelemetry;
     const safePct = (num: number, den: number) => den > 0 ? Number(((num / den) * 100).toFixed(1)) : 0;
@@ -1586,17 +1573,6 @@ export class ChatPipeline {
       this.normalizeCommonMedicalTypos(content.trim().replace(/\s+/g, ' '))
     );
     this.rewriteTelemetry.totalRequests += 1;
-
-    if (this.shouldSkipRewriteForClearStandaloneQuery(normalizedOriginal)) {
-      this.rewriteTelemetry.skippedClear += 1;
-      this.logRewriteTelemetrySummary();
-      return {
-        query: normalizedOriginal,
-        wasRewritten: false,
-        usedImmediateContext: false,
-        mode: 'skipped_clear',
-      };
-    }
 
     const immediateAssistantMessage = this.extractImmediatePreviousAssistantMessage(history);
     const immediateAnswerForQuery = this.extractAnswerForQueryFromAssistantMessage(immediateAssistantMessage);
