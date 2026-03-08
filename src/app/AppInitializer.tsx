@@ -8,26 +8,47 @@ import { createClient } from '../utils/supabase/client';
 import { userIdLogger } from '../utils/userIdDebugLogger';
 import { storageManager } from '../services/storage/storageManager';
 import { getIndexedDBServices } from '../services/indexedDB';
+import { SessionPreparationOverlay } from '../components/ui';
 
 const RESUME_STALE_HIDDEN_MS = 15000;
 const STALE_PIPELINE_AGE_MS = 90000;
 const AUTH_RECOVERY_RETRIES = 3;
 const AUTH_RECOVERY_BASE_DELAY_MS = 400;
 const ORPHAN_CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1000;
+const CLEANUP_FAKE_DURATION_MS = 10000;
+const CLEANUP_FAKE_CAP = 92;
+const CLEANUP_CREEP_CAP = 97;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+const getCleanupStatus = (progress: number, isReady: boolean): string => {
+  if (isReady) return 'Books are ready';
+  if (progress < 30) return 'Checking old data';
+  if (progress < 65) return 'Cleaning book storage';
+  if (progress < 90) return 'Preparing your library';
+  return 'Final checks';
+};
+
 export function AppInitializer() {
   const [isClient, setIsClient] = useState(false);
+  const [showCleanupOverlay, setShowCleanupOverlay] = useState(false);
+  const [cleanupProgress, setCleanupProgress] = useState(0);
+  const [isCleanupReady, setIsCleanupReady] = useState(false);
   const lastHiddenAtRef = useRef<number | null>(null);
   const supabaseRef = useRef(createClient());
   const hydratedUserIdRef = useRef<string | null>(null);
   const hydratingUserIdRef = useRef<string | null>(null);
   const startupCleanupUserRef = useRef<string | null>(null);
+  const isMountedRef = useRef(true);
 
   // Ensure we only run client-side code on the client
   useEffect(() => {
     setIsClient(true);
+  }, []);
+  useEffect(() => {
+    return () => {
+      isMountedRef.current = false;
+    };
   }, []);
   const { settings, loadSettings, setUserId: setSettingsUserId, clearSettings, updateSettings } = useSettingsStore();
   const { loadSessions, setUserId: setSessionUserId, clearSessions } = useSessionStore();
@@ -65,6 +86,12 @@ export function AppInitializer() {
         return;
       }
 
+      if (isMountedRef.current) {
+        setShowCleanupOverlay(true);
+        setCleanupProgress(0);
+        setIsCleanupReady(false);
+      }
+
       try {
         const { sessionService } = getIndexedDBServices();
         const cleanupSummary = await sessionService.cleanupOrphanedData();
@@ -75,6 +102,10 @@ export function AppInitializer() {
         });
       } catch (cleanupError) {
         console.warn('[APP INIT] Startup orphan cleanup failed:', cleanupError);
+      } finally {
+        if (isMountedRef.current) {
+          setIsCleanupReady(true);
+        }
       }
     };
 
@@ -203,6 +234,48 @@ export function AppInitializer() {
       subscription.unsubscribe();
     };
   }, [loadSettings, loadSessions, setSettingsUserId, setSessionUserId, setDocumentUserId, clearSettings, clearSessions, clearDocuments, isClient]);
+
+  useEffect(() => {
+    if (!showCleanupOverlay) {
+      return;
+    }
+
+    if (isCleanupReady) {
+      setCleanupProgress(100);
+      const hideTimer = window.setTimeout(() => {
+        setShowCleanupOverlay(false);
+      }, 280);
+
+      return () => {
+        window.clearTimeout(hideTimer);
+      };
+    }
+
+    const startedAt = Date.now();
+    const timer = window.setInterval(() => {
+      const elapsedMs = Date.now() - startedAt;
+
+      setCleanupProgress((current) => {
+        const linearProgress = Math.min(
+          CLEANUP_FAKE_CAP,
+          (elapsedMs / CLEANUP_FAKE_DURATION_MS) * CLEANUP_FAKE_CAP,
+        );
+
+        if (elapsedMs <= CLEANUP_FAKE_DURATION_MS) {
+          return Math.max(current, linearProgress);
+        }
+
+        return Math.min(
+          CLEANUP_CREEP_CAP,
+          Math.max(current, linearProgress) + 0.35,
+        );
+      });
+    }, 120);
+
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [showCleanupOverlay, isCleanupReady]);
 
   // Special Migration: Force update legacy models to Gemma 3 27B
   useEffect(() => {
@@ -346,6 +419,12 @@ export function AppInitializer() {
     return () => clearTimeout(timer);
   }, [isClient]);
 
-  // This component doesn't render anything
-  return null;
+  return showCleanupOverlay ? (
+    <SessionPreparationOverlay
+      progress={cleanupProgress}
+      title="Cleaning books to keep Meddy fast..."
+      description="Please wait while old data is cleaned and your library is prepared."
+      status={getCleanupStatus(cleanupProgress, isCleanupReady)}
+    />
+  ) : null;
 }

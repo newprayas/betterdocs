@@ -8,3 +8,4 @@ export { Switch } from './Switch';
 export { DropdownMenu, DropdownMenuItem } from './DropdownMenu';
 export { ReadingSourcesLoader } from './ReadingSourcesLoader';
 export { ResponseProgressBar, PROGRESS_STEPS, getProgressStep } from './ResponseProgressBar';
+export { SessionPreparationOverlay } from './SessionPreparationOverlay';

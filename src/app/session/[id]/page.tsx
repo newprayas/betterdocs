@@ -25,7 +25,6 @@ import {
 import { Loading } from "../../../components/ui";
 import { EmptyState } from "../../../components/common";
 import { Header } from "../../../components/layout";
-import { documentProcessor } from "../../../services/rag";
 import { useRouteErrorHandler } from "../../../components/common/RouteErrorBoundary";
 import { getLibraryBookNameById } from "../../../services/libraryService";
 import type { Document } from "../../../types";
@@ -230,8 +229,10 @@ export default function SessionPage() {
   useEffect(() => {
     let isMounted = true;
 
-    const loadSessionData = async () => {
+    const loadSessionData = () => {
       if (typeof window !== "undefined" && sessionId) {
+        setIsInitialLoad(true);
+
         // Set the current session ID immediately (this will now be optimistic if cached)
         // We don't await this because we want to render immediately with the cached data
         // The store handles the DB fetch in the background
@@ -250,11 +251,9 @@ export default function SessionPage() {
           console.error("Failed to load documents:", error);
         });
 
-        // We can show the UI immediately if we have the session
         if (isMounted) {
           setIsInitialLoad(false);
 
-          // Log performance metric if available
           try {
             const clickDataStr = sessionStorage.getItem("session_click_time");
             if (clickDataStr) {
@@ -264,7 +263,6 @@ export default function SessionPage() {
                 console.log(
                   `⏱️ [Performance] Session ${sessionId} opened in ${duration.toFixed(2)}ms`,
                 );
-                // Clear it so we don't log it again on refresh
                 sessionStorage.removeItem("session_click_time");
               }
             }
@@ -745,7 +743,6 @@ export default function SessionPage() {
                   />
                 </div>
 
-                {/* Message Input is now properly positioned at the bottom */}
                 <div className="flex-shrink-0 mt-4 max-w-4xl mx-auto w-full">
                   <MessageInput
                     sessionId={sessionId}
@@ -849,7 +846,6 @@ export default function SessionPage() {
                   />
                 </div>
 
-                {/* Message Input */}
                 <div className="flex-shrink-0 mt-4 max-w-4xl mx-auto w-full">
                   {!documentsLoading && !hasDocuments && (
                     <div className="mb-4 flex justify-center">
