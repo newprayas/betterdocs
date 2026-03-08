@@ -90,6 +90,7 @@ export function AppInitializer() {
         setShowCleanupOverlay(true);
         setCleanupProgress(0);
         setIsCleanupReady(false);
+        console.log('[APP INIT] Cleanup overlay shown');
       }
 
       try {
@@ -244,6 +245,7 @@ export function AppInitializer() {
       setCleanupProgress(100);
       const hideTimer = window.setTimeout(() => {
         setShowCleanupOverlay(false);
+        console.log('[APP INIT] Cleanup overlay hidden');
       }, 280);
 
       return () => {
