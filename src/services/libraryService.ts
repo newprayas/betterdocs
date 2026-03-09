@@ -193,14 +193,14 @@ const LIBRARY_CATALOG = [
   },
   {
     "id": "combined_ward_notes_2025",
-    "name": "Whole Year Wards and Block Posting Notes",
+    "name": "✅ All Ward / Block notes 62 batch - whole year",
     "filename": "shard_0o8.bin",
     "size": "9.8 MB",
     "category": "🎉 Special notes"
   },
   {
     "id": "combined_notes_lectures",
-    "name": "All Lecture notes 62 batch - whole year",
+    "name": "✅ All Lecture notes 62 batch - whole year",
     "filename": "shard_7a5.bin",
     "size": "13.8 MB",
     "category": "🎉 Special notes"
