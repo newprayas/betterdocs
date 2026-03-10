@@ -21,8 +21,8 @@ export async function middleware(request: NextRequest) {
         }
 
         // ============ GEO-BLOCKING ============
-        // Only allow users from Bangladesh (BD), Nepal (NP), and Sri Lanka (LK)
-        const ALLOWED_COUNTRIES = ['BD', 'NP', 'LK'];
+        // Only allow users from Bangladesh (BD), and Nepal (NP)
+        const ALLOWED_COUNTRIES = ['BD', 'NP'];
         const country = request.geo?.country;
 
         // If country is detected and NOT in the allowed list, return raw 404
