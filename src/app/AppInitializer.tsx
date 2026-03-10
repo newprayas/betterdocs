@@ -295,19 +295,21 @@ export function AppInitializer() {
     }
   }, [isClient, settings?.model, settings?.userId, updateSettings]);
 
-  // Migration: replace legacy Groq model IDs with Cerebras model default
+  // Migration: replace legacy inference model IDs with the current Groq default
   useEffect(() => {
     if (!isClient || !settings || !settings.userId) return;
 
     const legacyInferenceModels = [
+      'gpt-oss-120b',
+      'openai/gpt-oss-120b',
       'llama-3.3-70b-versatile',
       'moonshotai/kimi-k2-instruct',
       'moonshotai/kimi-k2-instruct-0905'
     ];
 
     if (settings.groqModel && legacyInferenceModels.includes(settings.groqModel)) {
-      console.log('[APP INIT] 🔄 MIGRATION: Upgrading legacy inference model', settings.groqModel, 'to gpt-oss-120b');
-      updateSettings({ groqModel: 'gpt-oss-120b' });
+      console.log('[APP INIT] 🔄 MIGRATION: Upgrading legacy inference model', settings.groqModel, 'to groq/compound');
+      updateSettings({ groqModel: 'groq/compound' });
     }
   }, [isClient, settings?.groqModel, settings?.userId, updateSettings]);
 

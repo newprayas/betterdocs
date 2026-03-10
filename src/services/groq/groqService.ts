@@ -1,6 +1,5 @@
-const CEREBRAS_BASE_URL = 'https://api.cerebras.ai/v1';
 const GROQ_BASE_URL = 'https://api.groq.com/openai/v1';
-const DEFAULT_MODEL = 'gpt-oss-120b';
+const DEFAULT_MODEL = 'groq/compound';
 const REQUEST_TIMEOUT_MS = 30000;
 const STREAM_CONNECT_TIMEOUT_MS = 30000;
 const STREAM_CHUNK_TIMEOUT_MS = 45000;
@@ -28,33 +27,12 @@ type CerebrasChatResponse = {
 
 export class GroqService {
   private apiKey: string = '';
-  private envApiKeys: string[] = [];
-  private keyRotationIndex: number = 0;
   private groqEnvApiKeys: string[] = [];
   private groqKeyRotationIndex: number = 0;
 
   constructor() {
-    this.envApiKeys = this.loadEnvApiKeys();
     this.groqEnvApiKeys = this.loadGroqEnvApiKeys();
-    console.log('[CEREBRAS SERVICE]', `Loaded ${this.envApiKeys.length} env API key(s)`);
     console.log('[GROQ SERVICE]', `Loaded ${this.groqEnvApiKeys.length} env API key(s)`);
-  }
-
-  private loadEnvApiKeys(): string[] {
-    // Important: in Next.js client bundles, dynamic process.env[key] access can fail in production.
-    // Use explicit env references so values are statically inlined at build time.
-    const explicitKeys = [
-      process.env.NEXT_PUBLIC_CEREBRAS_API_1,
-      process.env.NEXT_PUBLIC_CEREBRAS_API_2,
-      process.env.NEXT_PUBLIC_CEREBRAS_API_3,
-      process.env.NEXT_PUBLIC_CEREBRAS_API_4,
-      process.env.NEXT_PUBLIC_CEREBRAS_API_5,
-      process.env.NEXT_PUBLIC_CEREBRAS_API_6,
-    ];
-
-    return explicitKeys
-      .map((k) => String(k || '').trim())
-      .filter((k) => k.length > 0);
   }
 
   private loadGroqEnvApiKeys(): string[] {
@@ -74,38 +52,19 @@ export class GroqService {
       .filter((k) => k.length > 0);
   }
 
-  private getAllAvailableKeys(): string[] {
-    // If env keys exist, always use them only. This avoids old saved/manual keys
-    // causing random 401s during rotation.
-    if (this.envApiKeys.length > 0) {
-      return this.envApiKeys.filter((k, idx, arr) => arr.indexOf(k) === idx);
+  private getAllAvailableInferenceKeys(): string[] {
+    if (this.groqEnvApiKeys.length > 0) {
+      return this.groqEnvApiKeys.filter((k, idx, arr) => arr.indexOf(k) === idx);
     }
 
     const manual = this.apiKey.trim();
     return manual ? [manual] : [];
   }
 
-  private getNextApiKey(): string {
-    const keys = this.getAllAvailableKeys();
+  private getNextInferenceApiKey(): string {
+    const keys = this.getAllAvailableInferenceKeys();
     if (keys.length === 0) {
-      throw new Error('Cerebras service not initialized and no env keys configured');
-    }
-    const key = keys[this.keyRotationIndex % keys.length];
-    this.keyRotationIndex = (this.keyRotationIndex + 1) % Math.max(keys.length, 1);
-    return key;
-  }
-
-  private getAllAvailableGroqKeys(): string[] {
-    if (this.groqEnvApiKeys.length > 0) {
-      return this.groqEnvApiKeys.filter((k, idx, arr) => arr.indexOf(k) === idx);
-    }
-    return [];
-  }
-
-  private getNextGroqApiKey(): string {
-    const keys = this.getAllAvailableGroqKeys();
-    if (keys.length === 0) {
-      throw new Error('Groq service has no env keys configured');
+      throw new Error('Groq service not initialized and no API keys are configured');
     }
     const key = keys[this.groqKeyRotationIndex % keys.length];
     this.groqKeyRotationIndex = (this.groqKeyRotationIndex + 1) % Math.max(keys.length, 1);
@@ -113,14 +72,14 @@ export class GroqService {
   }
 
   initialize(apiKey: string) {
-    // Optional manual key (legacy settings path). Env keys remain primary and are rotated.
+    // Optional manual key. Env keys remain primary and are rotated when present.
     if (!apiKey || apiKey === this.apiKey) return;
     this.apiKey = apiKey;
-    console.log('[CEREBRAS SERVICE]', 'Initialized with manual key:', apiKey.substring(0, 7) + '...');
+    console.log('[GROQ SERVICE]', 'Initialized with manual key:', apiKey.substring(0, 7) + '...');
   }
 
   isInitialized(): boolean {
-    return this.getAllAvailableKeys().length > 0;
+    return this.getAllAvailableInferenceKeys().length > 0;
   }
 
   private getModel(model?: string): string {
@@ -229,7 +188,7 @@ export class GroqService {
 
   async validateApiKey(apiKey: string): Promise<boolean> {
     try {
-      const response = await this.fetchWithTimeout(`${CEREBRAS_BASE_URL}/chat/completions`, {
+      const response = await this.fetchWithTimeout(`${GROQ_BASE_URL}/chat/completions`, {
         method: 'POST',
         headers: this.buildHeaders(apiKey),
         body: JSON.stringify({
@@ -244,13 +203,13 @@ export class GroqService {
 
       if (!response.ok) {
         const msg = await this.parseErrorBody(response);
-        console.error('[CEREBRAS SERVICE] API validation failed:', msg);
+        console.error('[GROQ SERVICE] API validation failed:', msg);
         return false;
       }
 
       return true;
     } catch (error) {
-      console.error('[CEREBRAS SERVICE] API validation failed:', error);
+      console.error('[GROQ SERVICE] API validation failed:', error);
       return false;
     }
   }
@@ -262,16 +221,16 @@ export class GroqService {
     options?: { temperature?: number; maxTokens?: number; timeoutMs?: number }
   ): Promise<string> {
     if (!this.isInitialized()) {
-      throw new Error('Cerebras service not initialized');
+      throw new Error('Groq service not initialized');
     }
 
     const modelToUse = this.getModel(model);
-    console.log('[CEREBRAS SERVICE]', 'Generating response with model:', modelToUse);
+    console.log('[GROQ SERVICE]', 'Generating response with model:', modelToUse);
 
     try {
-      const response = await this.fetchWithTimeout(`${CEREBRAS_BASE_URL}/chat/completions`, {
+      const response = await this.fetchWithTimeout(`${GROQ_BASE_URL}/chat/completions`, {
         method: 'POST',
-        headers: this.buildHeaders(this.getNextApiKey()),
+        headers: this.buildHeaders(this.getNextInferenceApiKey()),
         body: JSON.stringify({
           model: modelToUse,
           stream: false,
@@ -284,7 +243,7 @@ export class GroqService {
 
       if (!response.ok) {
         const errMessage = await this.parseErrorBody(response);
-        console.error('[CEREBRAS SERVICE ERROR]', errMessage);
+        console.error('[GROQ SERVICE ERROR]', errMessage);
 
         if (this.isRateLimitStatus(response.status)) {
           const waitTime = this.extractWaitTime(errMessage);
@@ -310,9 +269,9 @@ export class GroqService {
     model?: string,
     options?: { temperature?: number; maxTokens?: number; timeoutMs?: number }
   ): Promise<string> {
-    const keys = this.getAllAvailableGroqKeys();
+    const keys = this.getAllAvailableInferenceKeys();
     if (keys.length === 0) {
-      throw new Error('Groq service has no env keys configured');
+      throw new Error('Groq service not initialized and no API keys are configured');
     }
 
     const modelToUse = this.getModel(model);
@@ -321,7 +280,7 @@ export class GroqService {
     try {
       const response = await this.fetchWithTimeout(`${GROQ_BASE_URL}/chat/completions`, {
         method: 'POST',
-        headers: this.buildHeaders(this.getNextGroqApiKey()),
+        headers: this.buildHeaders(this.getNextInferenceApiKey()),
         body: JSON.stringify({
           model: modelToUse,
           stream: false,
@@ -367,11 +326,11 @@ export class GroqService {
     }
   ): Promise<void> {
     if (!this.isInitialized()) {
-      throw new Error('Cerebras service not initialized');
+      throw new Error('Groq service not initialized');
     }
 
     const modelToUse = this.getModel(model);
-    console.log('[CEREBRAS SERVICE]', 'Generating streaming response with model:', modelToUse);
+    console.log('[GROQ SERVICE]', 'Generating streaming response with model:', modelToUse);
     const maxFailoverRetries = Math.max(0, options?.maxFailoverRetries ?? 0);
     const retryBackoffMs = Math.max(0, options?.retryBackoffMs ?? 250);
 
@@ -381,9 +340,9 @@ export class GroqService {
       let streamStarted = false;
 
       try {
-        const response = await this.fetchWithTimeout(`${CEREBRAS_BASE_URL}/chat/completions`, {
+        const response = await this.fetchWithTimeout(`${GROQ_BASE_URL}/chat/completions`, {
           method: 'POST',
-          headers: this.buildHeaders(this.getNextApiKey()),
+          headers: this.buildHeaders(this.getNextInferenceApiKey()),
           body: JSON.stringify({
             model: modelToUse,
             stream: true,
@@ -397,11 +356,11 @@ export class GroqService {
         if (!response.ok) {
           const errMessage = await this.parseErrorBody(response);
           const shouldRetry = this.isRetriableStatus(response.status) && attempt < maxFailoverRetries;
-          console.error('[CEREBRAS SERVICE STREAM ERROR]', `attempt=${attemptNumber} status=${response.status} message=${errMessage}`);
+          console.error('[GROQ SERVICE STREAM ERROR]', `attempt=${attemptNumber} status=${response.status} message=${errMessage}`);
 
           if (shouldRetry) {
             const delayMs = retryBackoffMs * attemptNumber;
-            console.warn('[CEREBRAS SERVICE STREAM RETRY]', `Retrying with next key in ${delayMs}ms`);
+            console.warn('[GROQ SERVICE STREAM RETRY]', `Retrying with next key in ${delayMs}ms`);
             await new Promise((resolve) => setTimeout(resolve, delayMs));
             attempt += 1;
             continue;
@@ -465,7 +424,7 @@ export class GroqService {
         const canRetry = !streamStarted && attempt < maxFailoverRetries;
         if (canRetry) {
           const delayMs = retryBackoffMs * attemptNumber;
-          console.warn('[CEREBRAS SERVICE STREAM RETRY]', `attempt=${attemptNumber} error="${error instanceof Error ? error.message : String(error)}" next=${delayMs}ms`);
+          console.warn('[GROQ SERVICE STREAM RETRY]', `attempt=${attemptNumber} error="${error instanceof Error ? error.message : String(error)}" next=${delayMs}ms`);
           await new Promise((resolve) => setTimeout(resolve, delayMs));
           attempt += 1;
           continue;

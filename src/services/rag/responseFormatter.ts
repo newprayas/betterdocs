@@ -131,7 +131,7 @@ export class ResponseFormatter {
       const formattedResponse = await groqService.generateResponse(
         formattingPrompt,
         "You are a response formatting specialist.",
-        settings.groqModel || 'gpt-oss-120b',
+        settings.groqModel || 'groq/compound',
         {
           temperature: 0.3, // Lower temperature for consistent formatting
           maxTokens: Math.min(response.length * 2, 4000), // Allow for expansion but cap it

@@ -10,7 +10,7 @@ export interface AppSettings {
   model: string;
   geminiModel?: string; // Explicit Gemini model if needed
 
-  // Inference Provider Configuration (Cerebras)
+  // Inference Provider Configuration (Groq)
   groqApiKey: string;
   groqModel: string;
 

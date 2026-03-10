@@ -42,7 +42,7 @@ export class SettingsService {
       model: 'gemma-3-27b-it',
       geminiModel: 'gemma-3-27b-it',
       groqApiKey: '',
-      groqModel: 'gpt-oss-120b',
+      groqModel: 'groq/compound',
       temperature: 0.7,
       maxTokens: 4096,
       similarityThreshold: 0.7,

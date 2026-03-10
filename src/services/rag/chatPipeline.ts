@@ -2053,7 +2053,7 @@ ${normalizedOriginal}
 
     let fullResponse = '';
     let citations: any[] = [];
-    const groqModel = settings?.groqModel || 'gpt-oss-120b';
+    const groqModel = settings?.groqModel || 'groq/compound';
     const temperature = settings?.temperature || 0.7;
     const maxTokens = settings?.maxTokens || 2048;
 
@@ -2135,7 +2135,7 @@ ${normalizedOriginal}
 
     let fullResponse = '';
 
-    const groqModel = settings?.groqModel || 'gpt-oss-120b';
+    const groqModel = settings?.groqModel || 'groq/compound';
 
     await groqService.generateStreamingResponse(
       `Context:\n${context}\n\nQuestion: ${content}`,
@@ -2190,7 +2190,7 @@ ${normalizedOriginal}
     let fullResponse = '';
 
     // Build context-aware prompt for inference service
-    const groqModel = settings?.groqModel || 'gpt-oss-120b';
+    const groqModel = settings?.groqModel || 'groq/compound';
 
     // Construct simplified history and context
     const recentMessages = messages.slice(-5).map(m =>
