@@ -20,6 +20,8 @@ import type { SimplifiedCitationGroup } from '@/types/citation';
 import type { EmbeddingChunk, VectorSearchResult } from '@/types/embedding';
 import { cosineSimilarity, calculateVectorNorm } from '@/utils/vectorUtils';
 
+const ANSWER_GENERATION_MODEL = 'openai/gpt-oss-20b';
+
 interface RouteSectionCandidate {
   score: number;
   chunkIds: string[];
@@ -1952,9 +1954,9 @@ ${normalizedOriginal}
       console.log('[SEARCH RESULTS]', `${searchResults.length} relevant chunks found`);
       console.log('✅ CHUNKS USED =', searchResults.length);
 
-      // Update progress: Response Generation (90%)
+      // Update progress: Answer Generation (90%)
       if (onStreamEvent) {
-        onStreamEvent({ type: 'status', message: 'Response Generation' });
+        onStreamEvent({ type: 'status', message: 'Answer Generation' });
       }
 
       // Build context from search results
@@ -2053,7 +2055,7 @@ ${normalizedOriginal}
 
     let fullResponse = '';
     let citations: any[] = [];
-    const groqModel = settings?.groqModel || 'groq/compound';
+    const groqModel = ANSWER_GENERATION_MODEL;
     const temperature = settings?.temperature || 0.7;
     const maxTokens = settings?.maxTokens || 2048;
 
@@ -2135,7 +2137,7 @@ ${normalizedOriginal}
 
     let fullResponse = '';
 
-    const groqModel = settings?.groqModel || 'groq/compound';
+    const groqModel = ANSWER_GENERATION_MODEL;
 
     await groqService.generateStreamingResponse(
       `Context:\n${context}\n\nQuestion: ${content}`,
@@ -2190,7 +2192,7 @@ ${normalizedOriginal}
     let fullResponse = '';
 
     // Build context-aware prompt for inference service
-    const groqModel = settings?.groqModel || 'groq/compound';
+    const groqModel = ANSWER_GENERATION_MODEL;
 
     // Construct simplified history and context
     const recentMessages = messages.slice(-5).map(m =>
@@ -2236,6 +2238,10 @@ ${normalizedOriginal}
       );
 
       console.log('[SIMPLIFIED RESPONSE COMPLETE]', `Generated ${fullResponse.length} characters`);
+
+      if (onStreamEvent) {
+        onStreamEvent({ type: 'status', message: 'Answer Formatting' });
+      }
 
       const firstContractStartMs = Date.now();
       const firstContractPass = applyAnswerContract(fullResponse.trim(), answerContract);

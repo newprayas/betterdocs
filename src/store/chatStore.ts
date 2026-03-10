@@ -285,11 +285,11 @@ export const useChatStore = create<ChatStore>()(
                       case 'Vector Search':
                         setProgressState(75, 'Vector Search');
                         break;
-                      case 'Response Generation':
-                        setProgressState(90, 'Response Generation');
+                      case 'Answer Generation':
+                        setProgressState(90, 'Answer Generation');
                         break;
-                      case 'Response Formatting':
-                        setProgressState(95, 'Response Formatting');
+                      case 'Answer Formatting':
+                        setProgressState(95, 'Answer Formatting');
                         break;
                       default:
                         // For other status messages, don't update progress

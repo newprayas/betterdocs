@@ -79,8 +79,8 @@ export const PROGRESS_STEPS = {
   QUERY_REWRITING: { name: "Query Rewriting", percentage: 25 },
   EMBEDDING_GENERATION: { name: "Embedding Generation", percentage: 50 },
   VECTOR_SEARCH: { name: "Vector Search", percentage: 75 },
-  RESPONSE_GENERATION: { name: "Response Generation", percentage: 90 },
-  RESPONSE_FORMATTING: { name: "Response Formatting", percentage: 100 },
+  RESPONSE_GENERATION: { name: "Answer Generation", percentage: 90 },
+  RESPONSE_FORMATTING: { name: "Answer Formatting", percentage: 95 },
 } as const;
 
 // Helper function to get step info
