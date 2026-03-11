@@ -206,6 +206,13 @@ const LIBRARY_CATALOG = [
     "category": "🎉 Special notes"
   },
   {
+    "id": "combined_notes_vol_2_drive",
+    "name": "✅ FINAL PROF WRITTEN NOTES FULL",
+    "filename": "shard_2i2.bin",
+    "size": "31.5 MB",
+    "category": "🎉 Special notes"
+  },
+  {
     "id": "oxford_handbook_medicine_11ed",
     "name": "Oxford Handbook of Clinical Medicine 11th Edition",
     "filename": "shard_8o8.bin",
