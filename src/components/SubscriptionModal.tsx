@@ -9,10 +9,7 @@ import {
 
 // Subscription pricing tiers - matches Supabase enum values
 const SUBSCRIPTION_TIERS = [
-    { id: '1 Month', name: '1 Month', duration: '1 month', price: 150, savings: 0, note: 'Easiest!' },
-    { id: '3 Months', name: '3 Months', duration: '3 months', price: 300, savings: 150 },
-    { id: '6 Months', name: '6 Months', duration: '6 months', price: 600, savings: 300 },
-    { id: '12 Months', name: '12 Months', duration: '12 months', price: 1000, savings: 800 },
+    { id: '1 Month', name: 'Monthly subscription', duration: '1 month', price: 150, savings: 0 },
 ]
 
 export default function SubscriptionModal() {
@@ -100,7 +97,7 @@ export default function SubscriptionModal() {
                                                 It's awesome that you have been using the app and we are so happy you love it. We are grateful for your support ❤️
                                             </p>
                                             <p className="text-sm sm:text-base text-gray-600 dark:text-gray-300 leading-relaxed">
-                                                However, to keep this app running we need to pay some bills - mainly the cost of building this app, monthly server costs to host this website, and API cost to provide your answers. We really wish we could keep this app as a free service (free is awesome!), but these costs are unavoidable - we have to pay these companies to run our app, which you are a part of now ✨
+                                                However, to keep this app running we need to pay some bills - mainly the cost of building this app, monthly server costs to host this website, and API cost to provide your answers. We really wish we could keep this app as a free service (Yes, free is awesome!), but these costs are unavoidable - we have to pay these companies to run our app otherwise they will shut it down, which you are a part of now ✨
                                             </p>
                                             <p className="text-sm sm:text-base text-gray-600 dark:text-gray-300 leading-relaxed">
                                                 Hence if you find this app useful and want it to continue existing, please consider subscribing for a small fee.
@@ -109,25 +106,25 @@ export default function SubscriptionModal() {
                                                 <p className="text-sm sm:text-base font-medium text-gray-800 dark:text-gray-200 leading-relaxed text-center">
                                                     🎉 <strong>Prices are less than a cup of coffee a month </strong>
                                                     <br />
-                                                    Fair price for all the medical knowledge in the world in your pockets? 🥳
+                                                    All the medical knowledge in the world in your pockets 🥳
                                                     <br />
-                                                    ✨ Good Answers make Great Doctors That's priceless
+                                                    ✨ That's priceless ✨
                                                 </p>
                                             </div>
                                             <p className="text-sm sm:text-base text-gray-600 dark:text-gray-300 leading-relaxed">
                                                 Without your support we will have to sadly shut this app down for everyone, users who love this app as much as you do 😔
                                             </p>
                                             <p className="text-sm sm:text-base font-medium text-gray-900 dark:text-white text-center mt-6">
-                                                We have simplified the pricing plans for you:
+                                                We have simplified the pricing plan for you:
                                             </p>
 
                                             {/* Pricing Tiers */}
-                                            <div className="grid grid-cols-2 gap-3 mt-6">
+                                            <div className="mt-6 flex justify-center">
                                                 {SUBSCRIPTION_TIERS.map((tier) => (
                                                     <div
                                                         key={tier.id}
                                                         className={`
-                                                            relative p-4 rounded-xl border-2 transition-all
+                                                            relative w-full max-w-[220px] p-4 rounded-xl border-2 transition-all
                                                             ${tier.id === 'yearly'
                                                                 ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20'
                                                                 : 'border-gray-200 dark:border-slate-700 hover:border-indigo-300 dark:hover:border-indigo-600'
@@ -143,11 +140,8 @@ export default function SubscriptionModal() {
                                                             <h4 className="font-semibold text-gray-900 dark:text-white">
                                                                 {tier.name}
                                                             </h4>
-                                                            <p className="text-xs text-gray-500 dark:text-gray-400">
-                                                                {tier.duration}
-                                                            </p>
-                                                            <p className="mt-2 text-2xl font-bold text-indigo-600 dark:text-indigo-400">
-                                                                ৳{tier.price}
+                                                            <p className="mt-3 text-2xl font-bold text-lime-400 dark:text-lime-300">
+                                                                ৳{tier.price} only
                                                             </p>
                                                             {tier.savings > 0 && (
                                                                 <p className="text-xs text-green-600 dark:text-green-400 font-medium">
