@@ -583,28 +583,8 @@ export class ChatPipeline {
     }
   }
 
-  private extractImmediatePreviousAssistantMessage(history: any[]): string | null {
-    if (!Array.isArray(history) || history.length === 0) return null;
-
-    for (let i = history.length - 1; i >= 0; i--) {
-      const msg = history[i];
-      if (msg?.role === 'assistant' && typeof msg?.content === 'string' && msg.content.trim()) {
-        return msg.content;
-      }
-    }
-
-    return null;
-  }
-
-  private extractAnswerForQueryFromAssistantMessage(content: string | null): string | null {
-    if (!content) return null;
-    const match = content.match(/\*\*Answer for:\*\*\s*"([^"]+)"/i)
-      || content.match(/Answer for:\s*"([^"]+)"/i);
-    const clarified = match?.[1]?.trim();
-    if (!clarified) return null;
-
-    const normalizedClarified = this.normalizeStandaloneQueryShape(clarified);
-    return normalizedClarified || null;
+  private buildRewriteQueryResponse(query: string): string {
+    return JSON.stringify({ query });
   }
 
   private logRewriteTelemetrySummary(): void {
@@ -1569,7 +1549,7 @@ export class ChatPipeline {
    */
   private async generateStandaloneQuery(
     content: string,
-    history: any[]
+    latestRewriteQueryResponse: string | null | undefined
   ): Promise<StandaloneRewriteResult> {
     const REWRITE_TIMEOUT_MS = 10000;
     const normalizedOriginal = this.normalizeStandaloneQueryShape(
@@ -1577,9 +1557,11 @@ export class ChatPipeline {
     );
     this.rewriteTelemetry.totalRequests += 1;
 
-    const immediateAssistantMessage = this.extractImmediatePreviousAssistantMessage(history);
-    const immediateAnswerForQuery = this.extractAnswerForQueryFromAssistantMessage(immediateAssistantMessage);
-    const hasImmediateContext = Boolean(immediateAnswerForQuery);
+    const normalizedLatestRewriteQueryResponse = typeof latestRewriteQueryResponse === 'string'
+      ? latestRewriteQueryResponse.trim()
+      : '';
+    const immediateRewriteQuery = this.parseStructuredRewriteOutput(normalizedLatestRewriteQueryResponse);
+    const hasImmediateContext = Boolean(immediateRewriteQuery);
     const rewriterSystemPrompt =
       'You rewrite medical user input into one high-quality standalone retrieval query. Return strict JSON only.';
     const rewriterSystemPromptStrict =
@@ -1599,8 +1581,8 @@ Goals:
 6) Keep meaning faithful to user intent; do not invent a new topic.
 7) If user asks for Rx or treatment in query, include BOTH medical and surgical treatment wording.
 
-Immediate Previous Assistant "Answer for" Query:
-${immediateAnswerForQuery || 'None'}
+Immediate Previous Rewrite Response (JSON):
+${normalizedLatestRewriteQueryResponse || 'None'}
 
 Latest User Query:
 ${normalizedOriginal}
@@ -1612,8 +1594,8 @@ Return STRICT JSON ONLY:
 Do not add markdown, code fences, labels, or extra keys.
 Use ONLY immediate context below when needed.
 
-Immediate Previous Assistant "Answer for" Query:
-${immediateAnswerForQuery || 'None'}
+Immediate Previous Rewrite Response (JSON):
+${normalizedLatestRewriteQueryResponse || 'None'}
 
 Latest User Query:
 ${normalizedOriginal}
@@ -1621,7 +1603,8 @@ ${normalizedOriginal}
 
     console.log('[QUERY REWRITER CONTEXT]', {
       latestUserQuery: normalizedOriginal,
-      immediateAnswerForQuery: immediateAnswerForQuery || null,
+      latestRewriteQueryResponse: normalizedLatestRewriteQueryResponse || null,
+      immediateRewriteQuery: immediateRewriteQuery || null,
       usedImmediateContext: hasImmediateContext,
     });
     console.log('[QUERY REWRITER PROMPT][SYSTEM][PRIMARY]', rewriterSystemPrompt);
@@ -1785,29 +1768,24 @@ ${normalizedOriginal}
         throw new Error('Session not found');
       }
 
-      // 1. FETCH HISTORY (NEW STEP)
-      // We need the history BEFORE we do the search
-      console.log('[HISTORY]', 'Fetching chat history for context awareness...');
-      const history = await withStageTimeout(
-        this.indexedDBServices.messageService.getMessagesBySession(
-          sessionId,
-          sessionForDocuments.userId,
-          8
-        ),
-        STAGE_TIMEOUT_MS.historyLookup,
-        'History lookup'
-      );
-
       const retrievalMode: 'ann_rerank_v1' = 'ann_rerank_v1';
       console.log('[RETRIEVAL MODE]', retrievalMode);
 
-      // 2. GENERATE STANDALONE QUERY (NEW STEP)
+      // 1. GENERATE STANDALONE QUERY
       // This converts "What are its causes?" -> "What are the causes of cataract?"
       console.log('[REWRITING]', 'Generating standalone query...');
       const rewriteStartMs = Date.now();
-      const standaloneRewrite = await this.generateStandaloneQuery(content, history);
+      const standaloneRewrite = await this.generateStandaloneQuery(
+        content,
+        sessionForDocuments.latestRewriteQueryResponse
+      );
       const standaloneQuery = standaloneRewrite.query;
       rewriteMs = Date.now() - rewriteStartMs;
+      await this.indexedDBServices.sessionService.updateSession(
+        sessionId,
+        { latestRewriteQueryResponse: this.buildRewriteQueryResponse(standaloneQuery) },
+        sessionForDocuments.userId
+      );
       const queryIntent = classifyQueryIntent(standaloneQuery);
       const answerContract = getAnswerContract(queryIntent);
       const contractInstruction = buildContractPromptInstructions(answerContract);
@@ -2842,7 +2820,13 @@ Remember: Your goal is to provide accurate, well-cited responses based SOLELY on
    * Clear chat history for a session
    */
   async clearHistory(sessionId: string): Promise<void> {
-    await this.indexedDBServices.messageService.deleteMessagesBySession(sessionId);
+    const session = await this.indexedDBServices.sessionService.getSession(sessionId);
+    await this.indexedDBServices.messageService.deleteMessagesBySession(sessionId, session?.userId);
+    await this.indexedDBServices.sessionService.updateSession(
+      sessionId,
+      { latestRewriteQueryResponse: null },
+      session?.userId
+    );
   }
 
   /**

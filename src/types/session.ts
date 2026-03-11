@@ -10,6 +10,7 @@ export interface Session {
   documentCount: number;
   messageCount?: number;
   lastMessageAt?: Date;
+  latestRewriteQueryResponse?: string | null;
 }
 
 export interface SessionCreate {
@@ -22,4 +23,5 @@ export interface SessionUpdate {
   description?: string;
   updatedAt?: Date;
   documentCount?: number;
+  latestRewriteQueryResponse?: string | null;
 }

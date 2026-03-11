@@ -434,7 +434,14 @@ export const useChatStore = create<ChatStore>()(
             if (!messageService) {
               throw new Error('Message service not available');
             }
-            await messageService.deleteMessagesBySession(sessionId);
+            const services = getIndexedDBServices();
+            const { userId: currentUserId } = useSessionStore.getState();
+            await messageService.deleteMessagesBySession(sessionId, currentUserId || undefined);
+            await services.sessionService.updateSession(
+              sessionId,
+              { latestRewriteQueryResponse: null },
+              currentUserId || undefined
+            );
             set(state => ({
               messages: [],
               error: null,
