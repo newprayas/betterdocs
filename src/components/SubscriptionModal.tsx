@@ -148,11 +148,6 @@ export default function SubscriptionModal() {
                                                                     Save ৳{tier.savings}!
                                                                 </p>
                                                             )}
-                                                            {tier.note && (
-                                                                <p className="text-xs text-green-600 dark:text-green-400 font-medium mt-1">
-                                                                    {tier.note}
-                                                                </p>
-                                                            )}
                                                         </div>
                                                     </div>
                                                 ))}
