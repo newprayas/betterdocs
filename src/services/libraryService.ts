@@ -255,6 +255,13 @@ const LIBRARY_CATALOG = [
     "category": "Pediatrics"
   },
   {
+    "id": "bangladesh_formulary_2019",
+    "name": "Bangladesh National Formulary 2019 edition",
+    "filename": "shard_6s5.bin",
+    "size": "21.2 MB",
+    "category": "Pharmacology"
+  },
+  {
     "id": "step_to_paediatrics_mollah_5ed",
     "name": "Step on to Paediatrics by Md Abid Hossain Mollah 5 edition",
     "filename": "shard_6m4.bin",
