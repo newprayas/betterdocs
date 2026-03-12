@@ -13,6 +13,15 @@ import { MessageSender } from '@/types/message';
 import type { ChatStreamEvent } from '@/services/rag';
 
 const DRUG_MODE_MODEL = 'llama-3.3-70b-versatile';
+const PREFERRED_DRUG_COMPANIES = [
+  'Biopharma',
+  'Opsonin',
+  'Radiant',
+  'Beximco',
+  'Square',
+  'Incepta',
+  'Healthcare',
+];
 
 export const DRUG_DATASET_CONFIG: DrugDatasetConfig = {
   id: 'newdoc_voyage',
@@ -27,6 +36,19 @@ const normalizeText = (value: string): string =>
     .replace(/[^a-z0-9]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+
+const escapeRegExp = (value: string): string =>
+  value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const hasExactPhraseMatch = (text: string, query: string): boolean => {
+  const trimmedQuery = query.trim();
+  if (!text || !trimmedQuery) return false;
+
+  const pattern = new RegExp(
+    `(^|[^A-Za-z0-9])${escapeRegExp(trimmedQuery)}(?=\\s*\\(|[^A-Za-z0-9]|$)`,
+  );
+  return pattern.test(text);
+};
 
 const extractJsonObject = <T>(raw: string): T => {
   const trimmed = raw.trim();
@@ -150,7 +172,7 @@ Return ONLY valid JSON with this exact shape:
   "drugs": [
     {
       "input_name": "original mention from the user",
-      "normalized_name": "corrected canonical drug name in lowercase",
+      "normalized_name": "drug or brand name exactly as written by the user",
       "requested_fields": ["dose", "brand_names"],
       "confidence": 0.98
     }
@@ -159,8 +181,9 @@ Return ONLY valid JSON with this exact shape:
 }
 
 Rules:
-- Fix obvious spelling mistakes in drug names.
-- Use lowercase for normalized_name.
+- Do not correct, rewrite, normalize, expand, or autocorrect any drug name or brand name.
+- Preserve the drug or brand name exactly as written by the user in normalized_name.
+- You may correct obvious spelling mistakes only in the non-drug parts of the query when deciding requested_fields.
 - Keep requested_fields short and practical, such as dose, brand_names, indications, cautions, contraindications, side_effects, notes, proprietary_preparations.
 - If no drug can be identified, return intent drug_lookup with an empty drugs array.
 - Do not include any text outside JSON.`;
@@ -188,7 +211,7 @@ Rules:
           .filter((drug) => drug && typeof drug.normalized_name === 'string')
           .map((drug) => ({
             input_name: String(drug.input_name || drug.normalized_name || ''),
-            normalized_name: normalizeText(String(drug.normalized_name || '')),
+            normalized_name: String(drug.normalized_name || '').trim(),
             requested_fields: Array.isArray(drug.requested_fields)
               ? drug.requested_fields.map((field) => String(field).trim()).filter(Boolean)
               : [],
@@ -207,14 +230,26 @@ Rules:
     return safeParsed;
   }
 
-  private scoreEntry(entry: DrugEntry, normalizedQuery: string): number {
+  private scoreEntry(
+    entry: DrugEntry,
+    rawQuery: string,
+    normalizedQuery: string,
+  ): number {
+    const trimmedRawQuery = rawQuery.trim();
     const normalizedName = normalizeText(entry.drug_name);
     const aliases = entry.aliases.map((alias) => normalizeText(alias));
+    const rawAliases = entry.aliases.map((alias) => alias.trim());
+    const rawDrugName = entry.drug_name.trim();
+    const rawProprietary = entry.proprietary_preparations || '';
     const proprietary = normalizeText(entry.proprietary_preparations || '');
     const searchText = normalizeText(entry.search_text || entry.raw_text || '');
 
+    if (trimmedRawQuery && rawDrugName === trimmedRawQuery) return 500;
+    if (trimmedRawQuery && rawAliases.includes(trimmedRawQuery)) return 475;
+    if (trimmedRawQuery && hasExactPhraseMatch(rawProprietary, trimmedRawQuery)) return 450;
     if (normalizedName === normalizedQuery) return 400;
     if (aliases.includes(normalizedQuery)) return 350;
+    if (proprietary && hasExactPhraseMatch(proprietary, normalizedQuery)) return 325;
     if (proprietary && proprietary.includes(normalizedQuery)) return 300;
     if (normalizedName.includes(normalizedQuery)) return 250;
     if (aliases.some((alias) => alias.includes(normalizedQuery))) return 225;
@@ -235,19 +270,21 @@ Rules:
     const seenIds = new Set<string>();
 
     for (const drug of parsed.drugs) {
-      const normalizedDrugName = normalizeText(drug.normalized_name);
-      if (!normalizedDrugName) continue;
+      const rawDrugName = drug.normalized_name.trim() || drug.input_name.trim();
+      const normalizedDrugName = normalizeText(rawDrugName);
+      if (!rawDrugName || !normalizedDrugName) continue;
 
       const scored = catalog.entries
         .map((entry) => ({
           entry,
-          score: this.scoreEntry(entry, normalizedDrugName),
+          score: this.scoreEntry(entry, rawDrugName, normalizedDrugName),
         }))
         .filter((candidate) => candidate.score >= 0)
         .sort((left, right) => right.score - left.score);
 
       console.log('[DRUG SEARCH]', 'Lookup results for parsed drug', {
         requested: drug.input_name,
+        exact_query: rawDrugName,
         normalized: normalizedDrugName,
         confidence: drug.confidence,
         candidates: scored.slice(0, 5).map((candidate) => ({
@@ -365,12 +402,33 @@ Matched drug entries:
 ${matches.map((entry) => stringifyEntryForPrompt(entry)).join('\n\n---\n\n')}`;
 
       const systemPrompt = `You are answering questions only from structured drug records.
-Rules:
-- Use only the provided matched drug entries.
-- If a requested field is missing, clearly say it is not present in the dataset.
-- Do not use outside knowledge.
-- If multiple drugs are requested, answer each drug separately with a short heading.
-- Keep the answer precise and practical.`;
+
+Use only the provided matched drug entries. Do not use outside knowledge. If a requested field is missing, clearly say it is not present in the dataset.
+
+Formatting rules:
+- Always use markdown headings and bullet points.
+- If multiple drugs are requested, answer each drug separately under its own heading.
+- Use short, clear subheadings such as Indications, Dose, Side Effects, Cautions, Contraindications, Notes, and Brand Names where relevant.
+- Keep the answer practical and easy to scan.
+
+Brand name rules:
+- Always include a Brand Names section for each matched drug, even if the user asked about something else.
+- Group brand names by dosage form whenever the source provides dosage forms, such as Oral, Capsule, Tablet, Injection, Syrup, Suspension, Suppository, Infusion, or other clear forms.
+- Prefer these companies first when selecting brand names: ${PREFERRED_DRUG_COMPANIES.join(', ')}.
+- For each dosage form, provide only 4 to 5 brand names total.
+- Fill the 4 to 5 slots with preferred companies first. If there are not enough from the preferred list, use other available brands from the source.
+- For each brand, include brand name, company, strength if present, dosage form, and price exactly from the source when available.
+
+Dosing schedule rules:
+- When giving brand names, also include a short dosing schedule line if it can be derived from the dose information in the record.
+- Base the dosing schedule only on the provided dose text.
+- If the schedule is not clearly supported by the source, say that the exact schedule is not clearly specified in the dataset.
+- Do not invent brand-specific schedules that are not supported by the source.
+
+Answering rules:
+- If the user asked for clinical information such as indications, side effects, cautions, contraindications, or dose, answer that first.
+- Then include the Brand Names section.
+- Keep the answer faithful to the source text.`;
 
       console.log('[DRUG ANSWER PROMPT][SYSTEM]', systemPrompt);
       console.log('[DRUG ANSWER PROMPT][USER]', prompt);
