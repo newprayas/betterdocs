@@ -44,6 +44,7 @@ export interface ChatStore {
   questionTimestamps: number[];
   isRateLimited: boolean;
   rateLimitWaitSeconds: number;
+  drugModeBySession: Record<string, boolean>;
 
   // Actions
   loadMessages: (sessionId: string) => Promise<void>;
@@ -61,6 +62,8 @@ export interface ChatStore {
   checkRateLimit: () => number; // Returns wait time in seconds, 0 if OK
   setRateLimitState: (isLimited: boolean, waitSeconds: number) => void;
   recordQuestion: () => void;
+  setDrugModeForSession: (sessionId: string, enabled: boolean) => void;
+  isDrugModeEnabled: (sessionId: string) => boolean;
 }
 
 export interface DocumentStore {

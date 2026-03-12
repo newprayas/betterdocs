@@ -9,3 +9,4 @@ export * from './citation';
 export * from './library';
 export * from './ann';
 export * from './route';
+export * from './drug';

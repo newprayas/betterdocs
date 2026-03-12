@@ -27,6 +27,7 @@ import { EmptyState } from "../../../components/common";
 import { Header } from "../../../components/layout";
 import { useRouteErrorHandler } from "../../../components/common/RouteErrorBoundary";
 import { getLibraryBookNameById } from "../../../services/libraryService";
+import { drugModeService } from "../../../services/drug";
 import type { Document } from "../../../types";
 
 const getDocumentDisplayName = (document: Document): string => {
@@ -90,6 +91,8 @@ export default function SessionPage() {
     isStreaming,
     isReadingSources,
     loadMessages,
+    drugModeBySession,
+    setDrugModeForSession,
   } = useChatStore();
 
   const {
@@ -116,10 +119,12 @@ export default function SessionPage() {
   const [isSourcesPanelOpen, setIsSourcesPanelOpen] = useState(false);
   const [messageInput, setMessageInput] = useState("");
   const [isInitialLoad, setIsInitialLoad] = useState(true);
+  const [isPreparingDrugDataset, setIsPreparingDrugDataset] = useState(false);
   const [togglingDocumentIds, setTogglingDocumentIds] = useState<Set<string>>(
     new Set(),
   );
   const messageInputRef = useRef<HTMLTextAreaElement>(null);
+  const isDrugModeEnabled = Boolean(drugModeBySession[sessionId]);
 
   const sortedDocuments = useMemo(
     () =>
@@ -368,6 +373,29 @@ export default function SessionPage() {
     }
   };
 
+  const handleDrugModeToggle = async (enabled: boolean) => {
+    console.log("[DRUG MODE]", "Toggle changed from session page", {
+      sessionId,
+      enabled,
+    });
+
+    setDrugModeForSession(sessionId, enabled);
+
+    if (!enabled) return;
+
+    setIsPreparingDrugDataset(true);
+    try {
+      await drugModeService.warmup();
+      console.log("[DRUG MODE]", "Drug dataset warmup completed", {
+        sessionId,
+      });
+    } catch (error) {
+      console.error("[DRUG ERROR]", "Drug dataset warmup failed", error);
+    } finally {
+      setIsPreparingDrugDataset(false);
+    }
+  };
+
   const handlePhraseSelect = (phrase: string) => {
     // Append the selected phrase to the current message input with an extra space
     const newMessage = messageInput
@@ -609,42 +637,57 @@ export default function SessionPage() {
             variant="pills"
             className="w-full sm:w-auto min-w-[300px]"
             actions={
-              <DropdownMenu
-                trigger={
-                  <Button
-                    variant="ghost"
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2 rounded-full border border-gray-200 bg-white px-3 py-2 dark:border-gray-700 dark:bg-gray-900">
+                  <span className="text-xs font-medium text-gray-700 dark:text-gray-200">
+                    Drug Mode
+                  </span>
+                  <Switch
                     size="sm"
-                    className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800"
-                  >
-                    <svg
-                      className="h-5 w-5 text-gray-500 dark:text-gray-400"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
+                    checked={isDrugModeEnabled}
+                    disabled={isPreparingDrugDataset}
+                    onCheckedChange={handleDrugModeToggle}
+                    aria-label="Toggle drug mode"
+                    title="Toggle drug mode"
+                  />
+                </div>
+                <DropdownMenu
+                  trigger={
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800"
                     >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"
-                      />
-                    </svg>
-                  </Button>
-                }
-              >
-                <DropdownMenuItem
-                  onClick={handleClearHistory}
-                  disabled={messages.length === 0}
+                      <svg
+                        className="h-5 w-5 text-gray-500 dark:text-gray-400"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"
+                        />
+                      </svg>
+                    </Button>
+                  }
                 >
-                  Clear History
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => setIsDeleteDialogOpen(true)}
-                  variant="danger"
-                >
-                  Delete Session
-                </DropdownMenuItem>
-              </DropdownMenu>
+                  <DropdownMenuItem
+                    onClick={handleClearHistory}
+                    disabled={messages.length === 0}
+                  >
+                    Clear History
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => setIsDeleteDialogOpen(true)}
+                    variant="danger"
+                  >
+                    Delete Session
+                  </DropdownMenuItem>
+                </DropdownMenu>
+              </div>
             }
           />
         </div>
@@ -669,7 +712,7 @@ export default function SessionPage() {
                       description="Please wait while sources are being prepared."
                       icon={<div className="text-4xl mb-2">📚</div>}
                     />
-                  ) : !hasDocuments ? (
+                  ) : !isDrugModeEnabled && !hasDocuments ? (
                     <EmptyState
                       title="No books added, Add books to chat 🥳"
                       description=""
@@ -683,6 +726,18 @@ export default function SessionPage() {
                           ADD BOOKS
                         </Button>
                       }
+                    />
+                  ) : isPreparingDrugDataset ? (
+                    <EmptyState
+                      title="Preparing drug dataset..."
+                      description="Please wait while Drug Mode loads the drug catalog."
+                      icon={<div className="text-4xl mb-2">💊</div>}
+                    />
+                  ) : isDrugModeEnabled ? (
+                    <EmptyState
+                      title="Drug Mode is ready"
+                      description="Ask about drug doses, brand names, indications, cautions, or side effects."
+                      icon={<div className="text-4xl mb-2">💊</div>}
                     />
                   ) : (
                     <EmptyState
@@ -747,10 +802,17 @@ export default function SessionPage() {
                   <MessageInput
                     sessionId={sessionId}
                     disabled={
-                      isStreaming || !hasDocuments || !hasDocumentDataForSession
+                      isStreaming ||
+                      isPreparingDrugDataset ||
+                      (!isDrugModeEnabled &&
+                        (!hasDocuments || !hasDocumentDataForSession))
                     }
                     placeholder={
-                      documentsLoading
+                      isPreparingDrugDataset
+                        ? "Preparing drug dataset..."
+                        : isDrugModeEnabled
+                        ? "Ask about drugs, doses, brand names, side effects..."
+                        : documentsLoading
                         ? "Loading books..."
                         : !hasDocuments
                         ? "Please add a book FIRST to chat"
@@ -773,7 +835,7 @@ export default function SessionPage() {
 
                 {/* Phrase Pills */}
                 <div className="relative flex-shrink-0 mt-4 max-w-4xl mx-auto w-full">
-                  {!isReadingSources && (
+                  {!isReadingSources && !isDrugModeEnabled && (
                     <div className="absolute bottom-full right-2 mb-2 z-20 flex items-center gap-2">
                       <button
                         type="button"
@@ -847,7 +909,7 @@ export default function SessionPage() {
                 </div>
 
                 <div className="flex-shrink-0 mt-4 max-w-4xl mx-auto w-full">
-                  {!documentsLoading && !hasDocuments && (
+                  {!isDrugModeEnabled && !documentsLoading && !hasDocuments && (
                     <div className="mb-4 flex justify-center">
                       <Button
                         onClick={() => setActiveTab("documents")}
@@ -862,10 +924,17 @@ export default function SessionPage() {
                   <MessageInput
                     sessionId={sessionId}
                     disabled={
-                      isStreaming || !hasDocuments || !hasDocumentDataForSession
+                      isStreaming ||
+                      isPreparingDrugDataset ||
+                      (!isDrugModeEnabled &&
+                        (!hasDocuments || !hasDocumentDataForSession))
                     }
                     placeholder={
-                      documentsLoading
+                      isPreparingDrugDataset
+                        ? "Preparing drug dataset..."
+                        : isDrugModeEnabled
+                        ? "Ask about drugs, doses, brand names, side effects..."
+                        : documentsLoading
                         ? "Loading books..."
                         : !hasDocuments
                         ? "Please add a book FIRST to chat"
