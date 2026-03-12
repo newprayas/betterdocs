@@ -259,7 +259,14 @@ const LIBRARY_CATALOG = [
     "name": "Bangladesh National Formulary 2019 edition",
     "filename": "shard_6s5.bin",
     "size": "21.2 MB",
-    "category": "Pharmacology"
+    "category": "Drug Pharmacopoeia"
+  },
+  {
+    "id": "bnf_85_medex",
+    "name": "British National Formulary 85 edition",
+    "filename": "Small_shard_4p8.bin",
+    "size": "63.5 MB",
+    "category": "Drug Pharmacopoeia"
   },
   {
     "id": "step_to_paediatrics_mollah_5ed",

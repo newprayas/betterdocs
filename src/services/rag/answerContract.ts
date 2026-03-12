@@ -141,10 +141,14 @@ export function buildContractPromptInstructions(contract: AnswerContract): strin
 
   return `
 Required output contract (${contract.label}):
-- Use section headers and bullet points / numbered lists only.
+- Use section headers and real markdown bullet points / numbered lists only.
 - Do NOT use horizontal separators like ---.
 - Do NOT skip numbering in ordered lists.
 - Do NOT leave empty section headers.
+- Do NOT use long plain paragraphs.
+- Never place multiple bullet items on the same line.
+- If content contains a main topic with details, put the main topic on one line and the details as indented bullets underneath it.
+- If you use bullet symbols like • in drafting, convert each one into its own markdown list item before finishing.
 - If a required section is missing from sources, include that section and write: "${DEFAULT_PLACEHOLDER}".
 - Keep language simple and direct.
 
@@ -188,6 +192,7 @@ export function applyAnswerContract(
     working = emptyHeadingFix.content;
   }
 
+  working = expandInlineBulletLists(working);
   working = cleanupSpacing(working);
   const after = runContractChecks(working, contract);
 
@@ -227,6 +232,89 @@ function cleanupSpacing(text: string): string {
     .replace(/\n{3,}/g, '\n\n')
     .replace(/[ \t]+$/gm, '')
     .trim();
+}
+
+function expandInlineBulletLists(text: string): string {
+  const lines = text.split('\n');
+  const expanded: string[] = [];
+
+  for (const line of lines) {
+    if (!line.includes('•')) {
+      expanded.push(line);
+      continue;
+    }
+
+    const orderedMatch = line.match(/^(\s*)(\d+\.)\s+(.+)$/);
+    const bulletMatch = line.match(/^(\s*)([-*])\s+(.+)$/);
+
+    if (orderedMatch) {
+      expanded.push(...expandCompositeLine(orderedMatch[1], `${orderedMatch[2]} `, orderedMatch[3]));
+      continue;
+    }
+
+    if (bulletMatch) {
+      expanded.push(...expandCompositeLine(bulletMatch[1], `${bulletMatch[2]} `, bulletMatch[3]));
+      continue;
+    }
+
+    expanded.push(...expandCompositeLine('', '', line.trim()));
+  }
+
+  return expanded.join('\n');
+}
+
+function expandCompositeLine(indent: string, prefix: string, content: string): string[] {
+  const bulletParts = content
+    .split(/\s*•\s*/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  if (bulletParts.length <= 1) {
+    return [`${indent}${prefix}${content}`.trimEnd()];
+  }
+
+  const leaderCandidate = bulletParts[0].replace(/[-–—:]\s*$/, '').trim();
+  const hasLeader = bulletParts[0] !== leaderCandidate;
+  const lines: string[] = [];
+  const childIndent = `${indent}   `;
+  const grandchildIndent = `${childIndent}  `;
+
+  if (hasLeader && leaderCandidate) {
+    lines.push(`${indent}${prefix}${leaderCandidate}`.trimEnd());
+  } else if (prefix) {
+    lines.push(`${indent}${prefix}${bulletParts.shift()!}`.trimEnd());
+  }
+
+  const partsToRender = hasLeader ? bulletParts.slice(1) : bulletParts;
+
+  for (const part of partsToRender) {
+    const split = splitLabelAndDetail(part);
+    if (split) {
+      lines.push(`${childIndent}- ${split.label}`);
+      lines.push(`${grandchildIndent}- ${split.detail}`);
+    } else {
+      lines.push(`${childIndent}- ${part}`);
+    }
+  }
+
+  return lines.length > 0 ? lines : [`${indent}${prefix}${content}`.trimEnd()];
+}
+
+function splitLabelAndDetail(text: string): { label: string; detail: string } | null {
+  const colonIndex = text.indexOf(':');
+  if (colonIndex <= 0 || colonIndex >= text.length - 1) {
+    return null;
+  }
+
+  const label = text.slice(0, colonIndex).trim();
+  const detail = text.slice(colonIndex + 1).trim();
+  const labelWordCount = label.split(/\s+/).filter(Boolean).length;
+
+  if (!label || !detail || labelWordCount > 8) {
+    return null;
+  }
+
+  return { label, detail };
 }
 
 function escapeRegex(input: string): string {

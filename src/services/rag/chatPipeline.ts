@@ -2456,6 +2456,9 @@ Output format requirements:
 - Use section headers plus bullet points only.
 - Do not use long plain paragraphs.
 - Keep each section focused and scannable.
+- Every bullet or numbered item must start on its own new line.
+- Never keep multiple bullet-marker items inside one paragraph or one list line.
+- If a line starts with a topic and then lists details, put the topic on its own line and place the details as indented sub-bullets.
 - Do NOT use horizontal separators like ---.
 - Do NOT skip numbering in ordered lists.
 - Do NOT leave empty section headers.
