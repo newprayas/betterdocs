@@ -165,6 +165,9 @@ Rules:
 - If no drug can be identified, return intent drug_lookup with an empty drugs array.
 - Do not include any text outside JSON.`;
 
+    console.log('[DRUG PARSER PROMPT][SYSTEM]', systemPrompt);
+    console.log('[DRUG PARSER PROMPT][USER]', content);
+
     const raw = await groqService.generateResponseWithGroq(
       content,
       systemPrompt,
@@ -368,6 +371,9 @@ Rules:
 - Do not use outside knowledge.
 - If multiple drugs are requested, answer each drug separately with a short heading.
 - Keep the answer precise and practical.`;
+
+      console.log('[DRUG ANSWER PROMPT][SYSTEM]', systemPrompt);
+      console.log('[DRUG ANSWER PROMPT][USER]', prompt);
 
       let fullResponse = '';
       await groqService.generateStreamingResponse(
