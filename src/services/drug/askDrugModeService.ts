@@ -61,6 +61,12 @@ type AskDrugPromptEntry = {
   sections: Partial<Record<AskDrugSectionKey, string>>;
 };
 
+type AskDrugBroadIndicationPromptEntry = {
+  title: string;
+  pages: number[];
+  matched_indications: string[];
+};
+
 const ASK_DRUG_SYSTEM_PROMPT = `You answer drug questions using ONLY the provided dataset context.
 
 Your job is to EXTRACT and PRESENT the information, not to summarize it.
@@ -74,6 +80,7 @@ Core rules:
 - If the question asks for one section, answer from that section only.
 - If the question asks for multiple sections, present each section separately.
 - If the question is broad, compare only the matched drugs provided in context.
+- For broad indication queries, the context may contain only matched indication labels for each drug instead of full dosing paragraphs; use only those labels.
 - If something is not present in the dataset context, say "Not found in provided dataset context."
 - Never invent doses, contraindications, side-effects, pregnancy advice, renal advice, or safety details.
 
@@ -159,6 +166,47 @@ Example behavior:
 
 Do not summarize unless the user explicitly asks for a summary.`;
 
+const ASK_DRUG_BROAD_INDICATION_SYSTEM_PROMPT = `You answer broad drug-indication questions using ONLY the provided dataset context.
+
+The context for this task contains only:
+- drug names
+- matched indication labels
+
+It does NOT contain full dosing details, route details, or full monographs.
+
+Strict rules:
+- Do not use outside knowledge.
+- Do not infer, add, or guess any dose, route, formulation, frequency, duration, contraindication, or safety detail.
+- Do not provide dosing information.
+- Do not provide route information.
+- Do not expand beyond the matched indication labels shown in context.
+- If a drug is included in context, mention only the matched indication labels provided for that drug.
+- If multiple matched indications exist for one drug, list all of them.
+- Keep the answer focused on which drugs in the dataset match the user's condition.
+- If the dataset context is insufficient, say so clearly.
+
+Formatting rules:
+- Use a short heading for the condition-based answer.
+- Then use bullet points.
+- Each bullet should contain:
+  - drug name
+  - matched indication label(s) only
+- Do not create subheadings for routes or doses.
+- Do not rewrite the answer into a monograph.
+
+Preferred format:
+## Drugs for fever
+
+- Paracetamol
+  - Pyrexia
+  - Pyrexia with discomfort
+
+- Ibuprofen
+  - Pyrexia with discomfort
+  - Post-immunisation pyrexia in infants
+
+Never provide dose or route unless those details are explicitly present in the broad-query context.`;
+
 const escapeRegExp = (value: string): string =>
   value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -192,6 +240,9 @@ const compactField = (value?: string | null): string | undefined => {
   const compact = value.replace(/\s+/g, ' ').trim();
   return compact || undefined;
 };
+
+const uniqueStrings = (values: string[]): string[] =>
+  values.filter((value, index, array) => array.indexOf(value) === index);
 
 const extractJsonObject = <T>(raw: string): T => {
   const trimmed = raw.trim();
@@ -567,6 +618,122 @@ Rules:
     };
   }
 
+  private cleanMatchedIndicationLabel(value: string): string | null {
+    let cleaned = compactField(value) || '';
+    if (!cleaned) return null;
+
+    const trailingFromMax = cleaned.match(/(?:Usual\s+)?maximum\s+\d[^A-Z]*([A-Z].*)$/);
+    if (trailingFromMax?.[1]) {
+      cleaned = compactField(trailingFromMax[1]) || cleaned;
+    }
+
+    cleaned = cleaned
+      .replace(/^(?:and|or)\s+/i, '')
+      .replace(/^[,;:.()\[\]\s-]+/, '')
+      .replace(/[,;:.()\[\]\s-]+$/, '')
+      .trim();
+
+    const shouldPreferTrailingTitle =
+      /^\d/.test(cleaned) ||
+      /^[a-z]/.test(cleaned) ||
+      /\b(?:mg|g|micrograms?|mcg|ml|hours?|minutes?|daily|times a day|dose|doses)\b/i.test(cleaned);
+
+    if (shouldPreferTrailingTitle) {
+      const trailingTitleMatch = cleaned.match(
+        /([A-Z][A-Za-z][A-Za-z0-9()[\],;/'’\- ]*[A-Za-z)])$/,
+      );
+      if (trailingTitleMatch?.[1]) {
+        cleaned = trailingTitleMatch[1].trim();
+      }
+    }
+
+    if (!cleaned) return null;
+    if (/^(Adult|Child|Elderly|Neonate|Infant|Adolescent)\b/i.test(cleaned)) return null;
+    if (/^(BY|Oral|Injection|Infusion|Rectal|Subcutaneous|Intramuscular)\b/i.test(cleaned)) return null;
+    if (/\b\d+\s*(mg|g|microgram|mcg|ml)\b/i.test(cleaned) && !/[A-Za-z].*\b(pain|pyrexia|cough|infection|ulcer|oedema|disorder|syndrome|disease)\b/i.test(cleaned)) {
+      return null;
+    }
+
+    return cleaned;
+  }
+
+  private extractIndicationCandidatesFromSection(text: string): string[] {
+    const compact = compactField(text) || '';
+    if (!compact) return [];
+
+    const candidates: string[] = [];
+    const pattern =
+      /(?:^|▶\s*(?:Adult|Child|Elderly|Neonate|Infant|Adolescent|Young person)[^▶]{0,700}?)([^▶]{1,320}?)(?=\s*▶\s*BY\b)/gi;
+
+    for (const match of compact.matchAll(pattern)) {
+      const rawSegment = compactField(match[1] || '');
+      if (!rawSegment) continue;
+
+      for (const part of rawSegment.split(/\s+\|\s+/)) {
+        const cleaned = this.cleanMatchedIndicationLabel(part);
+        if (cleaned) {
+          candidates.push(cleaned);
+        }
+      }
+    }
+
+    return uniqueStrings(candidates);
+  }
+
+  private extractMatchedIndicationsFromSection(text: string, terms: string[]): string[] {
+    if (terms.length === 0) return [];
+
+    const candidates = this.extractIndicationCandidatesFromSection(text);
+    const rankedMatches = candidates
+      .map((candidate) => ({
+        label: candidate,
+        score: this.scoreSectionText(candidate, terms),
+      }))
+      .filter((candidate) => candidate.score > 0)
+      .sort((left, right) => right.score - left.score);
+
+    return uniqueStrings(rankedMatches.map((candidate) => candidate.label));
+  }
+
+  private findBroadIndicationMatches(
+    catalog: AskDrugCatalog,
+    terms: string[],
+  ): AskDrugBroadMatch[] {
+    if (terms.length === 0) return [];
+
+    return catalog.drugs
+      .map((entry) => {
+        const indicationText = this.getSectionText(entry, 'indications_and_dose');
+        if (!indicationText) {
+          return { entry, matchedSections: {}, score: 0 };
+        }
+
+        const matchedIndications = this.extractMatchedIndicationsFromSection(
+          indicationText,
+          terms,
+        );
+
+        if (matchedIndications.length === 0) {
+          return { entry, matchedSections: {}, score: 0 };
+        }
+
+        const matchedSectionText = matchedIndications.join('\n');
+        const score =
+          this.scoreSectionText(matchedSectionText, terms) + matchedIndications.length * 10;
+
+        return {
+          entry,
+          matchedSections: {
+            indications_and_dose: matchedSectionText,
+          },
+          score,
+        };
+      })
+      .filter((match) => match.score > 0)
+      .sort((left, right) => right.score - left.score)
+      .slice(0, ASK_DRUG_MATCH_LIMIT);
+  }
+
   private scoreSectionText(text: string, terms: string[]): number {
     const normalizedText = normalizeText(text);
     if (!normalizedText) return 0;
@@ -627,6 +794,21 @@ Rules:
       title: match.entry.title,
       pages: match.entry.pages,
       sections: match.matchedSections,
+    }));
+  }
+
+  private buildBroadIndicationContext(
+    matches: AskDrugBroadMatch[],
+  ): AskDrugBroadIndicationPromptEntry[] {
+    return matches.map((match) => ({
+      title: match.entry.title,
+      pages: match.entry.pages,
+      matched_indications: uniqueStrings(
+        compactField(match.matchedSections.indications_and_dose)
+          ?.split(/\n+/)
+          .map((value) => value.trim())
+          .filter(Boolean) || [],
+      ),
     }));
   }
 
@@ -757,7 +939,11 @@ ${JSON.stringify(promptContext, null, 2)}`;
       );
 
       onStreamEvent?.({ type: 'status', message: 'Ask Drug Search' });
-      const matches = this.findBroadMatches(catalog, broadSections, parsed.indication_terms);
+      const shouldUseIndicationOnlyBroadSearch =
+        broadSections.length === 1 && broadSections[0] === 'indications_and_dose';
+      const matches = shouldUseIndicationOnlyBroadSearch
+        ? this.findBroadIndicationMatches(catalog, parsed.indication_terms)
+        : this.findBroadMatches(catalog, broadSections, parsed.indication_terms);
 
       if (matches.length === 0) {
         const noBroadMatchMessage =
@@ -777,9 +963,19 @@ Indication terms:
 ${parsed.indication_terms.join(', ')}
 
 Matched dataset context:
-${JSON.stringify(this.buildBroadContext(matches), null, 2)}`;
+${JSON.stringify(
+  shouldUseIndicationOnlyBroadSearch
+    ? this.buildBroadIndicationContext(matches)
+    : this.buildBroadContext(matches),
+  null,
+  2,
+)}`;
 
-      logFullPromptText('[ASK DRUG ANSWER PROMPT][SYSTEM]', ASK_DRUG_SYSTEM_PROMPT);
+      const broadSystemPrompt = shouldUseIndicationOnlyBroadSearch
+        ? ASK_DRUG_BROAD_INDICATION_SYSTEM_PROMPT
+        : ASK_DRUG_SYSTEM_PROMPT;
+
+      logFullPromptText('[ASK DRUG ANSWER PROMPT][SYSTEM]', broadSystemPrompt);
       logFullPromptText('[ASK DRUG ANSWER PROMPT][USER]', prompt);
 
       onStreamEvent?.({ type: 'status', message: 'Ask Drug Answer Generation' });
@@ -787,7 +983,7 @@ ${JSON.stringify(this.buildBroadContext(matches), null, 2)}`;
       let fullResponse = '';
       await groqService.generateStreamingResponse(
         prompt,
-        ASK_DRUG_SYSTEM_PROMPT,
+        broadSystemPrompt,
         ASK_DRUG_ANSWER_MODEL,
         {
           temperature: 0.1,
