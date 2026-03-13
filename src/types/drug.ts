@@ -42,15 +42,7 @@ export interface DrugDatasetRecord {
   catalog: DrugCatalog;
 }
 
-export interface ParsedDrugQuery {
-  input_name: string;
-  normalized_name: string;
-  requested_fields: string[];
-  confidence: number;
-}
-
 export interface DrugQueryParseResult {
-  intent: string;
-  drugs: ParsedDrugQuery[];
-  unmatched_terms: string[];
+  drug_name: string;
+  confidence: number;
 }

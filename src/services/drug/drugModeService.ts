@@ -14,19 +14,8 @@ import type { ChatStreamEvent } from '@/services/rag';
 
 const DRUG_QUERY_PARSER_MODEL = 'llama-3.3-70b-versatile';
 const DRUG_ANSWER_MODEL = 'moonshotai/kimi-k2-instruct-0905';
-const DRUG_TOTAL_MATCH_LIMIT = 3;
-const DRUG_SECOND_PASS_LIMIT = 1;
 const DRUG_PROMPT_LOG_CHUNK_SIZE = 4000;
 const DRUG_NAME_DENYLIST = new Set(['ACE', 'FDA', 'KN.VDN', 'CNS']);
-const PREFERRED_DRUG_COMPANIES = [
-  'Biopharma',
-  'Opsonin',
-  'Radiant',
-  'Beximco',
-  'Square',
-  'Incepta',
-  'Healthcare',
-];
 
 export const DRUG_DATASET_CONFIG: DrugDatasetConfig = {
   id: 'newdoc_voyage',
@@ -34,13 +23,6 @@ export const DRUG_DATASET_CONFIG: DrugDatasetConfig = {
   filename: 'shard_4g1.bin',
   size: '2.9 MB',
 };
-
-const normalizeText = (value: string): string =>
-  value
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
 
 const canonicalizeDrugQueryCase = (value: string): string =>
   value
@@ -125,6 +107,66 @@ const logFullPromptText = (label: string, text: string): void => {
   }
 };
 
+const DRUG_MODE_SYSTEM_PROMPT_TEMPLATE = `For this question :
+All the brand names (this and alternate) with dosing schedule for the drug for each indication separately according to drug formulation, and indication with price data for the DRUG : {{DRUG_NAME}} (which is taken from the output of query parser)
+
+[ie; all brands of the generic drug in the context]
+[prioritize these brand names, Square, Incepta, Healthcare, Opsosin, Beximco, Aristopharma]
+[Avoid duplication - if dosing is calculated for same form, and same strength ot one brand, NO need to give dosing for another brands of same dose and strength]
+
+[IMPORTANT : Dosing information is usually given in this format : 🔴 You have to CALULATE the DOSING SCHDULE form the dosing Information below like this BASED on the DRUG dose and form (tab, or injfeciton or syrp etc) - YOU have to calculate it)
+Example :
+Dose:by mouth in benign gastric ulcer or
+gastroesophageal reflux disease, 40 mg
+daily in the morning for 4 weeks,
+followed by further 4 weeks if not fully
+healed.
+Duodenal ulcer or gastritis associated
+with H. pylori, 40 mg twice daily (with
+clarithromycin 250mg twice daily and
+metronidazole 400mg twice daily) for 7
+days.CHILD not recommended
+
+
+
+Formatting rule :
+Your output should look like this
+
+{{DRUG_NAME}} - Generic : Pantoprazole (header)
+Brands and dose (header)
+
+TABLET
+
+Tab. Pantonix 20 mg - Incepta
+1 + 0 + 1 -  [1/2 hour before meals] - For gastric ulcer
+1 + 1 + 1  -  [1/2 hour before meals] - For GERD
+Price : 20 tk / tab
+
+Tab. Pantonix 40 mg - Incepta
+1 + 0 + 0 -  [1/2 hour before meals] - For gastric ulcer
+1 + 0 + 0  -  [1/2 hour before meals] - For GERD
+Price : 40 tk / tab
+
+Tab. Esonix 20 mg  - Square [NO dosing info reqruied because same strengh drug dosing 20 mg tab already given above]
+Price : 33 tk / tab
+
+Tab Genova 40 mg - Opsonin
+Price : 20 tk / tab
+
+INJECTION (be mindful of IV or IM Or SC)
+
+
+Inj. Pantonix 40 mg - Inception
+1 vial IV 12 hourly - For gastric ulcer
+1 vial IV 8 hourly - For PUD
+Price : 120 tk / vial
+
+And so on ..
+
+Similarly all other formulation and brand names
+
+[ALL answers should be in bullet point and neatly formatted]`;
+
 export class DrugModeService {
   private indexedDBServices = getIndexedDBServices();
 
@@ -198,27 +240,19 @@ export class DrugModeService {
   }
 
   private async parseDrugQuery(content: string): Promise<DrugQueryParseResult> {
-    const systemPrompt = `You extract drug lookup intents from user questions.
+    const systemPrompt = `Extract only the single drug or brand name from the user's query.
 Return ONLY valid JSON with this exact shape:
 {
-  "intent": "drug_lookup",
-  "drugs": [
-    {
-      "input_name": "original mention from the user",
-      "normalized_name": "drug or brand name exactly as written by the user",
-      "requested_fields": ["dose", "brand_names"],
-      "confidence": 0.98
-    }
-  ],
-  "unmatched_terms": []
+  "drug_name": "Pantonix",
+  "confidence": 0.98
 }
 
 Rules:
-- Do not correct, rewrite, normalize, expand, or autocorrect any drug name or brand name.
-- Preserve the drug or brand name exactly as written by the user in normalized_name.
-- You may correct obvious spelling mistakes only in the non-drug parts of the query when deciding requested_fields.
-- Keep requested_fields short and practical, such as dose, brand_names, indications, cautions, contraindications, side_effects, notes, proprietary_preparations.
-- If no drug can be identified, return intent drug_lookup with an empty drugs array.
+- Return only one drug or brand name.
+- Remove all other words from the query.
+- Correct obvious spelling mistakes in the drug or brand name when the intended name is clear.
+- Auto-capitalize the final drug_name in standard title case.
+- If no drug or brand name can be identified, return an empty string for drug_name and 0 for confidence.
 - Do not include any text outside JSON.`;
 
     console.log('[DRUG PARSER PROMPT][SYSTEM]', systemPrompt);
@@ -238,191 +272,64 @@ Rules:
 
     const parsed = extractJsonObject<DrugQueryParseResult>(raw);
     const safeParsed: DrugQueryParseResult = {
-      intent: parsed.intent || 'drug_lookup',
-      drugs: Array.isArray(parsed.drugs)
-        ? parsed.drugs
-          .filter((drug) => drug && typeof drug.normalized_name === 'string')
-          .map((drug) => ({
-            input_name: String(drug.input_name || drug.normalized_name || ''),
-            normalized_name: String(drug.normalized_name || '').trim(),
-            requested_fields: Array.isArray(drug.requested_fields)
-              ? drug.requested_fields.map((field) => String(field).trim()).filter(Boolean)
-              : [],
-            confidence:
-              typeof drug.confidence === 'number'
-                ? Math.max(0, Math.min(1, drug.confidence))
-                : 0.5,
-          }))
-        : [],
-      unmatched_terms: Array.isArray(parsed.unmatched_terms)
-        ? parsed.unmatched_terms.map((term) => String(term))
-        : [],
+      drug_name: canonicalizeDrugQueryCase(String(parsed.drug_name || '').trim()),
+      confidence:
+        typeof parsed.confidence === 'number'
+          ? Math.max(0, Math.min(1, parsed.confidence))
+          : 0,
     };
 
     console.log('[DRUG PARSER]', 'Parsed query JSON', safeParsed);
     return safeParsed;
   }
 
-  private scoreEntry(
-    entry: DrugEntry,
-    rawQuery: string,
-    normalizedQuery: string,
-  ): number {
-    const trimmedRawQuery = rawQuery.trim();
-    const normalizedName = normalizeText(entry.drug_name);
-    const aliases = entry.aliases.map((alias) => normalizeText(alias));
-    const rawAliases = entry.aliases.map((alias) => alias.trim());
-    const rawDrugName = entry.drug_name.trim();
-    const rawProprietary = entry.proprietary_preparations || '';
-    const proprietary = normalizeText(entry.proprietary_preparations || '');
-    const searchText = normalizeText(entry.search_text || entry.raw_text || '');
+  private entryHasExactCaseSensitiveMatch(entry: DrugEntry, query: string): boolean {
+    const trimmedQuery = query.trim();
+    if (!trimmedQuery) return false;
 
-    if (trimmedRawQuery && rawDrugName === trimmedRawQuery) return 500;
-    if (trimmedRawQuery && rawAliases.includes(trimmedRawQuery)) return 475;
-    if (trimmedRawQuery && hasExactPhraseMatch(rawProprietary, trimmedRawQuery)) return 450;
-    if (normalizedName === normalizedQuery) return 400;
-    if (aliases.includes(normalizedQuery)) return 350;
-    if (normalizedName.includes(normalizedQuery)) return 250;
-    if (aliases.some((alias) => alias.includes(normalizedQuery))) return 225;
+    if (entry.drug_name.trim() === trimmedQuery) return true;
+    if (entry.aliases.some((alias) => alias.trim() === trimmedQuery)) return true;
+    if (hasExactPhraseMatch(entry.proprietary_preparations || '', trimmedQuery)) return true;
 
-    const queryTokens = normalizedQuery.split(' ').filter(Boolean);
-    if (
-      queryTokens.length > 0 &&
-      queryTokens.every((token) => searchText.includes(token))
-    ) {
-      return 150 - Math.max(0, normalizedName.length - normalizedQuery.length);
-    }
-
-    return -1;
+    return false;
   }
 
-  private getScoredCandidates(
+  private findTopExactMatch(
     catalog: DrugCatalog,
-    rawQuery: string,
-    normalizedQuery: string,
-  ): Array<{ entry: DrugEntry; score: number }> {
-    return catalog.entries
-      .map((entry) => ({
-        entry,
-        score: this.scoreEntry(entry, rawQuery, normalizedQuery),
-      }))
-      .filter((candidate) =>
-        candidate.score >= 0 &&
-        !DRUG_NAME_DENYLIST.has(candidate.entry.drug_name.trim().toUpperCase()) &&
-        candidate.entry.pages.length <= 2,
-      )
-      .sort((left, right) => right.score - left.score);
-  }
+    parsed: DrugQueryParseResult,
+  ): DrugEntry | null {
+    const query = parsed.drug_name.trim();
+    if (!query) return null;
 
-  private selectUniqueEntries(
-    scored: Array<{ entry: DrugEntry; score: number }>,
-    seenIds: Set<string>,
-    limit: number,
-  ): DrugEntry[] {
-    const selected: DrugEntry[] = [];
+    const validEntries = catalog.entries.filter((entry) => {
+      if (DRUG_NAME_DENYLIST.has(entry.drug_name.trim().toUpperCase())) return false;
+      if (entry.pages.length > 2) return false;
+      return true;
+    });
 
-    for (const candidate of scored) {
-      if (seenIds.has(candidate.entry.id)) continue;
-      selected.push(candidate.entry);
-      if (selected.length >= limit) break;
-    }
+    const matchingEntries = validEntries.filter((entry) =>
+      this.entryHasExactCaseSensitiveMatch(entry, query),
+    );
 
-    return selected;
-  }
+    console.log('[DRUG SEARCH]', 'Direct case-sensitive lookup', {
+      query,
+      confidence: parsed.confidence,
+      candidateCount: matchingEntries.length,
+      topCandidates: matchingEntries.slice(0, 5).map((entry) => ({
+        drug_name: entry.drug_name,
+        aliases: entry.aliases,
+        pages: entry.pages,
+      })),
+    });
 
-  private findMatches(catalog: DrugCatalog, parsed: DrugQueryParseResult): DrugEntry[] {
-    const matches: DrugEntry[] = [];
-    const firstRoundMatches: DrugEntry[] = [];
-    const seenIds = new Set<string>();
-    const reservedSecondPassSlots = parsed.drugs.length > 0 ? DRUG_SECOND_PASS_LIMIT : 0;
-    const firstPassLimit = Math.max(1, DRUG_TOTAL_MATCH_LIMIT - reservedSecondPassSlots);
-
-    for (const drug of parsed.drugs) {
-      if (matches.length >= firstPassLimit) break;
-
-      const rawDrugName = canonicalizeDrugQueryCase(
-        drug.normalized_name.trim() || drug.input_name.trim(),
-      );
-      const normalizedDrugName = normalizeText(rawDrugName);
-      if (!rawDrugName || !normalizedDrugName) continue;
-
-      const scored = this.getScoredCandidates(
-        catalog,
-        rawDrugName,
-        normalizedDrugName,
-      );
-
-      console.log('[DRUG SEARCH]', 'Lookup results for parsed drug', {
-        requested: drug.input_name,
-        exact_query: rawDrugName,
-        normalized: normalizedDrugName,
-        confidence: drug.confidence,
-        candidates: scored.slice(0, 5).map((candidate) => ({
-          drug_name: candidate.entry.drug_name,
-          score: candidate.score,
-        })),
-      });
-
-      const selected = this.selectUniqueEntries(
-        scored,
-        seenIds,
-        firstPassLimit - matches.length,
-      );
-
-      for (const entry of selected) {
-        seenIds.add(entry.id);
-        matches.push(entry);
-        firstRoundMatches.push(entry);
-      }
-    }
-
-    const topFirstRoundMatch = firstRoundMatches[0];
-    if (topFirstRoundMatch && matches.length < DRUG_TOTAL_MATCH_LIMIT) {
-      const titleQuery = topFirstRoundMatch.drug_name.trim();
-      const normalizedTitleQuery = normalizeText(titleQuery);
-
-      if (titleQuery && normalizedTitleQuery) {
-        const scored = this.getScoredCandidates(
-          catalog,
-          titleQuery,
-          normalizedTitleQuery,
-        );
-
-        console.log('[DRUG SEARCH]', 'Second pass title lookup', {
-          seed_entry: topFirstRoundMatch.drug_name,
-          title_query: titleQuery,
-          normalized: normalizedTitleQuery,
-          candidates: scored.slice(0, 5).map((candidate) => ({
-            drug_name: candidate.entry.drug_name,
-            score: candidate.score,
-          })),
-        });
-
-        const selected = this.selectUniqueEntries(
-          scored,
-          seenIds,
-          Math.min(
-            DRUG_SECOND_PASS_LIMIT,
-            DRUG_TOTAL_MATCH_LIMIT - matches.length,
-          ),
-        );
-
-        for (const entry of selected) {
-          seenIds.add(entry.id);
-          matches.push(entry);
-        }
-      }
-    }
-
-    return matches;
+    return matchingEntries[0] ?? null;
   }
 
   private buildNoMatchMessage(
     content: string,
     parsed: DrugQueryParseResult,
   ): string {
-    const requestedNames = parsed.drugs.map((drug) => drug.input_name).filter(Boolean);
-    const unmatched = requestedNames.length > 0 ? requestedNames.join(', ') : content;
+    const unmatched = parsed.drug_name.trim() || content;
 
     return `I could not find a matching drug entry for: ${unmatched}. Please check the spelling or ask with the exact generic or brand name.`;
   }
@@ -452,6 +359,10 @@ Rules:
     await this.ensureDatasetReady();
   }
 
+  private buildDrugAnswerSystemPrompt(drugName: string): string {
+    return DRUG_MODE_SYSTEM_PROMPT_TEMPLATE.split('{{DRUG_NAME}}').join(drugName);
+  }
+
   async sendMessage(
     sessionId: string,
     content: string,
@@ -479,15 +390,14 @@ Rules:
         type: 'status',
         message: 'Drug Search',
       });
-      const matches = this.findMatches(catalog, parsed);
+      const match = this.findTopExactMatch(catalog, parsed);
 
       console.log('[DRUG SEARCH]', 'Final matched entries', {
-        requestedDrugs: parsed.drugs.map((drug) => drug.normalized_name),
-        matchedEntries: matches.map((entry) => entry.drug_name),
-        unmatched_terms: parsed.unmatched_terms,
+        requestedDrug: parsed.drug_name,
+        matchedEntry: match?.drug_name ?? null,
       });
 
-      if (matches.length === 0) {
+      if (!match) {
         const noMatchMessage = this.buildNoMatchMessage(content, parsed);
         console.warn('[DRUG SEARCH]', 'No matching drug entries found', {
           query: content,
@@ -509,64 +419,13 @@ Rules:
       const prompt = `User question:
 ${content}
 
-Parsed query:
-${JSON.stringify(parsed, null, 2)}
+Extracted drug name:
+${parsed.drug_name}
 
-Matched drug entries:
-${matches.map((entry) => stringifyEntryForPrompt(entry)).join('\n\n---\n\n')}`;
+Matched drug entry:
+${stringifyEntryForPrompt(match)}`;
 
-      const systemPrompt = `You are answering questions only from structured drug records.
-
-Use only the provided matched drug entries. Do not use outside knowledge. If a requested field is missing, clearly say it is not present in the dataset.
-
-Formatting rules:
-- Always use markdown headings and bullet points.
-- If multiple drugs are requested, answer each drug separately under its own heading.
-- Use short, clear subheadings such as Indications, Dose, Side Effects, Cautions, Contraindications, Notes, and Brand Names where relevant.
-- Keep the answer practical and easy to scan.
-
-Brand name rules:
-- Always give the generic name at the top of your answer even if the user asked for Brand name 'Example - Pantoprazole if user asked for pantonix (brand name)
-- Always include a Brand Names section for each matched drug, even if the user asked about something else.
-- Group brand names by dosage form whenever the source provides dosage forms, such as Capsule, Tablet, Injection, Syrup, Suspension, Suppository, Infusion, or other clear forms.
-- Prefer these companies first when selecting brand names: ${PREFERRED_DRUG_COMPANIES.join(', ')}, and Healthcare pharmaceuticals. If you cannot find these companies, only then use other available companies from the source.
-- For each dosage form, provide only 4 to 5 brand names total.
-- Fill the 4 to 5 slots with preferred companies first. If there are not enough from the preferred list, use other available brands from the source.
-- For each brand, include brand name, company, strength if present, dosage form, and price exactly from the source when available.
-
-Dosing schedule rules:
-- At the top of the answer, clearly state these dosing assumptions when providing calculated schedules: adult dosing assumes a 70 kg adult, and child dosing assumes a 25 kg child.
-- When giving brand names, also include a dosing schedule line if it can be derived from the dose information in the record.
-- Base the dosing schedule only on the provided dose text.
-- Convert dose guidance into practical prescription-style schedules such as 1 + 0 + 1, 1 + 0 + 0, 5 ml every 8 hours, or 1 vial IV 12 hourly whenever the source supports that conversion.
-- When dose conversion requires a body-weight assumption, use 70 kg for adults and 25 kg for children.
-- Give separate dosing schedules for separate indications when the source provides them.
-- If the schedule is not clearly supported by the source, say that the exact schedule is not clearly specified in the dataset.
-- Do not invent brand-specific schedules or clinical details that are not supported by the source.
-- Do not present dose information in narrative paragraph form when it can be converted into prescription format.
-- Always prefer prescription-style lines over prose explanations.
-- For each brand and indication, present the dose in this structure:
-- Tab./Cap./Inj./Susp. BrandName (strength) - Company
-- prescription-style dosing line
-- Price: exact price from source
-- If multiple indications have different schedules, write separate prescription lines for each indication.
-
-Example format to follow:
-- ORAL
-- Tab. Pantonix (20 mg) - Incepta
-- 1 + 0 + 1 (1/2 hour before meal) - For benign gastric ulcer
-- 1 + 0 + 0 (1/2 hour before meal) - For PUD
-- Price: 7 tk / tab
-- INJECTION
-- Inj. Pantonix (40 mg) - Incepta
-- 1 vial IV - 12 hourly
-- Price: 90 tk / vial
-
-Answering rules:
-- If the user asked for clinical information such as indications, side effects, cautions, contraindications, or dose, answer that first.
-- Then include the Brand Names section.
-- Keep the answer faithful to the source text.
-- Do not include anything that is not given in the source text.`;
+      const systemPrompt = this.buildDrugAnswerSystemPrompt(parsed.drug_name.trim());
 
       logFullPromptText('[DRUG ANSWER PROMPT][SYSTEM]', systemPrompt);
       logFullPromptText('[DRUG ANSWER PROMPT][USER]', prompt);
@@ -588,7 +447,7 @@ Answering rules:
       );
 
       console.log('[DRUG ANSWER]', 'Answer generation complete', {
-        matchedEntryCount: matches.length,
+        matchedEntryCount: 1,
         responseLength: fullResponse.length,
       });
 
