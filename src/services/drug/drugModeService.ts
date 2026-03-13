@@ -17,7 +17,7 @@ const DRUG_ANSWER_MODEL = 'moonshotai/kimi-k2-instruct-0905';
 const DRUG_PROMPT_LOG_CHUNK_SIZE = 4000;
 const DRUG_NAME_DENYLIST = new Set(['ACE', 'FDA', 'KN.VDN', 'CNS']);
 const VERIFIED_DRUG_NAMES_URL = '/drug/verified-drug-names.txt';
-const DRUG_SUGGESTION_LIMIT = 5;
+const DRUG_SUGGESTION_LIMIT = 8;
 
 export const DRUG_DATASET_CONFIG: DrugDatasetConfig = {
   id: 'newdoc_voyage',
@@ -52,6 +52,9 @@ const isPlausibleDrugName = (value: string): boolean => {
   if (/^\d+$/.test(trimmed)) return false;
   return /[A-Za-z]/.test(trimmed);
 };
+
+const hasMinimumSuggestionLength = (value: string): boolean =>
+  normalizeDrugLookupText(value).length > 2;
 
 const levenshteinDistance = (left: string, right: string): number => {
   if (left === right) return 0;
@@ -295,7 +298,8 @@ export class DrugModeService {
               text
                 .split(/\r?\n/)
                 .map((line) => line.trim())
-                .filter((line) => isPlausibleDrugName(line)),
+                .filter((line) => isPlausibleDrugName(line))
+                .filter((line) => hasMinimumSuggestionLength(line)),
             ),
           );
         })
@@ -469,6 +473,7 @@ Rules:
         score: this.scoreSuggestedDrugName(trimmedQuery, name),
       }))
       .filter((candidate) => candidate.score >= 120)
+      .filter((candidate) => hasMinimumSuggestionLength(candidate.name))
       .filter((candidate) => normalizeDrugLookupText(candidate.name) !== normalizeDrugLookupText(trimmedQuery))
       .sort((left, right) => right.score - left.score);
 
