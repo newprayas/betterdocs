@@ -175,7 +175,7 @@ The context for this task contains only:
 It does NOT contain full dosing details, route details, or full monographs.
 
 Strict rules:
-- Do not use outside knowledge.
+- Do not use outside knowledge except for ordering the matched drugs by typical/common real-world clinical use.
 - Do not infer, add, or guess any dose, route, formulation, frequency, duration, contraindication, or safety detail.
 - Do not provide dosing information.
 - Do not provide route information.
@@ -183,11 +183,20 @@ Strict rules:
 - If a drug is included in context, mention only the matched indication labels provided for that drug.
 - If multiple matched indications exist for one drug, list all of them.
 - Keep the answer focused on which drugs in the dataset match the user's condition.
+- Rank the output from most commonly used / most practical drug first to least commonly used / least practical lower down.
+- Use typical clinical commonness and likely first-line use only for ordering, not for inventing new facts.
+- Prioritise common, direct treatment drugs over uncommon, incidental, preventive, vaccine, or disease-name-only matches.
+- Example: for "drugs for fever", common antipyretics such as paracetamol or ibuprofen should appear above vaccines, prophylaxis drugs, or allergy entries containing the word "fever".
+- Prefer general-purpose drugs for the requested indication before narrow, cause-specific, site-specific, combination, or specialist-only drugs.
+- Example: for "drugs used for pruritus", place general pruritus drugs first, then cause-specific pruritus drugs, then local "pruritus ani" preparations, and finally specialist-only options.
+- If one match is for the general condition and another is for a very specific subtype, body site, disease context, or expert-only setting, rank the general condition higher.
+- If some matches are weak, incidental, or disease-name-only matches, place them after the direct matches or omit them if they are not genuinely useful for the user's request.
 - If the dataset context is insufficient, say so clearly.
 
 Formatting rules:
 - Use a short heading for the condition-based answer.
 - Then use bullet points.
+- Present the most commonly used and most practical drugs first.
 - Each bullet should contain:
   - drug name
   - matched indication label(s) only
