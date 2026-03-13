@@ -17,7 +17,7 @@ const DRUG_ANSWER_MODEL = 'moonshotai/kimi-k2-instruct-0905';
 const DRUG_TOTAL_MATCH_LIMIT = 3;
 const DRUG_SECOND_PASS_LIMIT = 1;
 const DRUG_PROMPT_LOG_CHUNK_SIZE = 4000;
-const DRUG_NAME_DENYLIST = new Set(['ACE', 'FDA']);
+const DRUG_NAME_DENYLIST = new Set(['ACE', 'FDA', 'KN.VDN', 'CNS']);
 const PREFERRED_DRUG_COMPANIES = [
   'Biopharma',
   'Opsonin',
@@ -41,6 +41,17 @@ const normalizeText = (value: string): string =>
     .replace(/[^a-z0-9]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+
+const canonicalizeDrugQueryCase = (value: string): string =>
+  value
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((part) => {
+      if (part.toUpperCase() === part) return part;
+      return part.charAt(0).toUpperCase() + part.slice(1).toLowerCase();
+    })
+    .join(' ');
 
 const escapeRegExp = (value: string): string =>
   value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -271,8 +282,6 @@ Rules:
     if (trimmedRawQuery && hasExactPhraseMatch(rawProprietary, trimmedRawQuery)) return 450;
     if (normalizedName === normalizedQuery) return 400;
     if (aliases.includes(normalizedQuery)) return 350;
-    if (proprietary && hasExactPhraseMatch(proprietary, normalizedQuery)) return 325;
-    if (proprietary && proprietary.includes(normalizedQuery)) return 300;
     if (normalizedName.includes(normalizedQuery)) return 250;
     if (aliases.some((alias) => alias.includes(normalizedQuery))) return 225;
 
@@ -299,7 +308,8 @@ Rules:
       }))
       .filter((candidate) =>
         candidate.score >= 0 &&
-        !DRUG_NAME_DENYLIST.has(candidate.entry.drug_name.trim().toUpperCase()),
+        !DRUG_NAME_DENYLIST.has(candidate.entry.drug_name.trim().toUpperCase()) &&
+        candidate.entry.pages.length <= 2,
       )
       .sort((left, right) => right.score - left.score);
   }
@@ -330,7 +340,9 @@ Rules:
     for (const drug of parsed.drugs) {
       if (matches.length >= firstPassLimit) break;
 
-      const rawDrugName = drug.normalized_name.trim() || drug.input_name.trim();
+      const rawDrugName = canonicalizeDrugQueryCase(
+        drug.normalized_name.trim() || drug.input_name.trim(),
+      );
       const normalizedDrugName = normalizeText(rawDrugName);
       if (!rawDrugName || !normalizedDrugName) continue;
 
