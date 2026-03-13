@@ -13,7 +13,7 @@ import { MessageSender } from '@/types/message';
 import type { ChatStreamEvent } from '@/services/rag';
 
 const DRUG_QUERY_PARSER_MODEL = 'llama-3.3-70b-versatile';
-const DRUG_ANSWER_MODEL = 'llama-3.3-70b-versatile';
+const DRUG_ANSWER_MODEL = 'moonshotai/kimi-k2-instruct-0905';
 const DRUG_TOTAL_MATCH_LIMIT = 3;
 const DRUG_SECOND_PASS_LIMIT = 1;
 const DRUG_PROMPT_LOG_CHUNK_SIZE = 4000;
@@ -526,11 +526,18 @@ Dosing schedule rules:
 - At the top of the answer, clearly state these dosing assumptions when providing calculated schedules: adult dosing assumes a 70 kg adult, and child dosing assumes a 25 kg child.
 - When giving brand names, also include a dosing schedule line if it can be derived from the dose information in the record.
 - Base the dosing schedule only on the provided dose text.
-- Convert dose guidance into practical prescription-style schedules such as 1 + 0 + 1, 1 + 0 + 0, or 1 vial IV 12 hourly only when the source supports that conversion.
+- Convert dose guidance into practical prescription-style schedules such as 1 + 0 + 1, 1 + 0 + 0, 5 ml every 8 hours, or 1 vial IV 12 hourly whenever the source supports that conversion.
 - When dose conversion requires a body-weight assumption, use 70 kg for adults and 25 kg for children.
 - Give separate dosing schedules for separate indications when the source provides them.
 - If the schedule is not clearly supported by the source, say that the exact schedule is not clearly specified in the dataset.
 - Do not invent brand-specific schedules or clinical details that are not supported by the source.
+- Do not present dose information in narrative paragraph form when it can be converted into prescription format.
+- Always prefer prescription-style lines over prose explanations.
+- For each brand and indication, present the dose in this structure:
+- Tab./Cap./Inj./Susp. BrandName (strength) - Company
+- prescription-style dosing line
+- Price: exact price from source
+- If multiple indications have different schedules, write separate prescription lines for each indication.
 
 Example format to follow:
 - ORAL
