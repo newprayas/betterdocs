@@ -15,6 +15,7 @@ import type { ChatStreamEvent } from '@/services/rag';
 const DRUG_QUERY_PARSER_MODEL = 'llama-3.3-70b-versatile';
 const DRUG_ANSWER_MODEL = 'llama-3.3-70b-versatile';
 const DRUG_TOTAL_MATCH_LIMIT = 3;
+const DRUG_SECOND_PASS_LIMIT = 1;
 const DRUG_PROMPT_LOG_CHUNK_SIZE = 4000;
 const DRUG_NAME_DENYLIST = new Set(['ACE', 'FDA']);
 const PREFERRED_DRUG_COMPANIES = [
@@ -321,10 +322,13 @@ Rules:
 
   private findMatches(catalog: DrugCatalog, parsed: DrugQueryParseResult): DrugEntry[] {
     const matches: DrugEntry[] = [];
+    const firstRoundMatches: DrugEntry[] = [];
     const seenIds = new Set<string>();
+    const reservedSecondPassSlots = parsed.drugs.length > 0 ? DRUG_SECOND_PASS_LIMIT : 0;
+    const firstPassLimit = Math.max(1, DRUG_TOTAL_MATCH_LIMIT - reservedSecondPassSlots);
 
     for (const drug of parsed.drugs) {
-      if (matches.length >= DRUG_TOTAL_MATCH_LIMIT) break;
+      if (matches.length >= firstPassLimit) break;
 
       const rawDrugName = drug.normalized_name.trim() || drug.input_name.trim();
       const normalizedDrugName = normalizeText(rawDrugName);
@@ -350,12 +354,51 @@ Rules:
       const selected = this.selectUniqueEntries(
         scored,
         seenIds,
-        DRUG_TOTAL_MATCH_LIMIT - matches.length,
+        firstPassLimit - matches.length,
       );
 
       for (const entry of selected) {
         seenIds.add(entry.id);
         matches.push(entry);
+        firstRoundMatches.push(entry);
+      }
+    }
+
+    const topFirstRoundMatch = firstRoundMatches[0];
+    if (topFirstRoundMatch && matches.length < DRUG_TOTAL_MATCH_LIMIT) {
+      const titleQuery = topFirstRoundMatch.drug_name.trim();
+      const normalizedTitleQuery = normalizeText(titleQuery);
+
+      if (titleQuery && normalizedTitleQuery) {
+        const scored = this.getScoredCandidates(
+          catalog,
+          titleQuery,
+          normalizedTitleQuery,
+        );
+
+        console.log('[DRUG SEARCH]', 'Second pass title lookup', {
+          seed_entry: topFirstRoundMatch.drug_name,
+          title_query: titleQuery,
+          normalized: normalizedTitleQuery,
+          candidates: scored.slice(0, 5).map((candidate) => ({
+            drug_name: candidate.entry.drug_name,
+            score: candidate.score,
+          })),
+        });
+
+        const selected = this.selectUniqueEntries(
+          scored,
+          seenIds,
+          Math.min(
+            DRUG_SECOND_PASS_LIMIT,
+            DRUG_TOTAL_MATCH_LIMIT - matches.length,
+          ),
+        );
+
+        for (const entry of selected) {
+          seenIds.add(entry.id);
+          matches.push(entry);
+        }
       }
     }
 
