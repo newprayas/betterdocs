@@ -5,8 +5,10 @@ import { Message, MessageSender } from '@/types/message';
 import { getIndexedDBServices } from '../services/indexedDB';
 import { chatPipeline } from '../services/rag/chatPipeline';
 import { drugModeService } from '../services/drug';
+import { askDrugModeService } from '../services/drug/askDrugModeService';
 import { useSessionStore } from './sessionStore';
 import { userIdLogger } from '../utils/userIdDebugLogger';
+import type { SessionChatMode } from '@/types';
 
 const PRELOAD_SESSION_TIMEOUT_MS = 4000;
 const PIPELINE_TIMEOUT_MS = 90000;
@@ -64,7 +66,7 @@ export const useChatStore = create<ChatStore>()(
         questionTimestamps: [],
         isRateLimited: false,
         rateLimitWaitSeconds: 0,
-        drugModeBySession: {},
+        sessionModeBySession: {},
         drugSuggestionsBySession: {},
 
         // Actions
@@ -204,7 +206,9 @@ export const useChatStore = create<ChatStore>()(
           const { userId: currentUserId } = useSessionStore.getState();
           const operationId = userIdLogger.logOperationStart('ChatStore', 'sendMessage', currentUserId);
           let isSettled = false;
-          const isDrugMode = Boolean(get().drugModeBySession[sessionId]);
+          const sessionMode = get().sessionModeBySession[sessionId] || 'chat';
+          const isDrugMode = sessionMode === 'drug';
+          const isAskDrugMode = sessionMode === 'ask-drug';
 
           const failPipeline = (message: string) => {
             if (isSettled) return;
@@ -228,11 +232,15 @@ export const useChatStore = create<ChatStore>()(
             timestamp: new Date(),
             sessionId,
           };
-          const pipelineRunner = isDrugMode
-            ? (onEvent: Parameters<typeof drugModeService.sendMessage>[2]) =>
-                drugModeService.sendMessage(sessionId, content, onEvent)
-            : (onEvent: Parameters<typeof chatPipeline.sendMessage>[2]) =>
-                chatPipeline.sendMessage(sessionId, content, onEvent, userMessage);
+          const pipelineRunner =
+            sessionMode === 'drug'
+              ? (onEvent: Parameters<typeof drugModeService.sendMessage>[2]) =>
+                  drugModeService.sendMessage(sessionId, content, onEvent)
+              : sessionMode === 'ask-drug'
+                ? (onEvent: Parameters<typeof askDrugModeService.sendMessage>[2]) =>
+                    askDrugModeService.sendMessage(sessionId, content, onEvent)
+                : (onEvent: Parameters<typeof chatPipeline.sendMessage>[2]) =>
+                    chatPipeline.sendMessage(sessionId, content, onEvent, userMessage);
 
           set(state => {
             const newMessages = [...state.messages, userMessage];
@@ -242,7 +250,8 @@ export const useChatStore = create<ChatStore>()(
               isStreaming: false, // Don't show streaming content
               isReadingSources: true, // Show "Reading sources" instead
               progressPercentage: 0,
-              currentProgressStep: isDrugMode ? 'Drug Dataset' : 'Query Rewriting',
+              currentProgressStep:
+                sessionMode === 'chat' ? 'Query Rewriting' : 'Drug Dataset',
               pipelineStartedAt: Date.now(),
               drugSuggestionsBySession: {
                 ...state.drugSuggestionsBySession,
@@ -313,6 +322,15 @@ export const useChatStore = create<ChatStore>()(
                         break;
                       case 'Drug Answer Generation':
                         setProgressState(90, 'Drug Answer Generation');
+                        break;
+                      case 'Ask Drug Query Parsing':
+                        setProgressState(40, 'Ask Drug Query Parsing');
+                        break;
+                      case 'Ask Drug Search':
+                        setProgressState(70, 'Ask Drug Search');
+                        break;
+                      case 'Ask Drug Answer Generation':
+                        setProgressState(90, 'Ask Drug Answer Generation');
                         break;
                       default:
                         // For other status messages, don't update progress
@@ -587,16 +605,16 @@ export const useChatStore = create<ChatStore>()(
           set({ questionTimestamps: updatedTimestamps });
         },
 
-        setDrugModeForSession: (sessionId: string, enabled: boolean) => {
-          console.log('[DRUG MODE]', 'Persisting session toggle state', {
+        setSessionModeForSession: (sessionId: string, mode: SessionChatMode) => {
+          console.log('[SESSION MODE]', 'Persisting session mode', {
             sessionId,
-            enabled,
+            mode,
           });
 
           set((state) => ({
-            drugModeBySession: {
-              ...state.drugModeBySession,
-              [sessionId]: enabled,
+            sessionModeBySession: {
+              ...state.sessionModeBySession,
+              [sessionId]: mode,
             },
           }));
         },
@@ -619,14 +637,14 @@ export const useChatStore = create<ChatStore>()(
           }));
         },
 
-        isDrugModeEnabled: (sessionId: string) => {
-          return Boolean(get().drugModeBySession[sessionId]);
+        getSessionMode: (sessionId: string) => {
+          return get().sessionModeBySession[sessionId] || 'chat';
         },
       }),
       {
         name: 'chat-store',
         partialize: (state) => ({
-          drugModeBySession: state.drugModeBySession,
+          sessionModeBySession: state.sessionModeBySession,
         }),
       }
     )

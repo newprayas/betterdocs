@@ -1,4 +1,4 @@
-import type { Session, SessionCreate, SessionUpdate } from '@/types';
+import type { Session, SessionCreate, SessionUpdate, SessionChatMode } from '@/types';
 import type { Message, ChatStreamEvent } from '@/types';
 import type { Document, DocumentUpdate, DocumentProgress } from '@/types';
 import type { AppSettings, SettingsUpdate } from '@/types';
@@ -44,7 +44,7 @@ export interface ChatStore {
   questionTimestamps: number[];
   isRateLimited: boolean;
   rateLimitWaitSeconds: number;
-  drugModeBySession: Record<string, boolean>;
+  sessionModeBySession: Record<string, SessionChatMode>;
   drugSuggestionsBySession: Record<string, string[]>;
 
   // Actions
@@ -63,10 +63,10 @@ export interface ChatStore {
   checkRateLimit: () => number; // Returns wait time in seconds, 0 if OK
   setRateLimitState: (isLimited: boolean, waitSeconds: number) => void;
   recordQuestion: () => void;
-  setDrugModeForSession: (sessionId: string, enabled: boolean) => void;
+  setSessionModeForSession: (sessionId: string, mode: SessionChatMode) => void;
   setDrugSuggestionsForSession: (sessionId: string, suggestions: string[]) => void;
   clearDrugSuggestionsForSession: (sessionId: string) => void;
-  isDrugModeEnabled: (sessionId: string) => boolean;
+  getSessionMode: (sessionId: string) => SessionChatMode;
 }
 
 export interface DocumentStore {

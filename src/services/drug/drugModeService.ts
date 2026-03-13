@@ -254,12 +254,13 @@ export class DrugModeService {
         DRUG_DATASET_CONFIG.id,
       );
       if (cached?.catalog) {
+        const catalog = this.validateCatalog(cached.catalog);
         console.log('[DRUG DOWNLOAD]', 'Cache hit', {
           datasetId: cached.id,
           downloadedAt: cached.downloadedAt,
-          entryCount: cached.catalog.entries.length,
+          entryCount: catalog.entries.length,
         });
-        return cached.catalog;
+        return catalog;
       }
     }
 

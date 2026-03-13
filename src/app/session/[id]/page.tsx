@@ -27,8 +27,8 @@ import { EmptyState } from "../../../components/common";
 import { Header } from "../../../components/layout";
 import { useRouteErrorHandler } from "../../../components/common/RouteErrorBoundary";
 import { getLibraryBookNameById } from "../../../services/libraryService";
-import { drugModeService } from "../../../services/drug";
-import type { Document } from "../../../types";
+import { askDrugModeService, drugModeService } from "../../../services/drug";
+import type { Document, SessionChatMode } from "../../../types";
 
 const getDocumentDisplayName = (document: Document): string => {
   if (document.originalPath?.startsWith("library:")) {
@@ -91,9 +91,9 @@ export default function SessionPage() {
     isStreaming,
     isReadingSources,
     loadMessages,
-    drugModeBySession,
+    sessionModeBySession,
     drugSuggestionsBySession,
-    setDrugModeForSession,
+    setSessionModeForSession,
   } = useChatStore();
 
   const {
@@ -125,10 +125,46 @@ export default function SessionPage() {
     new Set(),
   );
   const messageInputRef = useRef<HTMLTextAreaElement>(null);
-  const isDrugModeEnabled = Boolean(drugModeBySession[sessionId]);
+  const sessionMode = sessionModeBySession[sessionId] || "chat";
+  const isDrugModeEnabled = sessionMode === "drug";
+  const isAskDrugModeEnabled = sessionMode === "ask-drug";
+  const isDatasetModeEnabled = sessionMode !== "chat";
   const drugSuggestionPhrases = drugSuggestionsBySession[sessionId] || [];
-  const shouldShowPhrasePills = !isDrugModeEnabled || drugSuggestionPhrases.length > 0;
-  const visiblePhrasePhrases = isDrugModeEnabled ? drugSuggestionPhrases : undefined;
+  const shouldShowPhrasePills =
+    !isDatasetModeEnabled || drugSuggestionPhrases.length > 0;
+  const visiblePhrasePhrases = isDatasetModeEnabled
+    ? drugSuggestionPhrases
+    : undefined;
+  const modeLabel =
+    sessionMode === "drug"
+      ? "Drug Mode"
+      : sessionMode === "ask-drug"
+        ? "Ask Drug Mode"
+        : "Chat Mode";
+  const readyTitle =
+    sessionMode === "drug"
+      ? "Drug Mode is ready"
+      : sessionMode === "ask-drug"
+        ? "Ask Drug Mode is ready"
+        : "Start a conversation";
+  const readyDescription =
+    sessionMode === "drug"
+      ? "Ask about drug doses, brand names, indications, cautions, or side effects."
+      : sessionMode === "ask-drug"
+        ? "Ask for indications, side-effects, renal dose, pregnancy advice, hepatic dose, or broad treatment questions."
+        : "Ask a question about your documents to get started";
+  const messagePlaceholder =
+    isPreparingDrugDataset
+      ? "Preparing drug dataset..."
+      : isDrugModeEnabled
+        ? "Ask about drugs, doses, brand names, side effects..."
+        : isAskDrugModeEnabled
+          ? "Ask about indications, side-effects, renal dose, pregnancy advice..."
+          : documentsLoading
+            ? "Loading books..."
+            : !hasDocuments
+              ? "Please add a book FIRST to chat"
+              : "Ask a question about your documents...";
 
   const sortedDocuments = useMemo(
     () =>
@@ -377,31 +413,36 @@ export default function SessionPage() {
     }
   };
 
-  const handleDrugModeToggle = async (enabled: boolean) => {
-    console.log("[DRUG MODE]", "Toggle changed from session page", {
+  const handleSessionModeChange = async (mode: SessionChatMode) => {
+    console.log("[SESSION MODE]", "Mode changed from session page", {
       sessionId,
-      enabled,
+      mode,
     });
 
-    setDrugModeForSession(sessionId, enabled);
+    setSessionModeForSession(sessionId, mode);
 
-    if (!enabled) return;
+    if (mode === "chat") return;
 
     setIsPreparingDrugDataset(true);
     try {
-      await drugModeService.warmup();
-      console.log("[DRUG MODE]", "Drug dataset warmup completed", {
+      if (mode === "drug") {
+        await drugModeService.warmup();
+      } else {
+        await askDrugModeService.warmup();
+      }
+      console.log("[SESSION MODE]", "Dataset warmup completed", {
         sessionId,
+        mode,
       });
     } catch (error) {
-      console.error("[DRUG ERROR]", "Drug dataset warmup failed", error);
+      console.error("[SESSION MODE ERROR]", "Dataset warmup failed", error);
     } finally {
       setIsPreparingDrugDataset(false);
     }
   };
 
   const handlePhraseSelect = (phrase: string) => {
-    if (isDrugModeEnabled && drugSuggestionPhrases.includes(phrase)) {
+    if (isDatasetModeEnabled && drugSuggestionPhrases.includes(phrase)) {
       setMessageInput(`${phrase} `);
 
       requestAnimationFrame(() => {
@@ -655,19 +696,37 @@ export default function SessionPage() {
             className="w-full sm:w-auto min-w-[300px]"
             actions={
               <div className="flex items-center gap-3">
-                <div className="flex items-center gap-2 rounded-full border border-gray-200 bg-white px-3 py-2 dark:border-gray-700 dark:bg-gray-900">
-                  <span className="text-xs font-medium text-gray-700 dark:text-gray-200">
+                <DropdownMenu
+                  trigger={
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={isPreparingDrugDataset}
+                      className="rounded-full"
+                    >
+                      {isPreparingDrugDataset ? "Preparing..." : modeLabel}
+                    </Button>
+                  }
+                >
+                  <DropdownMenuItem
+                    onClick={() => handleSessionModeChange("chat")}
+                    disabled={isPreparingDrugDataset || sessionMode === "chat"}
+                  >
+                    Chat Mode
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => handleSessionModeChange("drug")}
+                    disabled={isPreparingDrugDataset || sessionMode === "drug"}
+                  >
                     Drug Mode
-                  </span>
-                  <Switch
-                    size="sm"
-                    checked={isDrugModeEnabled}
-                    disabled={isPreparingDrugDataset}
-                    onCheckedChange={handleDrugModeToggle}
-                    aria-label="Toggle drug mode"
-                    title="Toggle drug mode"
-                  />
-                </div>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => handleSessionModeChange("ask-drug")}
+                    disabled={isPreparingDrugDataset || sessionMode === "ask-drug"}
+                  >
+                    Ask Drug Mode
+                  </DropdownMenuItem>
+                </DropdownMenu>
                 <DropdownMenu
                   trigger={
                     <Button
@@ -729,7 +788,7 @@ export default function SessionPage() {
                       description="Please wait while sources are being prepared."
                       icon={<div className="text-4xl mb-2">📚</div>}
                     />
-                  ) : !isDrugModeEnabled && !hasDocuments ? (
+                  ) : !isDatasetModeEnabled && !hasDocuments ? (
                     <EmptyState
                       title="No books added, Add books to chat 🥳"
                       description=""
@@ -747,19 +806,19 @@ export default function SessionPage() {
                   ) : isPreparingDrugDataset ? (
                     <EmptyState
                       title="Preparing drug dataset..."
-                      description="Please wait while Drug Mode loads the drug catalog."
+                      description={`Please wait while ${modeLabel} loads the drug catalog.`}
                       icon={<div className="text-4xl mb-2">💊</div>}
                     />
-                  ) : isDrugModeEnabled ? (
+                  ) : isDatasetModeEnabled ? (
                     <EmptyState
-                      title="Drug Mode is ready"
-                      description="Ask about drug doses, brand names, indications, cautions, or side effects."
+                      title={readyTitle}
+                      description={readyDescription}
                       icon={<div className="text-4xl mb-2">💊</div>}
                     />
                   ) : (
                     <EmptyState
-                      title="Start a conversation"
-                      description="Ask a question about your documents to get started"
+                      title={readyTitle}
+                      description={readyDescription}
                       icon={
                         <svg
                           className="w-12 h-12 text-gray-400"
@@ -815,7 +874,7 @@ export default function SessionPage() {
                       onPhraseSelect={handlePhraseSelect}
                       className="bg-gray-100 dark:bg-gray-800 rounded-lg"
                       ariaLabel={
-                        isDrugModeEnabled
+                        isDatasetModeEnabled
                           ? "Drug suggestion chips"
                           : "Quick phrase suggestions"
                       }
@@ -829,20 +888,10 @@ export default function SessionPage() {
                     disabled={
                       isStreaming ||
                       isPreparingDrugDataset ||
-                      (!isDrugModeEnabled &&
+                      (!isDatasetModeEnabled &&
                         (!hasDocuments || !hasDocumentDataForSession))
                     }
-                    placeholder={
-                      isPreparingDrugDataset
-                        ? "Preparing drug dataset..."
-                        : isDrugModeEnabled
-                        ? "Ask about drugs, doses, brand names, side effects..."
-                        : documentsLoading
-                        ? "Loading books..."
-                        : !hasDocuments
-                        ? "Please add a book FIRST to chat"
-                        : "Ask a question about your documents..."
-                    }
+                    placeholder={messagePlaceholder}
                     value={messageInput}
                     onChange={setMessageInput}
                     inputRef={messageInputRef}
@@ -860,7 +909,7 @@ export default function SessionPage() {
 
                 {/* Phrase Pills */}
                 <div className="relative flex-shrink-0 mt-4 max-w-4xl mx-auto w-full">
-                  {!isReadingSources && !isDrugModeEnabled && (
+                  {!isReadingSources && !isDatasetModeEnabled && (
                     <div className="absolute bottom-full right-2 mb-2 z-20 flex items-center gap-2">
                       <button
                         type="button"
@@ -933,7 +982,7 @@ export default function SessionPage() {
                       onPhraseSelect={handlePhraseSelect}
                       className="bg-gray-100 dark:bg-gray-800 rounded-lg"
                       ariaLabel={
-                        isDrugModeEnabled
+                        isDatasetModeEnabled
                           ? "Drug suggestion chips"
                           : "Quick phrase suggestions"
                       }
@@ -942,7 +991,7 @@ export default function SessionPage() {
                 </div>
 
                 <div className="flex-shrink-0 mt-4 max-w-4xl mx-auto w-full">
-                  {!isDrugModeEnabled && !documentsLoading && !hasDocuments && (
+                  {!isDatasetModeEnabled && !documentsLoading && !hasDocuments && (
                     <div className="mb-4 flex justify-center">
                       <Button
                         onClick={() => setActiveTab("documents")}
@@ -959,20 +1008,10 @@ export default function SessionPage() {
                     disabled={
                       isStreaming ||
                       isPreparingDrugDataset ||
-                      (!isDrugModeEnabled &&
+                      (!isDatasetModeEnabled &&
                         (!hasDocuments || !hasDocumentDataForSession))
                     }
-                    placeholder={
-                      isPreparingDrugDataset
-                        ? "Preparing drug dataset..."
-                        : isDrugModeEnabled
-                        ? "Ask about drugs, doses, brand names, side effects..."
-                        : documentsLoading
-                        ? "Loading books..."
-                        : !hasDocuments
-                        ? "Please add a book FIRST to chat"
-                        : "Ask a question about your documents..."
-                    }
+                    placeholder={messagePlaceholder}
                     value={messageInput}
                     onChange={setMessageInput}
                     inputRef={messageInputRef}

@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import gzip
+import hashlib
 import json
 import re
 from pathlib import Path
@@ -45,6 +47,7 @@ SECTION_KEYS = list(dict.fromkeys(SECTION_MAP.values()))
 
 DATE_SUFFIX_RE = re.compile(r"\s+\d{2}-[A-Za-z]{3}-\d{4}$")
 STOP_SECTION = "__stop__"
+OUTPUT_FORMAT_VERSION = "drug-sections-catalog-1.0"
 
 SECTION_PATTERNS = [
     ("indications_and_dose", re.compile(r"(?<!\w)(?:[lI|]\s+)?INDICATIONS\s+AND\s+DOSE\b")),
@@ -95,6 +98,20 @@ FORM_HEADING_RE = re.compile(
 
 def normalize_space(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
+
+
+def sha256_hex(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def format_bytes(num_bytes: int) -> str:
+    units = ["B", "KB", "MB", "GB", "TB"]
+    size = float(num_bytes)
+    index = 0
+    while size >= 1024 and index < len(units) - 1:
+        size /= 1024
+        index += 1
+    return f"{int(size)} {units[index]}" if index == 0 else f"{size:.1f} {units[index]}"
 
 
 def normalize_header(text: str) -> str:
@@ -342,6 +359,59 @@ def parse_pdf(pdf_path: Path) -> list[dict[str, Any]]:
     return entries
 
 
+def build_payload(target_dir: Path, pdfs: list[Path], all_entries: list[dict[str, Any]]) -> dict[str, Any]:
+    return {
+        "format_version": OUTPUT_FORMAT_VERSION,
+        "generated_at": dt.datetime.now(dt.timezone.utc).isoformat().replace("+00:00", "Z"),
+        "directory": str(target_dir),
+        "pdf_count": len(pdfs),
+        "drug_count": len(all_entries),
+        "drugs": all_entries,
+    }
+
+
+def write_json_bin_and_mapping(
+    payload: dict[str, Any],
+    target_dir: Path,
+    json_filename: str,
+    bin_filename: str,
+    mapping_filename: str,
+    source_pdfs: list[Path],
+) -> tuple[Path, Path, Path]:
+    json_path = target_dir / json_filename
+    with json_path.open("w", encoding="utf-8") as handle:
+        json.dump(payload, handle, indent=2, ensure_ascii=False)
+
+    json_bytes = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    gz_bytes = gzip.compress(json_bytes, compresslevel=9)
+    bin_path = target_dir / bin_filename
+    bin_path.write_bytes(gz_bytes)
+
+    round_trip = json.loads(gzip.decompress(bin_path.read_bytes()).decode("utf-8"))
+    if round_trip != payload:
+        raise ValueError("Decoded .bin JSON does not match the source JSON")
+
+    mapping = {
+        "generated_at": dt.datetime.now(dt.timezone.utc).isoformat().replace("+00:00", "Z"),
+        "directory": str(target_dir),
+        "json_output": json_filename,
+        "bin_output": bin_filename,
+        "bin_size_bytes": bin_path.stat().st_size,
+        "bin_size_human": format_bytes(bin_path.stat().st_size),
+        "sha256": sha256_hex(gz_bytes),
+        "pdf_count": len(source_pdfs),
+        "source_pdfs": [pdf.name for pdf in source_pdfs],
+        "drug_count": payload.get("drug_count", 0),
+        "format_version": payload.get("format_version"),
+    }
+
+    mapping_path = target_dir / mapping_filename
+    with mapping_path.open("w", encoding="utf-8") as handle:
+        json.dump(mapping, handle, indent=2, ensure_ascii=False)
+
+    return json_path, bin_path, mapping_path
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Extract BNF-style drug sections from all PDFs in the current working directory."
@@ -350,6 +420,16 @@ def main() -> None:
         "--output",
         default="drug_sections.json",
         help="Output JSON filename written to the current working directory.",
+    )
+    parser.add_argument(
+        "--bin-output",
+        default="drug_sections.bin",
+        help="Output BIN filename written to the current working directory.",
+    )
+    parser.add_argument(
+        "--mapping-file",
+        default="file_mapping.json",
+        help="Output mapping filename written to the current working directory.",
     )
     args = parser.parse_args()
 
@@ -362,22 +442,21 @@ def main() -> None:
     for pdf_path in pdfs:
         all_entries.extend(parse_pdf(pdf_path))
 
-    payload = {
-        "format_version": "bnf-drug-sections-1.0",
-        "generated_at": dt.datetime.now(dt.timezone.utc).isoformat().replace("+00:00", "Z"),
-        "directory": str(target_dir),
-        "pdf_count": len(pdfs),
-        "drug_count": len(all_entries),
-        "drugs": all_entries,
-    }
-
-    output_path = target_dir / args.output
-    with output_path.open("w", encoding="utf-8") as handle:
-        json.dump(payload, handle, indent=2, ensure_ascii=False)
+    payload = build_payload(target_dir, pdfs, all_entries)
+    json_path, bin_path, mapping_path = write_json_bin_and_mapping(
+        payload=payload,
+        target_dir=target_dir,
+        json_filename=args.output,
+        bin_filename=args.bin_output,
+        mapping_filename=args.mapping_file,
+        source_pdfs=pdfs,
+    )
 
     print(f"Processed {len(pdfs)} PDF file(s)")
     print(f"Extracted {len(all_entries)} drug entries")
-    print(f"Saved JSON to {output_path}")
+    print(f"Saved JSON to {json_path}")
+    print(f"Saved BIN to {bin_path} ({format_bytes(bin_path.stat().st_size)})")
+    print(f"Saved mapping to {mapping_path}")
 
 
 if __name__ == "__main__":

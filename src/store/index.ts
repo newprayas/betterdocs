@@ -63,9 +63,9 @@ export const useChat = () => {
     setRateLimitState: chatStore.setRateLimitState,
     recordQuestion: chatStore.recordQuestion,
     resetTransientState: chatStore.resetTransientState,
-    drugModeBySession: chatStore.drugModeBySession,
-    setDrugModeForSession: chatStore.setDrugModeForSession,
-    isDrugModeEnabled: chatStore.isDrugModeEnabled,
+    sessionModeBySession: chatStore.sessionModeBySession,
+    setSessionModeForSession: chatStore.setSessionModeForSession,
+    getSessionMode: chatStore.getSessionMode,
   };
 };
 
