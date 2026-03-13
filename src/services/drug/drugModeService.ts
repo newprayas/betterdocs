@@ -18,6 +18,7 @@ const DRUG_PROMPT_LOG_CHUNK_SIZE = 4000;
 const DRUG_NAME_DENYLIST = new Set(['ACE', 'FDA', 'KN.VDN', 'CNS']);
 const VERIFIED_DRUG_NAMES_URL = '/drug/verified-drug-names.txt';
 const DRUG_SUGGESTION_LIMIT = 8;
+const PREFERRED_MAX_PAGE_COUNT = 4;
 
 export const DRUG_DATASET_CONFIG: DrugDatasetConfig = {
   id: 'newdoc_voyage',
@@ -398,13 +399,15 @@ Rules:
       this.entryHasExactCaseSensitiveMatch(entry, query),
     );
 
-    const preferredStrictMatches = strictMatches.filter((entry) => entry.pages.length <= 2);
+    const preferredStrictMatches = strictMatches.filter(
+      (entry) => entry.pages.length <= PREFERRED_MAX_PAGE_COUNT,
+    );
     const normalizedMatches =
       strictMatches.length > 0
         ? []
         : searchableEntries.filter((entry) => this.entryHasExactNormalizedMatch(entry, query));
     const preferredNormalizedMatches = normalizedMatches.filter(
-      (entry) => entry.pages.length <= 2,
+      (entry) => entry.pages.length <= PREFERRED_MAX_PAGE_COUNT,
     );
     const finalMatch =
       preferredStrictMatches[0] ??
