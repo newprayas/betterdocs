@@ -250,8 +250,8 @@ Return ONLY valid JSON with this exact shape:
 Rules:
 - Return only one drug or brand name.
 - Remove all other words from the query.
-- Correct obvious spelling mistakes in the drug or brand name when the intended name is clear.
-- Auto-capitalize the final drug_name in standard title case.
+- Do not correct, normalize, or change the spelling of the drug or brand name.
+- Auto-capitalize the final drug_name in standard title case only.
 - If no drug or brand name can be identified, return an empty string for drug_name and 0 for confidence.
 - Do not include any text outside JSON.`;
 
