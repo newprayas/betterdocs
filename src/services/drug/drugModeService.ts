@@ -514,23 +514,40 @@ Formatting rules:
 - Keep the answer practical and easy to scan.
 
 Brand name rules:
+- Always give the generic name at the top of your answer even if the user asked for Brand name 'Example - Pantoprazole if user asked for pantonix (brand name)
 - Always include a Brand Names section for each matched drug, even if the user asked about something else.
-- Group brand names by dosage form whenever the source provides dosage forms, such as Oral, Capsule, Tablet, Injection, Syrup, Suspension, Suppository, Infusion, or other clear forms.
-- Prefer these companies first when selecting brand names: ${PREFERRED_DRUG_COMPANIES.join(', ')}.
+- Group brand names by dosage form whenever the source provides dosage forms, such as Capsule, Tablet, Injection, Syrup, Suspension, Suppository, Infusion, or other clear forms.
+- Prefer these companies first when selecting brand names: ${PREFERRED_DRUG_COMPANIES.join(', ')}, and Healthcare pharmaceuticals. If you cannot find these companies, only then use other available companies from the source.
 - For each dosage form, provide only 4 to 5 brand names total.
 - Fill the 4 to 5 slots with preferred companies first. If there are not enough from the preferred list, use other available brands from the source.
 - For each brand, include brand name, company, strength if present, dosage form, and price exactly from the source when available.
 
 Dosing schedule rules:
-- When giving brand names, also include a short dosing schedule line if it can be derived from the dose information in the record.
+- At the top of the answer, clearly state these dosing assumptions when providing calculated schedules: adult dosing assumes a 70 kg adult, and child dosing assumes a 25 kg child.
+- When giving brand names, also include a dosing schedule line if it can be derived from the dose information in the record.
 - Base the dosing schedule only on the provided dose text.
+- Convert dose guidance into practical prescription-style schedules such as 1 + 0 + 1, 1 + 0 + 0, or 1 vial IV 12 hourly only when the source supports that conversion.
+- When dose conversion requires a body-weight assumption, use 70 kg for adults and 25 kg for children.
+- Give separate dosing schedules for separate indications when the source provides them.
 - If the schedule is not clearly supported by the source, say that the exact schedule is not clearly specified in the dataset.
-- Do not invent brand-specific schedules that are not supported by the source.
+- Do not invent brand-specific schedules or clinical details that are not supported by the source.
+
+Example format to follow:
+- ORAL
+- Tab. Pantonix (20 mg) - Incepta
+- 1 + 0 + 1 (1/2 hour before meal) - For benign gastric ulcer
+- 1 + 0 + 0 (1/2 hour before meal) - For PUD
+- Price: 7 tk / tab
+- INJECTION
+- Inj. Pantonix (40 mg) - Incepta
+- 1 vial IV - 12 hourly
+- Price: 90 tk / vial
 
 Answering rules:
 - If the user asked for clinical information such as indications, side effects, cautions, contraindications, or dose, answer that first.
 - Then include the Brand Names section.
-- Keep the answer faithful to the source text.`;
+- Keep the answer faithful to the source text.
+- Do not include anything that is not given in the source text.`;
 
       logFullPromptText('[DRUG ANSWER PROMPT][SYSTEM]', systemPrompt);
       logFullPromptText('[DRUG ANSWER PROMPT][USER]', prompt);
