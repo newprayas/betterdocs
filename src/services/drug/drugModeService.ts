@@ -12,7 +12,11 @@ import type {
 import { MessageSender } from '@/types/message';
 import type { ChatStreamEvent } from '@/services/rag';
 
-const DRUG_MODE_MODEL = 'llama-3.3-70b-versatile';
+const DRUG_QUERY_PARSER_MODEL = 'llama-3.3-70b-versatile';
+const DRUG_ANSWER_MODEL = 'llama-3.3-70b-versatile';
+const DRUG_TOTAL_MATCH_LIMIT = 3;
+const DRUG_PROMPT_LOG_CHUNK_SIZE = 4000;
+const DRUG_NAME_DENYLIST = new Set(['ACE', 'FDA']);
 const PREFERRED_DRUG_COMPANIES = [
   'Biopharma',
   'Opsonin',
@@ -86,11 +90,28 @@ const stringifyEntryForPrompt = (entry: DrugEntry): string =>
       dose: compactField(entry.dose),
       notes: compactField(entry.notes),
       proprietary_preparations: compactField(entry.proprietary_preparations),
-      raw_text: compactField(entry.raw_text),
     },
     null,
     2,
   );
+
+const logFullPromptText = (label: string, text: string): void => {
+  const chunkCount = Math.max(1, Math.ceil(text.length / DRUG_PROMPT_LOG_CHUNK_SIZE));
+  console.log(`${label}[META]`, {
+    length: text.length,
+    chunkSize: DRUG_PROMPT_LOG_CHUNK_SIZE,
+    chunkCount,
+  });
+
+  for (let index = 0; index < chunkCount; index += 1) {
+    const start = index * DRUG_PROMPT_LOG_CHUNK_SIZE;
+    const end = start + DRUG_PROMPT_LOG_CHUNK_SIZE;
+    console.log(
+      `${label}[CHUNK ${index + 1}/${chunkCount}]`,
+      text.slice(start, end),
+    );
+  }
+};
 
 export class DrugModeService {
   private indexedDBServices = getIndexedDBServices();
@@ -194,7 +215,7 @@ Rules:
     const raw = await groqService.generateResponseWithGroq(
       content,
       systemPrompt,
-      DRUG_MODE_MODEL,
+      DRUG_QUERY_PARSER_MODEL,
       {
         temperature: 0,
         maxTokens: 700,
@@ -265,22 +286,55 @@ Rules:
     return -1;
   }
 
+  private getScoredCandidates(
+    catalog: DrugCatalog,
+    rawQuery: string,
+    normalizedQuery: string,
+  ): Array<{ entry: DrugEntry; score: number }> {
+    return catalog.entries
+      .map((entry) => ({
+        entry,
+        score: this.scoreEntry(entry, rawQuery, normalizedQuery),
+      }))
+      .filter((candidate) =>
+        candidate.score >= 0 &&
+        !DRUG_NAME_DENYLIST.has(candidate.entry.drug_name.trim().toUpperCase()),
+      )
+      .sort((left, right) => right.score - left.score);
+  }
+
+  private selectUniqueEntries(
+    scored: Array<{ entry: DrugEntry; score: number }>,
+    seenIds: Set<string>,
+    limit: number,
+  ): DrugEntry[] {
+    const selected: DrugEntry[] = [];
+
+    for (const candidate of scored) {
+      if (seenIds.has(candidate.entry.id)) continue;
+      selected.push(candidate.entry);
+      if (selected.length >= limit) break;
+    }
+
+    return selected;
+  }
+
   private findMatches(catalog: DrugCatalog, parsed: DrugQueryParseResult): DrugEntry[] {
     const matches: DrugEntry[] = [];
     const seenIds = new Set<string>();
 
     for (const drug of parsed.drugs) {
+      if (matches.length >= DRUG_TOTAL_MATCH_LIMIT) break;
+
       const rawDrugName = drug.normalized_name.trim() || drug.input_name.trim();
       const normalizedDrugName = normalizeText(rawDrugName);
       if (!rawDrugName || !normalizedDrugName) continue;
 
-      const scored = catalog.entries
-        .map((entry) => ({
-          entry,
-          score: this.scoreEntry(entry, rawDrugName, normalizedDrugName),
-        }))
-        .filter((candidate) => candidate.score >= 0)
-        .sort((left, right) => right.score - left.score);
+      const scored = this.getScoredCandidates(
+        catalog,
+        rawDrugName,
+        normalizedDrugName,
+      );
 
       console.log('[DRUG SEARCH]', 'Lookup results for parsed drug', {
         requested: drug.input_name,
@@ -293,10 +347,15 @@ Rules:
         })),
       });
 
-      const best = scored[0]?.entry;
-      if (best && !seenIds.has(best.id)) {
-        seenIds.add(best.id);
-        matches.push(best);
+      const selected = this.selectUniqueEntries(
+        scored,
+        seenIds,
+        DRUG_TOTAL_MATCH_LIMIT - matches.length,
+      );
+
+      for (const entry of selected) {
+        seenIds.add(entry.id);
+        matches.push(entry);
       }
     }
 
@@ -430,14 +489,14 @@ Answering rules:
 - Then include the Brand Names section.
 - Keep the answer faithful to the source text.`;
 
-      console.log('[DRUG ANSWER PROMPT][SYSTEM]', systemPrompt);
-      console.log('[DRUG ANSWER PROMPT][USER]', prompt);
+      logFullPromptText('[DRUG ANSWER PROMPT][SYSTEM]', systemPrompt);
+      logFullPromptText('[DRUG ANSWER PROMPT][USER]', prompt);
 
       let fullResponse = '';
       await groqService.generateStreamingResponse(
         prompt,
         systemPrompt,
-        DRUG_MODE_MODEL,
+        DRUG_ANSWER_MODEL,
         {
           temperature: 0.2,
           maxTokens: 1800,
