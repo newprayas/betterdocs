@@ -92,6 +92,7 @@ export default function SessionPage() {
     isReadingSources,
     loadMessages,
     drugModeBySession,
+    drugSuggestionsBySession,
     setDrugModeForSession,
   } = useChatStore();
 
@@ -125,6 +126,9 @@ export default function SessionPage() {
   );
   const messageInputRef = useRef<HTMLTextAreaElement>(null);
   const isDrugModeEnabled = Boolean(drugModeBySession[sessionId]);
+  const drugSuggestionPhrases = drugSuggestionsBySession[sessionId] || [];
+  const shouldShowPhrasePills = !isDrugModeEnabled || drugSuggestionPhrases.length > 0;
+  const visiblePhrasePhrases = isDrugModeEnabled ? drugSuggestionPhrases : undefined;
 
   const sortedDocuments = useMemo(
     () =>
@@ -397,6 +401,19 @@ export default function SessionPage() {
   };
 
   const handlePhraseSelect = (phrase: string) => {
+    if (isDrugModeEnabled && drugSuggestionPhrases.includes(phrase)) {
+      setMessageInput(`${phrase} `);
+
+      requestAnimationFrame(() => {
+        if (messageInputRef.current) {
+          messageInputRef.current.focus();
+          const length = messageInputRef.current.value.length;
+          messageInputRef.current.setSelectionRange(length, length);
+        }
+      });
+      return;
+    }
+
     // Append the selected phrase to the current message input with an extra space
     const newMessage = messageInput
       ? `${messageInput} ${phrase} `
@@ -792,10 +809,18 @@ export default function SessionPage() {
                       Sources {documentsLoading ? "..." : activeDocumentCount}
                     </button>
                   )}
-                  <PhrasePills
-                    onPhraseSelect={handlePhraseSelect}
-                    className="bg-gray-100 dark:bg-gray-800 rounded-lg"
-                  />
+                  {shouldShowPhrasePills && (
+                    <PhrasePills
+                      phrases={visiblePhrasePhrases}
+                      onPhraseSelect={handlePhraseSelect}
+                      className="bg-gray-100 dark:bg-gray-800 rounded-lg"
+                      ariaLabel={
+                        isDrugModeEnabled
+                          ? "Drug suggestion chips"
+                          : "Quick phrase suggestions"
+                      }
+                    />
+                  )}
                 </div>
 
                 <div className="flex-shrink-0 mt-4 max-w-4xl mx-auto w-full">
@@ -902,10 +927,18 @@ export default function SessionPage() {
                       </button>
                     </div>
                   )}
-                  <PhrasePills
-                    onPhraseSelect={handlePhraseSelect}
-                    className="bg-gray-100 dark:bg-gray-800 rounded-lg"
-                  />
+                  {shouldShowPhrasePills && (
+                    <PhrasePills
+                      phrases={visiblePhrasePhrases}
+                      onPhraseSelect={handlePhraseSelect}
+                      className="bg-gray-100 dark:bg-gray-800 rounded-lg"
+                      ariaLabel={
+                        isDrugModeEnabled
+                          ? "Drug suggestion chips"
+                          : "Quick phrase suggestions"
+                      }
+                    />
+                  )}
                 </div>
 
                 <div className="flex-shrink-0 mt-4 max-w-4xl mx-auto w-full">

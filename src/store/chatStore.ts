@@ -65,6 +65,7 @@ export const useChatStore = create<ChatStore>()(
         isRateLimited: false,
         rateLimitWaitSeconds: 0,
         drugModeBySession: {},
+        drugSuggestionsBySession: {},
 
         // Actions
         loadMessages: async (sessionId: string) => {
@@ -243,6 +244,10 @@ export const useChatStore = create<ChatStore>()(
               progressPercentage: 0,
               currentProgressStep: isDrugMode ? 'Drug Dataset' : 'Query Rewriting',
               pipelineStartedAt: Date.now(),
+              drugSuggestionsBySession: {
+                ...state.drugSuggestionsBySession,
+                [sessionId]: [],
+              },
               // Update cache immediately
               messageCache: {
                 ...state.messageCache,
@@ -415,6 +420,13 @@ export const useChatStore = create<ChatStore>()(
                       }
                     }
                   })();
+                  } else if (event.type === 'suggestions') {
+                    set((state) => ({
+                      drugSuggestionsBySession: {
+                        ...state.drugSuggestionsBySession,
+                        [sessionId]: event.suggestions || [],
+                      },
+                    }));
                   } else if (event.type === 'error') {
                     isSettled = true;
                     userIdLogger.logError('ChatStore.sendMessage (pipeline error)', event.message || 'Unknown error', currentUserId);
@@ -585,6 +597,24 @@ export const useChatStore = create<ChatStore>()(
             drugModeBySession: {
               ...state.drugModeBySession,
               [sessionId]: enabled,
+            },
+          }));
+        },
+
+        setDrugSuggestionsForSession: (sessionId: string, suggestions: string[]) => {
+          set((state) => ({
+            drugSuggestionsBySession: {
+              ...state.drugSuggestionsBySession,
+              [sessionId]: suggestions,
+            },
+          }));
+        },
+
+        clearDrugSuggestionsForSession: (sessionId: string) => {
+          set((state) => ({
+            drugSuggestionsBySession: {
+              ...state.drugSuggestionsBySession,
+              [sessionId]: [],
             },
           }));
         },

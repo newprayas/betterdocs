@@ -45,6 +45,7 @@ export interface ChatStore {
   isRateLimited: boolean;
   rateLimitWaitSeconds: number;
   drugModeBySession: Record<string, boolean>;
+  drugSuggestionsBySession: Record<string, string[]>;
 
   // Actions
   loadMessages: (sessionId: string) => Promise<void>;
@@ -63,6 +64,8 @@ export interface ChatStore {
   setRateLimitState: (isLimited: boolean, waitSeconds: number) => void;
   recordQuestion: () => void;
   setDrugModeForSession: (sessionId: string, enabled: boolean) => void;
+  setDrugSuggestionsForSession: (sessionId: string, suggestions: string[]) => void;
+  clearDrugSuggestionsForSession: (sessionId: string) => void;
   isDrugModeEnabled: (sessionId: string) => boolean;
 }
 

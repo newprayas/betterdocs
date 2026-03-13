@@ -4,12 +4,13 @@ import type { VectorSearchResult } from '@/types/embedding';
 import type { AppSettings } from '@/types/settings';
 
 export interface ChatStreamEvent {
-  type: 'start' | 'chunk' | 'citation' | 'progress' | 'thinking' | 'end' | 'error' | 'status' | 'textChunk' | 'citations' | 'done';
+  type: 'start' | 'chunk' | 'citation' | 'progress' | 'thinking' | 'end' | 'error' | 'status' | 'textChunk' | 'citations' | 'done' | 'suggestions';
   content?: string;
   citation?: any;
   error?: string;
   message?: string;
   citations?: any[];
+  suggestions?: string[];
   progress?: {
     stage: 'embedding' | 'searching' | 'generating' | 'processing';
     percentage: number;

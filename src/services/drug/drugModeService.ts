@@ -16,6 +16,8 @@ const DRUG_QUERY_PARSER_MODEL = 'llama-3.3-70b-versatile';
 const DRUG_ANSWER_MODEL = 'moonshotai/kimi-k2-instruct-0905';
 const DRUG_PROMPT_LOG_CHUNK_SIZE = 4000;
 const DRUG_NAME_DENYLIST = new Set(['ACE', 'FDA', 'KN.VDN', 'CNS']);
+const VERIFIED_DRUG_NAMES_URL = '/drug/verified-drug-names.txt';
+const DRUG_SUGGESTION_LIMIT = 5;
 
 export const DRUG_DATASET_CONFIG: DrugDatasetConfig = {
   id: 'newdoc_voyage',
@@ -37,6 +39,45 @@ const canonicalizeDrugQueryCase = (value: string): string =>
 
 const escapeRegExp = (value: string): string =>
   value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const normalizeDrugLookupText = (value: string): string =>
+  value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '')
+    .trim();
+
+const isPlausibleDrugName = (value: string): boolean => {
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+  if (/^\d+$/.test(trimmed)) return false;
+  return /[A-Za-z]/.test(trimmed);
+};
+
+const levenshteinDistance = (left: string, right: string): number => {
+  if (left === right) return 0;
+  if (!left) return right.length;
+  if (!right) return left.length;
+
+  const previous = Array.from({ length: right.length + 1 }, (_, index) => index);
+
+  for (let row = 1; row <= left.length; row += 1) {
+    let diagonal = previous[0];
+    previous[0] = row;
+
+    for (let col = 1; col <= right.length; col += 1) {
+      const temp = previous[col];
+      const cost = left[row - 1] === right[col - 1] ? 0 : 1;
+      previous[col] = Math.min(
+        previous[col] + 1,
+        previous[col - 1] + 1,
+        diagonal + cost,
+      );
+      diagonal = temp;
+    }
+  }
+
+  return previous[right.length];
+};
 
 const hasExactPhraseMatch = (text: string, query: string): boolean => {
   const trimmedQuery = query.trim();
@@ -169,6 +210,7 @@ Similarly all other formulation and brand names
 
 export class DrugModeService {
   private indexedDBServices = getIndexedDBServices();
+  private verifiedDrugNamesPromise: Promise<string[]> | null = null;
 
   private validateCatalog(data: unknown): DrugCatalog {
     if (!data || typeof data !== 'object') {
@@ -239,6 +281,34 @@ export class DrugModeService {
     return catalog;
   }
 
+  private async loadVerifiedDrugNames(): Promise<string[]> {
+    if (!this.verifiedDrugNamesPromise) {
+      this.verifiedDrugNamesPromise = fetch(VERIFIED_DRUG_NAMES_URL)
+        .then(async (response) => {
+          if (!response.ok) {
+            throw new Error(`Failed to load verified drug names: ${response.status}`);
+          }
+
+          const text = await response.text();
+          return Array.from(
+            new Set(
+              text
+                .split(/\r?\n/)
+                .map((line) => line.trim())
+                .filter((line) => isPlausibleDrugName(line)),
+            ),
+          );
+        })
+        .catch((error) => {
+          console.warn('[DRUG SUGGESTIONS]', 'Verified drug-name list unavailable', error);
+          this.verifiedDrugNamesPromise = Promise.resolve([]);
+          return [];
+        });
+    }
+
+    return this.verifiedDrugNamesPromise;
+  }
+
   private async parseDrugQuery(content: string): Promise<DrugQueryParseResult> {
     const systemPrompt = `Extract only the single drug or brand name from the user's query.
 Return ONLY valid JSON with this exact shape:
@@ -294,6 +364,21 @@ Rules:
     return false;
   }
 
+  private entryHasExactNormalizedMatch(entry: DrugEntry, query: string): boolean {
+    const normalizedQuery = normalizeDrugLookupText(query);
+    if (!normalizedQuery) return false;
+
+    if (normalizeDrugLookupText(entry.drug_name) === normalizedQuery) return true;
+    if (entry.aliases.some((alias) => normalizeDrugLookupText(alias) === normalizedQuery)) {
+      return true;
+    }
+    if (normalizeDrugLookupText(entry.proprietary_preparations || '').includes(normalizedQuery)) {
+      return true;
+    }
+
+    return false;
+  }
+
   private findTopExactMatch(
     catalog: DrugCatalog,
     parsed: DrugQueryParseResult,
@@ -301,37 +386,108 @@ Rules:
     const query = parsed.drug_name.trim();
     if (!query) return null;
 
-    const validEntries = catalog.entries.filter((entry) => {
-      if (DRUG_NAME_DENYLIST.has(entry.drug_name.trim().toUpperCase())) return false;
-      if (entry.pages.length > 2) return false;
-      return true;
+    const searchableEntries = catalog.entries.filter((entry) => {
+      return !DRUG_NAME_DENYLIST.has(entry.drug_name.trim().toUpperCase());
     });
 
-    const matchingEntries = validEntries.filter((entry) =>
+    const strictMatches = searchableEntries.filter((entry) =>
       this.entryHasExactCaseSensitiveMatch(entry, query),
     );
+
+    const preferredStrictMatches = strictMatches.filter((entry) => entry.pages.length <= 2);
+    const normalizedMatches =
+      strictMatches.length > 0
+        ? []
+        : searchableEntries.filter((entry) => this.entryHasExactNormalizedMatch(entry, query));
+    const preferredNormalizedMatches = normalizedMatches.filter(
+      (entry) => entry.pages.length <= 2,
+    );
+    const finalMatch =
+      preferredStrictMatches[0] ??
+      strictMatches[0] ??
+      preferredNormalizedMatches[0] ??
+      normalizedMatches[0] ??
+      null;
 
     console.log('[DRUG SEARCH]', 'Direct case-sensitive lookup', {
       query,
       confidence: parsed.confidence,
-      candidateCount: matchingEntries.length,
-      topCandidates: matchingEntries.slice(0, 5).map((entry) => ({
+      strictCandidateCount: strictMatches.length,
+      preferredStrictCandidateCount: preferredStrictMatches.length,
+      normalizedCandidateCount: normalizedMatches.length,
+      preferredNormalizedCandidateCount: preferredNormalizedMatches.length,
+      selectedMatch: finalMatch
+        ? {
+            drug_name: finalMatch.drug_name,
+            aliases: finalMatch.aliases,
+            pages: finalMatch.pages,
+          }
+        : null,
+      topCandidates: [...preferredStrictMatches, ...strictMatches, ...preferredNormalizedMatches, ...normalizedMatches]
+        .filter((entry, index, array) => array.findIndex((item) => item.id === entry.id) === index)
+        .slice(0, 5)
+        .map((entry) => ({
         drug_name: entry.drug_name,
         aliases: entry.aliases,
         pages: entry.pages,
       })),
     });
 
-    return matchingEntries[0] ?? null;
+    return finalMatch;
+  }
+
+  private scoreSuggestedDrugName(query: string, candidate: string): number {
+    const normalizedQuery = normalizeDrugLookupText(query);
+    const normalizedCandidate = normalizeDrugLookupText(candidate);
+
+    if (!normalizedQuery || !normalizedCandidate) return Number.NEGATIVE_INFINITY;
+    if (normalizedQuery === normalizedCandidate) return 1000;
+
+    let score = 0;
+
+    if (normalizedCandidate.startsWith(normalizedQuery)) score += 320;
+    if (normalizedQuery.startsWith(normalizedCandidate)) score += 180;
+    if (normalizedCandidate.includes(normalizedQuery)) score += 140;
+
+    const distance = levenshteinDistance(normalizedQuery, normalizedCandidate);
+    score += Math.max(0, 240 - distance * 40);
+    score -= Math.abs(normalizedCandidate.length - normalizedQuery.length) * 5;
+
+    if (normalizedCandidate[0] === normalizedQuery[0]) score += 25;
+
+    return score;
+  }
+
+  private async buildFallbackSuggestions(query: string): Promise<string[]> {
+    const trimmedQuery = query.trim();
+    if (!trimmedQuery) return [];
+
+    const verifiedDrugNames = await this.loadVerifiedDrugNames();
+    const ranked = verifiedDrugNames
+      .map((name) => ({
+        name,
+        score: this.scoreSuggestedDrugName(trimmedQuery, name),
+      }))
+      .filter((candidate) => candidate.score >= 120)
+      .filter((candidate) => normalizeDrugLookupText(candidate.name) !== normalizeDrugLookupText(trimmedQuery))
+      .sort((left, right) => right.score - left.score);
+
+    return ranked
+      .slice(0, DRUG_SUGGESTION_LIMIT)
+      .map((candidate) => candidate.name);
   }
 
   private buildNoMatchMessage(
     content: string,
     parsed: DrugQueryParseResult,
+    suggestions: string[],
   ): string {
     const unmatched = parsed.drug_name.trim() || content;
+    if (suggestions.length === 0) {
+      return `I could not find a matching drug entry for: ${unmatched}. Please check the spelling or ask with the exact generic or brand name.`;
+    }
 
-    return `I could not find a matching drug entry for: ${unmatched}. Please check the spelling or ask with the exact generic or brand name.`;
+    return `I could not find a matching drug entry for: ${unmatched}. Did you mean: ${suggestions.join(', ')}?`;
   }
 
   private async saveAssistantMessage(
@@ -398,11 +554,19 @@ Rules:
       });
 
       if (!match) {
-        const noMatchMessage = this.buildNoMatchMessage(content, parsed);
+        const suggestions = await this.buildFallbackSuggestions(parsed.drug_name);
+        const noMatchMessage = this.buildNoMatchMessage(content, parsed, suggestions);
         console.warn('[DRUG SEARCH]', 'No matching drug entries found', {
           query: content,
           parsed,
+          suggestions,
         });
+        if (suggestions.length > 0) {
+          onStreamEvent?.({
+            type: 'suggestions',
+            suggestions,
+          });
+        }
         await this.saveAssistantMessage(sessionId, noMatchMessage);
         onStreamEvent?.({
           type: 'done',
