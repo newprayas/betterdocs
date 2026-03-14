@@ -65,6 +65,7 @@ type AskDrugBroadIndicationPromptEntry = {
   title: string;
   pages: number[];
   matched_indications: string[];
+  all_indications: string[];
 };
 
 const ASK_DRUG_SYSTEM_PROMPT = `You answer drug questions using ONLY the provided dataset context.
@@ -171,6 +172,7 @@ const ASK_DRUG_BROAD_INDICATION_SYSTEM_PROMPT = `You answer broad drug-indicatio
 The context for this task contains only:
 - drug names
 - matched indication labels
+- all indication labels for the selected drugs
 
 It does NOT contain full dosing details, route details, or full monographs.
 
@@ -179,9 +181,10 @@ Strict rules:
 - Do not infer, add, or guess any dose, route, formulation, frequency, duration, contraindication, or safety detail.
 - Do not provide dosing information.
 - Do not provide route information.
-- Do not expand beyond the matched indication labels shown in context.
-- If a drug is included in context, mention only the matched indication labels provided for that drug.
-- If multiple matched indications exist for one drug, list all of them.
+- Do not expand beyond the indication labels shown in context.
+- If a drug is included in context, use only the indication labels provided for that drug.
+- If both matched indication labels and all indication labels are provided, you may present all indication labels for that selected drug.
+- If multiple indications exist for one drug, list them clearly.
 - Keep the answer focused on which drugs in the dataset match the user's condition.
 - Rank the output from most commonly used / most practical drug first to least commonly used / least practical lower down.
 - Use typical clinical commonness and likely first-line use only for ordering, not for inventing new facts.
@@ -199,7 +202,7 @@ Formatting rules:
 - Present the most commonly used and most practical drugs first.
 - Each bullet should contain:
   - drug name
-  - matched indication label(s) only
+  - the indication label(s) provided in context for that drug
 - Do not create subheadings for routes or doses.
 - Do not rewrite the answer into a monograph.
 
@@ -209,6 +212,7 @@ Preferred format:
 - Paracetamol
   - Pyrexia
   - Pyrexia with discomfort
+  - Post-immunisation pyrexia in infants
 
 - Ibuprofen
   - Pyrexia with discomfort
@@ -817,6 +821,9 @@ Rules:
           ?.split(/\n+/)
           .map((value) => value.trim())
           .filter(Boolean) || [],
+      ),
+      all_indications: this.extractIndicationCandidatesFromSection(
+        this.getSectionText(match.entry, 'indications_and_dose') || '',
       ),
     }));
   }
