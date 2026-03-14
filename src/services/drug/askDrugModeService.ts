@@ -17,7 +17,7 @@ import type { ChatStreamEvent } from '@/services/rag';
 const ASK_DRUG_QUERY_PARSER_MODEL = 'llama-3.3-70b-versatile';
 const ASK_DRUG_ANSWER_MODEL = 'moonshotai/kimi-k2-instruct-0905';
 const ASK_DRUG_PROMPT_LOG_CHUNK_SIZE = 4000;
-const ASK_DRUG_MATCH_LIMIT = 15;
+const ASK_DRUG_MATCH_LIMIT = 25;
 const ASK_DRUG_SUGGESTION_LIMIT = 8;
 const ASK_DRUG_SAFETY_BUNDLE: AskDrugSectionKey[] = [
   'important_safety_information',
@@ -79,7 +79,6 @@ type AskDrugBroadIndicationPromptEntry = {
   title: string;
   pages: number[];
   matched_indications: string[];
-  all_indications: string[];
 };
 
 const ASK_DRUG_SYSTEM_PROMPT = `You answer drug questions using ONLY the provided dataset context.
@@ -186,7 +185,6 @@ const ASK_DRUG_BROAD_INDICATION_SYSTEM_PROMPT = `You answer broad drug-indicatio
 The context for this task contains only:
 - drug names
 - matched indication labels
-- all indication labels for the selected drugs
 
 It does NOT contain full dosing details, route details, or full monographs.
 
@@ -197,7 +195,6 @@ Strict rules:
 - Do not provide route information.
 - Do not expand beyond the indication labels shown in context.
 - If a drug is included in context, use only the indication labels provided for that drug.
-- If both matched indication labels and all indication labels are provided, you may present all indication labels for that selected drug.
 - If multiple indications exist for one drug, list them clearly.
 - Keep the answer focused on which drugs in the dataset match the user's condition.
 - Rank the output from most commonly used / most practical drug first to least commonly used / least practical lower down.
@@ -866,9 +863,6 @@ Rules:
           .split(/\n+/)
           .map((value) => value.trim())
           .filter(Boolean) || [],
-      ),
-      all_indications: this.extractIndicationCandidatesFromSection(
-        this.getSectionText(match.entry, 'indications_and_dose') || '',
       ),
     }));
   }
