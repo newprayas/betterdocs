@@ -51,6 +51,9 @@ const ASK_DRUG_BROAD_TERM_EXPANSIONS: Record<string, string[]> = {
   vomiting: ['vomiting', 'nausea', 'emesis'],
   nausea: ['nausea', 'vomiting', 'emesis'],
   emesis: ['emesis', 'vomiting', 'nausea'],
+  hiccup: ['hiccup', 'hiccups', 'singultus'],
+  hiccups: ['hiccups', 'hiccup', 'singultus'],
+  singultus: ['singultus', 'hiccup', 'hiccups'],
   fever: ['fever', 'pyrexia', 'febrile'],
   pyrexia: ['pyrexia', 'fever', 'febrile'],
   febrile: ['febrile', 'fever', 'pyrexia'],
@@ -268,6 +271,27 @@ const compactField = (value?: string | null): string | undefined => {
 const uniqueStrings = (values: string[]): string[] =>
   values.filter((value, index, array) => array.indexOf(value) === index);
 
+const getSingularPluralVariants = (term: string): string[] => {
+  const normalized = normalizeText(term);
+  if (!normalized || normalized.includes(' ')) {
+    return normalized ? [normalized] : [];
+  }
+
+  const variants = new Set<string>([normalized]);
+
+  if (normalized.endsWith('ies') && normalized.length > 3) {
+    variants.add(`${normalized.slice(0, -3)}y`);
+  } else if (normalized.endsWith('es') && normalized.length > 3) {
+    variants.add(normalized.slice(0, -2));
+  } else if (normalized.endsWith('s') && normalized.length > 2) {
+    variants.add(normalized.slice(0, -1));
+  } else {
+    variants.add(`${normalized}s`);
+  }
+
+  return Array.from(variants).filter(Boolean);
+};
+
 const expandBroadIndicationTerms = (terms: string[]): string[] => {
   const expanded: string[] = [];
 
@@ -275,17 +299,20 @@ const expandBroadIndicationTerms = (terms: string[]): string[] => {
     const normalized = normalizeText(term);
     if (!normalized) continue;
 
-    expanded.push(normalized);
+    const seedTerms = getSingularPluralVariants(normalized);
+    expanded.push(...seedTerms);
 
-    const direct = ASK_DRUG_BROAD_TERM_EXPANSIONS[normalized];
-    if (direct) {
-      expanded.push(...direct);
-      continue;
-    }
+    for (const seed of seedTerms) {
+      const direct = ASK_DRUG_BROAD_TERM_EXPANSIONS[seed];
+      if (direct) {
+        expanded.push(...direct);
+        continue;
+      }
 
-    for (const [key, values] of Object.entries(ASK_DRUG_BROAD_TERM_EXPANSIONS)) {
-      if (normalized.includes(key) || key.includes(normalized)) {
-        expanded.push(...values);
+      for (const [key, values] of Object.entries(ASK_DRUG_BROAD_TERM_EXPANSIONS)) {
+        if (seed.includes(key) || key.includes(seed)) {
+          expanded.push(...values);
+        }
       }
     }
   }
