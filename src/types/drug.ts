@@ -64,6 +64,8 @@ export type AskDrugSectionKey =
   | 'prescribing_and_dispensing_information'
   | 'patient_and_carer_advice';
 
+export type AskDrugRequestedSection = AskDrugSectionKey | 'all_details';
+
 export interface AskDrugEntry {
   title: string;
   source_pdf: string;
@@ -96,7 +98,7 @@ export interface AskDrugCatalog {
 
 export interface AskDrugQueryParseResult {
   drug_name: string;
-  sections: AskDrugSectionKey[];
+  sections: AskDrugRequestedSection[];
   indication_terms: string[];
   confidence: number;
 }

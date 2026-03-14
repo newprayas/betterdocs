@@ -6,6 +6,7 @@ import type {
   AskDrugCatalog,
   AskDrugEntry,
   AskDrugQueryParseResult,
+  AskDrugRequestedSection,
   AskDrugSectionKey,
   DrugDatasetConfig,
   DrugDatasetRecord,
@@ -46,6 +47,23 @@ const ASK_DRUG_ALL_SEARCHABLE_SECTIONS: AskDrugSectionKey[] = [
   'hepatic_impairment',
   'renal_impairment',
   'treatment_cessation',
+];
+const ASK_DRUG_ALL_DETAILS_SECTIONS: AskDrugSectionKey[] = [
+  'indications_and_dose',
+  'important_safety_information',
+  'contra_indications',
+  'cautions',
+  'cautions_further_information',
+  'interactions',
+  'side_effects',
+  'pregnancy',
+  'breast_feeding',
+  'hepatic_impairment',
+  'renal_impairment',
+  'treatment_cessation',
+  'directions_for_administration',
+  'prescribing_and_dispensing_information',
+  'patient_and_carer_advice',
 ];
 const ASK_DRUG_BROAD_TERM_EXPANSIONS: Record<string, string[]> = {
   vomiting: ['vomiting', 'nausea', 'emesis'],
@@ -378,12 +396,24 @@ const logFullPromptText = (label: string, text: string): void => {
   }
 };
 
-const normalizeRequestedSection = (value: string): AskDrugSectionKey | 'safety_bundle' | null => {
+const normalizeRequestedSection = (
+  value: string,
+): AskDrugRequestedSection | 'safety_bundle' | null => {
   const normalized = normalizeText(value)
     .replace(/\s+/g, '_')
     .replace(/__+/g, '_');
 
   switch (normalized) {
+    case 'all_details':
+    case 'details':
+    case 'detail':
+    case 'full_details':
+    case 'full_detail':
+    case 'everything':
+    case 'all_information':
+    case 'full_information':
+    case 'complete_details':
+      return 'all_details';
     case 'indications':
     case 'indication':
     case 'dose':
@@ -433,6 +463,16 @@ const expandSections = (sections: AskDrugSectionKey[]): AskDrugSectionKey[] => {
     }
   }
   return Array.from(new Set(expanded));
+};
+
+const expandRequestedSections = (
+  sections: AskDrugRequestedSection[],
+): AskDrugSectionKey[] => {
+  if (sections.includes('all_details')) {
+    return ASK_DRUG_ALL_DETAILS_SECTIONS;
+  }
+
+  return expandSections(sections as AskDrugSectionKey[]);
 };
 
 const sectionLabel = (section: AskDrugSectionKey): string => {
@@ -557,6 +597,7 @@ Rules:
 - drug_name should be generic if the user clearly asks about a specific generic drug.
 - If there is no drug name, return an empty string.
 - Allowed section values are only:
+  "all_details",
   "indications_and_dose",
   "contra_indications",
   "side_effects",
@@ -567,9 +608,12 @@ Rules:
   "important_safety_information"
 - "Indications" implies "indications_and_dose".
 - "Safety information" implies "important_safety_information".
+- Queries like "details about paracetamol", "full details of paracetamol", "everything about paracetamol", or "tell me about paracetamol" should use ["all_details"] when the user wants the full drug entry.
 - For broad treatment questions without a named drug, extract indication_terms from the clinical intent.
 - Include close clinical synonyms and related medical terms for broad symptom queries when helpful.
 - Examples:
+  - "details about paracetamol" -> drug_name "Paracetamol", sections ["all_details"], indication_terms []
+  - "indications and side effects of paracetamol" -> drug_name "Paracetamol", sections ["indications_and_dose", "side_effects"], indication_terms []
   - "drugs for vomiting" -> ["vomiting", "nausea", "emesis"]
   - "treatment of fever" -> ["fever", "pyrexia", "febrile"]
   - "drugs for itching" -> ["itching", "pruritus"]
@@ -612,9 +656,19 @@ Rules:
       ),
     );
 
+    const normalizedContent = normalizeText(content);
+    const wantsAllDetails =
+      /(?:^|\b)(details|detail|everything|full details|full detail|full information|complete details)\b/.test(normalizedContent) &&
+      Boolean(String(parsed.drug_name || '').trim());
+
     return {
       drug_name: canonicalizeTitleCase(String(parsed.drug_name || '').trim()),
-      sections: mappedSections.length > 0 ? mappedSections : ['indications_and_dose'],
+      sections:
+        wantsAllDetails
+          ? ['all_details']
+          : mappedSections.length > 0
+            ? mappedSections
+            : ['indications_and_dose'],
       indication_terms: expandBroadIndicationTerms(
         (Array.isArray(parsed.indication_terms) ? parsed.indication_terms : [])
           .map((term) => normalizeText(String(term)))
@@ -943,7 +997,10 @@ Rules:
 
       onStreamEvent?.({ type: 'status', message: 'Ask Drug Query Parsing' });
       const parsed = await this.parseQuery(content);
-      const requestedSections = expandSections(parsed.sections);
+      const requestedSections = expandRequestedSections(parsed.sections);
+      const requestedSectionSummary = parsed.sections.includes('all_details')
+        ? 'All available sections'
+        : requestedSections.map(sectionLabel).join(', ');
 
       console.log('[ASK DRUG PARSER]', 'Parsed query JSON', parsed);
 
@@ -977,7 +1034,7 @@ Resolved drug:
 ${match.title}
 
 Requested sections:
-${requestedSections.map(sectionLabel).join(', ')}
+${requestedSectionSummary}
 
 Dataset context:
 ${JSON.stringify(promptContext, null, 2)}`;
