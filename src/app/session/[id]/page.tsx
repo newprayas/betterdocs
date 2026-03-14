@@ -909,33 +909,35 @@ export default function SessionPage() {
 
                 {/* Phrase Pills */}
                 <div className="relative flex-shrink-0 mt-4 max-w-4xl mx-auto w-full">
-                  {!isReadingSources && !isDatasetModeEnabled && (
+                  {!isReadingSources && (
                     <div className="absolute bottom-full right-2 mb-2 z-20 flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={handleSourcesPanelOpen}
-                        onMouseUp={(event) => {
-                          event.currentTarget.blur();
-                        }}
-                        onTouchEnd={(event) => {
-                          event.currentTarget.blur();
-                        }}
-                        className="
-                          sources-scroll-button
-                          inline-flex items-center justify-center
-                          px-3 py-2 sm:px-4 sm:py-2
-                          text-xs sm:text-sm font-medium rounded-full
-                          bg-blue-600 text-white shadow-sm
-                          hover:bg-blue-700 active:bg-blue-700
-                          transition-none
-                          focus:outline-none focus:ring-0 focus:ring-offset-0
-                        "
-                        style={{ WebkitTapHighlightColor: "transparent" }}
-                        aria-label="Manage active sources"
-                        title="Sources"
-                      >
-                        Sources {documentsLoading ? "..." : activeDocumentCount}
-                      </button>
+                      {!isDatasetModeEnabled && (
+                        <button
+                          type="button"
+                          onClick={handleSourcesPanelOpen}
+                          onMouseUp={(event) => {
+                            event.currentTarget.blur();
+                          }}
+                          onTouchEnd={(event) => {
+                            event.currentTarget.blur();
+                          }}
+                          className="
+                            sources-scroll-button
+                            inline-flex items-center justify-center
+                            px-3 py-2 sm:px-4 sm:py-2
+                            text-xs sm:text-sm font-medium rounded-full
+                            bg-blue-600 text-white shadow-sm
+                            hover:bg-blue-700 active:bg-blue-700
+                            transition-none
+                            focus:outline-none focus:ring-0 focus:ring-offset-0
+                          "
+                          style={{ WebkitTapHighlightColor: "transparent" }}
+                          aria-label="Manage active sources"
+                          title="Sources"
+                        >
+                          Sources {documentsLoading ? "..." : activeDocumentCount}
+                        </button>
+                      )}
                       <button
                         type="button"
                         onClick={handleScrollToLatestQuestion}
