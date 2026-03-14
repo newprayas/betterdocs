@@ -47,6 +47,13 @@ export interface DrugQueryParseResult {
   confidence: number;
 }
 
+export type DrugModeRequestedField =
+  | 'indications'
+  | 'cautions'
+  | 'contraindications'
+  | 'side_effects'
+  | 'dose';
+
 export type AskDrugSectionKey =
   | 'indications_and_dose'
   | 'important_safety_information'

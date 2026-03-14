@@ -1,6 +1,12 @@
 #!/usr/bin/env python3
 """
-Extract structured drug entries from all PDFs in a directory.
+Improved structured drug extractor for all PDFs in a directory.
+
+This version adds stricter stop rules to reduce:
+- chapter / section listings leaking into the previous drug
+- page-transition bleed between unrelated sections
+- numbered subsection headers being mistaken for drug content
+- proprietary preparations swallowing the next chapter or drug
 
 Outputs for each matched PDF:
 - <pdf_stem>_drug_catalog.json
@@ -8,8 +14,8 @@ Outputs for each matched PDF:
 - file_mapping.json summary for the whole run
 
 Usage:
-  python3 Scripts/pdf_to_drug_json_bin.py
-  python3 Scripts/pdf_to_drug_json_bin.py "/path/to/folder"
+  python3 Scripts/IMPROVED_pdf_to_drug_json_bin.py
+  python3 Scripts/IMPROVED_pdf_to_drug_json_bin.py "/path/to/folder"
 """
 
 from __future__ import annotations
@@ -46,6 +52,7 @@ SECTION_HEADERS = {
     "notes": "notes",
     "interactions": "notes",
     "proprietary preparations": "proprietary_preparations",
+    "proprietary preparation": "proprietary_preparations",
 }
 
 NON_DRUG_HEADERS = {
@@ -59,19 +66,37 @@ NON_DRUG_HEADERS = {
     "notes",
     "interactions",
     "proprietary preparations",
+    "proprietary preparation",
 }
 
 SECTION_HEADER_NOISE_KEYWORDS = {
     "SYSTEM",
+    "DRUG",
     "DRUGS",
     "ANALGESICS",
-    "ANTI INFLAMMATORY",
-    "ANTI-INFLAMMATORY",
-    "NSAIDS",
-    "PAIN",
-    "NEURALGIC",
-    "NEUROPATHIC",
+    "ANTICOAGULANTS",
+    "ANTIANGINAL",
+    "ANTIHYPERTENSIVE",
+    "RESPIRATORY",
+    "CARDIOVASCULAR",
+    "GASTROINTESTINAL",
+    "NERVOUS",
+    "MENTAL",
+    "HEPARINS",
+    "CHAPTER",
 }
+
+BOUNDARY_SPLIT_PATTERN = re.compile(
+    r"(?=(?:Chapter-\d+\b|\d+\.\s+[A-Z][A-Z][A-Z /&-]{5,}|\d+(?:\.\d+)+\.?\s+[A-Z]))"
+)
+
+CONTENTS_LINE_PATTERN = re.compile(
+    r"^(?:Chapter-\d+\b.*|\d+(?:\.\d+)+\.?\s+.+\bp\.\s*\d+\b.*)$",
+    re.IGNORECASE,
+)
+
+MAJOR_SECTION_PATTERN = re.compile(r"^\d+\.\s+[A-Z][A-Z0-9 /&().' -]{5,}$")
+NUMBERED_SUBSECTION_PATTERN = re.compile(r"^\d+(?:\.\d+)+\.?\s+")
 
 
 def sha256_hex(data: bytes) -> str:
@@ -114,6 +139,32 @@ def normalize_header_token(text: str) -> str:
     return cleaned
 
 
+def split_embedded_boundaries(text: str) -> List[str]:
+    cleaned = normalize_space(text)
+    if not cleaned:
+        return []
+
+    boundaries = [
+        match.start()
+        for match in BOUNDARY_SPLIT_PATTERN.finditer(cleaned)
+        if match.start() > 0
+    ]
+    if not boundaries:
+        return [cleaned]
+
+    parts: List[str] = []
+    start = 0
+    for boundary in boundaries:
+        chunk = normalize_space(cleaned[start:boundary])
+        if chunk:
+            parts.append(chunk)
+        start = boundary
+    final_chunk = normalize_space(cleaned[start:])
+    if final_chunk:
+        parts.append(final_chunk)
+    return parts
+
+
 def remove_inline_page_noise(text: str) -> str:
     cleaned = normalize_space(text)
     pattern = re.compile(r"\d+\.\s+[A-Z][A-Z \-/()]+$")
@@ -147,8 +198,50 @@ def is_likely_page_noise(line: str) -> bool:
     return alpha_letters > 6 and uppercase_ratio > 0.75 and keyword_hit
 
 
+def is_contents_or_listing_line(line: str) -> bool:
+    text = normalize_space(line)
+    if not text:
+        return False
+
+    if CONTENTS_LINE_PATTERN.match(text):
+        return True
+
+    if " p." in text.lower() and len(re.findall(r"\d+(?:\.\d+)+", text)) >= 1:
+        return True
+
+    if text.startswith("Chapter-"):
+        return True
+
+    return False
+
+
+def is_structural_boundary(line: str) -> bool:
+    text = normalize_space(line)
+    if not text:
+        return True
+
+    if is_contents_or_listing_line(text):
+        return True
+
+    if text.startswith("Chapter-"):
+        return True
+
+    if MAJOR_SECTION_PATTERN.fullmatch(text):
+        return True
+
+    stripped = strip_heading_prefix(text)
+    if "SYSTEM" in text and ":" not in text and "," not in text:
+        return True
+
+    if NUMBERED_SUBSECTION_PATTERN.match(text) and "[" not in stripped and "(" not in stripped:
+        return True
+
+    return False
+
+
 def is_drug_heading(line: str) -> bool:
-    text = strip_heading_prefix(line)
+    original = normalize_space(line)
+    text = strip_heading_prefix(original)
     if len(text) < 3 or len(text) > 120:
         return False
     if text.endswith(":"):
@@ -158,6 +251,15 @@ def is_drug_heading(line: str) -> bool:
 
     lowered = text.lower()
     if lowered in NON_DRUG_HEADERS:
+        return False
+
+    if is_contents_or_listing_line(original):
+        return False
+
+    if MAJOR_SECTION_PATTERN.fullmatch(original):
+        return False
+
+    if NUMBERED_SUBSECTION_PATTERN.match(original) and "[" not in text and "(" not in text:
         return False
 
     letters_only = re.sub(r"[^A-Za-z]", "", text)
@@ -197,9 +299,10 @@ def extract_pdf_lines(pdf_path: Path) -> Tuple[List[Dict[str, Any]], int]:
         for page_index, page in enumerate(doc):
             text = page.get_text("text")
             for raw_line in text.splitlines():
-                cleaned = remove_inline_page_noise(raw_line)
-                if cleaned and not is_likely_page_noise(cleaned):
-                    rows.append({"page": page_index + 1, "text": cleaned})
+                for segment in split_embedded_boundaries(raw_line):
+                    cleaned = remove_inline_page_noise(segment)
+                    if cleaned and not is_likely_page_noise(cleaned):
+                        rows.append({"page": page_index + 1, "text": cleaned})
         return rows, len(doc)
     finally:
         doc.close()
@@ -210,11 +313,21 @@ def split_into_blocks(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     current: Optional[Dict[str, Any]] = None
 
     for row in rows:
-        if is_drug_heading(row["text"]):
+        text = normalize_space(row["text"])
+        if not text:
+            continue
+
+        if is_structural_boundary(text):
+            if current and current["lines"]:
+                blocks.append(current)
+            current = None
+            continue
+
+        if is_drug_heading(text):
             if current and current["lines"]:
                 blocks.append(current)
             current = {
-                "heading": strip_heading_prefix(row["text"]),
+                "heading": strip_heading_prefix(text),
                 "pages": [row["page"]],
                 "lines": [],
             }
@@ -223,15 +336,15 @@ def split_into_blocks(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         if current is None:
             continue
 
-        if not current["lines"] and is_heading_continuation(row["text"]):
+        if not current["lines"] and is_heading_continuation(text):
             current["heading"] = normalize_space(
-                f"{current['heading']} {strip_heading_prefix(row['text'])}"
+                f"{current['heading']} {strip_heading_prefix(text)}"
             )
             if row["page"] not in current["pages"]:
                 current["pages"].append(row["page"])
             continue
 
-        current["lines"].append(row["text"])
+        current["lines"].append(text)
         if row["page"] not in current["pages"]:
             current["pages"].append(row["page"])
 
@@ -302,6 +415,20 @@ def classify_section_line(line: str) -> Tuple[List[str], str, bool]:
     return [], stripped, False
 
 
+def sanitize_section_value(text: str) -> Optional[str]:
+    compact = normalize_space(text)
+    if not compact:
+        return None
+
+    if is_contents_or_listing_line(compact):
+        return None
+
+    compact = re.sub(r"(?:Chapter-\d+\b.*)$", "", compact, flags=re.IGNORECASE)
+    compact = re.sub(r"(?:\d+\.\s+[A-Z][A-Z0-9 /&().' -]{5,})$", "", compact)
+    compact = normalize_space(compact)
+    return compact or None
+
+
 def parse_block(block: Dict[str, Any], document_id: str, index: int) -> Optional[Dict[str, Any]]:
     drug_name, aliases = parse_heading(block["heading"])
     if not drug_name:
@@ -324,12 +451,17 @@ def parse_block(block: Dict[str, Any], document_id: str, index: int) -> Optional
         line = remove_inline_page_noise(line)
         if not line or is_likely_page_noise(line):
             continue
+        if is_structural_boundary(line):
+            break
+
         section_keys, remainder, consumed = classify_section_line(line)
         if section_keys:
             current_sections = section_keys
             if remainder:
-                for key in current_sections:
-                    sections[key].append(remainder)
+                cleaned_remainder = sanitize_section_value(remainder)
+                if cleaned_remainder:
+                    for key in current_sections:
+                        sections[key].append(cleaned_remainder)
             raw_lines.append(line)
             continue
 
@@ -337,9 +469,13 @@ def parse_block(block: Dict[str, Any], document_id: str, index: int) -> Optional
             raw_lines.append(line)
             continue
 
+        cleaned_line = sanitize_section_value(line)
+        if not cleaned_line:
+            continue
+
         for key in current_sections:
-            sections[key].append(line)
-        raw_lines.append(line)
+            sections[key].append(cleaned_line)
+        raw_lines.append(cleaned_line)
 
     has_key_sections = any(
         sections[key]
@@ -425,7 +561,7 @@ def process_pdf(
             "filename": pdf_path.name,
             "page_count": page_count,
             "generated_at": datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z"),
-            "source_system": "LocalDocs AI Drug Extractor",
+            "source_system": "LocalDocs AI Drug Extractor (Improved Boundaries)",
         },
         "entries": entries,
     }

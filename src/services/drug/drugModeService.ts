@@ -6,6 +6,7 @@ import type {
   DrugDatasetConfig,
   DrugDatasetRecord,
   DrugEntry,
+  DrugModeRequestedField,
   DrugQueryParseResult,
   MessageCreate,
 } from '@/types';
@@ -19,11 +20,20 @@ const DRUG_NAME_DENYLIST = new Set(['ACE', 'FDA', 'KN.VDN', 'CNS']);
 const VERIFIED_DRUG_NAMES_URL = '/drug/verified-drug-names.txt';
 const DRUG_SUGGESTION_LIMIT = 8;
 const PREFERRED_MAX_PAGE_COUNT = 4;
+const DRUG_BRAND_RESULT_LIMIT = 5;
+const PREFERRED_BRAND_COMPANIES = [
+  'square',
+  'incepta',
+  'healthcare',
+  'opsonin',
+  'beximco',
+  'aristopharma',
+];
 
 export const DRUG_DATASET_CONFIG: DrugDatasetConfig = {
   id: 'newdoc_voyage',
   name: 'BD prescription',
-  filename: 'shard_4g1.bin',
+  filename: 'shard_9p5.bin',
   size: '2.9 MB',
 };
 
@@ -46,6 +56,16 @@ const normalizeDrugLookupText = (value: string): string =>
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '')
     .trim();
+
+const stripDrugNameQualifiers = (value: string): string =>
+  value
+    .replace(/\[[^\]]*\]/g, ' ')
+    .replace(/\([^)]+\)$/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const normalizeDrugIdentity = (value: string): string =>
+  normalizeDrugLookupText(stripDrugNameQualifiers(value));
 
 const isPlausibleDrugName = (value: string): boolean => {
   const trimmed = value.trim();
@@ -116,23 +136,43 @@ const compactField = (value?: string): string | undefined => {
   return compact || undefined;
 };
 
-const stringifyEntryForPrompt = (entry: DrugEntry): string =>
-  JSON.stringify(
-    {
-      drug_name: entry.drug_name,
-      aliases: entry.aliases,
-      pages: entry.pages,
-      indications: compactField(entry.indications),
-      cautions: compactField(entry.cautions),
-      contraindications: compactField(entry.contraindications),
-      side_effects: compactField(entry.side_effects),
-      dose: compactField(entry.dose),
-      notes: compactField(entry.notes),
-      proprietary_preparations: compactField(entry.proprietary_preparations),
-    },
-    null,
-    2,
-  );
+const uniqueStrings = (values: Array<string | undefined | null>): string[] => {
+  const seen = new Set<string>();
+  const result: string[] = [];
+
+  for (const value of values) {
+    const compact = compactField(value || undefined);
+    if (!compact) continue;
+    const normalized = compact.toLowerCase();
+    if (seen.has(normalized)) continue;
+    seen.add(normalized);
+    result.push(compact);
+  }
+
+  return result;
+};
+
+const cleanDrugDisplayName = (value: string): string =>
+  canonicalizeDrugQueryCase(value.replace(/\[[^\]]*]/g, ' ').replace(/\s+/g, ' ').trim());
+
+type DrugModeAnswerKind = 'sectional' | 'dose_with_brands';
+
+interface DrugModeIntent {
+  requestedFields: DrugModeRequestedField[];
+  answerKind: DrugModeAnswerKind;
+  needsBrands: boolean;
+}
+
+interface ParsedProprietaryPreparation {
+  brand_name: string;
+  company_name: string;
+  display_name: string;
+  details: string;
+  is_combination: boolean;
+}
+
+const stringifyEntryForPrompt = (entry: Record<string, unknown>): string =>
+  JSON.stringify(entry, null, 2);
 
 const logFullPromptText = (label: string, text: string): void => {
   const chunkCount = Math.max(1, Math.ceil(text.length / DRUG_PROMPT_LOG_CHUNK_SIZE));
@@ -156,8 +196,9 @@ const DRUG_MODE_SYSTEM_PROMPT_TEMPLATE = `For this question :
 All the brand names (this and alternate) with dosing schedule for the drug for each indication separately according to drug formulation, and indication with price data for the DRUG : {{DRUG_NAME}} (which is taken from the output of query parser)
 
 [ie; all brands of the generic drug in the context]
-[prioritize these brand names, Square, Incepta, Healthcare, Opsosin, Beximco, Aristopharma]
+[the app has already filtered and prioritized these brand names when available: Square, Incepta, Healthcare, Opsonin, Beximco, Aristopharma]
 [Avoid duplication - if dosing is calculated for same form, and same strength ot one brand, NO need to give dosing for another brands of same dose and strength]
+[Use ONLY the filtered proprietary brand entries provided in context. Do not invent extra brands.]
 
 [IMPORTANT : Dosing information is usually given in this format : 🔴 You have to CALULATE the DOSING SCHDULE form the dosing Information below like this BASED on the DRUG dose and form (tab, or injfeciton or syrp etc) - YOU have to calculate it)
 Example :
@@ -211,6 +252,24 @@ And so on ..
 Similarly all other formulation and brand names
 
 [ALL answers should be in bullet point and neatly formatted]`;
+
+const DRUG_MODE_SECTION_SYSTEM_PROMPT = `You answer drug questions using ONLY the provided structured drug context.
+
+Rules:
+- Use only the fields provided in the context.
+- Answer only the requested section(s).
+- Do not add brand names, prices, or dosing unless those fields are explicitly provided in the context.
+- Do not use outside knowledge.
+- If a requested field is missing or empty, say "Not found in provided drug dataset."
+- Keep the answer clean and direct.
+
+Formatting:
+- Use the matched generic drug name as the main heading.
+- Use a section heading for each requested section.
+- Use bullet points or short paragraphs under each section.
+- If only indications are requested, return only the indications section.
+- If indications and side-effects are requested, return both, separately.
+`;
 
 export class DrugModeService {
   private indexedDBServices = getIndexedDBServices();
@@ -359,30 +418,249 @@ Rules:
     return safeParsed;
   }
 
+  private analyzeDrugQueryIntent(content: string): DrugModeIntent {
+    const normalized = content.toLowerCase();
+    const requestedFields: DrugModeRequestedField[] = [];
+
+    const addField = (field: DrugModeRequestedField): void => {
+      if (!requestedFields.includes(field)) {
+        requestedFields.push(field);
+      }
+    };
+
+    if (/\bindications?\b/.test(normalized)) addField('indications');
+    if (/\bside[\s-]?effects?\b|\badverse\s+effects?\b|\badverse\s+reactions?\b/.test(normalized)) {
+      addField('side_effects');
+    }
+    if (/\bcautions?\b/.test(normalized)) addField('cautions');
+    if (/\bcontra[\s-]?indications?\b/.test(normalized)) addField('contraindications');
+
+    const doseRequested =
+      /\b(dose|doses|dosage|dosing|schedule|regimen|strength|how much|how many|brands?|price|prices|cost|costs|tab(?:let)?s?|caps?(?:ule)?s?|syrup|susp(?:ension)?|drops?|supp(?:ository|ositories)?|injection|injectable|inj|infusion|iv|im|sc)\b/.test(
+        normalized,
+      );
+
+    if (doseRequested) {
+      addField('indications');
+      addField('dose');
+    }
+
+    if (requestedFields.length === 0) {
+      return {
+        requestedFields: ['indications', 'dose'],
+        answerKind: 'dose_with_brands',
+        needsBrands: true,
+      };
+    }
+
+    return {
+      requestedFields,
+      answerKind: doseRequested ? 'dose_with_brands' : 'sectional',
+      needsBrands: doseRequested,
+    };
+  }
+
+  private getFieldValue(entry: DrugEntry, field: DrugModeRequestedField): string | undefined {
+    switch (field) {
+      case 'indications':
+        return compactField(entry.indications);
+      case 'cautions':
+        return compactField(entry.cautions);
+      case 'contraindications':
+        return compactField(entry.contraindications);
+      case 'side_effects':
+        return compactField(entry.side_effects);
+      case 'dose':
+        return compactField(entry.dose);
+      default:
+        return undefined;
+    }
+  }
+
+  private getFieldLabel(field: DrugModeRequestedField): string {
+    switch (field) {
+      case 'indications':
+        return 'Indications';
+      case 'cautions':
+        return 'Cautions';
+      case 'contraindications':
+        return 'Contraindications';
+      case 'side_effects':
+        return 'Side effects';
+      case 'dose':
+        return 'Dose';
+      default:
+        return field;
+    }
+  }
+
+  private extractBrandCandidate(
+    proprietaryText: string,
+    companyStartIndex: number,
+  ): { brandName: string; brandStart: number } | null {
+    const prefixStart = Math.max(0, companyStartIndex - 80);
+    const prefix = proprietaryText.slice(prefixStart, companyStartIndex);
+    const brandMatch = prefix.match(/([A-Z][A-Za-z][A-Za-z .+'&\/-]{0,50})\s*$/);
+    let brandName = brandMatch?.[1]?.replace(/\s+/g, ' ').trim() || '';
+    if (!brandName) return null;
+
+    const dosagePrefix = brandName.match(
+      /^(?:Tab(?:let)?\.?|Cap(?:sule)?\.?|Inj(?:ection)?\.?|Syrup|Suspn?\.?|Supp\.?|Paed\.?\s*drops?|Paed\.?\s*drop|Drops?)\s+/i,
+    );
+    let brandStart = prefixStart + (brandMatch?.index || 0);
+    if (dosagePrefix) {
+      brandName = brandName.slice(dosagePrefix[0].length).trim();
+      brandStart += dosagePrefix[0].length;
+    }
+
+    if (!/[A-Za-z]{2,}/.test(brandName)) return null;
+    return { brandName, brandStart };
+  }
+
+  private parseProprietaryPreparations(entry: DrugEntry): ParsedProprietaryPreparation[] {
+    const proprietaryText = entry.proprietary_preparations || '';
+    if (!proprietaryText.trim()) return [];
+
+    const companyPattern = /\(([A-Za-z][A-Za-z0-9.&'\/ -]{1,60})\)/g;
+    const headers: Array<{
+      brandName: string;
+      companyName: string;
+      brandStart: number;
+      companyEnd: number;
+      contextBefore: string;
+    }> = [];
+
+    let match: RegExpExecArray | null;
+    while ((match = companyPattern.exec(proprietaryText)) !== null) {
+      const companyName = compactField(match[1]);
+      if (!companyName) continue;
+
+      const extracted = this.extractBrandCandidate(proprietaryText, match.index);
+      if (!extracted) continue;
+
+      headers.push({
+        brandName: extracted.brandName,
+        companyName,
+        brandStart: extracted.brandStart,
+        companyEnd: match.index + match[0].length,
+        contextBefore: proprietaryText.slice(Math.max(0, extracted.brandStart - 120), extracted.brandStart),
+      });
+    }
+
+    return headers
+      .map((header, index) => {
+        const nextBrandStart = headers[index + 1]?.brandStart ?? proprietaryText.length;
+        const details = compactField(
+          proprietaryText
+            .slice(header.companyEnd, nextBrandStart)
+            .replace(/^[,;.\s]+/, '')
+            .replace(
+              /\s+[A-Za-z][A-Za-z0-9 ]+\d+(?:\.\d+)?\s*(?:mg|g|ml|mcg|micrograms?)\s*\+\s*[A-Za-z][A-Za-z0-9 ]+\d+(?:\.\d+)?\s*(?:mg|g|ml|mcg|micrograms?)\s*$/i,
+              '',
+            )
+            .replace(/[;,\s]+$/, ''),
+        );
+
+        if (!details) return null;
+
+        const isCombination =
+          /\+\s*[A-Za-z]/.test(header.contextBefore) ||
+          /\b\d+(?:\.\d+)?\s*(?:mg|g|ml|mcg|micrograms?)\b[^.]{0,40}\+\s*[A-Za-z]/i.test(
+            header.contextBefore,
+          );
+
+        return {
+          brand_name: header.brandName,
+          company_name: header.companyName,
+          display_name: `${header.brandName} (${header.companyName})`,
+          details,
+          is_combination: isCombination,
+        } satisfies ParsedProprietaryPreparation;
+      })
+      .filter((value): value is ParsedProprietaryPreparation => Boolean(value));
+  }
+
+  private selectPreferredBrandEntries(entry: DrugEntry): ParsedProprietaryPreparation[] {
+    const parsedBrands = this.parseProprietaryPreparations(entry);
+    if (parsedBrands.length === 0) return [];
+
+    const nonCombination = parsedBrands.filter((brand) => !brand.is_combination);
+    const pool = nonCombination.length > 0 ? nonCombination : parsedBrands;
+    const preferred = pool.filter((brand) =>
+      PREFERRED_BRAND_COMPANIES.includes(normalizeDrugLookupText(brand.company_name)),
+    );
+    const others = pool.filter(
+      (brand) => !PREFERRED_BRAND_COMPANIES.includes(normalizeDrugLookupText(brand.company_name)),
+    );
+
+    return [...preferred, ...others].slice(0, DRUG_BRAND_RESULT_LIMIT);
+  }
+
+  private buildSectionPromptContext(entry: DrugEntry, intent: DrugModeIntent): Record<string, unknown> {
+    const requestedSections = intent.requestedFields.map((field) => this.getFieldLabel(field));
+    const sections = Object.fromEntries(
+      intent.requestedFields.map((field) => [
+        field,
+        this.getFieldValue(entry, field) ?? 'Not found in provided drug dataset.',
+      ]),
+    );
+
+    return {
+      generic_name: cleanDrugDisplayName(entry.drug_name),
+      aliases: uniqueStrings(entry.aliases),
+      pages: entry.pages,
+      requested_sections: requestedSections,
+      sections,
+    };
+  }
+
+  private buildDosePromptContext(entry: DrugEntry): Record<string, unknown> {
+    return {
+      generic_name: cleanDrugDisplayName(entry.drug_name),
+      aliases: uniqueStrings(entry.aliases),
+      pages: entry.pages,
+      indications: compactField(entry.indications),
+      dose: compactField(entry.dose),
+      filtered_proprietary_preparations: this.selectPreferredBrandEntries(entry),
+      notes: compactField(entry.notes),
+    };
+  }
+
   private entryHasExactCaseSensitiveMatch(entry: DrugEntry, query: string): boolean {
     const trimmedQuery = query.trim();
     if (!trimmedQuery) return false;
 
-    if (entry.drug_name.trim() === trimmedQuery) return true;
-    if (entry.aliases.some((alias) => alias.trim() === trimmedQuery)) return true;
-    if (hasExactPhraseMatch(entry.proprietary_preparations || '', trimmedQuery)) return true;
+    const cleanedQuery = stripDrugNameQualifiers(trimmedQuery);
+    if (stripDrugNameQualifiers(entry.drug_name.trim()) === cleanedQuery) return true;
+    if (entry.aliases.some((alias) => stripDrugNameQualifiers(alias.trim()) === cleanedQuery)) {
+      return true;
+    }
 
     return false;
   }
 
   private entryHasExactNormalizedMatch(entry: DrugEntry, query: string): boolean {
-    const normalizedQuery = normalizeDrugLookupText(query);
+    const normalizedQuery = normalizeDrugIdentity(query);
     if (!normalizedQuery) return false;
 
-    if (normalizeDrugLookupText(entry.drug_name) === normalizedQuery) return true;
-    if (entry.aliases.some((alias) => normalizeDrugLookupText(alias) === normalizedQuery)) {
-      return true;
-    }
-    if (normalizeDrugLookupText(entry.proprietary_preparations || '').includes(normalizedQuery)) {
+    if (normalizeDrugIdentity(entry.drug_name) === normalizedQuery) return true;
+    if (entry.aliases.some((alias) => normalizeDrugIdentity(alias) === normalizedQuery)) {
       return true;
     }
 
     return false;
+  }
+
+  private entryHasProprietaryPhraseMatch(entry: DrugEntry, query: string): boolean {
+    const trimmedQuery = query.trim();
+    if (!trimmedQuery) return false;
+    return hasExactPhraseMatch(entry.proprietary_preparations || '', trimmedQuery);
+  }
+
+  private entryHasProprietaryNormalizedMatch(entry: DrugEntry, query: string): boolean {
+    const normalizedQuery = normalizeDrugLookupText(query);
+    if (!normalizedQuery) return false;
+    return normalizeDrugLookupText(entry.proprietary_preparations || '').includes(normalizedQuery);
   }
 
   private findTopExactMatch(
@@ -410,11 +688,21 @@ Rules:
     const preferredNormalizedMatches = normalizedMatches.filter(
       (entry) => entry.pages.length <= PREFERRED_MAX_PAGE_COUNT,
     );
+    const proprietaryStrictMatches =
+      strictMatches.length > 0 || normalizedMatches.length > 0
+        ? []
+        : searchableEntries.filter((entry) => this.entryHasProprietaryPhraseMatch(entry, query));
+    const proprietaryNormalizedMatches =
+      strictMatches.length > 0 || normalizedMatches.length > 0 || proprietaryStrictMatches.length > 0
+        ? []
+        : searchableEntries.filter((entry) => this.entryHasProprietaryNormalizedMatch(entry, query));
     const finalMatch =
       preferredStrictMatches[0] ??
       strictMatches[0] ??
       preferredNormalizedMatches[0] ??
       normalizedMatches[0] ??
+      proprietaryStrictMatches[0] ??
+      proprietaryNormalizedMatches[0] ??
       null;
 
     console.log('[DRUG SEARCH]', 'Direct case-sensitive lookup', {
@@ -424,6 +712,8 @@ Rules:
       preferredStrictCandidateCount: preferredStrictMatches.length,
       normalizedCandidateCount: normalizedMatches.length,
       preferredNormalizedCandidateCount: preferredNormalizedMatches.length,
+      proprietaryStrictCandidateCount: proprietaryStrictMatches.length,
+      proprietaryNormalizedCandidateCount: proprietaryNormalizedMatches.length,
       selectedMatch: finalMatch
         ? {
             drug_name: finalMatch.drug_name,
@@ -431,7 +721,14 @@ Rules:
             pages: finalMatch.pages,
           }
         : null,
-      topCandidates: [...preferredStrictMatches, ...strictMatches, ...preferredNormalizedMatches, ...normalizedMatches]
+      topCandidates: [
+        ...preferredStrictMatches,
+        ...strictMatches,
+        ...preferredNormalizedMatches,
+        ...normalizedMatches,
+        ...proprietaryStrictMatches,
+        ...proprietaryNormalizedMatches,
+      ]
         .filter((entry, index, array) => array.findIndex((item) => item.id === entry.id) === index)
         .slice(0, 5)
         .map((entry) => ({
@@ -550,6 +847,7 @@ Rules:
         message: 'Drug Query Parsing',
       });
       const parsed = await this.parseDrugQuery(content);
+      const intent = this.analyzeDrugQueryIntent(content);
 
       onStreamEvent?.({
         type: 'status',
@@ -560,6 +858,8 @@ Rules:
       console.log('[DRUG SEARCH]', 'Final matched entries', {
         requestedDrug: parsed.drug_name,
         matchedEntry: match?.drug_name ?? null,
+        requestedFields: intent.requestedFields,
+        answerKind: intent.answerKind,
       });
 
       if (!match) {
@@ -589,16 +889,28 @@ Rules:
         message: 'Drug Answer Generation',
       });
 
+      const resolvedDrugName = cleanDrugDisplayName(match.drug_name);
+      const promptContext =
+        intent.answerKind === 'dose_with_brands'
+          ? this.buildDosePromptContext(match)
+          : this.buildSectionPromptContext(match, intent);
+
       const prompt = `User question:
 ${content}
 
 Extracted drug name:
 ${parsed.drug_name}
 
-Matched drug entry:
-${stringifyEntryForPrompt(match)}`;
+Resolved generic drug:
+${resolvedDrugName}
 
-      const systemPrompt = this.buildDrugAnswerSystemPrompt(parsed.drug_name.trim());
+Matched drug entry:
+${stringifyEntryForPrompt(promptContext)}`;
+
+      const systemPrompt =
+        intent.answerKind === 'dose_with_brands'
+          ? this.buildDrugAnswerSystemPrompt(resolvedDrugName)
+          : DRUG_MODE_SECTION_SYSTEM_PROMPT;
 
       logFullPromptText('[DRUG ANSWER PROMPT][SYSTEM]', systemPrompt);
       logFullPromptText('[DRUG ANSWER PROMPT][USER]', prompt);
