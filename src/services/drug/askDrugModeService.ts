@@ -47,6 +47,20 @@ const ASK_DRUG_ALL_SEARCHABLE_SECTIONS: AskDrugSectionKey[] = [
   'renal_impairment',
   'treatment_cessation',
 ];
+const ASK_DRUG_BROAD_TERM_EXPANSIONS: Record<string, string[]> = {
+  vomiting: ['vomiting', 'nausea', 'emesis'],
+  nausea: ['nausea', 'vomiting', 'emesis'],
+  emesis: ['emesis', 'vomiting', 'nausea'],
+  fever: ['fever', 'pyrexia', 'febrile'],
+  pyrexia: ['pyrexia', 'fever', 'febrile'],
+  febrile: ['febrile', 'fever', 'pyrexia'],
+  itching: ['itching', 'pruritus'],
+  itch: ['itch', 'itching', 'pruritus'],
+  pruritus: ['pruritus', 'itching'],
+  breathlessness: ['breathlessness', 'dyspnoea', 'shortness of breath'],
+  dyspnoea: ['dyspnoea', 'breathlessness', 'shortness of breath'],
+  'shortness of breath': ['shortness of breath', 'breathlessness', 'dyspnoea'],
+};
 
 export const ASK_DRUG_DATASET_CONFIG: DrugDatasetConfig = {
   id: 'drug_sections_bnf',
@@ -256,6 +270,31 @@ const compactField = (value?: string | null): string | undefined => {
 
 const uniqueStrings = (values: string[]): string[] =>
   values.filter((value, index, array) => array.indexOf(value) === index);
+
+const expandBroadIndicationTerms = (terms: string[]): string[] => {
+  const expanded: string[] = [];
+
+  for (const term of terms) {
+    const normalized = normalizeText(term);
+    if (!normalized) continue;
+
+    expanded.push(normalized);
+
+    const direct = ASK_DRUG_BROAD_TERM_EXPANSIONS[normalized];
+    if (direct) {
+      expanded.push(...direct);
+      continue;
+    }
+
+    for (const [key, values] of Object.entries(ASK_DRUG_BROAD_TERM_EXPANSIONS)) {
+      if (normalized.includes(key) || key.includes(normalized)) {
+        expanded.push(...values);
+      }
+    }
+  }
+
+  return uniqueStrings(expanded.map((term) => normalizeText(term)).filter(Boolean));
+};
 
 const extractJsonObject = <T>(raw: string): T => {
   const trimmed = raw.trim();
@@ -504,7 +543,15 @@ Rules:
   "important_safety_information"
 - "Indications" implies "indications_and_dose".
 - "Safety information" implies "important_safety_information".
-- For broad treatment questions without a named drug, extract indication_terms from the clinical intent, such as "pain", "pyrexia", "cough".
+- For broad treatment questions without a named drug, extract indication_terms from the clinical intent.
+- Include close clinical synonyms and related medical terms for broad symptom queries when helpful.
+- Examples:
+  - "drugs for vomiting" -> ["vomiting", "nausea", "emesis"]
+  - "treatment of fever" -> ["fever", "pyrexia", "febrile"]
+  - "drugs for itching" -> ["itching", "pruritus"]
+  - "drugs for breathlessness" -> ["breathlessness", "dyspnoea", "shortness of breath"]
+  - "drugs for cough" -> ["cough"]
+- Use only close clinical synonyms, not broad related concepts.
 - If the user names a drug but does not name a section, default sections to ["indications_and_dose"].
 - Do not include any text outside JSON.`;
 
@@ -544,12 +591,10 @@ Rules:
     return {
       drug_name: canonicalizeTitleCase(String(parsed.drug_name || '').trim()),
       sections: mappedSections.length > 0 ? mappedSections : ['indications_and_dose'],
-      indication_terms: Array.from(
-        new Set(
-          (Array.isArray(parsed.indication_terms) ? parsed.indication_terms : [])
-            .map((term) => normalizeText(String(term)))
-            .filter(Boolean),
-        ),
+      indication_terms: expandBroadIndicationTerms(
+        (Array.isArray(parsed.indication_terms) ? parsed.indication_terms : [])
+          .map((term) => normalizeText(String(term)))
+          .filter(Boolean),
       ),
       confidence:
         typeof parsed.confidence === 'number'
@@ -817,8 +862,8 @@ Rules:
       title: match.entry.title,
       pages: match.entry.pages,
       matched_indications: uniqueStrings(
-        compactField(match.matchedSections.indications_and_dose)
-          ?.split(/\n+/)
+        (match.matchedSections.indications_and_dose || '')
+          .split(/\n+/)
           .map((value) => value.trim())
           .filter(Boolean) || [],
       ),
