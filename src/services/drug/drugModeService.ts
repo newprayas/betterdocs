@@ -198,6 +198,8 @@ interface DrugSearchCandidates {
   preferredStrictMatches: DrugEntry[];
   normalizedMatches: DrugEntry[];
   preferredNormalizedMatches: DrugEntry[];
+  fuzzyTitleMatches: DrugEntry[];
+  preferredFuzzyTitleMatches: DrugEntry[];
   proprietaryStrictMatches: DrugEntry[];
   proprietaryNormalizedMatches: DrugEntry[];
 }
@@ -840,6 +842,17 @@ Rules:
     return false;
   }
 
+  private entryHasFuzzyTitleMatch(entry: DrugEntry, query: string): boolean {
+    const normalizedQuery = normalizeDrugIdentity(query);
+    if (normalizedQuery.length < 5) return false;
+
+    const candidates = [entry.drug_name, ...entry.aliases].map((value) => normalizeDrugIdentity(value));
+    return candidates.some((candidate) => {
+      if (!candidate || candidate.length < 5) return false;
+      return candidate.includes(normalizedQuery) || normalizedQuery.includes(candidate);
+    });
+  }
+
   private entryHasProprietaryPhraseMatch(entry: DrugEntry, query: string): boolean {
     const trimmedQuery = query.trim();
     if (!trimmedQuery) return false;
@@ -863,6 +876,8 @@ Rules:
         preferredStrictMatches: [],
         normalizedMatches: [],
         preferredNormalizedMatches: [],
+        fuzzyTitleMatches: [],
+        preferredFuzzyTitleMatches: [],
         proprietaryStrictMatches: [],
         proprietaryNormalizedMatches: [],
       };
@@ -886,12 +901,22 @@ Rules:
     const preferredNormalizedMatches = normalizedMatches.filter(
       (entry) => entry.pages.length <= PREFERRED_MAX_PAGE_COUNT,
     );
-    const proprietaryStrictMatches =
+    const fuzzyTitleMatches =
       strictMatches.length > 0 || normalizedMatches.length > 0
+        ? []
+        : searchableEntries.filter((entry) => this.entryHasFuzzyTitleMatch(entry, query));
+    const preferredFuzzyTitleMatches = fuzzyTitleMatches.filter(
+      (entry) => entry.pages.length <= PREFERRED_MAX_PAGE_COUNT,
+    );
+    const proprietaryStrictMatches =
+      strictMatches.length > 0 || normalizedMatches.length > 0 || fuzzyTitleMatches.length > 0
         ? []
         : searchableEntries.filter((entry) => this.entryHasProprietaryPhraseMatch(entry, query));
     const proprietaryNormalizedMatches =
-      strictMatches.length > 0 || normalizedMatches.length > 0 || proprietaryStrictMatches.length > 0
+      strictMatches.length > 0 ||
+      normalizedMatches.length > 0 ||
+      fuzzyTitleMatches.length > 0 ||
+      proprietaryStrictMatches.length > 0
         ? []
         : searchableEntries.filter((entry) => this.entryHasProprietaryNormalizedMatch(entry, query));
 
@@ -900,6 +925,8 @@ Rules:
       preferredStrictMatches,
       normalizedMatches,
       preferredNormalizedMatches,
+      fuzzyTitleMatches,
+      preferredFuzzyTitleMatches,
       proprietaryStrictMatches,
       proprietaryNormalizedMatches,
     };
@@ -915,6 +942,8 @@ Rules:
       candidates.strictMatches,
       candidates.preferredNormalizedMatches,
       candidates.normalizedMatches,
+      candidates.preferredFuzzyTitleMatches,
+      candidates.fuzzyTitleMatches,
       candidates.proprietaryStrictMatches,
       candidates.proprietaryNormalizedMatches,
     ];
@@ -947,6 +976,8 @@ Rules:
       preferredStrictCandidateCount: candidates.preferredStrictMatches.length,
       normalizedCandidateCount: candidates.normalizedMatches.length,
       preferredNormalizedCandidateCount: candidates.preferredNormalizedMatches.length,
+      fuzzyTitleCandidateCount: candidates.fuzzyTitleMatches.length,
+      preferredFuzzyTitleCandidateCount: candidates.preferredFuzzyTitleMatches.length,
       proprietaryStrictCandidateCount: candidates.proprietaryStrictMatches.length,
       proprietaryNormalizedCandidateCount: candidates.proprietaryNormalizedMatches.length,
       selectedMatchCount: topMatches.length,
@@ -962,6 +993,8 @@ Rules:
         ...candidates.strictMatches,
         ...candidates.preferredNormalizedMatches,
         ...candidates.normalizedMatches,
+        ...candidates.preferredFuzzyTitleMatches,
+        ...candidates.fuzzyTitleMatches,
         ...candidates.proprietaryStrictMatches,
         ...candidates.proprietaryNormalizedMatches,
       ]

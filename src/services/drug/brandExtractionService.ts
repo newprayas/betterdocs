@@ -85,9 +85,13 @@ Important dosing behavior:
 
 Formatting rules:
 - Start each generic with a heading in this style:
-  - PANTOPRAZOLE - Generic : Pantoprazole
+  - **✅ PANTOPRAZOLE**
+  - Generic : Pantoprazole
 - Then write:
   - Brands and dose
+- You must include every formulation that is present in the provided filtered proprietary brand data for that generic.
+- Do not stop after one formulation if tablets, capsules, injections, syrup, suspension, drops, suppositories, gels, or other forms are present in the context.
+- Group all brands under their correct formulation headings.
 - Formulation headers must be bold and uppercase, for example:
   - **TABLET**
   - **SYRUP**
@@ -104,7 +108,8 @@ Formatting rules:
 - Keep the answer neat and compact, but do not skip useful dosing lines when they can be derived from the context.
 
 Reference style example:
-PANTOPRAZOLE - Generic : Pantoprazole
+**✅ PANTOPRAZOLE**
+Generic : Pantoprazole
 
 Brands and dose
 
@@ -185,7 +190,8 @@ const buildNoBrandLookupSections = (
   for (const result of foundWithoutBrands) {
     lines.push(
       '',
-      `### ${result.resolved_generic_name}`,
+      `**✅ ${result.resolved_generic_name}**`,
+      `Generic : ${result.resolved_generic_name}`,
       'No matching brand entry found in BD prescription dataset.',
     );
 
@@ -201,7 +207,8 @@ const buildNoBrandLookupSections = (
   for (const drugName of missing) {
     lines.push(
       '',
-      `### ${drugName}`,
+      `**✅ ${drugName}**`,
+      `Generic : ${drugName}`,
       'No matching brand entry found in BD prescription dataset.',
     );
   }
