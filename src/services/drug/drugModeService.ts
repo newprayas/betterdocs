@@ -156,12 +156,45 @@ const uniqueStrings = (values: Array<string | undefined | null>): string[] => {
 const cleanDrugDisplayName = (value: string): string =>
   canonicalizeDrugQueryCase(value.replace(/\[[^\]]*]/g, ' ').replace(/\s+/g, ' ').trim());
 
+const dedupeDrugEntries = (entries: DrugEntry[]): DrugEntry[] => {
+  const seen = new Set<string>();
+  return entries.filter((entry) => {
+    if (seen.has(entry.id)) return false;
+    seen.add(entry.id);
+    return true;
+  });
+};
+
+const uniquePages = (entries: DrugEntry[]): number[] =>
+  Array.from(new Set(entries.flatMap((entry) => entry.pages))).sort((left, right) => left - right);
+
+const dedupeParsedBrands = (
+  brands: ParsedProprietaryPreparation[],
+): ParsedProprietaryPreparation[] => {
+  const seen = new Set<string>();
+  return brands.filter((brand) => {
+    const key = `${normalizeDrugLookupText(brand.display_name)}|${normalizeDrugLookupText(brand.details)}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+};
+
 type DrugModeAnswerKind = 'sectional' | 'dose_with_brands';
 
 interface DrugModeIntent {
   requestedFields: DrugModeRequestedField[];
   answerKind: DrugModeAnswerKind;
   needsBrands: boolean;
+}
+
+interface DrugSearchCandidates {
+  strictMatches: DrugEntry[];
+  preferredStrictMatches: DrugEntry[];
+  normalizedMatches: DrugEntry[];
+  preferredNormalizedMatches: DrugEntry[];
+  proprietaryStrictMatches: DrugEntry[];
+  proprietaryNormalizedMatches: DrugEntry[];
 }
 
 const stringifyEntryForPrompt = (entry: Record<string, unknown>): string =>
@@ -192,6 +225,8 @@ All the brand names (this and alternate) with dosing schedule for the drug for e
 [the app has already filtered and prioritized these brand names when available: Square, Incepta, Healthcare, Opsonin, Beximco, Aristopharma]
 [Avoid duplication - if dosing is calculated for same form, and same strength ot one brand, NO need to give dosing for another brands of same dose and strength]
 [Use ONLY the filtered proprietary brand entries provided in context. Do not invent extra brands.]
+[If the context contains multiple matched entries for the same generic drug, use all of them together and combine them carefully.]
+[If two matched entries differ, keep the difference clear instead of deleting one.]
 
 [IMPORTANT : Dosing information is usually given in this format : 🔴 You have to CALULATE the DOSING SCHDULE form the dosing Information below like this BASED on the DRUG dose and form (tab, or injfeciton or syrp etc) - YOU have to calculate it)
 Example :
@@ -254,6 +289,8 @@ Rules:
 - Do not add brand names, prices, or dosing unless those fields are explicitly provided in the context.
 - Do not use outside knowledge.
 - If a requested field is missing or empty, say "Not found in provided drug dataset."
+- If multiple matched entries are provided for the same drug, use all of them and combine them carefully.
+- If matched entries disagree or cover different use-cases, keep that distinction clear in the answer.
 - Keep the answer clean and direct.
 
 Formatting:
@@ -598,38 +635,118 @@ Rules:
     return [...preferred, ...others].slice(0, DRUG_BRAND_RESULT_LIMIT);
   }
 
-  private buildSectionPromptContext(entry: DrugEntry, intent: DrugModeIntent): Record<string, unknown> {
+  private buildSectionPromptContexts(entries: DrugEntry[], intent: DrugModeIntent): Record<string, unknown> {
+    const safeEntries = dedupeDrugEntries(entries);
+    const primaryEntry = safeEntries[0];
     const requestedSections = intent.requestedFields.map((field) => this.getFieldLabel(field));
-    const sections = Object.fromEntries(
-      intent.requestedFields.map((field) => [
-        field,
-        this.getFieldValue(entry, field) ?? 'Not found in provided drug dataset.',
-      ]),
-    );
+
+    if (!primaryEntry) {
+      return {
+        generic_name: '',
+        aliases: [],
+        pages: [],
+        requested_sections: requestedSections,
+        matched_entries: [],
+      };
+    }
+
+    if (safeEntries.length === 1) {
+      const sections = Object.fromEntries(
+        intent.requestedFields.map((field) => [
+          field,
+          this.getFieldValue(primaryEntry, field) ?? 'Not found in provided drug dataset.',
+        ]),
+      );
+
+      return {
+        generic_name: cleanDrugDisplayName(primaryEntry.drug_name),
+        aliases: uniqueStrings(primaryEntry.aliases),
+        pages: primaryEntry.pages,
+        requested_sections: requestedSections,
+        sections,
+      };
+    }
 
     return {
-      generic_name: cleanDrugDisplayName(entry.drug_name),
-      aliases: uniqueStrings(entry.aliases),
-      pages: entry.pages,
+      generic_name: cleanDrugDisplayName(primaryEntry.drug_name),
+      aliases: uniqueStrings(safeEntries.flatMap((entry) => entry.aliases)),
+      pages: uniquePages(safeEntries),
       requested_sections: requestedSections,
-      sections,
+      matched_entry_count: safeEntries.length,
+      matched_entries: safeEntries.map((entry, index) => ({
+        entry_label: `Entry ${index + 1}`,
+        pages: entry.pages,
+        aliases: uniqueStrings(entry.aliases),
+        sections: Object.fromEntries(
+          intent.requestedFields.map((field) => [
+            field,
+            this.getFieldValue(entry, field) ?? 'Not found in provided drug dataset.',
+          ]),
+        ),
+      })),
+    };
+  }
+
+  private buildSectionPromptContext(entry: DrugEntry, intent: DrugModeIntent): Record<string, unknown> {
+    return this.buildSectionPromptContexts([entry], intent);
+  }
+
+  private buildDosePromptContexts(entries: DrugEntry[]): Record<string, unknown> {
+    const safeEntries = dedupeDrugEntries(entries);
+    const primaryEntry = safeEntries[0];
+    const filteredBrands = dedupeParsedBrands(
+      safeEntries.flatMap((entry) => this.selectPreferredBrandEntries(entry)),
+    );
+
+    if (!primaryEntry) {
+      return {
+        generic_name: '',
+        aliases: [],
+        pages: [],
+        filtered_proprietary_preparations: [],
+        matched_entries: [],
+      };
+    }
+
+    if (safeEntries.length === 1) {
+      return {
+        generic_name: cleanDrugDisplayName(primaryEntry.drug_name),
+        aliases: uniqueStrings(primaryEntry.aliases),
+        pages: primaryEntry.pages,
+        indications: compactField(primaryEntry.indications),
+        dose: compactField(primaryEntry.dose),
+        filtered_proprietary_preparations: filteredBrands,
+        notes: compactField(primaryEntry.notes),
+      };
+    }
+
+    return {
+      generic_name: cleanDrugDisplayName(primaryEntry.drug_name),
+      aliases: uniqueStrings(safeEntries.flatMap((entry) => entry.aliases)),
+      pages: uniquePages(safeEntries),
+      filtered_proprietary_preparations: filteredBrands,
+      matched_entry_count: safeEntries.length,
+      matched_entries: safeEntries.map((entry, index) => ({
+        entry_label: `Entry ${index + 1}`,
+        pages: entry.pages,
+        indications: compactField(entry.indications),
+        dose: compactField(entry.dose),
+        notes: compactField(entry.notes),
+        filtered_proprietary_preparations: this.selectPreferredBrandEntries(entry),
+      })),
     };
   }
 
   private buildDosePromptContext(entry: DrugEntry): Record<string, unknown> {
-    return {
-      generic_name: cleanDrugDisplayName(entry.drug_name),
-      aliases: uniqueStrings(entry.aliases),
-      pages: entry.pages,
-      indications: compactField(entry.indications),
-      dose: compactField(entry.dose),
-      filtered_proprietary_preparations: this.selectPreferredBrandEntries(entry),
-      notes: compactField(entry.notes),
-    };
+    return this.buildDosePromptContexts([entry]);
   }
 
   getResolvedGenericName(entry: DrugEntry): string {
     return cleanDrugDisplayName(entry.drug_name);
+  }
+
+  getResolvedGenericNameFromEntries(entries: DrugEntry[]): string {
+    return entries[0] ? this.getResolvedGenericName(entries[0]) : '';
   }
 
   async findDrugEntryByName(query: string, catalog?: DrugCatalog): Promise<DrugEntry | null> {
@@ -693,12 +810,21 @@ Rules:
     return normalizeDrugLookupText(entry.proprietary_preparations || '').includes(normalizedQuery);
   }
 
-  private findTopExactMatch(
+  private collectSearchCandidates(
     catalog: DrugCatalog,
     parsed: DrugQueryParseResult,
-  ): DrugEntry | null {
+  ): DrugSearchCandidates {
     const query = parsed.drug_name.trim();
-    if (!query) return null;
+    if (!query) {
+      return {
+        strictMatches: [],
+        preferredStrictMatches: [],
+        normalizedMatches: [],
+        preferredNormalizedMatches: [],
+        proprietaryStrictMatches: [],
+        proprietaryNormalizedMatches: [],
+      };
+    }
 
     const searchableEntries = catalog.entries.filter((entry) => {
       return !DRUG_NAME_DENYLIST.has(entry.drug_name.trim().toUpperCase());
@@ -726,24 +852,62 @@ Rules:
       strictMatches.length > 0 || normalizedMatches.length > 0 || proprietaryStrictMatches.length > 0
         ? []
         : searchableEntries.filter((entry) => this.entryHasProprietaryNormalizedMatch(entry, query));
-    const finalMatch =
-      preferredStrictMatches[0] ??
-      strictMatches[0] ??
-      preferredNormalizedMatches[0] ??
-      normalizedMatches[0] ??
-      proprietaryStrictMatches[0] ??
-      proprietaryNormalizedMatches[0] ??
-      null;
+
+    return {
+      strictMatches,
+      preferredStrictMatches,
+      normalizedMatches,
+      preferredNormalizedMatches,
+      proprietaryStrictMatches,
+      proprietaryNormalizedMatches,
+    };
+  }
+
+  private collectTopExactMatches(
+    catalog: DrugCatalog,
+    parsed: DrugQueryParseResult,
+  ): DrugEntry[] {
+    const candidates = this.collectSearchCandidates(catalog, parsed);
+    const rankedGroups = [
+      candidates.preferredStrictMatches,
+      candidates.strictMatches,
+      candidates.preferredNormalizedMatches,
+      candidates.normalizedMatches,
+      candidates.proprietaryStrictMatches,
+      candidates.proprietaryNormalizedMatches,
+    ];
+
+    const activeGroup = rankedGroups.find((group) => group.length > 0) ?? [];
+    if (activeGroup.length === 0) return [];
+
+    const primaryNormalizedDrugIdentity = normalizeDrugIdentity(activeGroup[0].drug_name);
+    const relatedMatches = activeGroup.filter(
+      (entry) => normalizeDrugIdentity(entry.drug_name) === primaryNormalizedDrugIdentity,
+    );
+
+    return dedupeDrugEntries(relatedMatches.length > 0 ? relatedMatches : [activeGroup[0]]);
+  }
+
+  private findTopExactMatch(
+    catalog: DrugCatalog,
+    parsed: DrugQueryParseResult,
+  ): DrugEntry | null {
+    const query = parsed.drug_name.trim();
+    if (!query) return null;
+    const candidates = this.collectSearchCandidates(catalog, parsed);
+    const topMatches = this.collectTopExactMatches(catalog, parsed);
+    const finalMatch = topMatches[0] ?? null;
 
     console.log('[DRUG SEARCH]', 'Direct case-sensitive lookup', {
       query,
       confidence: parsed.confidence,
-      strictCandidateCount: strictMatches.length,
-      preferredStrictCandidateCount: preferredStrictMatches.length,
-      normalizedCandidateCount: normalizedMatches.length,
-      preferredNormalizedCandidateCount: preferredNormalizedMatches.length,
-      proprietaryStrictCandidateCount: proprietaryStrictMatches.length,
-      proprietaryNormalizedCandidateCount: proprietaryNormalizedMatches.length,
+      strictCandidateCount: candidates.strictMatches.length,
+      preferredStrictCandidateCount: candidates.preferredStrictMatches.length,
+      normalizedCandidateCount: candidates.normalizedMatches.length,
+      preferredNormalizedCandidateCount: candidates.preferredNormalizedMatches.length,
+      proprietaryStrictCandidateCount: candidates.proprietaryStrictMatches.length,
+      proprietaryNormalizedCandidateCount: candidates.proprietaryNormalizedMatches.length,
+      selectedMatchCount: topMatches.length,
       selectedMatch: finalMatch
         ? {
             drug_name: finalMatch.drug_name,
@@ -752,12 +916,12 @@ Rules:
           }
         : null,
       topCandidates: [
-        ...preferredStrictMatches,
-        ...strictMatches,
-        ...preferredNormalizedMatches,
-        ...normalizedMatches,
-        ...proprietaryStrictMatches,
-        ...proprietaryNormalizedMatches,
+        ...candidates.preferredStrictMatches,
+        ...candidates.strictMatches,
+        ...candidates.preferredNormalizedMatches,
+        ...candidates.normalizedMatches,
+        ...candidates.proprietaryStrictMatches,
+        ...candidates.proprietaryNormalizedMatches,
       ]
         .filter((entry, index, array) => array.findIndex((item) => item.id === entry.id) === index)
         .slice(0, 5)
@@ -827,9 +991,19 @@ Rules:
   }
 
   buildNoBrandEntryMessage(entry: DrugEntry): string {
-    const genericName = this.getResolvedGenericName(entry);
-    const indications = compactField(entry.indications);
-    const dose = compactField(entry.dose);
+    return this.buildNoBrandEntriesMessage([entry]);
+  }
+
+  buildNoBrandEntriesMessage(entries: DrugEntry[]): string {
+    const safeEntries = dedupeDrugEntries(entries);
+    const primaryEntry = safeEntries[0];
+    if (!primaryEntry) {
+      return 'No matching brand entry found in BD prescription dataset.';
+    }
+
+    const genericName = this.getResolvedGenericName(primaryEntry);
+    const indications = uniqueStrings(safeEntries.map((entry) => compactField(entry.indications)));
+    const doses = uniqueStrings(safeEntries.map((entry) => compactField(entry.dose)));
 
     const sections = [
       `${genericName} - Generic : ${genericName}`,
@@ -839,12 +1013,12 @@ Rules:
       'No matching brand entry found in BD prescription dataset.',
     ];
 
-    if (indications) {
-      sections.push('', `Indications: ${indications}`);
+    if (indications.length > 0) {
+      sections.push('', `Indications: ${indications.join(' | ')}`);
     }
 
-    if (dose) {
-      sections.push('', `Dose: ${dose}`);
+    if (doses.length > 0) {
+      sections.push('', `Dose: ${doses.join(' | ')}`);
     }
 
     return sections.join('\n');
@@ -907,11 +1081,13 @@ Rules:
         type: 'status',
         message: 'Drug Search',
       });
-      const match = this.findTopExactMatch(catalog, parsed);
+      const matchedEntries = this.collectTopExactMatches(catalog, parsed);
+      const match = matchedEntries[0] ?? null;
 
       console.log('[DRUG SEARCH]', 'Final matched entries', {
         requestedDrug: parsed.drug_name,
         matchedEntry: match?.drug_name ?? null,
+        matchedEntryCount: matchedEntries.length,
         requestedFields: intent.requestedFields,
         answerKind: intent.answerKind,
       });
@@ -943,18 +1119,18 @@ Rules:
         message: 'Drug Answer Generation',
       });
 
-      const resolvedDrugName = cleanDrugDisplayName(match.drug_name);
+      const resolvedDrugName = this.getResolvedGenericNameFromEntries(matchedEntries);
       const promptContext =
         intent.answerKind === 'dose_with_brands'
-          ? this.buildDosePromptContext(match)
-          : this.buildSectionPromptContext(match, intent);
+          ? this.buildDosePromptContexts(matchedEntries)
+          : this.buildSectionPromptContexts(matchedEntries, intent);
 
       if (
         intent.answerKind === 'dose_with_brands' &&
         Array.isArray((promptContext as Record<string, unknown>).filtered_proprietary_preparations) &&
         ((promptContext as Record<string, unknown>).filtered_proprietary_preparations as unknown[]).length === 0
       ) {
-        const noBrandMessage = this.buildNoBrandEntryMessage(match);
+        const noBrandMessage = this.buildNoBrandEntriesMessage(matchedEntries);
         await this.saveAssistantMessage(sessionId, noBrandMessage);
         onStreamEvent?.({
           type: 'done',
@@ -972,7 +1148,7 @@ ${parsed.drug_name}
 Resolved generic drug:
 ${resolvedDrugName}
 
-Matched drug entry:
+Matched drug entry or entries:
 ${stringifyEntryForPrompt(promptContext)}`;
 
       const systemPrompt =
