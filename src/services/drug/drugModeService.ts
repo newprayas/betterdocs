@@ -29,6 +29,11 @@ const PREFERRED_BRAND_COMPANIES = [
   'opsonin',
   'beximco',
   'aristopharma',
+  'novartis',
+  'acme',
+  'ziska',
+  'renata',
+  'radiant',
 ];
 
 export const DRUG_DATASET_CONFIG: DrugDatasetConfig = {
@@ -619,7 +624,24 @@ Rules:
       .filter((value): value is ParsedProprietaryPreparation => Boolean(value));
   }
 
-  private selectPreferredBrandEntries(entry: DrugEntry): ParsedProprietaryPreparation[] {
+  private findRequestedBrandMatch(
+    brands: ParsedProprietaryPreparation[],
+    requestedBrandQuery?: string,
+  ): ParsedProprietaryPreparation | null {
+    const normalizedQuery = normalizeDrugLookupText(requestedBrandQuery || '');
+    if (!normalizedQuery) return null;
+
+    return (
+      brands.find((brand) => normalizeDrugLookupText(brand.brand_name) === normalizedQuery) ??
+      brands.find((brand) => normalizeDrugLookupText(brand.display_name) === normalizedQuery) ??
+      null
+    );
+  }
+
+  private selectPreferredBrandEntries(
+    entry: DrugEntry,
+    requestedBrandQuery?: string,
+  ): ParsedProprietaryPreparation[] {
     const parsedBrands = this.parseProprietaryPreparations(entry);
     if (parsedBrands.length === 0) return [];
 
@@ -631,8 +653,21 @@ Rules:
     const others = pool.filter(
       (brand) => !PREFERRED_BRAND_COMPANIES.includes(normalizeDrugLookupText(brand.company_name)),
     );
+    const selected = [...preferred, ...others].slice(0, DRUG_BRAND_RESULT_LIMIT);
+    const requestedBrand =
+      this.findRequestedBrandMatch(pool, requestedBrandQuery) ??
+      this.findRequestedBrandMatch(parsedBrands, requestedBrandQuery);
 
-    return [...preferred, ...others].slice(0, DRUG_BRAND_RESULT_LIMIT);
+    if (!requestedBrand) {
+      return selected;
+    }
+
+    const alreadyIncluded = selected.some(
+      (brand) =>
+        normalizeDrugLookupText(brand.display_name) === normalizeDrugLookupText(requestedBrand.display_name),
+    );
+
+    return alreadyIncluded ? selected : [...selected, requestedBrand];
   }
 
   private buildSectionPromptContexts(entries: DrugEntry[], intent: DrugModeIntent): Record<string, unknown> {
@@ -691,11 +726,14 @@ Rules:
     return this.buildSectionPromptContexts([entry], intent);
   }
 
-  private buildDosePromptContexts(entries: DrugEntry[]): Record<string, unknown> {
+  private buildDosePromptContexts(
+    entries: DrugEntry[],
+    requestedBrandQuery?: string,
+  ): Record<string, unknown> {
     const safeEntries = dedupeDrugEntries(entries);
     const primaryEntry = safeEntries[0];
     const filteredBrands = dedupeParsedBrands(
-      safeEntries.flatMap((entry) => this.selectPreferredBrandEntries(entry)),
+      safeEntries.flatMap((entry) => this.selectPreferredBrandEntries(entry, requestedBrandQuery)),
     );
 
     if (!primaryEntry) {
@@ -732,7 +770,7 @@ Rules:
         indications: compactField(entry.indications),
         dose: compactField(entry.dose),
         notes: compactField(entry.notes),
-        filtered_proprietary_preparations: this.selectPreferredBrandEntries(entry),
+        filtered_proprietary_preparations: this.selectPreferredBrandEntries(entry, requestedBrandQuery),
       })),
     };
   }
@@ -1122,7 +1160,7 @@ Rules:
       const resolvedDrugName = this.getResolvedGenericNameFromEntries(matchedEntries);
       const promptContext =
         intent.answerKind === 'dose_with_brands'
-          ? this.buildDosePromptContexts(matchedEntries)
+          ? this.buildDosePromptContexts(matchedEntries, parsed.drug_name)
           : this.buildSectionPromptContexts(matchedEntries, intent);
 
       if (
