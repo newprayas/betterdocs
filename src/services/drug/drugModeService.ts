@@ -251,8 +251,12 @@ days.CHILD not recommended
 Formatting rule :
 Your output should look like this
 
-{{DRUG_NAME}} - Generic : Pantoprazole (header)
+**{{DRUG_NAME}}**- Generic : Pantoprazole (header)
 Brands and dose (header)
+
+[Always format the main title exactly like this: **{{DRUG_NAME}}**- Generic : resolved generic name]
+[Only the drug name itself should be bold. The text after it should remain normal.]
+[Formulation headings must be bold and uppercase, for example **TABLET**, **INJECTION**, **SUPPOSITORY**]
 
 TABLET
 
