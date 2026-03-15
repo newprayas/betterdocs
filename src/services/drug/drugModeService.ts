@@ -32,9 +32,9 @@ const PREFERRED_BRAND_COMPANIES = [
 ];
 
 export const DRUG_DATASET_CONFIG: DrugDatasetConfig = {
-  id: 'newdoc_voyage',
+  id: 'newdoc_voyage_9e7',
   name: 'BD prescription',
-  filename: 'shard_9p5.bin',
+  filename: 'shard_9e7.bin',
   size: '2.9 MB',
 };
 

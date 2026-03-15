@@ -50,7 +50,7 @@ SECTION_HEADERS = {
     "dose": "dose",
     "note": "notes",
     "notes": "notes",
-    "interactions": "notes",
+    "interactions": "interactions",
     "proprietary preparations": "proprietary_preparations",
     "proprietary preparation": "proprietary_preparations",
 }
@@ -96,7 +96,7 @@ CONTENTS_LINE_PATTERN = re.compile(
 )
 
 MAJOR_SECTION_PATTERN = re.compile(r"^\d+\.\s+[A-Z][A-Z0-9 /&().' -]{5,}$")
-NUMBERED_SUBSECTION_PATTERN = re.compile(r"^\d+(?:\.\d+)+\.?\s+")
+NUMBERED_SUBSECTION_PATTERN = re.compile(r"^\d+\.\d+(?:\.\d+)+\.?\s*[A-Z]")
 
 
 def sha256_hex(data: bytes) -> str:
@@ -239,12 +239,32 @@ def is_structural_boundary(line: str) -> bool:
     return False
 
 
+def is_soft_page_boundary(line: str) -> bool:
+    text = normalize_space(line)
+    if not text:
+        return True
+
+    if MAJOR_SECTION_PATTERN.fullmatch(text):
+        return True
+
+    stripped = strip_heading_prefix(text)
+    if "SYSTEM" in text and ":" not in text and "," not in text:
+        return True
+
+    if stripped.isupper() and any(keyword in stripped for keyword in SECTION_HEADER_NOISE_KEYWORDS):
+        return True
+
+    return False
+
+
 def is_drug_heading(line: str) -> bool:
     original = normalize_space(line)
     text = strip_heading_prefix(original)
     if len(text) < 3 or len(text) > 120:
         return False
     if text.endswith(":"):
+        return False
+    if text.endswith(",") or text.endswith(";"):
         return False
     if text.startswith("("):
         return False
@@ -264,6 +284,8 @@ def is_drug_heading(line: str) -> bool:
 
     letters_only = re.sub(r"[^A-Za-z]", "", text)
     if len(letters_only) < 3:
+        return False
+    if "[" not in text and "(" not in text and " " not in text and len(letters_only) < 6:
         return False
 
     uppercase_ratio = sum(1 for ch in text if ch.isupper()) / max(
@@ -315,6 +337,9 @@ def split_into_blocks(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     for row in rows:
         text = normalize_space(row["text"])
         if not text:
+            continue
+
+        if is_soft_page_boundary(text):
             continue
 
         if is_structural_boundary(text):
@@ -384,12 +409,26 @@ def looks_like_header_fragment(text: str) -> bool:
     return bool(parts) and all(part in SECTION_HEADERS for part in parts)
 
 
+def resolve_section_key(header_text: str) -> Optional[str]:
+    target = SECTION_HEADERS.get(header_text)
+    if target:
+        return target
+
+    for candidate in sorted(SECTION_HEADERS, key=len, reverse=True):
+        if header_text.startswith(f"{candidate} "):
+            return SECTION_HEADERS[candidate]
+
+    return None
+
+
 def classify_section_line(line: str) -> Tuple[List[str], str, bool]:
     stripped = normalize_space(line)
     if not stripped:
         return [], "", False
 
-    bare_header = SECTION_HEADERS.get(normalize_header_token(stripped))
+    bare_header = None
+    if stripped[:1].isupper() or stripped.isupper():
+        bare_header = SECTION_HEADERS.get(normalize_header_token(stripped))
     if bare_header:
         return [bare_header], "", True
 
@@ -399,13 +438,13 @@ def classify_section_line(line: str) -> Tuple[List[str], str, bool]:
 
     header_text = normalize_header_token(match.group(1))
     remainder = normalize_space(match.group(2))
-    target = SECTION_HEADERS.get(header_text)
+    target = resolve_section_key(header_text)
     if target:
         return [target], remainder, True
 
     raw_header_parts = re.split(r",|&|/|\band\b", match.group(1), flags=re.IGNORECASE)
     header_parts = [normalize_header_token(part) for part in raw_header_parts]
-    section_keys = [SECTION_HEADERS.get(part) for part in header_parts if part]
+    section_keys = [resolve_section_key(part) for part in header_parts if part]
     if section_keys and all(section_keys):
         unique_keys = list(dict.fromkeys(section_keys))
         if not remainder or looks_like_header_fragment(remainder):
@@ -429,6 +468,26 @@ def sanitize_section_value(text: str) -> Optional[str]:
     return compact or None
 
 
+def join_section_lines(parts: List[str]) -> Optional[str]:
+    text = ""
+    for part in parts:
+        cleaned = normalize_space(part)
+        if not cleaned:
+            continue
+        if not text:
+            text = cleaned
+            continue
+
+        if text.endswith("-") and cleaned[:1].islower():
+            text = f"{text[:-1]}{cleaned}"
+        elif text.endswith("/") or cleaned.startswith(("/", ")", ",", ".", ";", ":")):
+            text = f"{text}{cleaned}"
+        else:
+            text = f"{text} {cleaned}"
+
+    return normalize_space(text) or None
+
+
 def parse_block(block: Dict[str, Any], document_id: str, index: int) -> Optional[Dict[str, Any]]:
     drug_name, aliases = parse_heading(block["heading"])
     if not drug_name:
@@ -440,6 +499,7 @@ def parse_block(block: Dict[str, Any], document_id: str, index: int) -> Optional
         "contraindications": [],
         "side_effects": [],
         "dose": [],
+        "interactions": [],
         "notes": [],
         "proprietary_preparations": [],
     }
@@ -451,11 +511,25 @@ def parse_block(block: Dict[str, Any], document_id: str, index: int) -> Optional
         line = remove_inline_page_noise(line)
         if not line or is_likely_page_noise(line):
             continue
+        if is_soft_page_boundary(line):
+            continue
         if is_structural_boundary(line):
             break
 
         section_keys, remainder, consumed = classify_section_line(line)
         if section_keys:
+            if (
+                not remainder
+                and len(section_keys) == 1
+                and current_sections
+                and current_sections[0] != section_keys[0]
+            ):
+                current_value = join_section_lines(sections[current_sections[0]])
+                if current_value and current_value.lower().endswith("see under"):
+                    sections[current_sections[0]].append(line)
+                    raw_lines.append(line)
+                    continue
+
             current_sections = section_keys
             if remainder:
                 cleaned_remainder = sanitize_section_value(remainder)
@@ -485,6 +559,7 @@ def parse_block(block: Dict[str, Any], document_id: str, index: int) -> Optional
             "contraindications",
             "side_effects",
             "dose",
+            "interactions",
             "proprietary_preparations",
         )
     )
@@ -508,13 +583,14 @@ def parse_block(block: Dict[str, Any], document_id: str, index: int) -> Optional
         "drug_name": drug_name,
         "aliases": aliases,
         "pages": block["pages"],
-        "indications": normalize_space(" ".join(sections["indications"])) or None,
-        "cautions": normalize_space(" ".join(sections["cautions"])) or None,
-        "contraindications": normalize_space(" ".join(sections["contraindications"])) or None,
-        "side_effects": normalize_space(" ".join(sections["side_effects"])) or None,
-        "dose": normalize_space(" ".join(sections["dose"])) or None,
-        "notes": normalize_space(" ".join(sections["notes"])) or None,
-        "proprietary_preparations": normalize_space(" ".join(sections["proprietary_preparations"])) or None,
+        "indications": join_section_lines(sections["indications"]),
+        "cautions": join_section_lines(sections["cautions"]),
+        "contraindications": join_section_lines(sections["contraindications"]),
+        "side_effects": join_section_lines(sections["side_effects"]),
+        "dose": join_section_lines(sections["dose"]),
+        "interactions": join_section_lines(sections["interactions"]),
+        "notes": join_section_lines(sections["notes"]),
+        "proprietary_preparations": join_section_lines(sections["proprietary_preparations"]),
         "raw_text": combined_text,
         "search_text": search_text,
     }
