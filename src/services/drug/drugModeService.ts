@@ -668,9 +668,6 @@ Rules:
 
     const cleanedQuery = stripDrugNameQualifiers(trimmedQuery);
     if (stripDrugNameQualifiers(entry.drug_name.trim()) === cleanedQuery) return true;
-    if (entry.aliases.some((alias) => stripDrugNameQualifiers(alias.trim()) === cleanedQuery)) {
-      return true;
-    }
 
     return false;
   }
@@ -680,9 +677,6 @@ Rules:
     if (!normalizedQuery) return false;
 
     if (normalizeDrugIdentity(entry.drug_name) === normalizedQuery) return true;
-    if (entry.aliases.some((alias) => normalizeDrugIdentity(alias) === normalizedQuery)) {
-      return true;
-    }
 
     return false;
   }
@@ -832,6 +826,30 @@ Rules:
     return `I could not find a matching drug entry for: ${unmatched}. Did you mean: ${suggestions.join(', ')}?`;
   }
 
+  buildNoBrandEntryMessage(entry: DrugEntry): string {
+    const genericName = this.getResolvedGenericName(entry);
+    const indications = compactField(entry.indications);
+    const dose = compactField(entry.dose);
+
+    const sections = [
+      `${genericName} - Generic : ${genericName}`,
+      '',
+      'Brands and dose',
+      '',
+      'No matching brand entry found in BD prescription dataset.',
+    ];
+
+    if (indications) {
+      sections.push('', `Indications: ${indications}`);
+    }
+
+    if (dose) {
+      sections.push('', `Dose: ${dose}`);
+    }
+
+    return sections.join('\n');
+  }
+
   private async saveAssistantMessage(
     sessionId: string,
     content: string,
@@ -930,6 +948,20 @@ Rules:
         intent.answerKind === 'dose_with_brands'
           ? this.buildDosePromptContext(match)
           : this.buildSectionPromptContext(match, intent);
+
+      if (
+        intent.answerKind === 'dose_with_brands' &&
+        Array.isArray((promptContext as Record<string, unknown>).filtered_proprietary_preparations) &&
+        ((promptContext as Record<string, unknown>).filtered_proprietary_preparations as unknown[]).length === 0
+      ) {
+        const noBrandMessage = this.buildNoBrandEntryMessage(match);
+        await this.saveAssistantMessage(sessionId, noBrandMessage);
+        onStreamEvent?.({
+          type: 'done',
+          content: noBrandMessage,
+        });
+        return;
+      }
 
       const prompt = `User question:
 ${content}

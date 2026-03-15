@@ -176,6 +176,39 @@ const logFullPromptText = (label: string, text: string): void => {
   }
 };
 
+const buildNoBrandLookupSections = (
+  foundWithoutBrands: DrugBrandLookupResult[],
+  missing: string[],
+): string[] => {
+  const lines: string[] = [];
+
+  for (const result of foundWithoutBrands) {
+    lines.push(
+      '',
+      `### ${result.resolved_generic_name}`,
+      'No matching brand entry found in BD prescription dataset.',
+    );
+
+    if (result.indications) {
+      lines.push('', `Indications: ${result.indications}`);
+    }
+
+    if (result.dose) {
+      lines.push('', `Dose: ${result.dose}`);
+    }
+  }
+
+  for (const drugName of missing) {
+    lines.push(
+      '',
+      `### ${drugName}`,
+      'No matching brand entry found in BD prescription dataset.',
+    );
+  }
+
+  return lines;
+};
+
 export class BrandExtractionService {
   private indexedDBServices = getIndexedDBServices();
 
@@ -273,6 +306,24 @@ export class BrandExtractionService {
       found.push(drugModeService.buildBrandLookupResult(drugName, entry, MAX_BRANDS_PER_GENERIC));
     }
 
+    const foundWithBrands = found.filter(
+      (result) => result.filtered_proprietary_preparations.length > 0,
+    );
+    const foundWithoutBrands = found.filter(
+      (result) => result.filtered_proprietary_preparations.length === 0,
+    );
+
+    if (foundWithBrands.length === 0) {
+      const deterministicResponse = ['## Brand names', ...buildNoBrandLookupSections(foundWithoutBrands, missing)]
+        .join('\n');
+      await this.saveAssistantMessage(sessionId, deterministicResponse);
+      onStreamEvent?.({
+        type: 'done',
+        content: deterministicResponse,
+      });
+      return;
+    }
+
     const prompt = `Source mode:
 ${request.sourceMode}
 
@@ -283,7 +334,18 @@ Extracted generic names:
 ${JSON.stringify(drugNames, null, 2)}
 
 Matched brand lookup context:
-${JSON.stringify(found, null, 2)}
+${JSON.stringify(foundWithBrands, null, 2)}
+
+Matched generics with no filtered brands:
+${JSON.stringify(
+  foundWithoutBrands.map((result) => ({
+    resolved_generic_name: result.resolved_generic_name,
+    indications: result.indications,
+    dose: result.dose,
+  })),
+  null,
+  2,
+)}
 
 Missing generic names:
 ${JSON.stringify(missing, null, 2)}`;
@@ -311,6 +373,11 @@ ${JSON.stringify(missing, null, 2)}`;
         },
       },
     );
+
+    const noBrandSections = buildNoBrandLookupSections(foundWithoutBrands, missing);
+    if (noBrandSections.length > 0) {
+      fullResponse = `${fullResponse.trim()}\n${noBrandSections.join('\n')}`;
+    }
 
     await this.saveAssistantMessage(sessionId, fullResponse);
     onStreamEvent?.({
