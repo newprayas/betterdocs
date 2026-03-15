@@ -201,6 +201,28 @@ Example behavior:
 
 Do not summarize unless the user explicitly asks for a summary.`;
 
+const ASK_DRUG_INDICATIONS_ONLY_FORMAT_PROMPT = `Additional formatting mode:
+- If the prompt says "Requested response format: indications_summary_plus_dose", and the dataset section is "Indications and dose", output TWO blocks in this order:
+  - first: the drug title as the main heading at the very top
+  - first: **✅ Indications**
+  - second: **✅ Indications and dose**
+- The drug title must appear only once at the top of the answer.
+- Do not repeat the drug title again before the second block.
+- Do not output a separate plain "Indications and dose" line under the ✅ Indications and dose heading.
+- Always render both of these section labels in Markdown bold.
+- In the ✅ Indications block, output only the indication labels.
+- In the ✅ Indications block, do not include route labels, formulations, age groups, or dose instructions.
+- In the ✅ Indications and dose block, keep the full detailed format with routes and doses.
+- Example:
+  - Tramadol hydrochloride
+  - **✅ Indications**
+  - Mild to moderate pain | Pyrexia
+  - Pain | Pyrexia with discomfort
+  - Post-immunisation pyrexia in infants
+  - **✅ Indications and dose**
+  - then the full detailed route-and-dose breakdown
+- If the prompt says "Requested response format: standard", use the normal detailed formatting rules already defined above.`;
+
 const ASK_DRUG_BROAD_INDICATION_SYSTEM_PROMPT = `You answer broad drug-indication questions using ONLY the provided dataset context.
 
 The context for this task contains only:
@@ -754,6 +776,14 @@ Rules:
     };
   }
 
+  private shouldRenderIndicationsSummaryPlusDose(
+    parsed: AskDrugQueryParseResult,
+    requestedSections: AskDrugSectionKey[],
+  ): boolean {
+    if (parsed.sections.includes('all_details')) return false;
+    return requestedSections.length === 1 && requestedSections[0] === 'indications_and_dose';
+  }
+
   private cleanMatchedIndicationLabel(value: string): string | null {
     let cleaned = compactField(value) || '';
     if (!cleaned) return null;
@@ -1027,6 +1057,10 @@ Rules:
           return;
         }
 
+        const requestedResponseFormat = this.shouldRenderIndicationsSummaryPlusDose(parsed, requestedSections)
+          ? 'indications_summary_plus_dose'
+          : 'standard';
+
         const prompt = `User question:
 ${content}
 
@@ -1036,10 +1070,15 @@ ${match.title}
 Requested sections:
 ${requestedSectionSummary}
 
+Requested response format:
+${requestedResponseFormat}
+
 Dataset context:
 ${JSON.stringify(promptContext, null, 2)}`;
 
-        logFullPromptText('[ASK DRUG ANSWER PROMPT][SYSTEM]', ASK_DRUG_SYSTEM_PROMPT);
+        const namedSystemPrompt = `${ASK_DRUG_SYSTEM_PROMPT}\n\n${ASK_DRUG_INDICATIONS_ONLY_FORMAT_PROMPT}`;
+
+        logFullPromptText('[ASK DRUG ANSWER PROMPT][SYSTEM]', namedSystemPrompt);
         logFullPromptText('[ASK DRUG ANSWER PROMPT][USER]', prompt);
 
         onStreamEvent?.({ type: 'status', message: 'Ask Drug Answer Generation' });
@@ -1047,7 +1086,7 @@ ${JSON.stringify(promptContext, null, 2)}`;
         let fullResponse = '';
         await groqService.generateStreamingResponse(
           prompt,
-          ASK_DRUG_SYSTEM_PROMPT,
+          namedSystemPrompt,
           ASK_DRUG_ANSWER_MODEL,
           {
             temperature: 0.1,
