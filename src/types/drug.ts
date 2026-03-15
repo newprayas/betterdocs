@@ -47,6 +47,23 @@ export interface DrugQueryParseResult {
   confidence: number;
 }
 
+export interface ParsedProprietaryPreparation {
+  brand_name: string;
+  company_name: string;
+  display_name: string;
+  details: string;
+  is_combination: boolean;
+}
+
+export interface BrandExtractionParseResult {
+  drug_names: string[];
+}
+
+export interface BrandLookupRequest {
+  sourceMode: 'chat' | 'ask-drug';
+  answerText: string;
+}
+
 export type DrugModeRequestedField =
   | 'indications'
   | 'cautions'

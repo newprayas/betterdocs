@@ -9,6 +9,7 @@ import type {
   DrugModeRequestedField,
   DrugQueryParseResult,
   MessageCreate,
+  ParsedProprietaryPreparation,
 } from '@/types';
 import { MessageSender } from '@/types/message';
 import type { ChatStreamEvent } from '@/services/rag';
@@ -163,14 +164,6 @@ interface DrugModeIntent {
   needsBrands: boolean;
 }
 
-interface ParsedProprietaryPreparation {
-  brand_name: string;
-  company_name: string;
-  display_name: string;
-  details: string;
-  is_combination: boolean;
-}
-
 const stringifyEntryForPrompt = (entry: Record<string, unknown>): string =>
   JSON.stringify(entry, null, 2);
 
@@ -270,6 +263,15 @@ Formatting:
 - If only indications are requested, return only the indications section.
 - If indications and side-effects are requested, return both, separately.
 `;
+
+export interface DrugBrandLookupResult {
+  query: string;
+  resolved_generic_name: string;
+  filtered_proprietary_preparations: ParsedProprietaryPreparation[];
+  indications?: string;
+  dose?: string;
+  notes?: string;
+}
 
 export class DrugModeService {
   private indexedDBServices = getIndexedDBServices();
@@ -622,6 +624,40 @@ Rules:
       indications: compactField(entry.indications),
       dose: compactField(entry.dose),
       filtered_proprietary_preparations: this.selectPreferredBrandEntries(entry),
+      notes: compactField(entry.notes),
+    };
+  }
+
+  getResolvedGenericName(entry: DrugEntry): string {
+    return cleanDrugDisplayName(entry.drug_name);
+  }
+
+  async findDrugEntryByName(query: string, catalog?: DrugCatalog): Promise<DrugEntry | null> {
+    const activeCatalog = catalog ?? (await this.ensureDatasetReady());
+    return this.findTopExactMatch(activeCatalog, {
+      drug_name: canonicalizeDrugQueryCase(query),
+      confidence: 1,
+    });
+  }
+
+  getFilteredBrandEntries(
+    entry: DrugEntry,
+    limit = 3,
+  ): ParsedProprietaryPreparation[] {
+    return this.selectPreferredBrandEntries(entry).slice(0, Math.max(0, limit));
+  }
+
+  buildBrandLookupResult(
+    query: string,
+    entry: DrugEntry,
+    limit = 3,
+  ): DrugBrandLookupResult {
+    return {
+      query,
+      resolved_generic_name: this.getResolvedGenericName(entry),
+      filtered_proprietary_preparations: this.getFilteredBrandEntries(entry, limit),
+      indications: compactField(entry.indications),
+      dose: compactField(entry.dose),
       notes: compactField(entry.notes),
     };
   }

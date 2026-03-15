@@ -6,6 +6,7 @@ import { getIndexedDBServices } from '../services/indexedDB';
 import { chatPipeline } from '../services/rag/chatPipeline';
 import { drugModeService } from '../services/drug';
 import { askDrugModeService } from '../services/drug/askDrugModeService';
+import { brandExtractionService } from '../services/drug';
 import { useSessionStore } from './sessionStore';
 import { userIdLogger } from '../utils/userIdDebugLogger';
 import type { SessionChatMode } from '@/types';
@@ -472,6 +473,187 @@ export const useChatStore = create<ChatStore>()(
           } catch (error) {
             userIdLogger.logError('ChatStore.sendMessage', error instanceof Error ? error : String(error), currentUserId);
             failPipeline(error instanceof Error ? error.message : 'Failed to send message');
+          }
+        },
+
+        extractBrandsFromLatestAnswer: async (sessionId: string) => {
+          const { userId: currentUserId } = useSessionStore.getState();
+          const operationId = userIdLogger.logOperationStart('ChatStore', 'extractBrandsFromLatestAnswer', currentUserId);
+          let isSettled = false;
+          const sessionMode = get().sessionModeBySession[sessionId] || 'chat';
+
+          const failPipeline = (message: string) => {
+            if (isSettled) return;
+            isSettled = true;
+            set({
+              error: message,
+              isStreaming: false,
+              streamingContent: '',
+              streamingCitations: [],
+              isReadingSources: false,
+              progressPercentage: 0,
+              currentProgressStep: '',
+              pipelineStartedAt: null,
+            });
+          };
+
+          if (sessionMode !== 'chat' && sessionMode !== 'ask-drug') {
+            failPipeline('Brand extraction is only available in Chat Mode and Ask Drug Mode.');
+            return;
+          }
+
+          const latestAssistantMessage = [...get().messages]
+            .reverse()
+            .find((message) => message.role === MessageSender.ASSISTANT && message.sessionId === sessionId);
+
+          if (!latestAssistantMessage?.content?.trim()) {
+            failPipeline('No completed assistant answer is available to extract brands from.');
+            return;
+          }
+
+          set({
+            error: null,
+            isStreaming: false,
+            streamingContent: '',
+            streamingCitations: [],
+            isReadingSources: true,
+            progressPercentage: 0,
+            currentProgressStep: 'Brand Parsing',
+            pipelineStartedAt: Date.now(),
+          });
+
+          try {
+            const messageService = getMessageService();
+            if (!messageService) {
+              throw new Error('Message service not available');
+            }
+
+            await withTimeout(
+              brandExtractionService.extractBrandsFromAnswer(
+                sessionId,
+                {
+                  sourceMode: sessionMode,
+                  answerText: latestAssistantMessage.content,
+                },
+                (event) => {
+                  if (isSettled) return;
+
+                  if (event.type === 'status') {
+                    console.log('Chat status:', event.message);
+                    const { setProgressState } = get();
+
+                    switch (event.message) {
+                      case 'Brand Parsing':
+                        setProgressState(35, 'Brand Parsing');
+                        break;
+                      case 'Brand Lookup':
+                        setProgressState(70, 'Brand Lookup');
+                        break;
+                      case 'Brand Answer Generation':
+                        setProgressState(90, 'Brand Answer Generation');
+                        break;
+                      default:
+                        break;
+                    }
+                  } else if (event.type === 'done') {
+                    isSettled = true;
+                    const { content: finalContent, citations: finalCitations } = event;
+                    const services = getIndexedDBServices();
+                    const { userId: finalUserId } = useSessionStore.getState();
+
+                    if (finalContent) {
+                      set((state) => {
+                        const assistantMessage: Message = {
+                          id: crypto.randomUUID(),
+                          sessionId,
+                          content: finalContent,
+                          role: MessageSender.ASSISTANT,
+                          timestamp: new Date(),
+                          citations: finalCitations,
+                        };
+
+                        const newMessages = [...state.messages, assistantMessage];
+                        return {
+                          messages: newMessages,
+                          isStreaming: false,
+                          streamingContent: '',
+                          streamingCitations: [],
+                          isReadingSources: false,
+                          progressPercentage: 100,
+                          currentProgressStep: 'Complete',
+                          pipelineStartedAt: null,
+                          messageCache: {
+                            ...state.messageCache,
+                            [sessionId]: newMessages,
+                          },
+                        };
+                      });
+                    }
+
+                    (async () => {
+                      try {
+                        const session = await services.sessionService.getSession(sessionId, finalUserId || undefined);
+                        if (!session) {
+                          throw new Error(`Session ${sessionId} not found during brand extraction completion callback`);
+                        }
+
+                        const messages = await messageService.getMessagesBySession(sessionId, session.userId);
+                        userIdLogger.logOperationEnd('ChatStore', operationId, finalUserId);
+
+                        set((state) => ({
+                          messages,
+                          isStreaming: false,
+                          streamingContent: '',
+                          streamingCitations: [],
+                          isReadingSources: false,
+                          pipelineStartedAt: null,
+                          messageCache: {
+                            ...state.messageCache,
+                            [sessionId]: messages,
+                          },
+                        }));
+                      } catch (error) {
+                        console.error('[ChatStore] Error checking for new messages in brand extraction done callback:', error);
+                        userIdLogger.logError('ChatStore.extractBrandsFromLatestAnswer.doneCallback', error instanceof Error ? error : String(error), finalUserId);
+
+                        if (!finalContent) {
+                          set({
+                            isStreaming: false,
+                            streamingContent: '',
+                            streamingCitations: [],
+                            isReadingSources: false,
+                            pipelineStartedAt: null,
+                            error: 'Brand response generated, but failed to refresh chat history. Pull to refresh.',
+                          });
+                        }
+                      }
+                    })();
+                  } else if (event.type === 'error') {
+                    isSettled = true;
+                    userIdLogger.logError('ChatStore.extractBrandsFromLatestAnswer (pipeline error)', event.message || 'Unknown error', currentUserId);
+                    set({
+                      error: event.message || 'Failed to generate brand response',
+                      isStreaming: false,
+                      streamingContent: '',
+                      streamingCitations: [],
+                      isReadingSources: false,
+                      progressPercentage: 0,
+                      currentProgressStep: '',
+                      pipelineStartedAt: null,
+                    });
+                  }
+                },
+              ),
+              PIPELINE_TIMEOUT_MS,
+              'Brand extraction request timed out. Please try again.',
+            );
+
+            if (!isSettled) {
+              failPipeline('Brand extraction ended unexpectedly. Please try again.');
+            }
+          } catch (error) {
+            userIdLogger.logError('ChatStore.extractBrandsFromLatestAnswer', error instanceof Error ? error : String(error), currentUserId);
+            failPipeline(error instanceof Error ? error.message : 'Failed to extract brands from the latest answer');
           }
         },
 

@@ -51,6 +51,7 @@ export interface ChatStore {
   loadMessages: (sessionId: string) => Promise<void>;
   preloadMessages: (sessionIds: string[]) => Promise<void>;
   sendMessage: (sessionId: string, content: string) => Promise<void>;
+  extractBrandsFromLatestAnswer: (sessionId: string) => Promise<void>;
   clearHistory: (sessionId: string) => Promise<void>;
   setStreamingState: (isStreaming: boolean, content?: string, citations?: any[]) => void;
   addMessage: (message: Message) => void;

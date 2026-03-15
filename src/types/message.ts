@@ -37,7 +37,9 @@ export interface ChatRequest {
 }
 
 export interface ChatStreamEvent {
-  type: 'userMessage' | 'status' | 'citations' | 'textChunk' | 'done' | 'error';
+  type: 'userMessage' | 'status' | 'citations' | 'textChunk' | 'done' | 'error' | 'suggestions';
   message?: string;
   citations?: Citation[];
+  suggestions?: string[];
+  content?: string;
 }
