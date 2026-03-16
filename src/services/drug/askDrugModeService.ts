@@ -1,6 +1,7 @@
 import { groqService } from '@/services/groq/groqService';
 import { getIndexedDBServices } from '@/services/indexedDB';
 import { libraryService } from '@/services/libraryService';
+import { drugModeService } from './drugModeService';
 import type {
   AskDrugBroadMatch,
   AskDrugCatalog,
@@ -118,6 +119,7 @@ Core rules:
 - For broad indication queries, the context may contain only matched indication labels for each drug instead of full dosing paragraphs; use only those labels.
 - If something is not present in the dataset context, say "Not found in provided dataset context."
 - Never invent doses, contraindications, side-effects, pregnancy advice, renal advice, or safety details.
+- If the prompt provides a "Display title", use that exact text as the main drug heading.
 
 Formatting rules:
 - Use clear markdown headings and subheadings.
@@ -1041,7 +1043,27 @@ Rules:
 
       if (parsed.drug_name.trim()) {
         onStreamEvent?.({ type: 'status', message: 'Ask Drug Search' });
-        const match = this.resolveNamedDrug(catalog, parsed);
+        let effectiveParsed = parsed;
+        let match = this.resolveNamedDrug(catalog, effectiveParsed);
+        let fallbackGenericName: string | null = null;
+
+        if (!match) {
+          const fallbackEntry = await drugModeService.findDrugEntryByName(parsed.drug_name);
+          if (fallbackEntry) {
+            fallbackGenericName = drugModeService.getResolvedGenericName(fallbackEntry);
+            effectiveParsed = {
+              ...parsed,
+              drug_name: fallbackGenericName,
+            };
+            match = this.resolveNamedDrug(catalog, effectiveParsed);
+
+            console.log('[ASK DRUG FALLBACK]', 'Resolved brand-like query through drug mode dataset', {
+              originalDrugName: parsed.drug_name,
+              fallbackGenericName,
+              matchedAskDrugTitle: match?.title ?? null,
+            });
+          }
+        }
 
         if (!match) {
           const suggestions = this.buildSuggestions(catalog, parsed.drug_name);
@@ -1062,15 +1084,23 @@ Rules:
           return;
         }
 
-        const requestedResponseFormat = this.shouldRenderIndicationsSummaryPlusDose(parsed, requestedSections)
+        const requestedResponseFormat = this.shouldRenderIndicationsSummaryPlusDose(effectiveParsed, requestedSections)
           ? 'indications_summary_plus_dose'
           : 'standard';
+        const displayTitle = fallbackGenericName
+          ? `${match.title} (${parsed.drug_name})`
+          : match.title;
 
         const prompt = `User question:
 ${content}
 
 Resolved drug:
 ${match.title}
+
+Display title:
+${displayTitle}
+
+${fallbackGenericName ? `Resolved via brand-to-generic fallback:\n${parsed.drug_name} -> ${fallbackGenericName}\n` : ''}
 
 Requested sections:
 ${requestedSectionSummary}
