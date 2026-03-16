@@ -616,7 +616,10 @@ Return ONLY valid JSON with this exact shape:
 }
 
 Rules:
-- drug_name should be generic if the user clearly asks about a specific generic drug.
+- If the user clearly names a specific generic drug, preserve that exact generic drug name in drug_name.
+- Do not shorten, simplify, or strip qualifiers from a generic drug name the user explicitly typed.
+- Do not remove words such as "sodium", "hydrochloride", "tartrate", "phosphate", or similar qualifiers when they are part of the user’s drug name.
+- Extract the drug name; do not normalize it to a broader parent name.
 - If there is no drug name, return an empty string.
 - Allowed section values are only:
   "all_details",
@@ -636,6 +639,8 @@ Rules:
 - Examples:
   - "details about paracetamol" -> drug_name "Paracetamol", sections ["all_details"], indication_terms []
   - "indications and side effects of paracetamol" -> drug_name "Paracetamol", sections ["indications_and_dose", "side_effects"], indication_terms []
+  - "indications of diclofenac sodium" -> drug_name "Diclofenac sodium", sections ["indications_and_dose"], indication_terms []
+  - "dose of amiloride hydrochloride" -> drug_name "Amiloride hydrochloride", sections ["indications_and_dose"], indication_terms []
   - "drugs for vomiting" -> ["vomiting", "nausea", "emesis"]
   - "treatment of fever" -> ["fever", "pyrexia", "febrile"]
   - "drugs for itching" -> ["itching", "pruritus"]
