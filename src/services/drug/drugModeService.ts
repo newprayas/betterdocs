@@ -232,8 +232,15 @@ All the brand names (this and alternate) with dosing schedule for the drug for e
 [the app has already filtered and prioritized these brand names when available: Square, Incepta, Healthcare, Opsonin, Beximco, Aristopharma]
 [Avoid duplication - if dosing is calculated for same form, and same strength ot one brand, NO need to give dosing for another brands of same dose and strength]
 [Use ONLY the filtered proprietary brand entries provided in context. Do not invent extra brands.]
+[Use ONLY the provided clinical_context as the source for indications and dose calculation. Do not mix it with any other indication or dose source.]
+[If clinical_context_source is ask_drug_indications_and_dose, use only clinical_context.indications_and_dose for the clinical indication and dose logic.]
+[If clinical_context_source is drug_mode_fallback, use only clinical_context.indications and clinical_context.dose for the clinical indication and dose logic.]
+[Never combine the ask-drug clinical context and the drug-mode clinical context together in the same reasoning.]
 [If the context contains multiple matched entries for the same generic drug, use all of them together and combine them carefully.]
 [If two matched entries differ, keep the difference clear instead of deleting one.]
+[When using ask-drug clinical context, prefer broad/common indication labels, merge obvious duplicates, and avoid repeating near-identical indication labels, but do not aggressively remove distinct uncommon indications.]
+[Keep distinct indication labels when they represent a different clinical use-case, even if they are less common. For example, keep Acute migraine as its own indication instead of dropping it.]
+[Only merge indications when they are truly the same or near-identical. Do not merge or delete distinct indications such as Acute migraine, Acute gout, Postoperative pain, Ureteric colic, or Actinic keratosis.]
 
 [IMPORTANT : Dosing information is usually given in this format : 🔴 You have to CALULATE the DOSING SCHDULE form the dosing Information below like this BASED on the DRUG dose and form (tab, or injfeciton or syrp etc) - YOU have to calculate it)
 Example :
@@ -733,15 +740,74 @@ Rules:
     return this.buildSectionPromptContexts([entry], intent);
   }
 
-  private buildDosePromptContexts(
+  private async buildPreferredClinicalDoseContext(
+    entries: DrugEntry[],
+  ): Promise<Record<string, unknown>> {
+    const safeEntries = dedupeDrugEntries(entries);
+    const primaryEntry = safeEntries[0];
+
+    if (!primaryEntry) {
+      return {
+        clinical_context_source: 'drug_mode_fallback',
+        clinical_context: {},
+      };
+    }
+
+    const resolvedGenericName = this.getResolvedGenericName(primaryEntry);
+
+    try {
+      const { askDrugModeService } = await import('./askDrugModeService');
+      const askDrugContext = await askDrugModeService.lookupIndicationsAndDoseByDrugName(
+        resolvedGenericName,
+      );
+
+      if (askDrugContext) {
+        console.log('[DRUG ASK-DRUG CONTEXT]', 'Using ask-drug indications_and_dose context', {
+          resolvedGenericName,
+          matchedAskDrugTitle: askDrugContext.title,
+          askDrugPages: askDrugContext.pages,
+        });
+
+        return {
+          clinical_context_source: 'ask_drug_indications_and_dose',
+          clinical_context: {
+            title: askDrugContext.title,
+            pages: askDrugContext.pages,
+            indications_and_dose: compactField(askDrugContext.indications_and_dose),
+          },
+        };
+      }
+
+      console.log('[DRUG ASK-DRUG CONTEXT]', 'No ask-drug indications_and_dose context found, falling back to drug-mode fields', {
+        resolvedGenericName,
+      });
+    } catch (error) {
+      console.warn('[DRUG ASK-DRUG CONTEXT]', 'Ask-drug context lookup failed, falling back to drug-mode fields', {
+        resolvedGenericName,
+        error,
+      });
+    }
+
+    return {
+      clinical_context_source: 'drug_mode_fallback',
+      clinical_context: {
+        pages: uniquePages(safeEntries),
+        indications: uniqueStrings(safeEntries.map((entry) => compactField(entry.indications))).join(' | ') || undefined,
+        dose: uniqueStrings(safeEntries.map((entry) => compactField(entry.dose))).join(' | ') || undefined,
+      },
+    };
+  }
+
+  private async buildDosePromptContexts(
     entries: DrugEntry[],
     requestedBrandQuery?: string,
-  ): Record<string, unknown> {
+  ): Promise<Record<string, unknown>> {
     const safeEntries = dedupeDrugEntries(entries);
     const primaryEntry = safeEntries[0];
     const filteredBrands = dedupeParsedBrands(
       safeEntries.flatMap((entry) => this.selectPreferredBrandEntries(entry, requestedBrandQuery)),
     );
+    const preferredClinicalContext = await this.buildPreferredClinicalDoseContext(safeEntries);
 
     if (!primaryEntry) {
       return {
@@ -749,6 +815,7 @@ Rules:
         aliases: [],
         pages: [],
         filtered_proprietary_preparations: [],
+        ...preferredClinicalContext,
         matched_entries: [],
       };
     }
@@ -758,10 +825,8 @@ Rules:
         generic_name: cleanDrugDisplayName(primaryEntry.drug_name),
         aliases: uniqueStrings(primaryEntry.aliases),
         pages: primaryEntry.pages,
-        indications: compactField(primaryEntry.indications),
-        dose: compactField(primaryEntry.dose),
         filtered_proprietary_preparations: filteredBrands,
-        notes: compactField(primaryEntry.notes),
+        ...preferredClinicalContext,
       };
     }
 
@@ -770,19 +835,17 @@ Rules:
       aliases: uniqueStrings(safeEntries.flatMap((entry) => entry.aliases)),
       pages: uniquePages(safeEntries),
       filtered_proprietary_preparations: filteredBrands,
+      ...preferredClinicalContext,
       matched_entry_count: safeEntries.length,
       matched_entries: safeEntries.map((entry, index) => ({
         entry_label: `Entry ${index + 1}`,
         pages: entry.pages,
-        indications: compactField(entry.indications),
-        dose: compactField(entry.dose),
-        notes: compactField(entry.notes),
         filtered_proprietary_preparations: this.selectPreferredBrandEntries(entry, requestedBrandQuery),
       })),
     };
   }
 
-  private buildDosePromptContext(entry: DrugEntry): Record<string, unknown> {
+  private async buildDosePromptContext(entry: DrugEntry): Promise<Record<string, unknown>> {
     return this.buildDosePromptContexts([entry]);
   }
 
@@ -1198,7 +1261,7 @@ Rules:
       const resolvedDrugName = this.getResolvedGenericNameFromEntries(matchedEntries);
       const promptContext =
         intent.answerKind === 'dose_with_brands'
-          ? this.buildDosePromptContexts(matchedEntries, parsed.drug_name)
+          ? await this.buildDosePromptContexts(matchedEntries, parsed.drug_name)
           : this.buildSectionPromptContexts(matchedEntries, intent);
 
       if (

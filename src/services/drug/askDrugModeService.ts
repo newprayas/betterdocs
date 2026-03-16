@@ -783,6 +783,37 @@ Rules:
     };
   }
 
+  async lookupIndicationsAndDoseByDrugName(
+    drugName: string,
+    catalog?: AskDrugCatalog,
+  ): Promise<{
+    title: string;
+    pages: number[];
+    indications_and_dose: string;
+  } | null> {
+    const query = canonicalizeTitleCase(drugName.trim());
+    if (!query) return null;
+
+    const activeCatalog = catalog ?? (await this.ensureDatasetReady());
+    const match = this.resolveNamedDrug(activeCatalog, {
+      drug_name: query,
+      sections: ['indications_and_dose'],
+      indication_terms: [],
+      confidence: 1,
+    });
+
+    if (!match) return null;
+
+    const indicationsAndDose = this.getSectionText(match, 'indications_and_dose');
+    if (!indicationsAndDose) return null;
+
+    return {
+      title: match.title,
+      pages: match.pages,
+      indications_and_dose: indicationsAndDose,
+    };
+  }
+
   private shouldRenderIndicationsSummaryPlusDose(
     parsed: AskDrugQueryParseResult,
     requestedSections: AskDrugSectionKey[],
