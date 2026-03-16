@@ -555,6 +555,28 @@ export const useChatStore = create<ChatStore>()(
                       default:
                         break;
                     }
+                  } else if (event.type === 'userMessage') {
+                    const syntheticUserContent = event.content?.trim();
+                    if (!syntheticUserContent) return;
+
+                    set((state) => {
+                      const syntheticUserMessage: Message = {
+                        id: crypto.randomUUID(),
+                        sessionId,
+                        content: syntheticUserContent,
+                        role: MessageSender.USER,
+                        timestamp: new Date(),
+                      };
+
+                      const newMessages = [...state.messages, syntheticUserMessage];
+                      return {
+                        messages: newMessages,
+                        messageCache: {
+                          ...state.messageCache,
+                          [sessionId]: newMessages,
+                        },
+                      };
+                    });
                   } else if (event.type === 'done') {
                     isSettled = true;
                     const { content: finalContent, citations: finalCitations } = event;

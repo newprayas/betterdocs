@@ -4,7 +4,7 @@ import type { VectorSearchResult } from '@/types/embedding';
 import type { AppSettings } from '@/types/settings';
 
 export interface ChatStreamEvent {
-  type: 'start' | 'chunk' | 'citation' | 'progress' | 'thinking' | 'end' | 'error' | 'status' | 'textChunk' | 'citations' | 'done' | 'suggestions';
+  type: 'start' | 'chunk' | 'citation' | 'progress' | 'thinking' | 'end' | 'error' | 'status' | 'textChunk' | 'citations' | 'done' | 'suggestions' | 'userMessage';
   content?: string;
   citation?: any;
   error?: string;

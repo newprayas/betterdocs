@@ -166,6 +166,17 @@ const uniqueOrdered = (values: string[]): string[] => {
 const removeCombinationNames = (values: string[]): string[] =>
   values.filter((value) => !/\bwith\b|\+|\//i.test(value));
 
+const formatDrugNameList = (drugNames: string[]): string => {
+  if (drugNames.length === 0) return '';
+  if (drugNames.length === 1) return drugNames[0];
+  if (drugNames.length === 2) return `${drugNames[0]} and ${drugNames[1]}`;
+
+  return `${drugNames.slice(0, -1).join(', ')} and ${drugNames[drugNames.length - 1]}`;
+};
+
+const buildBrandSearchQuery = (drugNames: string[]): string =>
+  `Search for brands and dose of ${formatDrugNameList(drugNames)}`;
+
 const logFullPromptText = (label: string, text: string): void => {
   const chunkCount = Math.max(1, Math.ceil(text.length / BRAND_EXTRACTION_PROMPT_LOG_CHUNK_SIZE));
   console.log(`${label}[META]`, {
@@ -219,22 +230,34 @@ const buildNoBrandLookupSections = (
 export class BrandExtractionService {
   private indexedDBServices = getIndexedDBServices();
 
-  private async saveAssistantMessage(sessionId: string, content: string): Promise<void> {
+  private async saveMessage(
+    sessionId: string,
+    role: MessageSender,
+    content: string,
+  ): Promise<void> {
     const session = await this.indexedDBServices.sessionService.getSession(sessionId);
     if (!session) {
       throw new Error('Session not found');
     }
 
-    const assistantMessage: MessageCreate = {
+    const message: MessageCreate = {
       sessionId,
       content,
-      role: MessageSender.ASSISTANT,
+      role,
     };
 
     await this.indexedDBServices.messageService.createMessage(
-      assistantMessage,
+      message,
       session.userId,
     );
+  }
+
+  private async saveAssistantMessage(sessionId: string, content: string): Promise<void> {
+    await this.saveMessage(sessionId, MessageSender.ASSISTANT, content);
+  }
+
+  private async saveUserMessage(sessionId: string, content: string): Promise<void> {
+    await this.saveMessage(sessionId, MessageSender.USER, content);
   }
 
   private async parseDrugNames(request: BrandLookupRequest): Promise<string[]> {
@@ -293,6 +316,13 @@ export class BrandExtractionService {
       onStreamEvent?.({ type: 'done', content: noDrugMessage });
       return;
     }
+
+    const syntheticUserQuery = buildBrandSearchQuery(drugNames);
+    await this.saveUserMessage(sessionId, syntheticUserQuery);
+    onStreamEvent?.({
+      type: 'userMessage',
+      content: syntheticUserQuery,
+    });
 
     onStreamEvent?.({
       type: 'status',
