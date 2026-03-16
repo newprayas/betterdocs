@@ -259,8 +259,9 @@ Brands and dose (header)
 [Always format the main title exactly like this: **{{DRUG_NAME}}**- Generic : resolved generic name]
 [Only the drug name itself should be bold. The text after it should remain normal.]
 [Formulation headings must be bold and uppercase with a leading check mark emoji, for example **✅ TABLET**, **✅ INJECTION**, **✅ SUPPOSITORY**]
+[Always wrap each formulation heading in literal Markdown bold markers like **✅ TABLET**. Do not output plain ✅ TABLET without the asterisks.]
 
-✅ TABLET
+**✅ TABLET**
 
 Tab. Pantonix 20 mg - Incepta
 1 + 0 + 1 -  [1/2 hour before meals] - For gastric ulcer
@@ -278,7 +279,7 @@ Price : 33 tk / tab
 Tab Genova 40 mg - Opsonin
 Price : 20 tk / tab
 
-✅ INJECTION (be mindful of IV or IM Or SC)
+**✅ INJECTION** (be mindful of IV or IM Or SC)
 
 
 Inj. Pantonix 40 mg - Inception
