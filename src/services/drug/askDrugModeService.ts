@@ -790,6 +790,7 @@ Rules:
     title: string;
     pages: number[];
     indications_and_dose: string;
+    contra_indications?: string;
   } | null> {
     const query = canonicalizeTitleCase(drugName.trim());
     if (!query) return null;
@@ -806,11 +807,13 @@ Rules:
 
     const indicationsAndDose = this.getSectionText(match, 'indications_and_dose');
     if (!indicationsAndDose) return null;
+    const contraIndications = this.getSectionText(match, 'contra_indications');
 
     return {
       title: match.title,
       pages: match.pages,
       indications_and_dose: indicationsAndDose,
+      contra_indications: contraIndications || undefined,
     };
   }
 

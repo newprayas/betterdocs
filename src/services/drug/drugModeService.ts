@@ -263,6 +263,7 @@ const buildPass3ClinicalContextPrompt = (promptContext: Record<string, unknown>)
           title: clinicalContext.title,
           pages: clinicalContext.pages,
           indications_and_dose: clinicalContext.indications_and_dose,
+          contra_indications: clinicalContext.contra_indications,
         },
       },
       null,
@@ -276,6 +277,7 @@ const buildPass3ClinicalContextPrompt = (promptContext: Record<string, unknown>)
       clinical_context: {
         pages: clinicalContext.pages,
         indications: clinicalContext.indications,
+        contraindications: clinicalContext.contraindications,
         dose: clinicalContext.dose,
       },
     },
@@ -408,6 +410,9 @@ CRITICAL FORMATTING RULES — you MUST follow these exactly:
 - In **✅ Indications**, list ALL unique indication headers found in the provided clinical context.
 - In **✅ Indications**, include indication headers only (no route, no age group, no dose, no "Usual maximum", no frequency text).
 - Use one bullet line per indication with "- ".
+- Immediately below indications, include a section labeled **❌ Contraindications** when contraindication text is available in clinical context.
+- In **❌ Contraindications**, list all unique contraindication statements from clinical context as bullets.
+- In **❌ Contraindications**, include only contraindication statements (no dosing, no route, no counseling text).
 - In the dosing/formulation sections below, use ONLY the indication(s) present in the extracted drug data sheet input; do not add extra dosing indications from clinical context.
 - Every brand name line MUST start with 🎉 and be wrapped in bold markers, e.g. 🎉 **Tab. Pantonix 20 mg - Incepta**, 🎉 **Inj. Pantonix 40 mg - Incepta**.
 - Every brand name line MUST be on its own line.
@@ -428,9 +433,14 @@ Output format — convert the input into EXACTLY this style (note: each line bel
 - indication 1
 - indication 2
 
+**❌ Contraindications**
+- contraindication 1
+- contraindication 2
+
 [Always format the main title exactly like this: **{{DRUG_NAME}}** - Generic : resolved generic name]
 [Only the drug name itself should be bold. The text after it should remain normal.]
 [The **✅ Indications** block is mandatory.]
+[If contraindications are present in clinical context, the **❌ Contraindications** block is mandatory.]
 [Formulation headings must be bold and uppercase with a leading check mark emoji: **✅ TABLET**, **✅ INJECTION**, **✅ SUPPOSITORY**]
 
 **✅ TABLET**
@@ -932,6 +942,7 @@ Rules:
             title: askDrugContext.title,
             pages: askDrugContext.pages,
             indications_and_dose: compactField(askDrugContext.indications_and_dose),
+            contra_indications: compactField(askDrugContext.contra_indications),
           },
         };
       }
@@ -951,6 +962,9 @@ Rules:
       clinical_context: {
         pages: uniquePages(safeEntries),
         indications: uniqueStrings(safeEntries.map((entry) => compactField(entry.indications))).join(' | ') || undefined,
+        contraindications:
+          uniqueStrings(safeEntries.map((entry) => compactField(entry.contraindications))).join(' | ') ||
+          undefined,
         dose: uniqueStrings(safeEntries.map((entry) => compactField(entry.dose))).join(' | ') || undefined,
       },
     };
@@ -1522,7 +1536,7 @@ ${stringifyEntryForPrompt(promptContextForModel)}`;
 
         const pass3SystemPrompt = this.buildDoseConversionSystemPrompt(resolvedDrugName);
         const pass3ClinicalContextPrompt = buildPass3ClinicalContextPrompt(promptContext);
-        const pass3UserPrompt = `Clinical context (use this to extract ALL indication headers for the top ✅ Indications block only):
+        const pass3UserPrompt = `Clinical context (use this to extract ALL indication headers and contraindication statements for the top summary blocks only):
 ${pass3ClinicalContextPrompt}
 
 Here is the extracted drug data sheet. Convert all verbatim doses into practical dosing schedules:
