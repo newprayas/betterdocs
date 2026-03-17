@@ -239,7 +239,7 @@ const formatDrugDoseOutput = (raw: string): string =>
 
 // ─── PASS 1: Extraction-only prompt (no dose math) ───────────────────────────
 const DRUG_EXTRACTION_SYSTEM_PROMPT_TEMPLATE = `You are a drug-data extraction assistant.
-For the DRUG: {{DRUG_NAME}}, extract all brand names with their exact verbatim indications and dose text from the clinical context.
+For the DRUG: {{DRUG_NAME}}, extract all brand names with exact verbatim dose text for ONLY the most common ward-use indications from the clinical context.
 
 [ie; all brands of the generic drug in the context]
 [the app has already filtered and prioritized these brand names when available: Square, Incepta, Healthcare, Opsonin, Beximco, Aristopharma]
@@ -250,11 +250,13 @@ For the DRUG: {{DRUG_NAME}}, extract all brand names with their exact verbatim i
 [Never combine the ask-drug clinical context and the drug-mode clinical context together.]
 [If the context contains multiple matched entries for the same generic drug, use all of them together and combine carefully.]
 [If two matched entries differ, keep the difference clear instead of deleting one.]
-[When using ask-drug clinical context, prefer broad/common indication labels, merge obvious duplicates, but do not aggressively remove distinct uncommon indications.]
-[Keep distinct indication labels when they represent a different clinical use-case. Keep Acute migraine, Acute gout, Postoperative pain, Ureteric colic, Actinic keratosis etc. as separate indications.]
-[Only merge indications when they are truly the same or near-identical.]
-[Do not omit distinct route-specific or formulation-specific indications. Keep oral, rectal, injection, infusion, topical uses separate when the clinical_context separates them.]
-[Include all distinct clinically supported indications that map to the available brand formulations.]
+[Select ONLY 2 to 3 indications total, choosing the most common general indications typically seen in hospital wards.]
+[CRITICAL: minimum indication count is 2 whenever at least 2 are available in clinical_context.]
+[Prioritize broad/high-frequency ward indications and ignore rare, niche, or specialty indications.]
+[If at least 2 clearly common indications are available, you MUST include at least 2. This minimum is mandatory.]
+[If only 1 clearly common indication is available, include that 1.]
+[Merge obvious duplicate or near-identical indication labels before final selection.]
+[Do not force-include every unique indication from the source context.]
 [If a formulation exists in filtered_proprietary_preparations, include it. Do not skip sachet, suspension, syrup, drops, suppository, topical, injection, infusion, or capsule forms.]
 [Use only clearly stated brand strengths from filtered_proprietary_preparations with explicit units (mg, g, mcg, ml, %).]
 [Do not invent a separate brand strength from a suspicious trailing numeric fragment.]
@@ -264,7 +266,9 @@ For the DRUG: {{DRUG_NAME}}, extract all brand names with their exact verbatim i
 IMPORTANT RULES:
 - Do NOT convert doses into tablet/capsule/vial counts. Just copy the exact dose text verbatim from clinical_context.
 - Do NOT calculate any dosing schedule. That is done in a separate step.
-- DO list each unique indication with its exact verbatim dose text (Adult, Child, etc.) from the clinical context.
+- DO list ONLY the selected common indication(s) (minimum 2 when at least 2 are available; maximum 3) with exact verbatim dose text (Adult, Child, etc.) from the clinical context.
+- CRITICAL: NEVER return only 1 indication when 2 or more valid common indications are available in the clinical context.
+- DO NOT include all unique indications when more are available; keep only the most common ward-use ones.
 - DO include the price for each brand.
 - DO avoid duplication ONLY when two brands have the EXACT SAME mg strength (e.g. two different 50 mg brands). In that case list the dose under the first brand and just show price for the later one.
 - If two brands have DIFFERENT mg strengths (e.g. 50 mg and 100 mg), you MUST repeat the full verbatim dose text for EACH strength, even if the source clinical_context uses the same dose description. This is critical because a separate step will calculate different unit counts for different strengths.
