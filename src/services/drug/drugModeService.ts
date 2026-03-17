@@ -297,13 +297,14 @@ For the DRUG: {{DRUG_NAME}}, extract all brand names with exact verbatim dose te
 [Never combine the ask-drug clinical context and the drug-mode clinical context together.]
 [If the context contains multiple matched entries for the same generic drug, use all of them together and combine carefully.]
 [If two matched entries differ, keep the difference clear instead of deleting one.]
-[Select ONLY 2 to 3 indications total, choosing the most common general indications typically seen in hospital wards.]
-[CRITICAL: minimum indication count is 2 whenever at least 2 are available in clinical_context.]
-[Prioritize broad/high-frequency ward indications and ignore rare, niche, or specialty indications.]
-[If at least 2 clearly common indications are available, you MUST include at least 2. This minimum is mandatory.]
-[If only 1 clearly common indication is available, include that 1.]
+[You will receive an optional requested_indication_query in the input context.]
+[If requested_indication_query is non-empty, select EXACTLY 1 indication that best matches that requested indication from clinical_context.]
+[When matching requested_indication_query, prioritize exact/near-exact indication label matches over broader alternatives.]
+[If requested_indication_query is empty, select EXACTLY 1 most common general ward-use indication from clinical_context.]
+[CRITICAL: indication count must be exactly 1 (minimum 1, maximum 1).]
+[Prioritize broad/high-frequency ward indications and ignore rare, niche, or specialty indications when no specific indication is requested.]
 [Merge obvious duplicate or near-identical indication labels before final selection.]
-[Do not force-include every unique indication from the source context.]
+[Do not include multiple indication labels in the extracted output.]
 [If a formulation exists in filtered_proprietary_preparations, include it. Do not skip sachet, suspension, syrup, drops, suppository, topical, injection, infusion, or capsule forms.]
 [Use only clearly stated brand strengths from filtered_proprietary_preparations with explicit units (mg, g, mcg, ml, %).]
 [Do not invent a separate brand strength from a suspicious trailing numeric fragment.]
@@ -313,9 +314,8 @@ For the DRUG: {{DRUG_NAME}}, extract all brand names with exact verbatim dose te
 IMPORTANT RULES:
 - Do NOT convert doses into tablet/capsule/vial counts. Just copy the exact dose text verbatim from clinical_context.
 - Do NOT calculate any dosing schedule. That is done in a separate step.
-- DO list ONLY the selected common indication(s) (minimum 2 when at least 2 are available; maximum 3) with exact verbatim dose text (Adult, Child, etc.) from the clinical context.
-- CRITICAL: NEVER return only 1 indication when 2 or more valid common indications are available in the clinical context.
-- DO NOT include all unique indications when more are available; keep only the most common ward-use ones.
+- DO list ONLY the single selected indication with exact verbatim dose text (Adult, Child, etc.) from the clinical context.
+- CRITICAL: ALWAYS output exactly 1 indication (never 0, never more than 1).
 - DO include the price for each brand.
 - DO avoid duplication ONLY when two brands have the EXACT SAME mg strength (e.g. two different 50 mg brands). In that case list the dose under the first brand and just show price for the later one.
 - If two brands have DIFFERENT mg strengths (e.g. 50 mg and 100 mg), you MUST repeat the full verbatim dose text for EACH strength, even if the source clinical_context uses the same dose description. This is critical because a separate step will calculate different unit counts for different strengths.
@@ -365,6 +365,11 @@ FORMATTING AND INCLUSION RULES TO CHECK AND FIX:
    - DO avoid duplication ONLY when two brands have the EXACT SAME mg strength (e.g. two different 50 mg brands). In that case, list the dose under the first brand and just show the price for the later one.
    - If two brands have DIFFERENT mg strengths (e.g. 50 mg and 100 mg), you MUST repeat the full verbatim dose text for EACH strength, even if the source clinical_context uses the same dose description. This is critical because a separate step will calculate different unit counts for different strengths.
 
+3. Indication Selection Rule (CRITICAL):
+   - Keep EXACTLY 1 indication in the extracted output (never 0, never more than 1).
+   - If requested_indication_query is present in context, the selected indication must match it as closely as possible from the clinical context.
+   - If requested_indication_query is empty, keep the single most common ward-use indication.
+
 If these rules are not being followed in the provided extraction output, you MUST FIX the output perfectly. Especially ensure the full verbatim dose text is repeated for each different strength.
 
 Output ONLY the fixed and verified extracted dataset in the EXACT SAME format as the input extraction. Do not add any conversational text.`;
@@ -400,9 +405,10 @@ Dose-conversion workflow for EVERY indication + formulation strength:
 
 CRITICAL FORMATTING RULES — you MUST follow these exactly:
 - At the very top, after the title, include a section labeled **✅ Indications**.
-- In **✅ Indications**, list ALL indication headers found in the provided clinical context.
+- In **✅ Indications**, list ALL unique indication headers found in the provided clinical context.
 - In **✅ Indications**, include indication headers only (no route, no age group, no dose, no "Usual maximum", no frequency text).
-- Keep each indication on its own bullet line using "- ".
+- Use one bullet line per indication with "- ".
+- In the dosing/formulation sections below, use ONLY the indication(s) present in the extracted drug data sheet input; do not add extra dosing indications from clinical context.
 - Every brand name line MUST start with 🎉 and be wrapped in bold markers, e.g. 🎉 **Tab. Pantonix 20 mg - Incepta**, 🎉 **Inj. Pantonix 40 mg - Incepta**.
 - Every brand name line MUST be on its own line.
 - Every 🎯 indication line MUST start on a NEW line.
@@ -581,18 +587,21 @@ export class DrugModeService {
   }
 
   private async parseDrugQuery(content: string): Promise<DrugQueryParseResult> {
-    const systemPrompt = `Extract only the single drug or brand name from the user's query.
+    const systemPrompt = `Extract the single drug/brand name and an optional requested indication phrase from the user's query.
 Return ONLY valid JSON with this exact shape:
 {
   "drug_name": "Pantonix",
+  "requested_indication": "",
   "confidence": 0.98
 }
 
 Rules:
 - Return only one drug or brand name.
-- Remove all other words from the query.
 - Do not correct, normalize, or change the spelling of the drug or brand name.
 - Auto-capitalize the final drug_name in standard title case only.
+- If the query contains a specific indication target (for example "for migraine", "for cough", "in postoperative pain"), set requested_indication to that clinical target phrase only.
+- If no specific indication target is present, return requested_indication as an empty string.
+- requested_indication must be short and clean (no dose, no route, no age group, no frequency, no brand names).
 - If no drug or brand name can be identified, return an empty string for drug_name and 0 for confidence.
 - Do not include any text outside JSON.`;
 
@@ -614,6 +623,7 @@ Rules:
     const parsed = extractJsonObject<DrugQueryParseResult>(raw);
     const safeParsed: DrugQueryParseResult = {
       drug_name: canonicalizeDrugQueryCase(String(parsed.drug_name || '').trim()),
+      requested_indication: compactField(String(parsed.requested_indication || '')) || '',
       confidence:
         typeof parsed.confidence === 'number'
           ? Math.max(0, Math.min(1, parsed.confidence))
@@ -1009,6 +1019,7 @@ Rules:
     const activeCatalog = catalog ?? (await this.ensureDatasetReady());
     return this.findTopExactMatch(activeCatalog, {
       drug_name: canonicalizeDrugQueryCase(query),
+      requested_indication: '',
       confidence: 1,
     });
   }
@@ -1406,10 +1417,18 @@ Rules:
       }
 
       const resolvedDrugName = this.getResolvedGenericNameFromEntries(matchedEntries);
+      const requestedIndicationQuery = compactField(parsed.requested_indication) || '';
       const promptContext =
         intent.answerKind === 'dose_with_brands'
           ? await this.buildDosePromptContexts(matchedEntries, parsed.drug_name)
           : this.buildSectionPromptContexts(matchedEntries, intent);
+      const promptContextForModel =
+        intent.answerKind === 'dose_with_brands'
+          ? {
+              ...(promptContext as Record<string, unknown>),
+              requested_indication_query: requestedIndicationQuery || null,
+            }
+          : promptContext;
 
       if (
         intent.answerKind === 'dose_with_brands' &&
@@ -1431,11 +1450,14 @@ ${content}
 Extracted drug name:
 ${parsed.drug_name}
 
+Requested indication from query:
+${requestedIndicationQuery || 'None'}
+
 Resolved generic drug:
 ${resolvedDrugName}
 
 Matched drug entry or entries:
-${stringifyEntryForPrompt(promptContext)}`;
+${stringifyEntryForPrompt(promptContextForModel)}`;
 
       let fullResponse = '';
 
@@ -1500,7 +1522,7 @@ ${stringifyEntryForPrompt(promptContext)}`;
 
         const pass3SystemPrompt = this.buildDoseConversionSystemPrompt(resolvedDrugName);
         const pass3ClinicalContextPrompt = buildPass3ClinicalContextPrompt(promptContext);
-        const pass3UserPrompt = `Clinical context (use this to extract ALL indication headers for the top ✅ Indications block):
+        const pass3UserPrompt = `Clinical context (use this to extract ALL indication headers for the top ✅ Indications block only):
 ${pass3ClinicalContextPrompt}
 
 Here is the extracted drug data sheet. Convert all verbatim doses into practical dosing schedules:

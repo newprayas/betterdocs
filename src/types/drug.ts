@@ -44,6 +44,7 @@ export interface DrugDatasetRecord {
 
 export interface DrugQueryParseResult {
   drug_name: string;
+  requested_indication: string;
   confidence: number;
 }
 
