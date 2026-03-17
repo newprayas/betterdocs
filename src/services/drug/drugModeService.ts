@@ -225,112 +225,119 @@ const logFullPromptText = (label: string, text: string): void => {
   }
 };
 
-const DRUG_MODE_SYSTEM_PROMPT_TEMPLATE = `For this question :
-All the brand names (this and alternate) with dosing schedule for the drug for each indication separately according to drug formulation, and indication with price data for the DRUG : {{DRUG_NAME}} (which is taken from the output of query parser)
+// ─── PASS 1: Extraction-only prompt (no dose math) ───────────────────────────
+const DRUG_EXTRACTION_SYSTEM_PROMPT_TEMPLATE = `You are a drug-data extraction assistant.
+For the DRUG: {{DRUG_NAME}}, extract all brand names with their exact verbatim indications and dose text from the clinical context.
 
 [ie; all brands of the generic drug in the context]
 [the app has already filtered and prioritized these brand names when available: Square, Incepta, Healthcare, Opsonin, Beximco, Aristopharma]
-[Avoid duplication - if dosing is calculated for same form, and same strength ot one brand, NO need to give dosing for another brands of same dose and strength]
 [Use ONLY the filtered proprietary brand entries provided in context. Do not invent extra brands.]
-[Use ONLY the provided clinical_context as the source for indications and dose calculation. Do not mix it with any other indication or dose source.]
-[If clinical_context_source is ask_drug_indications_and_dose, use only clinical_context.indications_and_dose for the clinical indication and dose logic.]
-[If clinical_context_source is drug_mode_fallback, use only clinical_context.indications and clinical_context.dose for the clinical indication and dose logic.]
-[Never combine the ask-drug clinical context and the drug-mode clinical context together in the same reasoning.]
-[Dose-conversion workflow: always do this in order for every indication and every formulation strength: (1) identify the exact required mg dose and frequency from the chosen clinical_context for that indication, (2) identify the actual listed strength of the brand formulation, (3) convert the mg dose into the correct number of units for that exact strength.]
-[Never reverse this workflow. Do not start from the brand strength and guess the clinical dose.]
-[Map indication first, then mg dose, then unit count.]
-[Do not add administration timing or advice such as "after food", "after meals", or similar unless that exact detail is present in the chosen clinical_context.]
-[If the chosen clinical_context does not explicitly state a timing detail, leave that timing detail out.]
-[If the context contains multiple matched entries for the same generic drug, use all of them together and combine them carefully.]
+[Use ONLY the provided clinical_context as the source for indications and dose text. Do not mix it with any other source.]
+[If clinical_context_source is ask_drug_indications_and_dose, use only clinical_context.indications_and_dose.]
+[If clinical_context_source is drug_mode_fallback, use only clinical_context.indications and clinical_context.dose.]
+[Never combine the ask-drug clinical context and the drug-mode clinical context together.]
+[If the context contains multiple matched entries for the same generic drug, use all of them together and combine carefully.]
 [If two matched entries differ, keep the difference clear instead of deleting one.]
-[When using ask-drug clinical context, prefer broad/common indication labels, merge obvious duplicates, and avoid repeating near-identical indication labels, but do not aggressively remove distinct uncommon indications.]
-[Keep distinct indication labels when they represent a different clinical use-case, even if they are less common. For example, keep Acute migraine as its own indication instead of dropping it.]
-[Only merge indications when they are truly the same or near-identical. Do not merge or delete distinct indications such as Acute migraine, Acute gout, Postoperative pain, Ureteric colic, or Actinic keratosis.]
-[Do not omit distinct route-specific or formulation-specific indications. Keep oral immediate-release, oral modified-release, rectal, intramuscular injection, intravenous infusion, and topical uses separate when the clinical_context separates them.]
-[Include all distinct clinically supported indications that map to the available brand formulations and strengths. Do not skip distinct indications such as Helicobacter pylori eradication, Zollinger-Ellison syndrome, severe oesophagitis refractory to initial treatment, severe peptic ulcer bleeding, or other clearly separate uses when they are present in the chosen clinical_context.]
-[For the same formulation and same strength, explain the dosing schedule only once for the first matching brand. For later brands with the same formulation and same strength, do not repeat the full dosing schedule; instead write that the same dosing is already covered, then give the price.]
-[If a strength or release form is not clearly supported by the chosen clinical_context, do not invent a confident exact schedule for it. In that case, show the brand and price, and keep the dosing cautious or note that the exact schedule is not explicitly stated.]
-[Strength-conversion rule: always calculate the schedule from the required total dose in the clinical_context and the actual strength of the listed brand formulation.]
-[If the clinical_context says 40 mg daily, then convert that into the correct number of units for each listed strength. Example: 40 mg tablet = 1 + 0 + 0, 20 mg tablet = 1 + 0 + 1 or equivalent 40 mg/day schedule, 10 mg tablet = 2 + 0 + 2 or equivalent 40 mg/day schedule.]
-[Do not copy a 40 mg once-daily instruction directly onto a 20 mg tablet as 1 + 0 + 0. The tablet count must match the listed strength.]
-[Apply this strength-conversion rule to all formulations where a strength-to-dose calculation is needed, including tablets, capsules, dispersible tablets, suppositories, injections, infusions, syrups, suspensions, drops, and other unit-based formulations.]
-[Per-indication mapping rule: keep different required mg totals separate. Do not merge 20 mg daily, 40 mg daily, 40 mg twice daily, 75-150 mg daily, 80 mg daily, or other different regimens into one shared line.]
-[Do not write shortcuts like "all above indications (same daily mg totals)" unless the underlying required mg dose and schedule are truly identical for all those indications.]
-[If one brand strength can cover several indications but those indications require different mg totals or frequencies, list those indications separately with their own converted unit schedules.]
-[If two indications have the same brand strength but different mg requirements, do not reuse the same line for both.]
-[Before outputting a converted line, sanity-check that the total units per dose and per day really match the source mg requirement for that indication.]
-[If the clinical_context gives a dose range, preserve that range in unit form instead of always choosing the highest value. Example: if the source says 50-100 mg every 4-6 hours and the listed tablet is 100 mg, write 1/2 or 1 tablet every 4-6 hours rather than always 1 tablet every 4-6 hours.]
-[Use range-based unit wording when it better matches the source, such as 1/2 or 1 tablet, 1-2 tablets, or equivalent unit ranges for capsules, suppositories, and other formulations.]
-[Do not force a fixed full-unit schedule when the source clearly allows a lower or higher dose within a range.]
-[Rectal divided-dose rule: if the chosen clinical_context says the rectal dose is in divided doses, then split the schedule across the day using the 1 + 0 + 1 or 1 + 1 + 1 style as appropriate for the strength and total daily dose.]
-[Do not rewrite a rectal divided-dose schedule as "at night" or other once-daily bedtime wording unless the chosen clinical_context explicitly says that.]
-[For suppositories, use the same numeric schedule style as tablets when converting divided daily doses into unit counts.]
-[Practical prescribing rule: do not generate a mathematically possible schedule if it is clinically impractical or would require an unreasonable number of units.]
-[Prefer practical prescribing strengths for each indication instead of listing every theoretically possible strength conversion.]
-[If a very low strength would require an excessive number of tablets, capsules, suppositories, or other units for one indication, do not present that as a normal schedule. Either omit that indication for that strength or note that it is not a practical strength for that use.]
-[Do not produce impractical schedules such as extremely high tablet counts per day for pain, fever, migraine, or other acute indications.]
-[Injection/vial rule: if the required dose is lower than the listed vial strength, convert it into the correct vial fraction instead of rounding up to a full vial. Example: if the clinical_context says 20 mg IV daily and the listed brand is 40 mg/vial, express it as 1/2 vial IV daily if prepared/administered accordingly, not 1 full vial daily.]
-[Do not round a lower mg dose up to a full vial or ampoule unless the chosen clinical_context explicitly supports that full amount.]
-[If a formulation exists in filtered_proprietary_preparations, include it in the answer. Do not skip sachet, powder for suspension, suspension, syrup, drops, suppository, topical, injection, infusion, or capsule forms when they are present in the provided brand data and can be mapped to the chosen clinical_context.]
-[Use only clearly stated brand strengths from filtered_proprietary_preparations. A strength must have an explicit unit such as mg, g, mcg, ml, or %.]
-[Do not invent a separate brand strength from a suspicious trailing numeric fragment such as "3." or any incomplete number without a unit.]
-[If a brand detail looks malformed or ambiguous, ignore that malformed strength instead of creating an extra strength line in the final answer.]
+[When using ask-drug clinical context, prefer broad/common indication labels, merge obvious duplicates, but do not aggressively remove distinct uncommon indications.]
+[Keep distinct indication labels when they represent a different clinical use-case. Keep Acute migraine, Acute gout, Postoperative pain, Ureteric colic, Actinic keratosis etc. as separate indications.]
+[Only merge indications when they are truly the same or near-identical.]
+[Do not omit distinct route-specific or formulation-specific indications. Keep oral, rectal, injection, infusion, topical uses separate when the clinical_context separates them.]
+[Include all distinct clinically supported indications that map to the available brand formulations.]
+[If a formulation exists in filtered_proprietary_preparations, include it. Do not skip sachet, suspension, syrup, drops, suppository, topical, injection, infusion, or capsule forms.]
+[Use only clearly stated brand strengths from filtered_proprietary_preparations with explicit units (mg, g, mcg, ml, %).]
+[Do not invent a separate brand strength from a suspicious trailing numeric fragment.]
+[If a brand detail looks malformed or ambiguous, ignore that malformed strength.]
+[Do not add administration timing or advice such as "after food", "after meals" unless that exact detail is present in the chosen clinical_context.]
 
-[IMPORTANT : Dosing information is usually given in this format : 🔴 You have to CALULATE the DOSING SCHDULE form the dosing Information below like this BASED on the DRUG dose and form (tab, or injfeciton or syrp etc) - YOU have to calculate it)
-Example :
-Dose:by mouth in benign gastric ulcer or
-gastroesophageal reflux disease, 40 mg
-daily in the morning for 4 weeks,
-followed by further 4 weeks if not fully
-healed.
-Duodenal ulcer or gastritis associated
-with H. pylori, 40 mg twice daily (with
-clarithromycin 250mg twice daily and
-metronidazole 400mg twice daily) for 7
-days.CHILD not recommended
+IMPORTANT RULES:
+- Do NOT convert doses into tablet/capsule/vial counts. Just copy the exact dose text verbatim from clinical_context.
+- Do NOT calculate any dosing schedule. That is done in a separate step.
+- DO list each unique indication with its exact verbatim dose text (Adult, Child, etc.) from the clinical context.
+- DO include the price for each brand.
+- DO avoid duplication - if exact same indication+dose text applies to multiple brands of same strength, just list it once under the first brand, then for later brands just show price.
 
+Formatting:
 
-
-Formatting rule :
-Your output should look like this
-
-**{{DRUG_NAME}}**- Generic : Pantoprazole (header)
-Brands and dose (header)
-
-[Always format the main title exactly like this: **{{DRUG_NAME}}**- Generic : resolved generic name]
-[Only the drug name itself should be bold. The text after it should remain normal.]
-[Formulation headings must be bold and uppercase with a leading check mark emoji, for example **✅ TABLET**, **✅ INJECTION**, **✅ SUPPOSITORY**]
-[Always wrap each formulation heading in literal Markdown bold markers like **✅ TABLET**. Do not output plain ✅ TABLET without the asterisks.]
+**{{DRUG_NAME}}** - Generic : resolved generic name
 
 **✅ TABLET**
 
 Tab. Pantonix 20 mg - Incepta
-1 + 0 + 1 -  [1/2 hour before meals] - For gastric ulcer
-1 + 1 + 1  -  [1/2 hour before meals] - For GERD
-Price : 20 tk / tab
+🎯 Helicobacter pylori eradication [in combination with other drugs]
+Adult: 40 mg twice daily for 7 days for first- and second-line eradication therapy; 10 days for third-line eradication therapy
+Child: Not recommended
+🎯 Benign gastric ulcer
+Adult: 40 mg daily for 8 weeks; increased if necessary up to 80 mg daily, dose increased in severe cases
+Child: ...
+Price: 20 tk/tab
 
-Tab. Pantonix 40 mg - Incepta
-1 + 0 + 0 -  [1/2 hour before meals] - For gastric ulcer
-1 + 0 + 0  -  [1/2 hour before meals] - For GERD
-Price : 40 tk / tab
+Tab. Esonix 20 mg - Square [same strength dosing already listed above]
+Price: 33 tk/tab
 
-Tab. Esonix 20 mg  - Square [NO dosing info reqruied because same strengh drug dosing 20 mg tab already given above]
-Price : 33 tk / tab
+**✅ INJECTION**
 
-Tab Genova 40 mg - Opsonin
-Price : 20 tk / tab
+Inj. Pantonix 40 mg - Incepta
+🎯 indication...
+Adult: exact verbatim dose text...
+Price: 120 tk/vial
 
-**✅ INJECTION** (be mindful of IV or IM Or SC)
+And so on for every formulation and brand.`;
 
+// ─── PASS 2: Dose-conversion-only prompt ─────────────────────────────────────
+const DRUG_DOSE_CONVERSION_SYSTEM_PROMPT = `You are a dosing-schedule calculator.
+You will receive an extracted drug data sheet with brand names, indications, and VERBATIM dose text.
+Your ONLY job is to convert each verbatim dose into a practical dosing schedule based on the brand's actual listed strength.
 
-Inj. Pantonix 40 mg - Inception
-1 vial IV 12 hourly - For gastric ulcer
-1 vial IV 8 hourly - For PUD
-Price : 120 tk / vial
+Dose-conversion workflow for EVERY indication + formulation strength:
+1. Identify the exact required mg dose and frequency from the verbatim dose text for that indication.
+2. Identify the actual listed strength of the brand formulation (from the brand line, e.g. "Tab. Pantonix 20 mg").
+3. Convert the mg dose into the correct number of units for that exact strength.
 
-And so on ..
+[Never reverse this workflow. Do not start from the brand strength and guess the clinical dose.]
+[Map indication first, then mg dose, then unit count.]
+[Strength-conversion rule: always calculate from the required total dose and the actual strength.]
+[If source says 40 mg daily: 40 mg tablet = 1 + 0 + 0, 20 mg tablet = 1 + 0 + 1, 10 mg tablet = 2 + 0 + 2.]
+[Do not copy a 40 mg once-daily instruction directly onto a 20 mg tablet as 1 + 0 + 0. The tablet count must match the listed strength.]
+[Apply this to all formulations: tablets, capsules, dispersible tablets, suppositories, injections, infusions, syrups, suspensions, drops.]
+[Per-indication mapping: keep different mg totals separate. Do not merge 20 mg daily, 40 mg daily, 40 mg twice daily, etc.]
+[Do not write shortcuts like "all above indications (same daily mg totals)" unless truly identical.]
+[If one brand strength covers several indications with different mg totals, list them separately.]
+[Before outputting, sanity-check that units per dose × doses per day match the source mg requirement.]
+[If the source gives a dose range, preserve it in unit form: e.g. 50-100 mg every 4-6 hours with 100 mg tablet → 1/2 or 1 tablet every 4-6 hours.]
+[Use range-based wording when it better matches the source: 1/2 or 1 tablet, 1-2 tablets, etc.]
+[Rectal divided-dose rule: if source says divided doses, split using 1 + 0 + 1 or 1 + 1 + 1 style.]
+[Practical prescribing: do not generate impractical schedules with excessive unit counts. Prefer practical strengths.]
+[Injection/vial rule: if required dose < vial strength, use vial fractions (e.g. 1/2 vial) not full vial.]
+[Do not add administration timing or advice ("after food", "after meals") unless it was present in the input.]
+[For the same formulation and same strength, show dosing for the first brand only. For later brands of same strength, just reference that dosing is already covered + show price.]
 
-Similarly all other formulation and brand names
+Output format — convert the input into this style:
+
+**{{DRUG_NAME}}** - Generic : resolved generic name
+Brands and dose
+
+[Always format the main title exactly like this: **{{DRUG_NAME}}** - Generic : resolved generic name]
+[Only the drug name itself should be bold. The text after it should remain normal.]
+[Formulation headings must be bold and uppercase with a leading check mark emoji: **✅ TABLET**, **✅ INJECTION**, **✅ SUPPOSITORY**]
+
+**✅ TABLET**
+
+Tab. Pantonix 20 mg - Incepta
+🎯 Helicobacter pylori eradication
+Adult: 1 + 0 + 1 — for 7 days for first-line eradication therapy; 10 days for third-line
+🎯 Benign gastric ulcer
+Adult: 1 + 0 + 1 — for 8 weeks; increased if necessary up to 2 + 0 + 2 daily
+Price: 20 tk/tab
+
+Tab. Esonix 20 mg - Square [same strength dosing already covered above]
+Price: 33 tk/tab
+
+**✅ INJECTION** (be mindful of IV or IM or SC)
+
+Inj. Pantonix 40 mg - Incepta
+🎯 indication
+Adult: 1 vial IV 12 hourly — for gastric ulcer
+Price: 120 tk/vial
 
 [ALL answers should be in bullet point and neatly formatted]`;
 
@@ -1222,8 +1229,12 @@ Rules:
     await this.ensureDatasetReady();
   }
 
-  private buildDrugAnswerSystemPrompt(drugName: string): string {
-    return DRUG_MODE_SYSTEM_PROMPT_TEMPLATE.split('{{DRUG_NAME}}').join(drugName);
+  private buildExtractionSystemPrompt(drugName: string): string {
+    return DRUG_EXTRACTION_SYSTEM_PROMPT_TEMPLATE.split('{{DRUG_NAME}}').join(drugName);
+  }
+
+  private buildDoseConversionSystemPrompt(drugName: string): string {
+    return DRUG_DOSE_CONVERSION_SYSTEM_PROMPT.split('{{DRUG_NAME}}').join(drugName);
   }
 
   async sendMessage(
@@ -1287,11 +1298,6 @@ Rules:
         return;
       }
 
-      onStreamEvent?.({
-        type: 'status',
-        message: 'Drug Answer Generation',
-      });
-
       const resolvedDrugName = this.getResolvedGenericNameFromEntries(matchedEntries);
       const promptContext =
         intent.answerKind === 'dose_with_brands'
@@ -1312,7 +1318,7 @@ Rules:
         return;
       }
 
-      const prompt = `User question:
+      const contextPrompt = `User question:
 ${content}
 
 Extracted drug name:
@@ -1324,34 +1330,94 @@ ${resolvedDrugName}
 Matched drug entry or entries:
 ${stringifyEntryForPrompt(promptContext)}`;
 
-      const systemPrompt =
-        intent.answerKind === 'dose_with_brands'
-          ? this.buildDrugAnswerSystemPrompt(resolvedDrugName)
-          : DRUG_MODE_SECTION_SYSTEM_PROMPT;
-
-      logFullPromptText('[DRUG ANSWER PROMPT][SYSTEM]', systemPrompt);
-      logFullPromptText('[DRUG ANSWER PROMPT][USER]', prompt);
-
       let fullResponse = '';
-      await groqService.generateStreamingResponse(
-        prompt,
-        systemPrompt,
-        DRUG_ANSWER_MODEL,
-        {
-          temperature: 0.2,
-          maxTokens: 2400,
-          maxFailoverRetries: 2,
-          retryBackoffMs: 300,
-          onChunk: (chunk) => {
-            fullResponse += chunk;
-          },
-        },
-      );
 
-      console.log('[DRUG ANSWER]', 'Answer generation complete', {
-        matchedEntryCount: 1,
-        responseLength: fullResponse.length,
-      });
+      if (intent.answerKind === 'dose_with_brands') {
+        // ── PASS 1: Extract brands + verbatim indications/doses (no conversion) ──
+        onStreamEvent?.({
+          type: 'status',
+          message: 'Extracting drug data...',
+        });
+
+        const pass1SystemPrompt = this.buildExtractionSystemPrompt(resolvedDrugName);
+        logFullPromptText('[DRUG PASS 1 PROMPT][SYSTEM]', pass1SystemPrompt);
+        logFullPromptText('[DRUG PASS 1 PROMPT][USER]', contextPrompt);
+
+        const extractionOutput = await groqService.generateResponseWithGroq(
+          contextPrompt,
+          pass1SystemPrompt,
+          DRUG_ANSWER_MODEL,
+          {
+            temperature: 0.1,
+            maxTokens: 2400,
+          },
+        );
+
+        console.log('[DRUG PASS 1]', 'Extraction complete', {
+          responseLength: extractionOutput.length,
+        });
+        logFullPromptText('[DRUG PASS 1 OUTPUT]', extractionOutput);
+
+        // ── PASS 2: Convert verbatim doses into dosing schedules (streaming) ──
+        onStreamEvent?.({
+          type: 'status',
+          message: 'Calculating dosing schedules...',
+        });
+
+        const pass2SystemPrompt = this.buildDoseConversionSystemPrompt(resolvedDrugName);
+        const pass2UserPrompt = `Here is the extracted drug data sheet. Convert all verbatim doses into practical dosing schedules:\n\n${extractionOutput}`;
+
+        logFullPromptText('[DRUG PASS 2 PROMPT][SYSTEM]', pass2SystemPrompt);
+        logFullPromptText('[DRUG PASS 2 PROMPT][USER]', pass2UserPrompt);
+
+        await groqService.generateStreamingResponse(
+          pass2UserPrompt,
+          pass2SystemPrompt,
+          DRUG_ANSWER_MODEL,
+          {
+            temperature: 0.2,
+            maxTokens: 2400,
+            maxFailoverRetries: 2,
+            retryBackoffMs: 300,
+            onChunk: (chunk) => {
+              fullResponse += chunk;
+            },
+          },
+        );
+
+        console.log('[DRUG PASS 2]', 'Dose conversion complete', {
+          responseLength: fullResponse.length,
+        });
+      } else {
+        // ── Sectional answer (side effects, indications, etc.) — single pass ──
+        onStreamEvent?.({
+          type: 'status',
+          message: 'Drug Answer Generation',
+        });
+
+        const systemPrompt = DRUG_MODE_SECTION_SYSTEM_PROMPT;
+        logFullPromptText('[DRUG ANSWER PROMPT][SYSTEM]', systemPrompt);
+        logFullPromptText('[DRUG ANSWER PROMPT][USER]', contextPrompt);
+
+        await groqService.generateStreamingResponse(
+          contextPrompt,
+          systemPrompt,
+          DRUG_ANSWER_MODEL,
+          {
+            temperature: 0.2,
+            maxTokens: 2400,
+            maxFailoverRetries: 2,
+            retryBackoffMs: 300,
+            onChunk: (chunk) => {
+              fullResponse += chunk;
+            },
+          },
+        );
+
+        console.log('[DRUG ANSWER]', 'Sectional answer complete', {
+          responseLength: fullResponse.length,
+        });
+      }
 
       await this.saveAssistantMessage(sessionId, fullResponse);
       onStreamEvent?.({
