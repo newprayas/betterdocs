@@ -142,6 +142,43 @@ const compactField = (value?: string): string | undefined => {
   return compact || undefined;
 };
 
+const QUERY_DRUG_NAME_PREFIX_PATTERNS = [
+  /^(?:what(?:'s| is)?\s+)?(?:the\s+)?(?:brands?|brand\s*names?|trade\s*names?)\s+of\s+/i,
+  /^(?:what(?:'s| is)?\s+)?(?:the\s+)?(?:dose|doses|dosage|dosing|regimen|schedule)\s+of\s+/i,
+  /^(?:what(?:'s| is)?\s+)?(?:the\s+)?(?:price|prices|cost|costs)\s+of\s+/i,
+  /^(?:what(?:'s| is)?\s+)?(?:the\s+)?(?:indications?|side[\s-]?effects?|contra[\s-]?indications?|cautions?)\s+of\s+/i,
+];
+
+const sanitizeParsedDrugName = (value: string): string => {
+  let cleaned = compactField(value) || '';
+  if (!cleaned) return '';
+
+  cleaned = cleaned.replace(/^['"`]+|['"`]+$/g, '').trim();
+  for (const pattern of QUERY_DRUG_NAME_PREFIX_PATTERNS) {
+    cleaned = cleaned.replace(pattern, '');
+  }
+  cleaned = cleaned.replace(/[?!.,;:]+$/g, '').trim();
+
+  return cleaned;
+};
+
+const inferDrugNameFromRawQuery = (content: string): string => {
+  const compact = compactField(content) || '';
+  if (!compact) return '';
+
+  const trailingOfPattern =
+    /(?:^|\b)(?:brands?|brand\s*names?|trade\s*names?|dose|doses|dosage|dosing|regimen|schedule|price|prices|cost|costs|indications?|side[\s-]?effects?|contra[\s-]?indications?|cautions?)\s+of\s+([A-Za-z][A-Za-z0-9\s+'().\-]{1,80})$/i;
+  const trailingBrandPattern = /([A-Za-z][A-Za-z0-9\s+'().\-]{1,80})\s+(?:brands?|brand\s*names?)$/i;
+
+  const fromOf = compact.match(trailingOfPattern)?.[1];
+  if (fromOf) return sanitizeParsedDrugName(fromOf);
+
+  const fromBrand = compact.match(trailingBrandPattern)?.[1];
+  if (fromBrand) return sanitizeParsedDrugName(fromBrand);
+
+  return '';
+};
+
 const uniqueStrings = (values: Array<string | undefined | null>): string[] => {
   const seen = new Set<string>();
   const result: string[] = [];
@@ -185,7 +222,12 @@ const dedupeParsedBrands = (
   });
 };
 
-type DrugModeAnswerKind = 'sectional' | 'dose_with_brands';
+type DrugModeAnswerKind = 'sectional' | 'dose_with_brands' | 'brands';
+
+type DrugModeIntentClassifierResult = {
+  intent: string;
+  confidence: number;
+};
 
 interface DrugModeIntent {
   requestedFields: DrugModeRequestedField[];
@@ -484,6 +526,34 @@ Formatting:
 - If indications and side-effects are requested, return both, separately.
 `;
 
+const DRUG_BRANDS_SYSTEM_PROMPT = `You answer brand-name-only drug queries using ONLY the provided structured context.
+
+Core rules:
+- Use only "filtered_proprietary_preparations" from the context.
+- You MUST include every brand entry provided in "filtered_proprietary_preparations".
+- Even if the user query mentions one brand name, output all brands available for the resolved generic drug.
+- Do not include indications, dose schedules, frequencies, age groups, contraindications, or counseling.
+- Show only formulation, brand, company, strength, and price when available.
+- Group brands under formulation headings.
+- If a price is missing for a specific item, write: Price: Not specified
+- Do not invent formulations, strengths, or prices.
+
+Formatting:
+- First line: **{GENERIC_NAME}** - Generic : {GENERIC_NAME}
+- Then formulation groups using bold headings like:
+  - **✅ TABLET**
+  - **✅ CAPSULE**
+  - **✅ INJECTION**
+  - **✅ SUPPOSITORY**
+  - **✅ SYRUP**
+  - **✅ SUSPENSION**
+  - **✅ GEL**
+- Under each group, list each brand entry in this style:
+  - 🎉 Brand line
+  - Price line
+- Keep a blank line between brand items.
+- Keep output clean and compact.`;
+
 export interface DrugBrandLookupResult {
   query: string;
   resolved_generic_name: string;
@@ -607,6 +677,7 @@ Return ONLY valid JSON with this exact shape:
 
 Rules:
 - Return only one drug or brand name.
+- Remove all unrelated words from drug_name (for example, return "Napa" from "brands of napa").
 - Do not correct, normalize, or change the spelling of the drug or brand name.
 - Auto-capitalize the final drug_name in standard title case only.
 - If the query contains a specific indication target (for example "for migraine", "for cough", "in postoperative pain"), set requested_indication to that clinical target phrase only.
@@ -631,8 +702,11 @@ Rules:
     console.log('[DRUG PARSER]', 'Raw parser output', raw);
 
     const parsed = extractJsonObject<DrugQueryParseResult>(raw);
+    const parserDrugName = sanitizeParsedDrugName(String(parsed.drug_name || ''));
+    const inferredDrugName = inferDrugNameFromRawQuery(content);
+    const resolvedDrugName = parserDrugName || inferredDrugName;
     const safeParsed: DrugQueryParseResult = {
-      drug_name: canonicalizeDrugQueryCase(String(parsed.drug_name || '').trim()),
+      drug_name: canonicalizeDrugQueryCase(resolvedDrugName),
       requested_indication: compactField(String(parsed.requested_indication || '')) || '',
       confidence:
         typeof parsed.confidence === 'number'
@@ -662,16 +736,146 @@ Rules:
     if (/\bcontra[\s-]?indications?\b/.test(normalized)) addField('contraindications');
 
     const doseRequested =
-      /\b(dose|doses|dosage|dosing|schedule|regimen|strength|how much|how many|brands?|price|prices|cost|costs|tab(?:let)?s?|caps?(?:ule)?s?|syrup|susp(?:ension)?|drops?|supp(?:ository|ositories)?|injection|injectable|inj|infusion|iv|im|sc)\b/.test(
+      /\b(dose|doses|dosage|dosing|schedule|regimen|how much|how many)\b/.test(
+        normalized,
+      );
+    const brandOnlyRequested =
+      /\b(brand|brands|brand\s+name(?:s)?|brands?\s+of|company|companies|price|prices|cost|costs|trade\s+name(?:s)?)\b/.test(
         normalized,
       );
 
     if (doseRequested) {
       addField('indications');
       addField('dose');
+      return {
+        requestedFields,
+        answerKind: 'dose_with_brands',
+        needsBrands: true,
+      };
+    }
+
+    if (brandOnlyRequested) {
+      return {
+        requestedFields: [],
+        answerKind: 'brands',
+        needsBrands: true,
+      };
     }
 
     if (requestedFields.length === 0) {
+      return {
+        requestedFields: [],
+        answerKind: 'sectional',
+        needsBrands: false,
+      };
+    }
+
+    return {
+      requestedFields,
+      answerKind: 'sectional',
+      needsBrands: false,
+    };
+  }
+
+  private shouldUseIntentFallbackForTypos(content: string): boolean {
+    const normalized = content.toLowerCase();
+    const tokens = normalized.split(/[^a-z0-9]+/).filter(Boolean);
+    const anchorKeywords = ['brand', 'brands', 'company', 'price', 'cost', 'dose', 'dosage', 'dosing', 'regimen', 'schedule'];
+
+    return tokens.some((token) => {
+      if (token.length < 4) return false;
+      return anchorKeywords.some((keyword) => {
+        if (Math.abs(token.length - keyword.length) > 1) return false;
+        return levenshteinDistance(token, keyword) <= 1;
+      });
+    });
+  }
+
+  private async classifyAmbiguousIntentWithGroq(content: string): Promise<DrugModeAnswerKind | null> {
+    const systemPrompt = `Classify the user query into exactly one intent.
+Return ONLY valid JSON with this exact shape:
+{
+  "intent": "dose_with_brands",
+  "confidence": 0.95
+}
+
+Valid "intent" values:
+- "dose_with_brands": user asks for dose/dosing/regimen/schedule/how much for a drug.
+- "brands": user asks for brand names/company/price list only, without dosing.
+- "sectional": user asks for other sections (indications only, side-effects, cautions, contraindications, etc.) without dose and without brand-list request.
+
+Rules:
+- Handle common typos (example: "brads of voltalin" means brands).
+- If both dose and brands are asked together, choose "dose_with_brands".
+- Do not include any text outside JSON.`;
+
+    try {
+      const raw = await groqService.generateResponseWithGroq(
+        content,
+        systemPrompt,
+        DRUG_QUERY_PARSER_MODEL,
+        {
+          temperature: 0,
+          maxTokens: 120,
+        },
+      );
+      const parsed = extractJsonObject<DrugModeIntentClassifierResult>(raw);
+      const intent = String(parsed.intent || '').toLowerCase().trim();
+      const normalizedIntent: DrugModeAnswerKind | null =
+        intent === 'dose_with_brands' || intent === 'dose'
+          ? 'dose_with_brands'
+          : intent === 'brands' || intent === 'brand' || intent === 'brands_only'
+            ? 'brands'
+            : intent === 'sectional' || intent === 'section'
+              ? 'sectional'
+              : null;
+
+      if (normalizedIntent) {
+        console.log('[DRUG INTENT FALLBACK]', 'Resolved ambiguous query with mini intent call', {
+          query: content,
+          intent: normalizedIntent,
+          confidence: typeof parsed.confidence === 'number' ? parsed.confidence : null,
+        });
+        return normalizedIntent;
+      }
+    } catch (error) {
+      console.warn('[DRUG INTENT FALLBACK]', 'Mini intent call failed, using app-level default', {
+        query: content,
+        error,
+      });
+    }
+
+    return null;
+  }
+
+  private async resolveDrugQueryIntent(content: string): Promise<DrugModeIntent> {
+    const heuristicIntent = this.analyzeDrugQueryIntent(content);
+    if (heuristicIntent.answerKind !== 'sectional') {
+      return heuristicIntent;
+    }
+
+    if (heuristicIntent.requestedFields.length > 0) {
+      return heuristicIntent;
+    }
+
+    if (!this.shouldUseIntentFallbackForTypos(content)) {
+      return {
+        requestedFields: ['indications', 'dose'],
+        answerKind: 'dose_with_brands',
+        needsBrands: true,
+      };
+    }
+
+    const fallbackIntent = await this.classifyAmbiguousIntentWithGroq(content);
+    if (fallbackIntent === 'brands') {
+      return {
+        requestedFields: [],
+        answerKind: 'brands',
+        needsBrands: true,
+      };
+    }
+
+    if (fallbackIntent === 'sectional') {
       return {
         requestedFields: ['indications', 'dose'],
         answerKind: 'dose_with_brands',
@@ -680,9 +884,9 @@ Rules:
     }
 
     return {
-      requestedFields,
-      answerKind: doseRequested ? 'dose_with_brands' : 'sectional',
-      needsBrands: doseRequested,
+      requestedFields: ['indications', 'dose'],
+      answerKind: 'dose_with_brands',
+      needsBrands: true,
     };
   }
 
@@ -1013,6 +1217,58 @@ Rules:
         entry_label: `Entry ${index + 1}`,
         pages: entry.pages,
         filtered_proprietary_preparations: this.selectPreferredBrandEntries(entry, requestedBrandQuery),
+      })),
+    };
+  }
+
+  private buildBrandsPromptContexts(entries: DrugEntry[]): Record<string, unknown> {
+    const safeEntries = dedupeDrugEntries(entries);
+    const primaryEntry = safeEntries[0];
+    const filteredBrands = dedupeParsedBrands(
+      safeEntries.flatMap((entry) => {
+        const parsedBrands = this.parseProprietaryPreparations(entry);
+        if (parsedBrands.length === 0) return [];
+        const nonCombination = parsedBrands.filter((brand) => !brand.is_combination);
+        return nonCombination.length > 0 ? nonCombination : parsedBrands;
+      }),
+    );
+
+    if (!primaryEntry) {
+      return {
+        generic_name: '',
+        aliases: [],
+        pages: [],
+        filtered_proprietary_preparations: [],
+        matched_entries: [],
+      };
+    }
+
+    if (safeEntries.length === 1) {
+      return {
+        generic_name: cleanDrugDisplayName(primaryEntry.drug_name),
+        aliases: uniqueStrings(primaryEntry.aliases),
+        pages: primaryEntry.pages,
+        filtered_proprietary_preparations: filteredBrands,
+      };
+    }
+
+    return {
+      generic_name: cleanDrugDisplayName(primaryEntry.drug_name),
+      aliases: uniqueStrings(safeEntries.flatMap((entry) => entry.aliases)),
+      pages: uniquePages(safeEntries),
+      filtered_proprietary_preparations: filteredBrands,
+      matched_entry_count: safeEntries.length,
+      matched_entries: safeEntries.map((entry, index) => ({
+        entry_label: `Entry ${index + 1}`,
+        pages: entry.pages,
+        filtered_proprietary_preparations: dedupeParsedBrands(
+          (() => {
+            const parsedBrands = this.parseProprietaryPreparations(entry);
+            if (parsedBrands.length === 0) return [];
+            const nonCombination = parsedBrands.filter((brand) => !brand.is_combination);
+            return nonCombination.length > 0 ? nonCombination : parsedBrands;
+          })(),
+        ),
       })),
     };
   }
@@ -1391,7 +1647,7 @@ Rules:
         message: 'Drug Query Parsing',
       });
       const parsed = await this.parseDrugQuery(content);
-      const intent = this.analyzeDrugQueryIntent(content);
+      const intent = await this.resolveDrugQueryIntent(content);
 
       onStreamEvent?.({
         type: 'status',
@@ -1433,9 +1689,11 @@ Rules:
       const resolvedDrugName = this.getResolvedGenericNameFromEntries(matchedEntries);
       const requestedIndicationQuery = compactField(parsed.requested_indication) || '';
       const promptContext =
-        intent.answerKind === 'dose_with_brands'
-          ? await this.buildDosePromptContexts(matchedEntries, parsed.drug_name)
-          : this.buildSectionPromptContexts(matchedEntries, intent);
+        intent.answerKind === 'sectional'
+          ? this.buildSectionPromptContexts(matchedEntries, intent)
+          : intent.answerKind === 'brands'
+            ? this.buildBrandsPromptContexts(matchedEntries)
+            : await this.buildDosePromptContexts(matchedEntries, parsed.drug_name);
       const promptContextForModel =
         intent.answerKind === 'dose_with_brands'
           ? {
@@ -1445,7 +1703,7 @@ Rules:
           : promptContext;
 
       if (
-        intent.answerKind === 'dose_with_brands' &&
+        (intent.answerKind === 'dose_with_brands' || intent.answerKind === 'brands') &&
         Array.isArray((promptContext as Record<string, unknown>).filtered_proprietary_preparations) &&
         ((promptContext as Record<string, unknown>).filtered_proprietary_preparations as unknown[]).length === 0
       ) {
@@ -1564,6 +1822,30 @@ ${verificationOutput}`;
         console.log('[DRUG PASS 3]', 'Dose conversion complete', {
           responseLength: fullResponse.length,
         });
+      } else if (intent.answerKind === 'brands') {
+        onStreamEvent?.({
+          type: 'status',
+          message: 'Formatting brand list...',
+        });
+
+        const systemPrompt = DRUG_BRANDS_SYSTEM_PROMPT;
+        logFullPromptText('[DRUG BRANDS PROMPT][SYSTEM]', systemPrompt);
+        logFullPromptText('[DRUG BRANDS PROMPT][USER]', contextPrompt);
+
+        const brandOnlyResponse = await groqService.generateResponseWithGroq(
+          contextPrompt,
+          systemPrompt,
+          DRUG_ANSWER_MODEL,
+          {
+            temperature: 0.1,
+            maxTokens: 1800,
+          },
+        );
+        fullResponse = brandOnlyResponse;
+
+        console.log('[DRUG BRANDS]', 'Brand-only answer complete', {
+          responseLength: fullResponse.length,
+        });
       } else {
         // ── Sectional answer (side effects, indications, etc.) — single pass ──
         onStreamEvent?.({
@@ -1595,9 +1877,9 @@ ${verificationOutput}`;
         });
       }
 
-      const finalResponse = intent.answerKind === 'dose_with_brands'
-        ? formatDrugDoseOutput(fullResponse)
-        : fullResponse;
+      const finalResponse = intent.answerKind === 'sectional'
+        ? fullResponse
+        : formatDrugDoseOutput(fullResponse);
 
       await this.saveAssistantMessage(sessionId, finalResponse);
       onStreamEvent?.({
