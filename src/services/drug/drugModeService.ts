@@ -237,6 +237,53 @@ const formatDrugDoseOutput = (raw: string): string =>
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 
+const buildPass3ClinicalContextPrompt = (promptContext: Record<string, unknown>): string => {
+  const source = compactField(String(promptContext.clinical_context_source || '')) || '';
+  const clinicalContext =
+    promptContext.clinical_context && typeof promptContext.clinical_context === 'object'
+      ? (promptContext.clinical_context as Record<string, unknown>)
+      : null;
+
+  if (!clinicalContext) {
+    return JSON.stringify(
+      {
+        clinical_context_source: source || 'unknown',
+        clinical_context: {},
+      },
+      null,
+      2,
+    );
+  }
+
+  if (source === 'ask_drug_indications_and_dose') {
+    return JSON.stringify(
+      {
+        clinical_context_source: source,
+        clinical_context: {
+          title: clinicalContext.title,
+          pages: clinicalContext.pages,
+          indications_and_dose: clinicalContext.indications_and_dose,
+        },
+      },
+      null,
+      2,
+    );
+  }
+
+  return JSON.stringify(
+    {
+      clinical_context_source: source || 'drug_mode_fallback',
+      clinical_context: {
+        pages: clinicalContext.pages,
+        indications: clinicalContext.indications,
+        dose: clinicalContext.dose,
+      },
+    },
+    null,
+    2,
+  );
+};
+
 // ─── PASS 1: Extraction-only prompt (no dose math) ───────────────────────────
 const DRUG_EXTRACTION_SYSTEM_PROMPT_TEMPLATE = `You are a drug-data extraction assistant.
 For the DRUG: {{DRUG_NAME}}, extract all brand names with exact verbatim dose text for ONLY the most common ward-use indications from the clinical context.
@@ -352,6 +399,10 @@ Dose-conversion workflow for EVERY indication + formulation strength:
 [For the same formulation and same strength, show dosing for the first brand only. For later brands of same strength, just reference that dosing is already covered + show price.]
 
 CRITICAL FORMATTING RULES — you MUST follow these exactly:
+- At the very top, after the title, include a section labeled **✅ Indications**.
+- In **✅ Indications**, list ALL indication headers found in the provided clinical context.
+- In **✅ Indications**, include indication headers only (no route, no age group, no dose, no "Usual maximum", no frequency text).
+- Keep each indication on its own bullet line using "- ".
 - Every brand name line MUST start with 🎉 and be wrapped in bold markers, e.g. 🎉 **Tab. Pantonix 20 mg - Incepta**, 🎉 **Inj. Pantonix 40 mg - Incepta**.
 - Every brand name line MUST be on its own line.
 - Every 🎯 indication line MUST start on a NEW line.
@@ -366,10 +417,14 @@ CRITICAL FORMATTING RULES — you MUST follow these exactly:
 Output format — convert the input into EXACTLY this style (note: each line below is a SEPARATE line in the output):
 
 **{{DRUG_NAME}}** - Generic : resolved generic name
-Brands and dose
+
+**✅ Indications**
+- indication 1
+- indication 2
 
 [Always format the main title exactly like this: **{{DRUG_NAME}}** - Generic : resolved generic name]
 [Only the drug name itself should be bold. The text after it should remain normal.]
+[The **✅ Indications** block is mandatory.]
 [Formulation headings must be bold and uppercase with a leading check mark emoji: **✅ TABLET**, **✅ INJECTION**, **✅ SUPPOSITORY**]
 
 **✅ TABLET**
@@ -1444,7 +1499,13 @@ ${stringifyEntryForPrompt(promptContext)}`;
         });
 
         const pass3SystemPrompt = this.buildDoseConversionSystemPrompt(resolvedDrugName);
-        const pass3UserPrompt = `Here is the extracted drug data sheet. Convert all verbatim doses into practical dosing schedules:\n\n${verificationOutput}`;
+        const pass3ClinicalContextPrompt = buildPass3ClinicalContextPrompt(promptContext);
+        const pass3UserPrompt = `Clinical context (use this to extract ALL indication headers for the top ✅ Indications block):
+${pass3ClinicalContextPrompt}
+
+Here is the extracted drug data sheet. Convert all verbatim doses into practical dosing schedules:
+
+${verificationOutput}`;
 
         logFullPromptText('[DRUG PASS 3 PROMPT][SYSTEM]', pass3SystemPrompt);
         logFullPromptText('[DRUG PASS 3 PROMPT][USER]', pass3UserPrompt);
