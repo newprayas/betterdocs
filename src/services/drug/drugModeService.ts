@@ -229,10 +229,10 @@ const formatDrugDoseOutput = (raw: string): string =>
   raw
     // Blank line before formulation headings and brand blocks
     .replace(/([^\n])\s*(?=\*\*✅)/g, '$1\n\n')
-    .replace(/([^\n])\s*(?=\*\*(?:Tab\.|Cap\.|Inj\.|Supp\.|Syrup\s|Suspn?\.|Drops?\s|Paed\.))/g, '$1\n\n')
+    .replace(/([^\n])\s*(?=🎉)/g, '$1\n\n')
     // Markdown line break (two spaces + newline) for items within a brand block
     .replace(/([^\n])\s*(?=🎯)/g, '$1\n\n')
-    .replace(/([^\n])\s*(?=(?:Adult|Child)[^:]*:)/g, '$1  \n')
+    .replace(/([^\n])\s*(?=\*\*(?:Adult|Child)[^*]*\*\*[:\s])/g, '$1  \n')
     .replace(/([^\n])\s*(?=Price:)/g, '$1  \n')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
@@ -275,24 +275,24 @@ Formatting:
 
 **✅ TABLET**
 
-**Tab. Pantonix 20 mg - Incepta**
+🎉 **Tab. Pantonix 20 mg - Incepta**
 Price: 20 tk/tab
 🎯 Helicobacter pylori eradication [in combination with other drugs]
-Adult: 40 mg twice daily for 7 days for first- and second-line eradication therapy; 10 days for third-line eradication therapy
-Child: Not recommended
+**Adult:** 40 mg twice daily for 7 days for first- and second-line eradication therapy; 10 days for third-line eradication therapy
+**Child:** Not recommended
 🎯 Benign gastric ulcer
-Adult: 40 mg daily for 8 weeks; increased if necessary up to 80 mg daily, dose increased in severe cases
-Child: ...
+**Adult:** 40 mg daily for 8 weeks; increased if necessary up to 80 mg daily, dose increased in severe cases
+**Child:** ...
 
-**Tab. Esonix 20 mg - Square** [same strength dosing already listed above]
+🎉 **Tab. Esonix 20 mg - Square** [same strength dosing already listed above]
 Price: 33 tk/tab
 
 **✅ INJECTION**
 
-**Inj. Pantonix 40 mg - Incepta**
+🎉 **Inj. Pantonix 40 mg - Incepta**
 Price: 120 tk/vial
 🎯 indication...
-Adult: exact verbatim dose text...
+**Adult:** exact verbatim dose text...
 
 And so on for every formulation and brand.`;
 
@@ -307,10 +307,11 @@ Dose-conversion workflow for EVERY indication + formulation strength:
 3. Convert the mg dose into the correct number of units for that exact strength.
 
 [Never reverse this workflow. Do not start from the brand strength and guess the clinical dose.]
-[Map indication first, then mg dose, then unit count.]
+[Map indication first, then mg dose, then unit count + explicit unit.]
 [Strength-conversion rule: always calculate from the required total dose and the actual strength.]
-[If source says 40 mg daily: 40 mg tablet = 1 + 0 + 0, 20 mg tablet = 1 + 0 + 1, 10 mg tablet = 2 + 0 + 2.]
-[Do not copy a 40 mg once-daily instruction directly onto a 20 mg tablet as 1 + 0 + 0. The tablet count must match the listed strength.]
+[If source says 40 mg daily: 40 mg tablet = 1 tablet + 0 + 0, 20 mg tablet = 1 tablet + 0 + 1 tablet, 10 mg tablet = 2 tablets + 0 + 2 tablets.]
+[CRITICAL: ALWAYS append the unit type (tablet, capsule, amp, vial, suppository) to ALL numbers. Never say just "1" or "2" - say "1 tablet", "2 capsules", "1 amp", etc.]
+[Do not copy a 40 mg once-daily instruction directly onto a 20 mg tablet as 1 tablet + 0 + 0. The unit count must match the listed strength.]
 [Apply this to all formulations: tablets, capsules, dispersible tablets, suppositories, injections, infusions, syrups, suspensions, drops.]
 [Per-indication mapping: keep different mg totals separate. Do not merge 20 mg daily, 40 mg daily, 40 mg twice daily, etc.]
 [Do not write shortcuts like "all above indications (same daily mg totals)" unless truly identical.]
@@ -325,10 +326,11 @@ Dose-conversion workflow for EVERY indication + formulation strength:
 [For the same formulation and same strength, show dosing for the first brand only. For later brands of same strength, just reference that dosing is already covered + show price.]
 
 CRITICAL FORMATTING RULES — you MUST follow these exactly:
-- Every brand name line MUST be wrapped in bold markers, e.g. **Tab. Pantonix 20 mg - Incepta**, **Inj. Pantonix 40 mg - Incepta**, **Cap. Esotid 20 mg - Opsonin**.
+- Every brand name line MUST start with 🎉 and be wrapped in bold markers, e.g. 🎉 **Tab. Pantonix 20 mg - Incepta**, 🎉 **Inj. Pantonix 40 mg - Incepta**.
 - Every brand name line MUST be on its own line.
 - Every 🎯 indication line MUST start on a NEW line.
-- Every "Adult:" or "Child:" dosing line MUST start on a NEW line.
+- Age group labels MUST be bolded and include the colon, e.g. **Adult:**, **Child 12-17 years:**, **Infant:**.
+- Every bolded age group line MUST start on a NEW line.
 - Every "Price:" line MUST start on a NEW line.
 - There MUST be a blank line between each brand block.
 - There MUST be a blank line before and after each formulation heading (**✅ TABLET**, etc.).
@@ -346,22 +348,22 @@ Brands and dose
 
 **✅ TABLET**
 
-**Tab. Pantonix 20 mg - Incepta**
+🎉 **Tab. Pantonix 20 mg - Incepta**
 Price: 20 tk/tab
 🎯 Helicobacter pylori eradication
-Adult: 1 + 0 + 1 — for 7 days for first-line eradication therapy; 10 days for third-line
+**Adult:** 1 tablet + 0 + 1 tablet — for 7 days for first-line eradication therapy; 10 days for third-line
 🎯 Benign gastric ulcer
-Adult: 1 + 0 + 1 — for 8 weeks; increased if necessary up to 2 + 0 + 2 daily
+**Adult:** 1 tablet + 0 + 1 tablet — for 8 weeks; increased if necessary up to 2 tablets + 0 + 2 tablets daily
 
-**Tab. Esonix 20 mg - Square** [same strength dosing already covered above]
+🎉 **Tab. Esonix 20 mg - Square** [same strength dosing already covered above]
 Price: 33 tk/tab
 
 **✅ INJECTION** (be mindful of IV or IM or SC)
 
-**Inj. Pantonix 40 mg - Incepta**
+🎉 **Inj. Pantonix 40 mg - Incepta**
 Price: 120 tk/vial
 🎯 indication
-Adult: 1 vial IV 12 hourly — for gastric ulcer
+**Adult:** 1 vial IV 12 hourly — for gastric ulcer
 
 [ALL answers should be neatly formatted with clear line breaks between every element]`;
 
