@@ -296,7 +296,29 @@ Price: 120 tk/vial
 
 And so on for every formulation and brand.`;
 
-// ─── PASS 2: Dose-conversion-only prompt ─────────────────────────────────────
+// ─── PASS 2: Verification and Formatting Fixes ───────────────────────────────
+const DRUG_VERIFICATION_SYSTEM_PROMPT = `You are a clinical data verification assistant.
+You will receive the extracted drug data from a previous step, along with the original matched drug entries and clinical context.
+
+Your job is to VERIFY and FIX the extracted data before it goes to the final dose-conversion step, ensuring all formatting and inclusion rules are perfectly followed.
+
+FORMATTING AND INCLUSION RULES TO CHECK AND FIX:
+1. Missing Formulations Check:
+   - Compare the formulations (Tablet, Capsule, Injection, Suppository, Syrup, Suspension, Drops, etc.) present in the provided "Matched drug entry or entries" against the dosages/indications present in the context.
+   - If a formulation exists in the matched drug entries (brands exist) BUT there is no dosing information for it in the clinical context, include the formulation heading, the brands under that formulation, and add exactly this notice:
+     🔴 No dosing information was present in dose and indications
+   - If the clinical context provides dosing for a specific formulation (e.g. "BY RECTUM") BUT there are no brands for it in the matched drug entries, create the formulation heading, include the verbatim dose text, and add exactly this notice:
+     🔴 No brands could be found for this formulation
+
+2. Duplication and Strength Rules (CRITICAL):
+   - DO avoid duplication ONLY when two brands have the EXACT SAME mg strength (e.g. two different 50 mg brands). In that case, list the dose under the first brand and just show the price for the later one.
+   - If two brands have DIFFERENT mg strengths (e.g. 50 mg and 100 mg), you MUST repeat the full verbatim dose text for EACH strength, even if the source clinical_context uses the same dose description. This is critical because a separate step will calculate different unit counts for different strengths.
+
+If these rules are not being followed in the provided extraction output, you MUST FIX the output perfectly. Especially ensure the full verbatim dose text is repeated for each different strength.
+
+Output ONLY the fixed and verified extracted dataset in the EXACT SAME format as the input extraction. Do not add any conversational text.`;
+
+// ─── PASS 3: Dose-conversion-only prompt ─────────────────────────────────────
 const DRUG_DOSE_CONVERSION_SYSTEM_PROMPT = `You are a dosing-schedule calculator.
 You will receive an extracted drug data sheet with brand names, indications, and VERBATIM dose text.
 Your ONLY job is to convert each verbatim dose into a practical dosing schedule based on the brand's actual listed strength.
@@ -1384,21 +1406,48 @@ ${stringifyEntryForPrompt(promptContext)}`;
         });
         logFullPromptText('[DRUG PASS 1 OUTPUT]', extractionOutput);
 
-        // ── PASS 2: Convert verbatim doses into dosing schedules (streaming) ──
+        // ── PASS 2: Verification and Formatting Fixes ──
+        onStreamEvent?.({
+          type: 'status',
+          message: 'Verifying drug data rules...',
+        });
+
+        const pass2SystemPrompt = DRUG_VERIFICATION_SYSTEM_PROMPT;
+        const pass2UserPrompt = `${contextPrompt}\n\nHere is the extracted output from Pass 1. Please verify and fix it according to the rules:\n\n${extractionOutput}`;
+
+        logFullPromptText('[DRUG PASS 2 PROMPT][SYSTEM]', pass2SystemPrompt);
+        logFullPromptText('[DRUG PASS 2 PROMPT][USER]', pass2UserPrompt);
+
+        const verificationOutput = await groqService.generateResponseWithGroq(
+          pass2UserPrompt,
+          pass2SystemPrompt,
+          DRUG_ANSWER_MODEL,
+          {
+            temperature: 0.1,
+            maxTokens: 2400,
+          },
+        );
+
+        console.log('[DRUG PASS 2]', 'Verification complete', {
+          responseLength: verificationOutput.length,
+        });
+        logFullPromptText('[DRUG PASS 2 OUTPUT]', verificationOutput);
+
+        // ── PASS 3: Convert verbatim doses into dosing schedules (streaming) ──
         onStreamEvent?.({
           type: 'status',
           message: 'Calculating dosing schedules...',
         });
 
-        const pass2SystemPrompt = this.buildDoseConversionSystemPrompt(resolvedDrugName);
-        const pass2UserPrompt = `Here is the extracted drug data sheet. Convert all verbatim doses into practical dosing schedules:\n\n${extractionOutput}`;
+        const pass3SystemPrompt = this.buildDoseConversionSystemPrompt(resolvedDrugName);
+        const pass3UserPrompt = `Here is the extracted drug data sheet. Convert all verbatim doses into practical dosing schedules:\n\n${verificationOutput}`;
 
-        logFullPromptText('[DRUG PASS 2 PROMPT][SYSTEM]', pass2SystemPrompt);
-        logFullPromptText('[DRUG PASS 2 PROMPT][USER]', pass2UserPrompt);
+        logFullPromptText('[DRUG PASS 3 PROMPT][SYSTEM]', pass3SystemPrompt);
+        logFullPromptText('[DRUG PASS 3 PROMPT][USER]', pass3UserPrompt);
 
         await groqService.generateStreamingResponse(
-          pass2UserPrompt,
-          pass2SystemPrompt,
+          pass3UserPrompt,
+          pass3SystemPrompt,
           DRUG_ANSWER_MODEL,
           {
             temperature: 0.2,
@@ -1411,7 +1460,7 @@ ${stringifyEntryForPrompt(promptContext)}`;
           },
         );
 
-        console.log('[DRUG PASS 2]', 'Dose conversion complete', {
+        console.log('[DRUG PASS 3]', 'Dose conversion complete', {
           responseLength: fullResponse.length,
         });
       } else {
