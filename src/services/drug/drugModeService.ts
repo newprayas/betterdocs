@@ -225,6 +225,18 @@ const logFullPromptText = (label: string, text: string): void => {
   }
 };
 
+const formatDrugDoseOutput = (raw: string): string =>
+  raw
+    // Blank line before formulation headings and brand blocks
+    .replace(/([^\n])\s*(?=\*\*✅)/g, '$1\n\n')
+    .replace(/([^\n])\s*(?=\*\*(?:Tab\.|Cap\.|Inj\.|Supp\.|Syrup\s|Suspn?\.|Drops?\s|Paed\.))/g, '$1\n\n')
+    // Markdown line break (two spaces + newline) for items within a brand block
+    .replace(/([^\n])\s*(?=🎯)/g, '$1\n\n')
+    .replace(/([^\n])\s*(?=(?:Adult|Child)[^:]*:)/g, '$1  \n')
+    .replace(/([^\n])\s*(?=Price:)/g, '$1  \n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+
 // ─── PASS 1: Extraction-only prompt (no dose math) ───────────────────────────
 const DRUG_EXTRACTION_SYSTEM_PROMPT_TEMPLATE = `You are a drug-data extraction assistant.
 For the DRUG: {{DRUG_NAME}}, extract all brand names with their exact verbatim indications and dose text from the clinical context.
@@ -254,7 +266,8 @@ IMPORTANT RULES:
 - Do NOT calculate any dosing schedule. That is done in a separate step.
 - DO list each unique indication with its exact verbatim dose text (Adult, Child, etc.) from the clinical context.
 - DO include the price for each brand.
-- DO avoid duplication - if exact same indication+dose text applies to multiple brands of same strength, just list it once under the first brand, then for later brands just show price.
+- DO avoid duplication ONLY when two brands have the EXACT SAME mg strength (e.g. two different 50 mg brands). In that case list the dose under the first brand and just show price for the later one.
+- If two brands have DIFFERENT mg strengths (e.g. 50 mg and 100 mg), you MUST repeat the full verbatim dose text for EACH strength, even if the source clinical_context uses the same dose description. This is critical because a separate step will calculate different unit counts for different strengths.
 
 Formatting:
 
@@ -262,24 +275,24 @@ Formatting:
 
 **✅ TABLET**
 
-Tab. Pantonix 20 mg - Incepta
+**Tab. Pantonix 20 mg - Incepta**
+Price: 20 tk/tab
 🎯 Helicobacter pylori eradication [in combination with other drugs]
 Adult: 40 mg twice daily for 7 days for first- and second-line eradication therapy; 10 days for third-line eradication therapy
 Child: Not recommended
 🎯 Benign gastric ulcer
 Adult: 40 mg daily for 8 weeks; increased if necessary up to 80 mg daily, dose increased in severe cases
 Child: ...
-Price: 20 tk/tab
 
-Tab. Esonix 20 mg - Square [same strength dosing already listed above]
+**Tab. Esonix 20 mg - Square** [same strength dosing already listed above]
 Price: 33 tk/tab
 
 **✅ INJECTION**
 
-Inj. Pantonix 40 mg - Incepta
+**Inj. Pantonix 40 mg - Incepta**
+Price: 120 tk/vial
 🎯 indication...
 Adult: exact verbatim dose text...
-Price: 120 tk/vial
 
 And so on for every formulation and brand.`;
 
@@ -311,7 +324,18 @@ Dose-conversion workflow for EVERY indication + formulation strength:
 [Do not add administration timing or advice ("after food", "after meals") unless it was present in the input.]
 [For the same formulation and same strength, show dosing for the first brand only. For later brands of same strength, just reference that dosing is already covered + show price.]
 
-Output format — convert the input into this style:
+CRITICAL FORMATTING RULES — you MUST follow these exactly:
+- Every brand name line MUST be wrapped in bold markers, e.g. **Tab. Pantonix 20 mg - Incepta**, **Inj. Pantonix 40 mg - Incepta**, **Cap. Esotid 20 mg - Opsonin**.
+- Every brand name line MUST be on its own line.
+- Every 🎯 indication line MUST start on a NEW line.
+- Every "Adult:" or "Child:" dosing line MUST start on a NEW line.
+- Every "Price:" line MUST start on a NEW line.
+- There MUST be a blank line between each brand block.
+- There MUST be a blank line before and after each formulation heading (**✅ TABLET**, etc.).
+- NEVER run multiple items together on one line or in a paragraph. Each element gets its own line.
+- Use newline characters to separate every distinct piece of information.
+
+Output format — convert the input into EXACTLY this style (note: each line below is a SEPARATE line in the output):
 
 **{{DRUG_NAME}}** - Generic : resolved generic name
 Brands and dose
@@ -322,24 +346,24 @@ Brands and dose
 
 **✅ TABLET**
 
-Tab. Pantonix 20 mg - Incepta
+**Tab. Pantonix 20 mg - Incepta**
+Price: 20 tk/tab
 🎯 Helicobacter pylori eradication
 Adult: 1 + 0 + 1 — for 7 days for first-line eradication therapy; 10 days for third-line
 🎯 Benign gastric ulcer
 Adult: 1 + 0 + 1 — for 8 weeks; increased if necessary up to 2 + 0 + 2 daily
-Price: 20 tk/tab
 
-Tab. Esonix 20 mg - Square [same strength dosing already covered above]
+**Tab. Esonix 20 mg - Square** [same strength dosing already covered above]
 Price: 33 tk/tab
 
 **✅ INJECTION** (be mindful of IV or IM or SC)
 
-Inj. Pantonix 40 mg - Incepta
+**Inj. Pantonix 40 mg - Incepta**
+Price: 120 tk/vial
 🎯 indication
 Adult: 1 vial IV 12 hourly — for gastric ulcer
-Price: 120 tk/vial
 
-[ALL answers should be in bullet point and neatly formatted]`;
+[ALL answers should be neatly formatted with clear line breaks between every element]`;
 
 const DRUG_MODE_SECTION_SYSTEM_PROMPT = `You answer drug questions using ONLY the provided structured drug context.
 
@@ -1419,10 +1443,14 @@ ${stringifyEntryForPrompt(promptContext)}`;
         });
       }
 
-      await this.saveAssistantMessage(sessionId, fullResponse);
+      const finalResponse = intent.answerKind === 'dose_with_brands'
+        ? formatDrugDoseOutput(fullResponse)
+        : fullResponse;
+
+      await this.saveAssistantMessage(sessionId, finalResponse);
       onStreamEvent?.({
         type: 'done',
-        content: fullResponse,
+        content: finalResponse,
       });
     } catch (error) {
       console.error('[DRUG ERROR]', error);
