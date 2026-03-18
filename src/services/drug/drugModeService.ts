@@ -279,6 +279,17 @@ const formatDrugDoseOutput = (raw: string): string =>
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 
+const formatDrugBrandsOutput = (raw: string): string =>
+  formatDrugDoseOutput(raw)
+    .split('\n')
+    .map((line) => {
+      if (/^\s*🎉/.test(line) || /^\s*Price:/i.test(line)) {
+        return line.replace(/\*\*/g, '');
+      }
+      return line;
+    })
+    .join('\n');
+
 const buildPass3ClinicalContextPrompt = (promptContext: Record<string, unknown>): string => {
   const source = compactField(String(promptContext.clinical_context_source || '')) || '';
   const clinicalContext =
@@ -530,8 +541,12 @@ const DRUG_BRANDS_SYSTEM_PROMPT = `You answer brand-name-only drug queries using
 
 Core rules:
 - Use only "filtered_proprietary_preparations" from the context.
-- You MUST include every brand entry provided in "filtered_proprietary_preparations".
-- Even if the user query mentions one brand name, output all brands available for the resolved generic drug.
+- Include all brand entries provided in "filtered_proprietary_preparations" (this list is already pre-filtered and capped to top results).
+- The list is capped to a maximum of 5 brands and prioritizes preferred companies first when available.
+- Treat each object in "filtered_proprietary_preparations" as ONE distinct brand block.
+- The number of 🎉 brand lines must equal the number of objects in "filtered_proprietary_preparations".
+- Never split one brand object into multiple 🎉 lines.
+- If one brand has multiple strengths/pack sizes/prices inside "details", keep them inside the same brand block (extra plain lines are allowed), not as new 🎉 items.
 - Do not include indications, dose schedules, frequencies, age groups, contraindications, or counseling.
 - Show only formulation, brand, company, strength, and price when available.
 - Group brands under formulation headings.
@@ -551,6 +566,7 @@ Formatting:
 - Under each group, list each brand entry in this style:
   - 🎉 Brand line
   - Price line
+- Brand lines (🎉 ...) and Price lines must be plain text (no bold markdown).
 - Keep a blank line between brand items.
 - Keep output clean and compact.`;
 
@@ -1221,17 +1237,22 @@ Rules:
     };
   }
 
-  private buildBrandsPromptContexts(entries: DrugEntry[]): Record<string, unknown> {
+  private buildBrandsPromptContexts(
+    entries: DrugEntry[],
+    requestedBrandQuery?: string,
+  ): Record<string, unknown> {
     const safeEntries = dedupeDrugEntries(entries);
     const primaryEntry = safeEntries[0];
-    const filteredBrands = dedupeParsedBrands(
-      safeEntries.flatMap((entry) => {
-        const parsedBrands = this.parseProprietaryPreparations(entry);
-        if (parsedBrands.length === 0) return [];
-        const nonCombination = parsedBrands.filter((brand) => !brand.is_combination);
-        return nonCombination.length > 0 ? nonCombination : parsedBrands;
-      }),
+    const allCandidateBrands = dedupeParsedBrands(
+      safeEntries.flatMap((entry) => this.selectPreferredBrandEntries(entry, requestedBrandQuery)),
     );
+    const preferredBrands = allCandidateBrands.filter((brand) =>
+      PREFERRED_BRAND_COMPANIES.includes(normalizeDrugLookupText(brand.company_name)),
+    );
+    const otherBrands = allCandidateBrands.filter(
+      (brand) => !PREFERRED_BRAND_COMPANIES.includes(normalizeDrugLookupText(brand.company_name)),
+    );
+    const filteredBrands = [...preferredBrands, ...otherBrands].slice(0, DRUG_BRAND_RESULT_LIMIT);
 
     if (!primaryEntry) {
       return {
@@ -1261,14 +1282,10 @@ Rules:
       matched_entries: safeEntries.map((entry, index) => ({
         entry_label: `Entry ${index + 1}`,
         pages: entry.pages,
-        filtered_proprietary_preparations: dedupeParsedBrands(
-          (() => {
-            const parsedBrands = this.parseProprietaryPreparations(entry);
-            if (parsedBrands.length === 0) return [];
-            const nonCombination = parsedBrands.filter((brand) => !brand.is_combination);
-            return nonCombination.length > 0 ? nonCombination : parsedBrands;
-          })(),
-        ),
+        filtered_proprietary_preparations: this.selectPreferredBrandEntries(
+          entry,
+          requestedBrandQuery,
+        ).slice(0, DRUG_BRAND_RESULT_LIMIT),
       })),
     };
   }
@@ -1692,7 +1709,7 @@ Rules:
         intent.answerKind === 'sectional'
           ? this.buildSectionPromptContexts(matchedEntries, intent)
           : intent.answerKind === 'brands'
-            ? this.buildBrandsPromptContexts(matchedEntries)
+            ? this.buildBrandsPromptContexts(matchedEntries, parsed.drug_name)
             : await this.buildDosePromptContexts(matchedEntries, parsed.drug_name);
       const promptContextForModel =
         intent.answerKind === 'dose_with_brands'
@@ -1879,7 +1896,9 @@ ${verificationOutput}`;
 
       const finalResponse = intent.answerKind === 'sectional'
         ? fullResponse
-        : formatDrugDoseOutput(fullResponse);
+        : intent.answerKind === 'brands'
+          ? formatDrugBrandsOutput(fullResponse)
+          : formatDrugDoseOutput(fullResponse);
 
       await this.saveAssistantMessage(sessionId, finalResponse);
       onStreamEvent?.({
