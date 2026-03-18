@@ -1459,24 +1459,26 @@ Rules:
     const preferredNormalizedMatches = normalizedMatches.filter(
       (entry) => entry.pages.length <= PREFERRED_MAX_PAGE_COUNT,
     );
-    const fuzzyTitleMatches =
-      strictMatches.length > 0 || normalizedMatches.length > 0
-        ? []
-        : searchableEntries.filter((entry) => this.entryHasFuzzyTitleMatch(entry, query));
-    const preferredFuzzyTitleMatches = fuzzyTitleMatches.filter(
-      (entry) => entry.pages.length <= PREFERRED_MAX_PAGE_COUNT,
-    );
     const proprietaryStrictMatches =
-      strictMatches.length > 0 || normalizedMatches.length > 0 || fuzzyTitleMatches.length > 0
+      strictMatches.length > 0 || normalizedMatches.length > 0
         ? []
         : searchableEntries.filter((entry) => this.entryHasProprietaryPhraseMatch(entry, query));
     const proprietaryNormalizedMatches =
       strictMatches.length > 0 ||
       normalizedMatches.length > 0 ||
-      fuzzyTitleMatches.length > 0 ||
       proprietaryStrictMatches.length > 0
         ? []
         : searchableEntries.filter((entry) => this.entryHasProprietaryNormalizedMatch(entry, query));
+    const fuzzyTitleMatches =
+      strictMatches.length > 0 ||
+      normalizedMatches.length > 0 ||
+      proprietaryStrictMatches.length > 0 ||
+      proprietaryNormalizedMatches.length > 0
+        ? []
+        : searchableEntries.filter((entry) => this.entryHasFuzzyTitleMatch(entry, query));
+    const preferredFuzzyTitleMatches = fuzzyTitleMatches.filter(
+      (entry) => entry.pages.length <= PREFERRED_MAX_PAGE_COUNT,
+    );
 
     return {
       strictMatches,
@@ -1500,10 +1502,10 @@ Rules:
       candidates.strictMatches,
       candidates.preferredNormalizedMatches,
       candidates.normalizedMatches,
-      candidates.preferredFuzzyTitleMatches,
-      candidates.fuzzyTitleMatches,
       candidates.proprietaryStrictMatches,
       candidates.proprietaryNormalizedMatches,
+      candidates.preferredFuzzyTitleMatches,
+      candidates.fuzzyTitleMatches,
     ];
 
     const activeGroup = rankedGroups.find((group) => group.length > 0) ?? [];
