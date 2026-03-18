@@ -282,19 +282,22 @@ def is_drug_heading(line: str) -> bool:
     if NUMBERED_SUBSECTION_PATTERN.match(original) and "[" not in text and "(" not in text:
         return False
 
-    letters_only = re.sub(r"[^A-Za-z]", "", text)
+    # Allow lowercase explanatory text inside parentheses, but judge the
+    # heading primarily by the core drug-name portion outside parentheses.
+    core_text = normalize_space(re.sub(r"\([^)]*\)", " ", text))
+    letters_only = re.sub(r"[^A-Za-z]", "", core_text)
     if len(letters_only) < 3:
         return False
-    if "[" not in text and "(" not in text and " " not in text and len(letters_only) < 6:
+    if "[" not in text and "(" not in text and " " not in core_text and len(letters_only) < 6:
         return False
 
-    uppercase_ratio = sum(1 for ch in text if ch.isupper()) / max(
-        1, sum(1 for ch in text if ch.isalpha())
+    uppercase_ratio = sum(1 for ch in core_text if ch.isupper()) / max(
+        1, sum(1 for ch in core_text if ch.isalpha())
     )
     if uppercase_ratio < 0.7:
         return False
 
-    if not re.fullmatch(r"[A-Z0-9 \-,'/().\[\]&]+", text):
+    if not re.fullmatch(r"[A-Za-z0-9 \-,'/().\[\]&]+", text):
         return False
 
     return True
@@ -311,7 +314,7 @@ def is_heading_continuation(line: str) -> bool:
     if len(letters_only) < 3:
         return False
 
-    return bool(re.fullmatch(r"\([A-Z0-9 \-,'/.&]+\)(?:\s*\[[A-Z]+\])*$", text))
+    return bool(re.fullmatch(r"\([A-Za-z0-9 \-,'/.&]+\)(?:\s*\[[A-Z]+\])*$", text))
 
 
 def extract_pdf_lines(pdf_path: Path) -> Tuple[List[Dict[str, Any]], int]:
