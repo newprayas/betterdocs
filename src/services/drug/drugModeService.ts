@@ -999,7 +999,7 @@ Rules:
     if (!brandName) return null;
 
     const dosagePrefix = brandName.match(
-      /^(?:Tab(?:let)?\.?|Cap(?:sule)?\.?|Inj(?:ection)?\.?|Syrup|Suspn?\.?|Supp\.?|Paed\.?\s*drops?|Paed\.?\s*drop|Drops?)\s+/i,
+      /^(?:Tab(?:let)?\.?|Cap(?:sule)?\.?|Inj(?:ection)?\.?|Amp(?:oule)?\.?|Vials?\.?|Syrup|Suspn?\.?|Supp\.?|Paed\.?\s*drops?|Paed\.?\s*drop|Drops?)\s+/i,
     );
     let brandStart = prefixStart + (brandMatch?.index || 0);
     if (dosagePrefix) {
@@ -1103,21 +1103,21 @@ Rules:
     const others = pool.filter(
       (brand) => !PREFERRED_BRAND_COMPANIES.includes(normalizeDrugLookupText(brand.company_name)),
     );
-    const selected = [...preferred, ...others].slice(0, DRUG_BRAND_RESULT_LIMIT);
+    const orderedBrands = [...preferred, ...others];
     const requestedBrand =
       this.findRequestedBrandMatch(pool, requestedBrandQuery) ??
       this.findRequestedBrandMatch(parsedBrands, requestedBrandQuery);
 
     if (!requestedBrand) {
-      return selected;
+      return orderedBrands.slice(0, DRUG_BRAND_RESULT_LIMIT);
     }
 
-    const alreadyIncluded = selected.some(
-      (brand) =>
-        normalizeDrugLookupText(brand.display_name) === normalizeDrugLookupText(requestedBrand.display_name),
+    const requestedBrandKey = normalizeDrugLookupText(requestedBrand.display_name);
+    const remainingBrands = orderedBrands.filter(
+      (brand) => normalizeDrugLookupText(brand.display_name) !== requestedBrandKey,
     );
 
-    return alreadyIncluded ? selected : [...selected, requestedBrand];
+    return [requestedBrand, ...remainingBrands].slice(0, DRUG_BRAND_RESULT_LIMIT);
   }
 
   private buildSectionPromptContexts(entries: DrugEntry[], intent: DrugModeIntent): Record<string, unknown> {
