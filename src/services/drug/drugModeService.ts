@@ -485,6 +485,9 @@ Dose-conversion workflow for EVERY indication + formulation strength:
 [If an age-group line says "Not found in provided drug dataset.", preserve that line exactly and do not attempt dose conversion for it.]
 
 CRITICAL FORMATTING RULES — you MUST follow these exactly:
+- If clinical_context_source is "drug_mode_fallback", include this warning line immediately below the title:
+  ⚠️ British National Pharmacopoeia data not found, using regional information
+- If clinical_context_source is "ask_drug_indications_and_dose", do not include the British National Pharmacopoeia fallback warning.
 - Immediately below the main title, include exactly one audience notice line.
 - If requested_dose_audience is "adult", the notice line must be:
   ⚠️ Only **ADULT** dose given, search child dose separately
@@ -513,6 +516,8 @@ Output format — convert the input into EXACTLY this style (note: each line bel
 
 **{{DRUG_NAME}}** - Generic : resolved generic name
 
+⚠️ British National Pharmacopoeia data not found, using regional information
+
 ⚠️ Only **ADULT** dose given, search child dose separately
 
 **✅ Indications**
@@ -525,7 +530,8 @@ Output format — convert the input into EXACTLY this style (note: each line bel
 
 [Always format the main title exactly like this: **{{DRUG_NAME}}** - Generic : resolved generic name]
 [Only the drug name itself should be bold. The text after it should remain normal.]
-[Always include exactly one audience notice line immediately after the title and before **✅ Indications**.]
+[If clinical_context_source is "drug_mode_fallback", include the British National Pharmacopoeia fallback warning immediately after the title.]
+[Always include exactly one audience notice line below the fallback warning when present, otherwise directly below the title, and before **✅ Indications**.]
 [The **✅ Indications** block is mandatory.]
 [If contraindications are present in clinical context, the **❌ Contraindications** block is mandatory.]
 [Formulation headings must be bold and uppercase with a leading check mark emoji: **✅ TABLET**, **✅ INJECTION**, **✅ SUPPOSITORY**]
@@ -1876,6 +1882,9 @@ ${stringifyEntryForPrompt(promptContextForModel)}`;
         const pass3ClinicalContextPrompt = buildPass3ClinicalContextPrompt(promptContext);
         const pass3UserPrompt = `Requested dose audience:
 ${requestedDoseAudience}
+
+Clinical context source:
+${String((promptContext as Record<string, unknown>).clinical_context_source || 'unknown')}
 
 Clinical context (use this to extract ALL indication headers and contraindication statements for the top summary blocks only):
 ${pass3ClinicalContextPrompt}
