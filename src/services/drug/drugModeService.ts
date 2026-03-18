@@ -485,6 +485,11 @@ Dose-conversion workflow for EVERY indication + formulation strength:
 [If an age-group line says "Not found in provided drug dataset.", preserve that line exactly and do not attempt dose conversion for it.]
 
 CRITICAL FORMATTING RULES — you MUST follow these exactly:
+- Immediately below the main title, include exactly one audience notice line.
+- If requested_dose_audience is "adult", the notice line must be:
+  ⚠️ Only **ADULT** dose given, search child dose separately
+- If requested_dose_audience is "child", the notice line must be:
+  ⚠️ Only **CHILD** dose given, search adult dose separately
 - At the very top, after the title, include a section labeled **✅ Indications**.
 - In **✅ Indications**, list ALL unique indication headers found in the provided clinical context.
 - In **✅ Indications**, include indication headers only (no route, no age group, no dose, no "Usual maximum", no frequency text).
@@ -508,6 +513,8 @@ Output format — convert the input into EXACTLY this style (note: each line bel
 
 **{{DRUG_NAME}}** - Generic : resolved generic name
 
+⚠️ Only **ADULT** dose given, search child dose separately
+
 **✅ Indications**
 - indication 1
 - indication 2
@@ -518,6 +525,7 @@ Output format — convert the input into EXACTLY this style (note: each line bel
 
 [Always format the main title exactly like this: **{{DRUG_NAME}}** - Generic : resolved generic name]
 [Only the drug name itself should be bold. The text after it should remain normal.]
+[Always include exactly one audience notice line immediately after the title and before **✅ Indications**.]
 [The **✅ Indications** block is mandatory.]
 [If contraindications are present in clinical context, the **❌ Contraindications** block is mandatory.]
 [Formulation headings must be bold and uppercase with a leading check mark emoji: **✅ TABLET**, **✅ INJECTION**, **✅ SUPPOSITORY**]
@@ -1864,7 +1872,10 @@ ${stringifyEntryForPrompt(promptContextForModel)}`;
 
         const pass3SystemPrompt = this.buildDoseConversionSystemPrompt(resolvedDrugName);
         const pass3ClinicalContextPrompt = buildPass3ClinicalContextPrompt(promptContext);
-        const pass3UserPrompt = `Clinical context (use this to extract ALL indication headers and contraindication statements for the top summary blocks only):
+        const pass3UserPrompt = `Requested dose audience:
+${requestedDoseAudience}
+
+Clinical context (use this to extract ALL indication headers and contraindication statements for the top summary blocks only):
 ${pass3ClinicalContextPrompt}
 
 Here is the extracted drug data sheet. Convert all verbatim doses into practical dosing schedules:
