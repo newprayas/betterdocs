@@ -321,6 +321,15 @@ export const useChatStore = create<ChatStore>()(
                       case 'Drug Search':
                         setProgressState(70, 'Drug Search');
                         break;
+                      case 'Extracting drug data...':
+                        setProgressState(85, 'Extracting drug data...');
+                        break;
+                      case 'Verifying drug data rules...':
+                        setProgressState(95, 'Verifying drug data rules...');
+                        break;
+                      case 'Calculating dosing schedules...':
+                        setProgressState(98, 'Calculating dosing schedules...');
+                        break;
                       case 'Drug Answer Generation':
                         setProgressState(90, 'Drug Answer Generation');
                         break;
