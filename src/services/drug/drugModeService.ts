@@ -223,6 +223,7 @@ const dedupeParsedBrands = (
 };
 
 type DrugModeAnswerKind = 'sectional' | 'dose_with_brands' | 'brands';
+type DrugDoseAudience = 'adult' | 'child';
 
 type DrugModeIntentClassifierResult = {
   intent: string;
@@ -274,7 +275,10 @@ const formatDrugDoseOutput = (raw: string): string =>
     .replace(/([^\n])\s*(?=🎉)/g, '$1\n\n')
     // Markdown line break (two spaces + newline) for items within a brand block
     .replace(/([^\n])\s*(?=🎯)/g, '$1\n\n')
-    .replace(/([^\n])\s*(?=\*\*(?:Adult|Child)[^*]*\*\*[:\s])/g, '$1  \n')
+    .replace(
+      /([^\n])\s*(?=\*\*(?:Adult|Child|Paediatric|Pediatric|Infant|Neonate|Toddler|Baby)[^*]*\*\*[:\s])/g,
+      '$1  \n',
+    )
     .replace(/([^\n])\s*(?=Price:)/g, '$1  \n')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
@@ -353,6 +357,13 @@ For the DRUG: {{DRUG_NAME}}, extract all brand names with exact verbatim dose te
 [If the context contains multiple matched entries for the same generic drug, use all of them together and combine carefully.]
 [If two matched entries differ, keep the difference clear instead of deleting one.]
 [You will receive an optional requested_indication_query in the input context.]
+[You will receive requested_dose_audience in the input context with value "adult" or "child".]
+[If requested_dose_audience is "adult", include ONLY adult/adult-equivalent dosing lines. Exclude child, pediatric, paediatric, infant, neonate, baby, and toddler dosing lines.]
+[If requested_dose_audience is "child", include ONLY child/pediatric/paediatric/infant/neonate/baby/toddler dosing lines when present. Do NOT include adult dosing.]
+[Never include both adult and child dosing in the same extracted output.]
+[If the requested dose audience is missing for the selected indication, write exactly "**Adult:** Not found in provided drug dataset." or "**Child:** Not found in provided drug dataset." as appropriate, and do not substitute the other audience.]
+[If requested_brand_query is present in the input context, that means the user asked by a brand name or alias.]
+[When requested_brand_query is present, do NOT limit the answer to only that brand. Include the requested brand if available, plus the other filtered brands for the resolved generic drug from context.]
 [If requested_indication_query is non-empty, select EXACTLY 1 indication that best matches that requested indication from clinical_context.]
 [When matching requested_indication_query, prioritize exact/near-exact indication label matches over broader alternatives.]
 [If requested_indication_query is empty, select EXACTLY 1 most common general ward-use indication from clinical_context.]
@@ -372,7 +383,9 @@ IMPORTANT RULES:
 - DO list ONLY the single selected indication with exact verbatim dose text (Adult, Child, etc.) from the clinical context.
 - CRITICAL: ALWAYS output exactly 1 indication (never 0, never more than 1).
 - DO include the price for each brand.
-- DO avoid duplication ONLY when two brands have the EXACT SAME mg strength (e.g. two different 50 mg brands). In that case list the dose under the first brand and just show price for the later one.
+- DO treat brands as duplicates for dosing when they have the SAME formulation AND the SAME explicit strength, even if the brand names and companies are different.
+- Example of duplicates for dosing: "Tab. Fenac 100 mg - Acme" and "Tab. Clofenac 100 mg - Square" are both TABLET 100 mg, so ONLY the first 100 mg tablet brand should carry the indication and dose lines.
+- For the second and later brands with the same formulation + same strength, show ONLY the brand line and price line, plus "[same strength dosing already listed above]". Do NOT repeat the indication or dose text.
 - If two brands have DIFFERENT mg strengths (e.g. 50 mg and 100 mg), you MUST repeat the full verbatim dose text for EACH strength, even if the source clinical_context uses the same dose description. This is critical because a separate step will calculate different unit counts for different strengths.
 
 Formatting:
@@ -385,10 +398,8 @@ Formatting:
 Price: 20 tk/tab
 🎯 Helicobacter pylori eradication [in combination with other drugs]
 **Adult:** 40 mg twice daily for 7 days for first- and second-line eradication therapy; 10 days for third-line eradication therapy
-**Child:** Not recommended
 🎯 Benign gastric ulcer
 **Adult:** 40 mg daily for 8 weeks; increased if necessary up to 80 mg daily, dose increased in severe cases
-**Child:** ...
 
 🎉 **Tab. Esonix 20 mg - Square** [same strength dosing already listed above]
 Price: 33 tk/tab
@@ -417,13 +428,26 @@ FORMATTING AND INCLUSION RULES TO CHECK AND FIX:
      🔴 No brands could be found for this formulation
 
 2. Duplication and Strength Rules (CRITICAL):
-   - DO avoid duplication ONLY when two brands have the EXACT SAME mg strength (e.g. two different 50 mg brands). In that case, list the dose under the first brand and just show the price for the later one.
+   - Treat two brand blocks as duplicates for dosing when they have the SAME formulation AND the SAME explicit strength, even if the brand names or companies differ.
+   - Example: "Tab. Fenac 100 mg - Acme" and "Tab. Clofenac 100 mg - Square" are both 100 mg tablets, so only one of them should keep the indication and dosing text.
+   - For the second and later brands with the same formulation + same strength, keep ONLY the brand line and the price line, plus "[same strength dosing already listed above]". Remove any repeated indication or dose lines if present.
    - If two brands have DIFFERENT mg strengths (e.g. 50 mg and 100 mg), you MUST repeat the full verbatim dose text for EACH strength, even if the source clinical_context uses the same dose description. This is critical because a separate step will calculate different unit counts for different strengths.
+   - Before finalizing, explicitly re-check the entire output for duplicate dosing blocks under the same formulation + same strength and collapse them if any slipped through.
 
 3. Indication Selection Rule (CRITICAL):
    - Keep EXACTLY 1 indication in the extracted output (never 0, never more than 1).
    - If requested_indication_query is present in context, the selected indication must match it as closely as possible from the clinical context.
    - If requested_indication_query is empty, keep the single most common ward-use indication.
+
+4. Dose Audience Rule (CRITICAL):
+   - Use requested_dose_audience from context.
+   - If requested_dose_audience is "adult", keep ONLY adult/adult-equivalent dosing lines.
+   - If requested_dose_audience is "child", keep ONLY child/pediatric/paediatric/infant/neonate/baby/toddler dosing lines.
+   - Never mix adult and child dosing in the same verified output.
+   - If the requested dose audience is missing for the selected indication, keep exactly this fallback line and do not substitute the other audience:
+     **Adult:** Not found in provided drug dataset.
+     or
+     **Child:** Not found in provided drug dataset.
 
 If these rules are not being followed in the provided extraction output, you MUST FIX the output perfectly. Especially ensure the full verbatim dose text is repeated for each different strength.
 
@@ -456,7 +480,9 @@ Dose-conversion workflow for EVERY indication + formulation strength:
 [Practical prescribing: do not generate impractical schedules with excessive unit counts. Prefer practical strengths.]
 [Injection/vial rule: if required dose < vial strength, use vial fractions (e.g. 1/2 vial) not full vial.]
 [Do not add administration timing or advice ("after food", "after meals") unless it was present in the input.]
-[For the same formulation and same strength, show dosing for the first brand only. For later brands of same strength, just reference that dosing is already covered + show price.]
+[For the same formulation and same strength, even across different brand names or companies, show dosing for the first brand only. For later brands of that same formulation + strength, just reference that dosing is already covered above and show price.]
+[The extracted drug data sheet has already been filtered to the requested dose audience. Do not add or restore any other age-group dosing lines.]
+[If an age-group line says "Not found in provided drug dataset.", preserve that line exactly and do not attempt dose conversion for it.]
 
 CRITICAL FORMATTING RULES — you MUST follow these exactly:
 - At the very top, after the title, include a section labeled **✅ Indications**.
@@ -732,6 +758,20 @@ Rules:
 
     console.log('[DRUG PARSER]', 'Parsed query JSON', safeParsed);
     return safeParsed;
+  }
+
+  private resolveRequestedDoseAudience(content: string): DrugDoseAudience {
+    const normalized = content.toLowerCase();
+
+    if (
+      /\b(child|children|pediatric|pediatrics|paediatric|paediatrics|peds|peds\.|paeds|paeds\.|infant|infants|baby|babies|toddler|toddlers|neonate|neonates|neonatal|newborn|newborns)\b/.test(
+        normalized,
+      )
+    ) {
+      return 'child';
+    }
+
+    return 'adult';
   }
 
   private analyzeDrugQueryIntent(content: string): DrugModeIntent {
@@ -1705,17 +1745,24 @@ Rules:
 
       const resolvedDrugName = this.getResolvedGenericNameFromEntries(matchedEntries);
       const requestedIndicationQuery = compactField(parsed.requested_indication) || '';
+      const requestedDoseAudience = this.resolveRequestedDoseAudience(content);
+      const requestedBrandQuery =
+        normalizeDrugIdentity(parsed.drug_name) !== normalizeDrugIdentity(resolvedDrugName)
+          ? parsed.drug_name
+          : '';
       const promptContext =
         intent.answerKind === 'sectional'
           ? this.buildSectionPromptContexts(matchedEntries, intent)
           : intent.answerKind === 'brands'
             ? this.buildBrandsPromptContexts(matchedEntries, parsed.drug_name)
-            : await this.buildDosePromptContexts(matchedEntries, parsed.drug_name);
+            : await this.buildDosePromptContexts(matchedEntries, requestedBrandQuery);
       const promptContextForModel =
         intent.answerKind === 'dose_with_brands'
           ? {
               ...(promptContext as Record<string, unknown>),
               requested_indication_query: requestedIndicationQuery || null,
+              requested_dose_audience: requestedDoseAudience,
+              requested_brand_query: requestedBrandQuery || null,
             }
           : promptContext;
 
@@ -1736,11 +1783,17 @@ Rules:
       const contextPrompt = `User question:
 ${content}
 
-Extracted drug name:
+Extracted user-requested drug or brand:
 ${parsed.drug_name}
 
 Requested indication from query:
 ${requestedIndicationQuery || 'None'}
+
+Requested dose audience:
+${requestedDoseAudience}
+
+Requested brand query:
+${requestedBrandQuery || 'None'}
 
 Resolved generic drug:
 ${resolvedDrugName}
