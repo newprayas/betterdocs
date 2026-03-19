@@ -16,7 +16,7 @@ import { MessageSender } from '@/types/message';
 import type { ChatStreamEvent } from '@/services/rag';
 
 const DRUG_QUERY_PARSER_MODEL = 'llama-3.3-70b-versatile';
-const DRUG_ANSWER_MODEL = 'moonshotai/kimi-k2-instruct-0905';
+const DRUG_ANSWER_MODEL = 'llama-3.3-70b-versatile';
 const DRUG_PROMPT_LOG_CHUNK_SIZE = 4000;
 const DRUG_NAME_DENYLIST = new Set(['ACE', 'FDA', 'KN.VDN', 'CNS']);
 const VERIFIED_DRUG_NAMES_URL = '/drug/verified-drug-names.txt';
@@ -294,24 +294,146 @@ const logFullPromptText = (label: string, text: string): void => {
   }
 };
 
-const formatDrugDoseOutput = (raw: string): string =>
-  raw
-    // Blank line before formulation headings and brand blocks
+const DRUG_AGE_LABEL_PREFIX =
+  '(?:Adult|Elderly|Child|Paediatric|Pediatric|Infant|Neonate|Toddler|Baby)';
+
+const normalizeDrugDoseAgeLine = (line: string): string => {
+  const trimmedLine = line.trim();
+  if (!trimmedLine) return trimmedLine;
+
+  const plainLine = trimmedLine.replace(/\*/g, '').replace(/\s+/g, ' ').trim();
+  const match = plainLine.match(
+    new RegExp(`^(${DRUG_AGE_LABEL_PREFIX}\\b[^:]{0,80}):\\s*(.*)$`, 'i'),
+  );
+
+  if (!match) return trimmedLine;
+
+  const [, ageLabel, remainder] = match;
+  return remainder ? `**${ageLabel}:** ${remainder}` : `**${ageLabel}:**`;
+};
+
+const normalizeDrugDoseBlock = (block: string): string =>
+  block
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const normalizedAgeLine = normalizeDrugDoseAgeLine(line);
+      if (/^Price:/i.test(normalizedAgeLine)) {
+        return `Price: ${normalizedAgeLine.replace(/^Price:\s*/i, '').trim()}`;
+      }
+      return normalizedAgeLine;
+    })
+    .join('\n');
+
+const isDrugFormulationHeadingBlock = (block: string): boolean => {
+  const firstLine = block.split('\n').find((line) => line.trim())?.trim() || '';
+  return /^\*\*✅/.test(firstLine) && !/\bIndications\b/i.test(firstLine);
+};
+
+const isDrugBrandBlock = (block: string): boolean => {
+  const firstLine = block.split('\n').find((line) => line.trim())?.trim() || '';
+  return /^🎉/.test(firstLine);
+};
+
+const isReferenceOnlyDrugBrandBlock = (block: string): boolean =>
+  isDrugBrandBlock(block) &&
+  /\[same strength dosing already (?:listed|covered) above\]/i.test(block) &&
+  !/(^|\n)🎯/m.test(block) &&
+  !new RegExp(`(^|\\n)\\*\\*${DRUG_AGE_LABEL_PREFIX}\\b`, 'im').test(block);
+
+const reorderDrugFormulationBlocks = (blocks: string[]): string[] => {
+  const reorderedBlocks: string[] = [];
+
+  for (let index = 0; index < blocks.length; index += 1) {
+    const block = blocks[index];
+    if (!isDrugFormulationHeadingBlock(block)) {
+      reorderedBlocks.push(block);
+      continue;
+    }
+
+    reorderedBlocks.push(block);
+
+    const formulationBlocks: string[] = [];
+    let cursor = index + 1;
+    while (cursor < blocks.length && !isDrugFormulationHeadingBlock(blocks[cursor])) {
+      formulationBlocks.push(blocks[cursor]);
+      cursor += 1;
+    }
+
+    const leadingNonBrandBlocks: string[] = [];
+    const trailingNonBrandBlocks: string[] = [];
+    const brandBlocks: string[] = [];
+
+    for (const formulationBlock of formulationBlocks) {
+      if (isDrugBrandBlock(formulationBlock)) {
+        brandBlocks.push(formulationBlock);
+        continue;
+      }
+
+      if (brandBlocks.length === 0) {
+        leadingNonBrandBlocks.push(formulationBlock);
+      } else {
+        trailingNonBrandBlocks.push(formulationBlock);
+      }
+    }
+
+    const primaryBrandBlocks = brandBlocks.filter(
+      (formulationBlock) => !isReferenceOnlyDrugBrandBlock(formulationBlock),
+    );
+    const referenceBrandBlocks = brandBlocks.filter(isReferenceOnlyDrugBrandBlock);
+
+    reorderedBlocks.push(
+      ...leadingNonBrandBlocks,
+      ...primaryBrandBlocks,
+      ...referenceBrandBlocks,
+      ...trailingNonBrandBlocks,
+    );
+
+    index = cursor - 1;
+  }
+
+  return reorderedBlocks;
+};
+
+const renderDrugDoseBlock = (block: string): string => {
+  const lines = block
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  if (lines.length === 0) return '';
+  if (isDrugBrandBlock(block)) {
+    return lines.join('  \n');
+  }
+
+  return lines.join('\n');
+};
+
+const formatDrugDoseOutput = (raw: string): string => {
+  const normalizedRaw = raw
+    .replace(/\r\n/g, '\n')
+    .replace(new RegExp(`\\*\\*\\s+(?=${DRUG_AGE_LABEL_PREFIX}\\b)`, 'gi'), '**')
     .replace(/([^\n])\s*(?=\*\*✅)/g, '$1\n\n')
     .replace(/([^\n])\s*(?=🎉)/g, '$1\n\n')
-    // Markdown line break (two spaces + newline) for items within a brand block
-    .replace(/([^\n])\s*(?=🎯)/g, '$1\n\n')
+    .replace(/([^\n])\s*(?=🎯)/g, '$1\n')
     .replace(
-      /([^\n])\s*(?=\*\*(?:Adult|Elderly|Child|Paediatric|Pediatric|Infant|Neonate|Toddler|Baby)[^*]*\*\*[:\s])/g,
-      '$1  \n',
-    )
-    .replace(
-      /([^\n])\s*(?=(?:Adult|Elderly|Child|Paediatric|Pediatric|Infant|Neonate|Toddler|Baby)[^:\n]{0,80}:)/g,
+      new RegExp(`([^\\n])\\s*(?=\\*\\*${DRUG_AGE_LABEL_PREFIX}\\b[^*]{0,80}:\\*\\*)`, 'gi'),
       '$1\n',
     )
-    .replace(/([^\n])\s*(?=Price:)/g, '$1  \n')
+    .replace(/([^\n])\s*(?=Price:)/gi, '$1\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
+
+  const reorderedBlocks = reorderDrugFormulationBlocks(
+    normalizedRaw
+      .split(/\n{2,}/)
+      .map(normalizeDrugDoseBlock)
+      .filter(Boolean),
+  );
+
+  return reorderedBlocks.map(renderDrugDoseBlock).filter(Boolean).join('\n\n').trim();
+};
 
 const formatDrugBrandsOutput = (raw: string): string =>
   formatDrugDoseOutput(raw)
@@ -545,6 +667,7 @@ IMPORTANT RULES:
 - Example of duplicates for dosing: "Tab. Fenac 100 mg - Acme" and "Tab. Clofenac 100 mg - Square" are both TABLET 100 mg, so ONLY the first 100 mg tablet brand should carry the indication and dose lines.
 - For the second and later brands with the same formulation + same strength, show ONLY the brand line and price line, plus "[same strength dosing already listed above]". Do NOT repeat the indication or dose text.
 - If two brands have DIFFERENT mg strengths (e.g. 50 mg and 100 mg), you MUST repeat the full verbatim dose text for EACH strength, even if the source clinical_context uses the same dose description. This is critical because a separate step will calculate different unit counts for different strengths.
+- Within each formulation, list ALL brands that keep full indication/dose content first, and only after those list the reference-only same-strength brands that say "[same strength dosing already listed above]".
 
 Formatting:
 
@@ -591,6 +714,7 @@ FORMATTING AND INCLUSION RULES TO CHECK AND FIX:
    - For the second and later brands with the same formulation + same strength, keep ONLY the brand line and the price line, plus "[same strength dosing already listed above]". Remove any repeated indication or dose lines if present.
    - If two brands have DIFFERENT mg strengths (e.g. 50 mg and 100 mg), you MUST repeat the full verbatim dose text for EACH strength, even if the source clinical_context uses the same dose description. This is critical because a separate step will calculate different unit counts for different strengths.
    - Before finalizing, explicitly re-check the entire output for duplicate dosing blocks under the same formulation + same strength and collapse them if any slipped through.
+   - Within each formulation, move all brands with full indication/dose content to the top, and place the reference-only same-strength brands below them.
 
 3. Indication Selection Rule (CRITICAL):
    - Keep EXACTLY 1 indication in the extracted output (never 0, never more than 1).
@@ -639,6 +763,7 @@ Dose-conversion workflow for EVERY indication + formulation strength:
 [Injection/vial rule: if required dose < vial strength, use vial fractions (e.g. 1/2 vial) not full vial.]
 [Do not add administration timing or advice ("after food", "after meals") unless it was present in the input.]
 [For the same formulation and same strength, even across different brand names or companies, show dosing for the first brand only. For later brands of that same formulation + strength, just reference that dosing is already covered above and show price.]
+[Within each formulation, place all brands with full dosing content first. After those, list the reference-only same-strength brands that point upward.]
 [The extracted drug data sheet has already been filtered to the requested dose audience. For "adult", this includes elderly lines when present. Do not add or restore any child or other excluded age-group dosing lines.]
 [If an age-group line says "Not found in provided drug dataset.", preserve that line exactly and do not attempt dose conversion for it.]
 

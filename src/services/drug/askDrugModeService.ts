@@ -23,7 +23,7 @@ import { MessageSender } from '@/types/message';
 import type { ChatStreamEvent } from '@/services/rag';
 
 const ASK_DRUG_QUERY_PARSER_MODEL = 'llama-3.3-70b-versatile';
-const ASK_DRUG_ANSWER_MODEL = 'moonshotai/kimi-k2-instruct-0905';
+const ASK_DRUG_ANSWER_MODEL = 'llama-3.3-70b-versatile';
 const ASK_DRUG_PROMPT_LOG_CHUNK_SIZE = 4000;
 const ASK_DRUG_MATCH_LIMIT = 25;
 const ASK_DRUG_SUGGESTION_LIMIT = 8;
