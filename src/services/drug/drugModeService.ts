@@ -2,6 +2,7 @@ import { groqService } from '@/services/groq/groqService';
 import { getIndexedDBServices } from '@/services/indexedDB';
 import { libraryService } from '@/services/libraryService';
 import type {
+  AskDrugIndicationsAndDoseStructured,
   DrugCatalog,
   DrugDatasetConfig,
   DrugDatasetRecord,
@@ -141,6 +142,18 @@ const compactField = (value?: string): string | undefined => {
   const compact = value.replace(/\s+/g, ' ').trim();
   return compact || undefined;
 };
+
+const hasStructuredIndicationsAndDose = (
+  value?: AskDrugIndicationsAndDoseStructured | null,
+): value is AskDrugIndicationsAndDoseStructured =>
+  Boolean(value && (value.indications.length > 0 || value.notes.length > 0));
+
+const sanitizeStructuredIndicationsAndDoseForPrompt = (
+  value: AskDrugIndicationsAndDoseStructured,
+): Omit<AskDrugIndicationsAndDoseStructured, 'raw_text'> => ({
+  indications: value.indications,
+  notes: value.notes,
+});
 
 const QUERY_DRUG_NAME_PREFIX_PATTERNS = [
   /^(?:what(?:'s| is)?\s+)?(?:the\s+)?(?:brands?|brand\s*names?|trade\s*names?)\s+of\s+/i,
@@ -313,16 +326,23 @@ const buildPass3ClinicalContextPrompt = (promptContext: Record<string, unknown>)
   }
 
   if (source === 'ask_drug_indications_and_dose') {
+    const askDrugClinicalContext: Record<string, unknown> = {
+      title: clinicalContext.title,
+      pages: clinicalContext.pages,
+      contra_indications: clinicalContext.contra_indications,
+    };
+
+    if (clinicalContext.indications_and_dose_structured !== undefined) {
+      askDrugClinicalContext.indications_and_dose_structured =
+        clinicalContext.indications_and_dose_structured;
+    } else if (clinicalContext.indications_and_dose !== undefined) {
+      askDrugClinicalContext.indications_and_dose = clinicalContext.indications_and_dose;
+    }
+
     return JSON.stringify(
       {
         clinical_context_source: source,
-        clinical_context: {
-          title: clinicalContext.title,
-          pages: clinicalContext.pages,
-          indications_and_dose: clinicalContext.indications_and_dose,
-          indications_and_dose_structured: clinicalContext.indications_and_dose_structured,
-          contra_indications: clinicalContext.contra_indications,
-        },
+        clinical_context: askDrugClinicalContext,
       },
       null,
       2,
@@ -352,7 +372,7 @@ For the DRUG: {{DRUG_NAME}}, extract all brand names with exact verbatim dose te
 [the app has already filtered and prioritized these brand names when available: Square, Incepta, Healthcare, Opsonin, Beximco, Aristopharma]
 [Use ONLY the filtered proprietary brand entries provided in context. Do not invent extra brands.]
 [Use ONLY the provided clinical_context as the source for indications and dose text. Do not mix it with any other source.]
-[If clinical_context_source is ask_drug_indications_and_dose, use only clinical_context.indications_and_dose.]
+[If clinical_context_source is ask_drug_indications_and_dose, use clinical_context.indications_and_dose_structured when present; otherwise use clinical_context.indications_and_dose.]
 [If clinical_context_source is drug_mode_fallback, use only clinical_context.indications and clinical_context.dose.]
 [Never combine the ask-drug clinical context and the drug-mode clinical context together.]
 [If the context contains multiple matched entries for the same generic drug, use all of them together and combine carefully.]
@@ -1205,19 +1225,37 @@ Rules:
       );
 
       if (askDrugContext) {
+        const structuredIndicationsAndDose = hasStructuredIndicationsAndDose(
+          askDrugContext.indications_and_dose_structured,
+        )
+          ? askDrugContext.indications_and_dose_structured
+          : undefined;
+
         console.log('[DRUG ASK-DRUG CONTEXT]', 'Using ask-drug indications_and_dose context', {
           resolvedGenericName,
           matchedAskDrugTitle: askDrugContext.title,
           askDrugPages: askDrugContext.pages,
         });
 
+        if (structuredIndicationsAndDose) {
+          console.log('[DRUG ASK-DRUG CONTEXT]', 'DEBUG RAW TEXT', {
+            resolvedGenericName,
+            matchedAskDrugTitle: askDrugContext.title,
+            rawText: compactField(structuredIndicationsAndDose.raw_text),
+          });
+        }
+
         return {
           clinical_context_source: 'ask_drug_indications_and_dose',
           clinical_context: {
             title: askDrugContext.title,
             pages: askDrugContext.pages,
-            indications_and_dose: compactField(askDrugContext.indications_and_dose),
-            indications_and_dose_structured: askDrugContext.indications_and_dose_structured,
+            indications_and_dose: structuredIndicationsAndDose
+              ? undefined
+              : compactField(askDrugContext.indications_and_dose),
+            indications_and_dose_structured: structuredIndicationsAndDose
+              ? sanitizeStructuredIndicationsAndDoseForPrompt(structuredIndicationsAndDose)
+              : undefined,
             contra_indications: compactField(askDrugContext.contra_indications),
           },
         };

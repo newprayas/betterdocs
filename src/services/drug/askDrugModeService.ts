@@ -100,7 +100,7 @@ type AskDrugPromptEntry = {
   title: string;
   pages: number[];
   sections: Partial<Record<AskDrugSectionKey, string>>;
-  indications_and_dose_structured?: AskDrugIndicationsAndDoseStructured;
+  indications_and_dose_structured?: Omit<AskDrugIndicationsAndDoseStructured, 'raw_text'>;
 };
 
 type AskDrugBroadIndicationPromptEntry = {
@@ -108,6 +108,14 @@ type AskDrugBroadIndicationPromptEntry = {
   pages: number[];
   matched_indications: string[];
 };
+
+const hasPromptEntryContent = (entry: AskDrugPromptEntry): boolean =>
+  Object.keys(entry.sections).length > 0 ||
+  Boolean(
+    entry.indications_and_dose_structured &&
+      (entry.indications_and_dose_structured.indications.length > 0 ||
+        entry.indications_and_dose_structured.notes.length > 0),
+  );
 
 const ASK_DRUG_SYSTEM_PROMPT = `You answer drug questions using ONLY the provided dataset context.
 
@@ -321,6 +329,18 @@ const compactField = (value?: string | null): string | undefined => {
   const compact = value.replace(/\s+/g, ' ').trim();
   return compact || undefined;
 };
+
+const hasStructuredIndicationsAndDose = (
+  value?: AskDrugIndicationsAndDoseStructured | null,
+): value is AskDrugIndicationsAndDoseStructured =>
+  Boolean(value && (value.indications.length > 0 || value.notes.length > 0));
+
+const sanitizeStructuredIndicationsAndDoseForPrompt = (
+  value: AskDrugIndicationsAndDoseStructured,
+): Omit<AskDrugIndicationsAndDoseStructured, 'raw_text'> => ({
+  indications: value.indications,
+  notes: value.notes,
+});
 
 const uniqueStrings = (values: string[]): string[] =>
   values.filter((value, index, array) => array.indexOf(value) === index);
@@ -1057,7 +1077,24 @@ Rules:
   }
 
   private buildNamedContext(entry: AskDrugEntry, sections: AskDrugSectionKey[]): AskDrugPromptEntry {
+    const structuredIndicationsAndDose =
+      sections.includes('indications_and_dose') &&
+      hasStructuredIndicationsAndDose(entry.indications_and_dose_structured)
+        ? entry.indications_and_dose_structured
+        : undefined;
+
+    if (structuredIndicationsAndDose) {
+      console.log('[ASK DRUG CONTEXT]', 'DEBUG RAW TEXT', {
+        title: entry.title,
+        pages: entry.pages,
+        rawText: compactField(structuredIndicationsAndDose.raw_text),
+      });
+    }
+
     const relevantSections = sections.reduce<Partial<Record<AskDrugSectionKey, string>>>((acc, section) => {
+      if (section === 'indications_and_dose' && structuredIndicationsAndDose) {
+        return acc;
+      }
       const text = this.getSectionText(entry, section);
       if (text) acc[section] = text;
       return acc;
@@ -1067,10 +1104,9 @@ Rules:
       title: entry.title,
       pages: entry.pages,
       sections: relevantSections,
-      indications_and_dose_structured:
-        sections.includes('indications_and_dose')
-          ? entry.indications_and_dose_structured || undefined
-          : undefined,
+      indications_and_dose_structured: structuredIndicationsAndDose
+        ? sanitizeStructuredIndicationsAndDoseForPrompt(structuredIndicationsAndDose)
+        : undefined,
     };
   }
 
@@ -1449,11 +1485,37 @@ Rules:
   }
 
   private buildBroadContext(matches: AskDrugBroadMatch[]): AskDrugPromptEntry[] {
-    return matches.map((match) => ({
-      title: match.entry.title,
-      pages: match.entry.pages,
-      sections: match.matchedSections,
-    }));
+    return matches.map((match) => {
+      const structuredIndicationsAndDose = hasStructuredIndicationsAndDose(
+        match.entry.indications_and_dose_structured,
+      )
+        ? match.entry.indications_and_dose_structured
+        : undefined;
+      const sections = structuredIndicationsAndDose
+        ? Object.fromEntries(
+            Object.entries(match.matchedSections).filter(
+              ([section]) => section !== 'indications_and_dose',
+            ),
+          ) as Partial<Record<AskDrugSectionKey, string>>
+        : match.matchedSections;
+
+      if (structuredIndicationsAndDose) {
+        console.log('[ASK DRUG CONTEXT]', 'DEBUG RAW TEXT', {
+          title: match.entry.title,
+          pages: match.entry.pages,
+          rawText: compactField(structuredIndicationsAndDose.raw_text),
+        });
+      }
+
+      return {
+        title: match.entry.title,
+        pages: match.entry.pages,
+        sections,
+        indications_and_dose_structured: structuredIndicationsAndDose
+          ? sanitizeStructuredIndicationsAndDoseForPrompt(structuredIndicationsAndDose)
+          : undefined,
+      };
+    });
   }
 
   private buildBroadIndicationContext(
@@ -1597,7 +1659,7 @@ Rules:
         }
 
         const promptContext = this.buildNamedContext(match!, requestedSections);
-        if (Object.keys(promptContext.sections).length === 0) {
+        if (!hasPromptEntryContent(promptContext)) {
           if (fallbackEntry) {
             const fallbackPayload = this.buildDrugModeFallbackPayload(
               fallbackEntry,
