@@ -155,6 +155,19 @@ const sanitizeStructuredIndicationsAndDoseForPrompt = (
   notes: value.notes,
 });
 
+const logDrugAskContextDebugRawText = (
+  resolvedGenericName: string,
+  matchedAskDrugTitle: string,
+  rawText?: string | null,
+): void => {
+  const compactRawText = compactField(rawText || undefined);
+  if (!compactRawText) return;
+
+  console.log(
+    `[DRUG ASK-DRUG CONTEXT] DEBUG RAW TEXT | resolvedGenericName=${resolvedGenericName} | matchedAskDrugTitle=${matchedAskDrugTitle} | ${compactRawText}`,
+  );
+};
+
 const QUERY_DRUG_NAME_PREFIX_PATTERNS = [
   /^(?:what(?:'s| is)?\s+)?(?:the\s+)?(?:brands?|brand\s*names?|trade\s*names?)\s+of\s+/i,
   /^(?:what(?:'s| is)?\s+)?(?:the\s+)?(?:dose|doses|dosage|dosing|regimen|schedule)\s+of\s+/i,
@@ -1238,11 +1251,11 @@ Rules:
         });
 
         if (structuredIndicationsAndDose) {
-          console.log('[DRUG ASK-DRUG CONTEXT]', 'DEBUG RAW TEXT', {
+          logDrugAskContextDebugRawText(
             resolvedGenericName,
-            matchedAskDrugTitle: askDrugContext.title,
-            rawText: compactField(structuredIndicationsAndDose.raw_text),
-          });
+            askDrugContext.title,
+            structuredIndicationsAndDose.raw_text,
+          );
         }
 
         return {

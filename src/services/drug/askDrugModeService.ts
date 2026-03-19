@@ -342,6 +342,19 @@ const sanitizeStructuredIndicationsAndDoseForPrompt = (
   notes: value.notes,
 });
 
+const logAskDrugDebugRawText = (
+  title: string,
+  pages: number[],
+  rawText?: string | null,
+): void => {
+  const compactRawText = compactField(rawText);
+  if (!compactRawText) return;
+
+  console.log(
+    `[ASK DRUG CONTEXT] DEBUG RAW TEXT | title=${title} | pages=${pages.join(', ')} | ${compactRawText}`,
+  );
+};
+
 const uniqueStrings = (values: string[]): string[] =>
   values.filter((value, index, array) => array.indexOf(value) === index);
 
@@ -1084,11 +1097,11 @@ Rules:
         : undefined;
 
     if (structuredIndicationsAndDose) {
-      console.log('[ASK DRUG CONTEXT]', 'DEBUG RAW TEXT', {
-        title: entry.title,
-        pages: entry.pages,
-        rawText: compactField(structuredIndicationsAndDose.raw_text),
-      });
+      logAskDrugDebugRawText(
+        entry.title,
+        entry.pages,
+        structuredIndicationsAndDose.raw_text,
+      );
     }
 
     const relevantSections = sections.reduce<Partial<Record<AskDrugSectionKey, string>>>((acc, section) => {
@@ -1500,11 +1513,11 @@ Rules:
         : match.matchedSections;
 
       if (structuredIndicationsAndDose) {
-        console.log('[ASK DRUG CONTEXT]', 'DEBUG RAW TEXT', {
-          title: match.entry.title,
-          pages: match.entry.pages,
-          rawText: compactField(structuredIndicationsAndDose.raw_text),
-        });
+        logAskDrugDebugRawText(
+          match.entry.title,
+          match.entry.pages,
+          structuredIndicationsAndDose.raw_text,
+        );
       }
 
       return {
