@@ -320,6 +320,7 @@ const buildPass3ClinicalContextPrompt = (promptContext: Record<string, unknown>)
           title: clinicalContext.title,
           pages: clinicalContext.pages,
           indications_and_dose: clinicalContext.indications_and_dose,
+          indications_and_dose_structured: clinicalContext.indications_and_dose_structured,
           contra_indications: clinicalContext.contra_indications,
         },
       },
@@ -1216,6 +1217,7 @@ Rules:
             title: askDrugContext.title,
             pages: askDrugContext.pages,
             indications_and_dose: compactField(askDrugContext.indications_and_dose),
+            indications_and_dose_structured: askDrugContext.indications_and_dose_structured,
             contra_indications: compactField(askDrugContext.contra_indications),
           },
         };

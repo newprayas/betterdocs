@@ -8,6 +8,7 @@ export interface DrugEntry {
   contraindications?: string;
   side_effects?: string;
   dose?: string;
+  interactions?: string;
   notes?: string;
   proprietary_preparations?: string;
   raw_text: string;
@@ -91,11 +92,33 @@ export type AskDrugSectionKey =
 
 export type AskDrugRequestedSection = AskDrugSectionKey | 'all_details';
 
+export interface AskDrugDoseInstruction {
+  group: string;
+  text: string;
+}
+
+export interface AskDrugDoseRoute {
+  route: string;
+  instructions: AskDrugDoseInstruction[];
+}
+
+export interface AskDrugDoseIndication {
+  indication: string;
+  routes: AskDrugDoseRoute[];
+}
+
+export interface AskDrugIndicationsAndDoseStructured {
+  indications: AskDrugDoseIndication[];
+  notes: string[];
+  raw_text: string;
+}
+
 export interface AskDrugEntry {
   title: string;
   source_pdf: string;
   pages: number[];
   indications_and_dose?: string | null;
+  indications_and_dose_structured?: AskDrugIndicationsAndDoseStructured | null;
   important_safety_information?: string | null;
   contra_indications?: string | null;
   cautions?: string | null;

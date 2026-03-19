@@ -5,7 +5,11 @@ import { drugModeService } from './drugModeService';
 import type {
   AskDrugBroadMatch,
   AskDrugCatalog,
+  AskDrugDoseIndication,
+  AskDrugDoseInstruction,
+  AskDrugDoseRoute,
   AskDrugEntry,
+  AskDrugIndicationsAndDoseStructured,
   AskDrugQueryParseResult,
   AskDrugRequestedSection,
   AskDrugSectionKey,
@@ -96,6 +100,7 @@ type AskDrugPromptEntry = {
   title: string;
   pages: number[];
   sections: Partial<Record<AskDrugSectionKey, string>>;
+  indications_and_dose_structured?: AskDrugIndicationsAndDoseStructured;
 };
 
 type AskDrugBroadIndicationPromptEntry = {
@@ -113,6 +118,12 @@ Core rules:
 - Do not shorten, compress, generalize, or simplify if the dataset contains more detail.
 - Do not omit points just to make the answer shorter.
 - Include ALL relevant information found in the provided sections.
+- If the dataset context includes "indications_and_dose_structured", prefer that structured representation over the flat raw text.
+- In "indications_and_dose_structured", each item contains:
+  - an indication
+  - one or more routes
+  - dose instructions grouped by age or patient group
+  - optional notes stored separately
 - If multiple indications, routes, formulations, age groups, or dose schedules are present, include all of them.
 - If the question asks for one section, answer from that section only.
 - If the question asks for multiple sections, present each section separately.
@@ -421,6 +432,263 @@ const logFullPromptText = (label: string, text: string): void => {
   }
 };
 
+const ASK_DRUG_ROUTE_PATTERN = /^BY\s+[A-Z]/i;
+const ASK_DRUG_DOSE_GROUP_PATTERN =
+  /^(?:Adult|Child|Elderly|Neonate|Infant|Adolescent|Young person|All ages?)(?:\b|[\s(0-9-])/i;
+const ASK_DRUG_NOTE_PATTERN =
+  /(?:UNLICENSED USE\b|Not licensed\b|In children\s+[A-Z]|In adults?\s+[A-Z]|Cautionary and advisory labels\b)/i;
+
+const looksLikeRouteSegment = (value: string): boolean =>
+  ASK_DRUG_ROUTE_PATTERN.test(compactField(value) || '');
+
+const looksLikeNoteSegment = (value: string): boolean => {
+  const compact = compactField(value) || '';
+  if (!compact) return false;
+  const cleaned = compact.replace(/^[lg]\s+/i, '');
+  return ASK_DRUG_NOTE_PATTERN.test(cleaned);
+};
+
+const looksLikeDoseInstructionSegment = (value: string): boolean => {
+  const compact = compactField(value) || '';
+  if (!compact.includes(':')) return false;
+  const label = compactField(compact.slice(0, compact.indexOf(':'))) || '';
+  return ASK_DRUG_DOSE_GROUP_PATTERN.test(label);
+};
+
+const looksLikeDoseText = (value: string): boolean =>
+  /\d/.test(value) ||
+  /\b(?:mg|g|micrograms?|mcg|ml|kg|hours?|dose|doses|daily|required|minutes?|day)\b/i.test(value);
+
+const looksLikeIndicationText = (value: string): boolean => {
+  const compact = compactField(value) || '';
+  if (!compact) return false;
+  if (looksLikeRouteSegment(compact) || looksLikeNoteSegment(compact) || looksLikeDoseInstructionSegment(compact)) {
+    return false;
+  }
+  if (compact.includes(':')) return false;
+  if (!/[A-Za-z]/.test(compact)) return false;
+  return compact.split(/\s+/).length >= 2;
+};
+
+const cleanStructuredNote = (value: string): string | null => {
+  const compact = compactField(value.replace(/^[lg]\s+/i, '').replace(/\s+[lg]$/i, '')) || '';
+  return compact || null;
+};
+
+const cleanStructuredDoseText = (value: string): string | null => {
+  const compact =
+    compactField(
+      value
+        .replace(/\s+[lg]$/i, '')
+        .replace(/\s+[lg](?=[,.;:]?$)/i, '')
+        .replace(/[|;:,.\s-]+$/g, ''),
+    ) || '';
+  return compact || null;
+};
+
+const splitStructuredNotes = (value: string): { main: string; notes: string[] } => {
+  const compact = compactField(value) || '';
+  if (!compact) {
+    return { main: '', notes: [] };
+  }
+
+  const marker = compact.match(
+    /\b(?:UNLICENSED USE|Not licensed|In children\s+[A-Z]|In adults?\s+[A-Z])\b/i,
+  );
+  if (marker?.index === undefined) {
+    return { main: compact, notes: [] };
+  }
+
+  const noteStart = marker.index;
+  const main = cleanStructuredDoseText(compact.slice(0, noteStart)) || '';
+  const noteBlock = compact
+    .slice(noteStart)
+    .replace(
+      /\s+[lg]\s+(?=(?:UNLICENSED USE|Not licensed|In children\s+[A-Z]|In adults?\s+[A-Z])\b)/gi,
+      '\n',
+    );
+  const notes = noteBlock
+    .split(/\n+|(?<=[.])\s+(?=(?:UNLICENSED USE|Not licensed|In children\s+[A-Z]|In adults?\s+[A-Z])\b)/i)
+    .map((note) => cleanStructuredNote(note))
+    .filter((note): note is string => Boolean(note));
+
+  for (let index = 0; index < notes.length - 1; index += 1) {
+    if (/^In children\b|^In adults?\b/i.test(notes[index]) && /^not licensed\b/.test(notes[index + 1])) {
+      notes[index] = `${notes[index]} ${notes[index + 1]}`.trim();
+      notes.splice(index + 1, 1);
+      index -= 1;
+    }
+  }
+
+  return { main, notes };
+};
+
+const splitTrailingIndication = (
+  value: string,
+  nextSegmentIsRoute: boolean,
+): { main: string; trailingIndication?: string } => {
+  const compact = compactField(value) || '';
+  if (!compact || !nextSegmentIsRoute) {
+    return { main: compact };
+  }
+
+  const boundaryPattern = /\s+(?=[A-Z])/g;
+  let match: RegExpExecArray | null;
+
+  while ((match = boundaryPattern.exec(compact)) !== null) {
+    const boundaryIndex = match.index;
+    const prefix = compactField(compact.slice(0, boundaryIndex)) || '';
+    const suffix = compactField(compact.slice(boundaryIndex)) || '';
+
+    if (!prefix || !suffix) continue;
+    if (!looksLikeDoseText(prefix)) continue;
+    if (!looksLikeIndicationText(suffix)) continue;
+    if (/\b(?:mg|g|micrograms?|mcg|ml|kg|hours?|dose|doses|daily|required|minutes?|day)\b/i.test(suffix)) {
+      continue;
+    }
+
+    return {
+      main: prefix,
+      trailingIndication: suffix,
+    };
+  }
+
+  return { main: compact };
+};
+
+const parseDoseInstructionSegment = (
+  value: string,
+  nextSegment?: string,
+): {
+  instruction: AskDrugDoseInstruction | null;
+  trailingIndication?: string;
+  notes: string[];
+} => {
+  const compact = compactField(value) || '';
+  if (!looksLikeDoseInstructionSegment(compact)) {
+    return { instruction: null, notes: [] };
+  }
+
+  const colonIndex = compact.indexOf(':');
+  const group = compactField(compact.slice(0, colonIndex)) || '';
+  const afterColon = compactField(compact.slice(colonIndex + 1)) || '';
+  const splitNotes = splitStructuredNotes(afterColon);
+  const splitIndication = splitTrailingIndication(
+    splitNotes.main,
+    looksLikeRouteSegment(nextSegment || ''),
+  );
+
+  return {
+    instruction: cleanStructuredDoseText(splitIndication.main)
+      ? {
+          group,
+          text: cleanStructuredDoseText(splitIndication.main) || splitIndication.main,
+        }
+      : null,
+    trailingIndication: splitIndication.trailingIndication,
+    notes: splitNotes.notes,
+  };
+};
+
+const parseIndicationsAndDoseStructured = (
+  value?: string | null,
+): AskDrugIndicationsAndDoseStructured | null => {
+  const rawText = compactField(value);
+  if (!rawText) return null;
+
+  const segments = rawText
+    .split(/\s*▶\s*/)
+    .map((segment) => compactField(segment))
+    .filter((segment): segment is string => Boolean(segment));
+
+  const indications: AskDrugDoseIndication[] = [];
+  const notes: string[] = [];
+  let currentIndication: AskDrugDoseIndication | null = null;
+  let currentRoute: AskDrugDoseRoute | null = null;
+
+  const pushNote = (note: string | null | undefined): void => {
+    if (!note) return;
+    if (!notes.includes(note)) notes.push(note);
+  };
+
+  const startIndication = (text: string): AskDrugDoseIndication | null => {
+    const cleaned = compactField(text);
+    if (!cleaned || !looksLikeIndicationText(cleaned)) return null;
+
+    currentIndication = {
+      indication: cleaned,
+      routes: [],
+    };
+    indications.push(currentIndication);
+    currentRoute = null;
+    return currentIndication;
+  };
+
+  const startRoute = (text: string): AskDrugDoseRoute | null => {
+    if (!currentIndication) return null;
+    currentRoute = {
+      route: compactField(text) || text,
+      instructions: [],
+    };
+    currentIndication.routes.push(currentRoute);
+    return currentRoute;
+  };
+
+  for (let index = 0; index < segments.length; index += 1) {
+    const segment = segments[index];
+    const nextSegment = segments[index + 1];
+
+    if (looksLikeRouteSegment(segment)) {
+      startRoute(segment);
+      continue;
+    }
+
+    const parsedInstruction = parseDoseInstructionSegment(segment, nextSegment);
+    if (parsedInstruction.instruction && currentRoute) {
+      const activeRoute = currentRoute;
+      activeRoute.instructions.push(parsedInstruction.instruction);
+      parsedInstruction.notes.forEach(pushNote);
+      if (parsedInstruction.trailingIndication) {
+        startIndication(parsedInstruction.trailingIndication);
+      }
+      continue;
+    }
+
+    if (looksLikeNoteSegment(segment)) {
+      const splitNotes = splitStructuredNotes(segment);
+      pushNote(cleanStructuredNote(splitNotes.main));
+      splitNotes.notes.forEach(pushNote);
+      currentRoute = null;
+      continue;
+    }
+
+    if (looksLikeIndicationText(segment)) {
+      startIndication(segment);
+      continue;
+    }
+
+    const splitNotes = splitStructuredNotes(segment);
+    if (splitNotes.main && currentRoute && currentRoute.instructions.length > 0) {
+      const activeRoute = currentRoute;
+      const lastInstruction = activeRoute.instructions[activeRoute.instructions.length - 1];
+      lastInstruction.text = `${lastInstruction.text} ${splitNotes.main}`.trim();
+    } else {
+      pushNote(cleanStructuredNote(splitNotes.main));
+    }
+    splitNotes.notes.forEach(pushNote);
+  }
+
+  if (indications.length === 0 && notes.length === 0) {
+    return null;
+  }
+
+  return {
+    indications: indications.filter((item) => item.routes.length > 0),
+    notes,
+    raw_text: rawText,
+  };
+};
+
 const normalizeRequestedSection = (
   value: string,
 ): AskDrugRequestedSection | 'safety_bundle' | null => {
@@ -540,6 +808,18 @@ const sectionLabel = (section: AskDrugSectionKey): string => {
 export class AskDrugModeService {
   private indexedDBServices = getIndexedDBServices();
 
+  private enrichCatalog(catalog: AskDrugCatalog): AskDrugCatalog {
+    return {
+      ...catalog,
+      drugs: catalog.drugs.map((entry) => ({
+        ...entry,
+        indications_and_dose_structured:
+          entry.indications_and_dose_structured ??
+          parseIndicationsAndDoseStructured(entry.indications_and_dose),
+      })),
+    };
+  }
+
   private validateCatalog(data: unknown): AskDrugCatalog {
     if (!data || typeof data !== 'object') {
       throw new Error('Ask drug dataset is missing or invalid');
@@ -552,7 +832,7 @@ export class AskDrugModeService {
     if (!Array.isArray(catalog.drugs)) {
       throw new Error('Ask drug dataset entries are missing');
     }
-    return catalog as AskDrugCatalog;
+    return this.enrichCatalog(catalog as AskDrugCatalog);
   }
 
   private makeRecord(catalog: AskDrugCatalog): DrugDatasetRecord {
@@ -781,6 +1061,10 @@ Rules:
       title: entry.title,
       pages: entry.pages,
       sections: relevantSections,
+      indications_and_dose_structured:
+        sections.includes('indications_and_dose')
+          ? entry.indications_and_dose_structured || undefined
+          : undefined,
     };
   }
 
@@ -905,6 +1189,7 @@ Rules:
     title: string;
     pages: number[];
     indications_and_dose: string;
+    indications_and_dose_structured?: AskDrugIndicationsAndDoseStructured;
     contra_indications?: string;
   } | null> {
     const query = canonicalizeTitleCase(drugName.trim());
@@ -928,6 +1213,7 @@ Rules:
       title: match.title,
       pages: match.pages,
       indications_and_dose: indicationsAndDose,
+      indications_and_dose_structured: match.indications_and_dose_structured || undefined,
       contra_indications: contraIndications || undefined,
     };
   }
