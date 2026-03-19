@@ -17,6 +17,7 @@ import type {
   DrugDatasetRecord,
   DrugEntry,
   MessageCreate,
+  ParsedProprietaryPreparation,
 } from '@/types';
 import { MessageSender } from '@/types/message';
 import type { ChatStreamEvent } from '@/services/rag';
@@ -108,6 +109,16 @@ type AskDrugBroadIndicationPromptEntry = {
   pages: number[];
   matched_indications: string[];
 };
+
+type AskDrugFormulationFamily =
+  | 'oral'
+  | 'injection'
+  | 'topical'
+  | 'ophthalmic'
+  | 'nasal'
+  | 'otic'
+  | 'rectal'
+  | 'inhalation';
 
 const hasPromptEntryContent = (entry: AskDrugPromptEntry): boolean =>
   Object.keys(entry.sections).length > 0 ||
@@ -342,6 +353,72 @@ const sanitizeStructuredIndicationsAndDoseForPrompt = (
   notes: value.notes,
 });
 
+const inferBrandFormulationFamilies = (
+  brandPreparations: ParsedProprietaryPreparation[] = [],
+): Set<AskDrugFormulationFamily> => {
+  const families = new Set<AskDrugFormulationFamily>();
+
+  for (const brand of brandPreparations) {
+    const details = compactField(`${brand.display_name} ${brand.details}`) || '';
+    if (!details) continue;
+
+    if (/\b(?:tab(?:let)?s?\.?|cap(?:sule)?s?\.?|syrup|susp(?:ension)?|oral|lozenge|powder for oral|granules)\b/i.test(details)) {
+      families.add('oral');
+    }
+    if (/\b(?:inj(?:ection)?\.?|amp(?:oule)?s?\.?|vials?\.?|prefilled|infusion)\b/i.test(details)) {
+      families.add('injection');
+    }
+    if (/\b(?:supp(?:ository)?\.?|pessary|enema|rectal)\b/i.test(details)) {
+      families.add('rectal');
+    }
+    if (/\b(?:gel|cream|ointment|oint\.?|lotion|liniment|spray|foam|paint|patch)\b/i.test(details)) {
+      families.add('topical');
+    }
+    if (/\b(?:eye|ophth(?:almic)?|ocular)\b/i.test(details)) {
+      families.add('ophthalmic');
+    }
+    if (/\b(?:ear|otic|aural)\b/i.test(details)) {
+      families.add('otic');
+    }
+    if (/\b(?:nasal|intranasal)\b/i.test(details)) {
+      families.add('nasal');
+    }
+    if (/\b(?:inhal(?:ation|er)?|neb(?:uliser|ulized|ulised)?|respules?)\b/i.test(details)) {
+      families.add('inhalation');
+    }
+  }
+
+  return families;
+};
+
+const inferAskDrugRouteFamilies = (entry: AskDrugEntry): Set<AskDrugFormulationFamily> => {
+  const families = new Set<AskDrugFormulationFamily>();
+  const text = compactField(
+    [
+      entry.indications_and_dose,
+      entry.directions_for_administration,
+      entry.indications_and_dose_structured?.raw_text,
+    ]
+      .filter(Boolean)
+      .join(' '),
+  ) || '';
+
+  if (!text) return families;
+
+  if (/\bBY MOUTH\b/i.test(text)) families.add('oral');
+  if (/\b(?:INTRAMUSCULAR|INTRAVENOUS|SUBCUTANEOUS)\b/i.test(text) || /\b(?:INJECTION|INFUSION)\b/i.test(text)) {
+    families.add('injection');
+  }
+  if (/\b(?:BY RECTUM|RECTAL)\b/i.test(text)) families.add('rectal');
+  if (/\b(?:TO THE SKIN|TOPICAL(?:LY)?)\b/i.test(text)) families.add('topical');
+  if (/\b(?:TO THE EYE|OPHTHALMIC|OCULAR)\b/i.test(text)) families.add('ophthalmic');
+  if (/\b(?:TO THE NOSE|INTRANASAL|NASAL)\b/i.test(text)) families.add('nasal');
+  if (/\b(?:TO THE EAR|OTIC|AURAL)\b/i.test(text)) families.add('otic');
+  if (/\b(?:INHALATION|INHALED|NEBULISED|NEBULIZED)\b/i.test(text)) families.add('inhalation');
+
+  return families;
+};
+
 const logAskDrugDebugRawText = (
   title: string,
   pages: number[],
@@ -465,14 +542,20 @@ const logFullPromptText = (label: string, text: string): void => {
   }
 };
 
-const ASK_DRUG_ROUTE_PATTERN = /^BY\s+[A-Z]/i;
+const ASK_DRUG_ROUTE_PATTERNS = [
+  /^BY\s+[A-Z]/i,
+  /^TO\s+THE\s+[A-Z]/i,
+  /^VIA\s+[A-Z]/i,
+  /^FOR\s+[A-Z].*\bADMINISTRATION\b/i,
+  /^(?:APPLIED|INSTILLED|INSERTED|INHALED)\b/i,
+];
 const ASK_DRUG_DOSE_GROUP_PATTERN =
   /^(?:Adult|Child|Elderly|Neonate|Infant|Adolescent|Young person|All ages?)(?:\b|[\s(0-9-])/i;
 const ASK_DRUG_NOTE_PATTERN =
   /(?:UNLICENSED USE\b|Not licensed\b|In children\s+[A-Z]|In adults?\s+[A-Z]|Cautionary and advisory labels\b)/i;
 
 const looksLikeRouteSegment = (value: string): boolean =>
-  ASK_DRUG_ROUTE_PATTERN.test(compactField(value) || '');
+  ASK_DRUG_ROUTE_PATTERNS.some((pattern) => pattern.test(compactField(value) || ''));
 
 const looksLikeNoteSegment = (value: string): boolean => {
   const compact = compactField(value) || '';
@@ -1049,22 +1132,74 @@ Rules:
     return score;
   }
 
+  private scoreNamedDrugCandidate(
+    query: string,
+    entry: AskDrugEntry,
+    brandPreparations: ParsedProprietaryPreparation[] = [],
+  ): number {
+    let score = this.scoreDrugTitle(query, entry.title);
+    if (!Number.isFinite(score)) return score;
+
+    const brandFamilies = inferBrandFormulationFamilies(brandPreparations);
+    const candidateFamilies = inferAskDrugRouteFamilies(entry);
+
+    if (brandFamilies.size > 0 && candidateFamilies.size > 0) {
+      const overlapCount = Array.from(brandFamilies).filter((family) => candidateFamilies.has(family)).length;
+      if (overlapCount > 0) {
+        score += overlapCount * 220;
+      } else {
+        score -= 260;
+      }
+    }
+
+    if (hasStructuredIndicationsAndDose(entry.indications_and_dose_structured)) {
+      score += 25;
+    }
+
+    return score;
+  }
+
   private resolveNamedDrug(
     catalog: AskDrugCatalog,
     parsed: AskDrugQueryParseResult,
+    options?: {
+      brandPreparations?: ParsedProprietaryPreparation[];
+    },
   ): AskDrugEntry | null {
     const query = parsed.drug_name.trim();
     if (!query) return null;
 
-    const exact = catalog.drugs.find(
+    const exactMatches = catalog.drugs.filter(
       (entry) => normalizeCompact(entry.title) === normalizeCompact(query),
     );
-    if (exact) return exact;
+    if (exactMatches.length === 1) return exactMatches[0];
+    if (exactMatches.length > 1) {
+      const rankedExactMatches = exactMatches
+        .map((entry) => ({
+          entry,
+          score: this.scoreNamedDrugCandidate(query, entry, options?.brandPreparations),
+          routeFamilies: Array.from(inferAskDrugRouteFamilies(entry)),
+        }))
+        .sort((left, right) => right.score - left.score);
+
+      console.log('[ASK DRUG LOOKUP]', 'Resolved duplicate exact-title entries', {
+        query,
+        brandFormulationFamilies: Array.from(inferBrandFormulationFamilies(options?.brandPreparations)),
+        candidates: rankedExactMatches.map((candidate) => ({
+          title: candidate.entry.title,
+          pages: candidate.entry.pages,
+          score: candidate.score,
+          routeFamilies: candidate.routeFamilies,
+        })),
+      });
+
+      return rankedExactMatches[0]?.entry ?? null;
+    }
 
     const ranked = catalog.drugs
       .map((entry) => ({
         entry,
-        score: this.scoreDrugTitle(query, entry.title),
+        score: this.scoreNamedDrugCandidate(query, entry, options?.brandPreparations),
       }))
       .filter((candidate) => candidate.score >= 120)
       .sort((left, right) => right.score - left.score);
@@ -1284,7 +1419,10 @@ Rules:
 
   async lookupIndicationsAndDoseByDrugName(
     drugName: string,
-    catalog?: AskDrugCatalog,
+    options?: {
+      catalog?: AskDrugCatalog;
+      brandPreparations?: ParsedProprietaryPreparation[];
+    },
   ): Promise<{
     title: string;
     pages: number[];
@@ -1295,12 +1433,14 @@ Rules:
     const query = canonicalizeTitleCase(drugName.trim());
     if (!query) return null;
 
-    const activeCatalog = catalog ?? (await this.ensureDatasetReady());
+    const activeCatalog = options?.catalog ?? (await this.ensureDatasetReady());
     const match = this.resolveNamedDrug(activeCatalog, {
       drug_name: query,
       sections: ['indications_and_dose'],
       indication_terms: [],
       confidence: 1,
+    }, {
+      brandPreparations: options?.brandPreparations,
     });
 
     if (!match) return null;

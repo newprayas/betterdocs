@@ -1335,6 +1335,7 @@ Rules:
 
   private async buildPreferredClinicalDoseContext(
     entries: DrugEntry[],
+    brandPreparations: ParsedProprietaryPreparation[] = [],
   ): Promise<Record<string, unknown>> {
     const safeEntries = dedupeDrugEntries(entries);
     const primaryEntry = safeEntries[0];
@@ -1352,6 +1353,9 @@ Rules:
       const { askDrugModeService } = await import('./askDrugModeService');
       const askDrugContext = await askDrugModeService.lookupIndicationsAndDoseByDrugName(
         resolvedGenericName,
+        {
+          brandPreparations,
+        },
       );
 
       if (askDrugContext) {
@@ -1423,7 +1427,10 @@ Rules:
     const filteredBrands = dedupeParsedBrands(
       safeEntries.flatMap((entry) => this.selectPreferredBrandEntries(entry, requestedBrandQuery)),
     );
-    const preferredClinicalContext = await this.buildPreferredClinicalDoseContext(safeEntries);
+    const preferredClinicalContext = await this.buildPreferredClinicalDoseContext(
+      safeEntries,
+      filteredBrands,
+    );
 
     if (!primaryEntry) {
       return {
