@@ -11,6 +11,7 @@ import type {
   AskDrugSectionKey,
   DrugDatasetConfig,
   DrugDatasetRecord,
+  DrugEntry,
   MessageCreate,
 } from '@/types';
 import { MessageSender } from '@/types/message';
@@ -783,6 +784,120 @@ Rules:
     };
   }
 
+  private buildDrugModeFallbackDisplayTitle(
+    entry: DrugEntry,
+    originalDrugName: string,
+  ): string {
+    const resolvedGenericName = drugModeService.getResolvedGenericName(entry);
+    return normalizeCompact(originalDrugName) === normalizeCompact(resolvedGenericName)
+      ? resolvedGenericName
+      : `${resolvedGenericName} (${originalDrugName})`;
+  }
+
+  private getDrugModeFallbackSection(
+    entry: DrugEntry,
+    section: AskDrugSectionKey,
+  ): { title: string; body: string } | null {
+    switch (section) {
+      case 'indications_and_dose': {
+        const indications = compactField(entry.indications);
+        const dose = compactField(entry.dose);
+        if (!indications && !dose) return null;
+
+        const lines: string[] = [];
+        if (indications) lines.push(`- Indications: ${indications}`);
+        if (dose) lines.push(`- Dose: ${dose}`);
+
+        return {
+          title: sectionLabel(section),
+          body: lines.join('\n'),
+        };
+      }
+      case 'contra_indications': {
+        const contraindications = compactField(entry.contraindications);
+        if (!contraindications) return null;
+        return {
+          title: sectionLabel(section),
+          body: `- ${contraindications}`,
+        };
+      }
+      case 'side_effects': {
+        const sideEffects = compactField(entry.side_effects);
+        if (!sideEffects) return null;
+        return {
+          title: sectionLabel(section),
+          body: `- ${sideEffects}`,
+        };
+      }
+      default:
+        return null;
+    }
+  }
+
+  private buildDrugModeAllDetailsFallbackSections(
+    entry: DrugEntry,
+  ): Array<{ title: string; body: string }> {
+    const sections: Array<{ title: string; body: string }> = [];
+
+    const indicationsAndDose = this.getDrugModeFallbackSection(entry, 'indications_and_dose');
+    if (indicationsAndDose) sections.push(indicationsAndDose);
+
+    const cautions = compactField(entry.cautions);
+    if (cautions) {
+      sections.push({
+        title: 'Cautions',
+        body: `- ${cautions}`,
+      });
+    }
+
+    const contraindications = this.getDrugModeFallbackSection(entry, 'contra_indications');
+    if (contraindications) sections.push(contraindications);
+
+    const sideEffects = this.getDrugModeFallbackSection(entry, 'side_effects');
+    if (sideEffects) sections.push(sideEffects);
+
+    const interactions = compactField(entry.interactions);
+    if (interactions) {
+      sections.push({
+        title: 'Interactions',
+        body: `- ${interactions}`,
+      });
+    }
+
+    return sections;
+  }
+
+  private buildDrugModeFallbackAnswer(
+    entry: DrugEntry,
+    parsed: AskDrugQueryParseResult,
+    requestedSections: AskDrugSectionKey[],
+    originalDrugName: string,
+  ): string | null {
+    const displayTitle = this.buildDrugModeFallbackDisplayTitle(entry, originalDrugName);
+    const warning =
+      '⚠️ British National Pharmacopoeia data not found, using regional information';
+
+    const sections = parsed.sections.includes('all_details')
+      ? this.buildDrugModeAllDetailsFallbackSections(entry)
+      : requestedSections
+          .map((section) => this.getDrugModeFallbackSection(entry, section))
+          .filter((value): value is { title: string; body: string } => Boolean(value));
+
+    if (sections.length === 0) {
+      return null;
+    }
+
+    return [
+      `## ${displayTitle}`,
+      '',
+      warning,
+      '',
+      ...sections.flatMap((section) => [`### ${section.title}`, '', section.body, '']),
+    ]
+      .join('\n')
+      .trim();
+  }
+
   async lookupIndicationsAndDoseByDrugName(
     drugName: string,
     catalog?: AskDrugCatalog,
@@ -1077,29 +1192,28 @@ Rules:
 
       if (parsed.drug_name.trim()) {
         onStreamEvent?.({ type: 'status', message: 'Ask Drug Search' });
-        let effectiveParsed = parsed;
-        let match = this.resolveNamedDrug(catalog, effectiveParsed);
-        let fallbackGenericName: string | null = null;
+        const fallbackEntry = await drugModeService.findDrugEntryByName(parsed.drug_name);
+        const fallbackGenericName = fallbackEntry
+          ? drugModeService.getResolvedGenericName(fallbackEntry)
+          : null;
+        const effectiveParsed =
+          fallbackGenericName
+            ? {
+                ...parsed,
+                drug_name: fallbackGenericName,
+              }
+            : parsed;
+        const match = this.resolveNamedDrug(catalog, effectiveParsed);
 
-        if (!match) {
-          const fallbackEntry = await drugModeService.findDrugEntryByName(parsed.drug_name);
-          if (fallbackEntry) {
-            fallbackGenericName = drugModeService.getResolvedGenericName(fallbackEntry);
-            effectiveParsed = {
-              ...parsed,
-              drug_name: fallbackGenericName,
-            };
-            match = this.resolveNamedDrug(catalog, effectiveParsed);
-
-            console.log('[ASK DRUG FALLBACK]', 'Resolved brand-like query through drug mode dataset', {
-              originalDrugName: parsed.drug_name,
-              fallbackGenericName,
-              matchedAskDrugTitle: match?.title ?? null,
-            });
-          }
+        if (fallbackGenericName) {
+          console.log('[ASK DRUG FALLBACK]', 'Resolved named query through drug mode dataset first', {
+            originalDrugName: parsed.drug_name,
+            fallbackGenericName,
+            matchedAskDrugTitle: match?.title ?? null,
+          });
         }
 
-        if (!match) {
+        if (!match && !fallbackEntry) {
           const suggestions = this.buildSuggestions(catalog, parsed.drug_name);
           const noMatchMessage = this.buildNoMatchMessage(parsed, suggestions);
           if (suggestions.length > 0) {
@@ -1110,9 +1224,39 @@ Rules:
           return;
         }
 
-        const promptContext = this.buildNamedContext(match, requestedSections);
+        if (!match && fallbackEntry) {
+          const fallbackAnswer = this.buildDrugModeFallbackAnswer(
+            fallbackEntry,
+            parsed,
+            requestedSections,
+            parsed.drug_name,
+          );
+          const noDataMessage =
+            fallbackAnswer ||
+            'Sorry, the drug information is not in our database, please search online.';
+          await this.saveAssistantMessage(sessionId, noDataMessage);
+          onStreamEvent?.({ type: 'done', content: noDataMessage });
+          return;
+        }
+
+        const promptContext = this.buildNamedContext(match!, requestedSections);
         if (Object.keys(promptContext.sections).length === 0) {
-          const noDataMessage = `I found ${match.title}, but the requested section is not present in this dataset entry.`;
+          if (fallbackEntry) {
+            const fallbackAnswer = this.buildDrugModeFallbackAnswer(
+              fallbackEntry,
+              parsed,
+              requestedSections,
+              parsed.drug_name,
+            );
+            const noDataMessage =
+              fallbackAnswer ||
+              'Sorry, the drug information is not in our database, please search online.';
+            await this.saveAssistantMessage(sessionId, noDataMessage);
+            onStreamEvent?.({ type: 'done', content: noDataMessage });
+            return;
+          }
+
+          const noDataMessage = `I found ${match!.title}, but the requested section is not present in this dataset entry.`;
           await this.saveAssistantMessage(sessionId, noDataMessage);
           onStreamEvent?.({ type: 'done', content: noDataMessage });
           return;
@@ -1122,14 +1266,14 @@ Rules:
           ? 'indications_summary_plus_dose'
           : 'standard';
         const displayTitle = fallbackGenericName
-          ? `${match.title} (${parsed.drug_name})`
-          : match.title;
+          ? `${match!.title} (${parsed.drug_name})`
+          : match!.title;
 
         const prompt = `User question:
 ${content}
 
 Resolved drug:
-${match.title}
+${match!.title}
 
 Display title:
 ${displayTitle}
