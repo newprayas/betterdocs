@@ -644,8 +644,8 @@ const parseIndicationsAndDoseStructured = (
     }
 
     const parsedInstruction = parseDoseInstructionSegment(segment, nextSegment);
-    if (parsedInstruction.instruction && currentRoute) {
-      const activeRoute = currentRoute;
+    const activeRoute = currentRoute as AskDrugDoseRoute | null;
+    if (parsedInstruction.instruction && activeRoute) {
       activeRoute.instructions.push(parsedInstruction.instruction);
       parsedInstruction.notes.forEach(pushNote);
       if (parsedInstruction.trailingIndication) {
@@ -668,9 +668,9 @@ const parseIndicationsAndDoseStructured = (
     }
 
     const splitNotes = splitStructuredNotes(segment);
-    if (splitNotes.main && currentRoute && currentRoute.instructions.length > 0) {
-      const activeRoute = currentRoute;
-      const lastInstruction = activeRoute.instructions[activeRoute.instructions.length - 1];
+    const appendRoute = currentRoute as AskDrugDoseRoute | null;
+    if (splitNotes.main && appendRoute && appendRoute.instructions.length > 0) {
+      const lastInstruction = appendRoute.instructions[appendRoute.instructions.length - 1];
       lastInstruction.text = `${lastInstruction.text} ${splitNotes.main}`.trim();
     } else {
       pushNote(cleanStructuredNote(splitNotes.main));
@@ -687,6 +687,12 @@ const parseIndicationsAndDoseStructured = (
     notes,
     raw_text: rawText,
   };
+};
+
+type AskDrugFallbackUsedSection = {
+  requestedSection: string;
+  title: string;
+  body: string;
 };
 
 const normalizeRequestedSection = (
@@ -1151,35 +1157,80 @@ Rules:
     return sections;
   }
 
+  private buildDrugModeFallbackPayload(
+    entry: DrugEntry,
+    parsed: AskDrugQueryParseResult,
+    requestedSections: AskDrugSectionKey[],
+    originalDrugName: string,
+  ): {
+    displayTitle: string;
+    warning: string;
+    requestedSectionKeys: AskDrugRequestedSection[];
+    requestedSectionLabels: string[];
+    usedSections: AskDrugFallbackUsedSection[];
+    answer: string;
+  } | null {
+    const displayTitle = this.buildDrugModeFallbackDisplayTitle(entry, originalDrugName);
+    const warning =
+      '⚠️ British National Pharmacopoeia data not found, using regional information';
+
+    const usedSections: AskDrugFallbackUsedSection[] = [];
+    if (parsed.sections.includes('all_details')) {
+      this.buildDrugModeAllDetailsFallbackSections(entry).forEach((section) => {
+        usedSections.push({
+          requestedSection: 'all_details',
+          title: section.title,
+          body: section.body,
+        });
+      });
+    } else {
+      requestedSections.forEach((section) => {
+        const fallbackSection = this.getDrugModeFallbackSection(entry, section);
+        if (!fallbackSection) return;
+        usedSections.push({
+          requestedSection: section,
+          title: fallbackSection.title,
+          body: fallbackSection.body,
+        });
+      });
+    }
+
+    if (usedSections.length === 0) {
+      return null;
+    }
+
+    const answer = [
+      `## ${displayTitle}`,
+      '',
+      warning,
+      '',
+      ...usedSections.flatMap((section) => [`### ${section.title}`, '', section.body, '']),
+    ]
+      .join('\n')
+      .trim();
+
+    return {
+      displayTitle,
+      warning,
+      requestedSectionKeys: parsed.sections,
+      requestedSectionLabels: parsed.sections.includes('all_details')
+        ? ['All available sections']
+        : requestedSections.map(sectionLabel),
+      usedSections,
+      answer,
+    };
+  }
+
   private buildDrugModeFallbackAnswer(
     entry: DrugEntry,
     parsed: AskDrugQueryParseResult,
     requestedSections: AskDrugSectionKey[],
     originalDrugName: string,
   ): string | null {
-    const displayTitle = this.buildDrugModeFallbackDisplayTitle(entry, originalDrugName);
-    const warning =
-      '⚠️ British National Pharmacopoeia data not found, using regional information';
-
-    const sections = parsed.sections.includes('all_details')
-      ? this.buildDrugModeAllDetailsFallbackSections(entry)
-      : requestedSections
-          .map((section) => this.getDrugModeFallbackSection(entry, section))
-          .filter((value): value is { title: string; body: string } => Boolean(value));
-
-    if (sections.length === 0) {
-      return null;
-    }
-
-    return [
-      `## ${displayTitle}`,
-      '',
-      warning,
-      '',
-      ...sections.flatMap((section) => [`### ${section.title}`, '', section.body, '']),
-    ]
-      .join('\n')
-      .trim();
+    return (
+      this.buildDrugModeFallbackPayload(entry, parsed, requestedSections, originalDrugName)?.answer ||
+      null
+    );
   }
 
   async lookupIndicationsAndDoseByDrugName(
@@ -1511,12 +1562,32 @@ Rules:
         }
 
         if (!match && fallbackEntry) {
-          const fallbackAnswer = this.buildDrugModeFallbackAnswer(
+          const fallbackPayload = this.buildDrugModeFallbackPayload(
             fallbackEntry,
             parsed,
             requestedSections,
             parsed.drug_name,
           );
+          if (fallbackPayload) {
+            console.log('[ASK DRUG FALLBACK][PAYLOAD]', {
+              originalDrugName: parsed.drug_name,
+              resolvedGenericName: fallbackGenericName,
+              requestedSectionKeys: fallbackPayload.requestedSectionKeys,
+              requestedSectionLabels: fallbackPayload.requestedSectionLabels,
+              usedSections: fallbackPayload.usedSections,
+              fullFallbackAnswer: fallbackPayload.answer,
+            });
+          } else {
+            console.log('[ASK DRUG FALLBACK][PAYLOAD]', {
+              originalDrugName: parsed.drug_name,
+              resolvedGenericName: fallbackGenericName,
+              requestedSectionKeys: parsed.sections,
+              requestedSectionLabels: requestedSectionSummary,
+              usedSections: [],
+              fullFallbackAnswer: null,
+            });
+          }
+          const fallbackAnswer = fallbackPayload?.answer || null;
           const noDataMessage =
             fallbackAnswer ||
             'Sorry, the drug information is not in our database, please search online.';
@@ -1528,12 +1599,32 @@ Rules:
         const promptContext = this.buildNamedContext(match!, requestedSections);
         if (Object.keys(promptContext.sections).length === 0) {
           if (fallbackEntry) {
-            const fallbackAnswer = this.buildDrugModeFallbackAnswer(
+            const fallbackPayload = this.buildDrugModeFallbackPayload(
               fallbackEntry,
               parsed,
               requestedSections,
               parsed.drug_name,
             );
+            if (fallbackPayload) {
+              console.log('[ASK DRUG FALLBACK][PAYLOAD]', {
+                originalDrugName: parsed.drug_name,
+                resolvedGenericName: fallbackGenericName,
+                requestedSectionKeys: fallbackPayload.requestedSectionKeys,
+                requestedSectionLabels: fallbackPayload.requestedSectionLabels,
+                usedSections: fallbackPayload.usedSections,
+                fullFallbackAnswer: fallbackPayload.answer,
+              });
+            } else {
+              console.log('[ASK DRUG FALLBACK][PAYLOAD]', {
+                originalDrugName: parsed.drug_name,
+                resolvedGenericName: fallbackGenericName,
+                requestedSectionKeys: parsed.sections,
+                requestedSectionLabels: requestedSectionSummary,
+                usedSections: [],
+                fullFallbackAnswer: null,
+              });
+            }
+            const fallbackAnswer = fallbackPayload?.answer || null;
             const noDataMessage =
               fallbackAnswer ||
               'Sorry, the drug information is not in our database, please search online.';
