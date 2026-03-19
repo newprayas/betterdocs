@@ -302,8 +302,12 @@ const formatDrugDoseOutput = (raw: string): string =>
     // Markdown line break (two spaces + newline) for items within a brand block
     .replace(/([^\n])\s*(?=🎯)/g, '$1\n\n')
     .replace(
-      /([^\n])\s*(?=\*\*(?:Adult|Child|Paediatric|Pediatric|Infant|Neonate|Toddler|Baby)[^*]*\*\*[:\s])/g,
+      /([^\n])\s*(?=\*\*(?:Adult|Elderly|Child|Paediatric|Pediatric|Infant|Neonate|Toddler|Baby)[^*]*\*\*[:\s])/g,
       '$1  \n',
+    )
+    .replace(
+      /([^\n])\s*(?=(?:Adult|Elderly|Child|Paediatric|Pediatric|Infant|Neonate|Toddler|Baby)[^:\n]{0,80}:)/g,
+      '$1\n',
     )
     .replace(/([^\n])\s*(?=Price:)/g, '$1  \n')
     .replace(/\n{3,}/g, '\n\n')
@@ -429,6 +433,9 @@ const normalizeContraindicationCapitalization = (text: string): string => {
     if (normalizedBlockLines.length > 0) {
       normalizedLines.push('');
       normalizedLines.push(...normalizedBlockLines);
+      if (innerIndex < lines.length && lines[innerIndex]?.trim()) {
+        normalizedLines.push('');
+      }
     }
 
     index = innerIndex - 1;
@@ -509,7 +516,7 @@ For the DRUG: {{DRUG_NAME}}, extract all brand names with exact verbatim dose te
 [If two matched entries differ, keep the difference clear instead of deleting one.]
 [You will receive an optional requested_indication_query in the input context.]
 [You will receive requested_dose_audience in the input context with value "adult" or "child".]
-[If requested_dose_audience is "adult", include ONLY adult/adult-equivalent dosing lines. Exclude child, pediatric, paediatric, infant, neonate, baby, and toddler dosing lines.]
+[If requested_dose_audience is "adult", include adult dosing lines and elderly dosing lines when present. Exclude child, pediatric, paediatric, infant, neonate, baby, and toddler dosing lines.]
 [If requested_dose_audience is "child", include ONLY child/pediatric/paediatric/infant/neonate/baby/toddler dosing lines when present. Do NOT include adult dosing.]
 [Never include both adult and child dosing in the same extracted output.]
 [If the requested dose audience is missing for the selected indication, write exactly "**Adult:** Not found in provided drug dataset." or "**Child:** Not found in provided drug dataset." as appropriate, and do not substitute the other audience.]
@@ -592,7 +599,7 @@ FORMATTING AND INCLUSION RULES TO CHECK AND FIX:
 
 4. Dose Audience Rule (CRITICAL):
    - Use requested_dose_audience from context.
-   - If requested_dose_audience is "adult", keep ONLY adult/adult-equivalent dosing lines.
+   - If requested_dose_audience is "adult", keep adult dosing lines and elderly dosing lines when present.
    - If requested_dose_audience is "child", keep ONLY child/pediatric/paediatric/infant/neonate/baby/toddler dosing lines.
    - Never mix adult and child dosing in the same verified output.
    - If the requested dose audience is missing for the selected indication, keep exactly this fallback line and do not substitute the other audience:
@@ -632,7 +639,7 @@ Dose-conversion workflow for EVERY indication + formulation strength:
 [Injection/vial rule: if required dose < vial strength, use vial fractions (e.g. 1/2 vial) not full vial.]
 [Do not add administration timing or advice ("after food", "after meals") unless it was present in the input.]
 [For the same formulation and same strength, even across different brand names or companies, show dosing for the first brand only. For later brands of that same formulation + strength, just reference that dosing is already covered above and show price.]
-[The extracted drug data sheet has already been filtered to the requested dose audience. Do not add or restore any other age-group dosing lines.]
+[The extracted drug data sheet has already been filtered to the requested dose audience. For "adult", this includes elderly lines when present. Do not add or restore any child or other excluded age-group dosing lines.]
 [If an age-group line says "Not found in provided drug dataset.", preserve that line exactly and do not attempt dose conversion for it.]
 
 CRITICAL FORMATTING RULES — you MUST follow these exactly:
