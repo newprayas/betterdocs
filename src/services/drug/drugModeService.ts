@@ -320,6 +320,123 @@ const formatDrugBrandsOutput = (raw: string): string =>
     })
     .join('\n');
 
+const capitalizeContraindicationText = (value: string): string =>
+  value.replace(/^([a-z])/, (_, firstLetter: string) => firstLetter.toUpperCase());
+
+const isContraindicationsHeading = (trimmedLine: string): boolean =>
+  /^(?:\*\*)?❌\s*Contraindications(?:\*\*)?$/i.test(trimmedLine) ||
+  /^(?:\*\*)?Contraindications(?:\*\*)?$/i.test(trimmedLine);
+
+const isContraindicationsBlockBoundary = (trimmedLine: string): boolean =>
+  /^(?:\*\*)?✅/.test(trimmedLine) ||
+  /^(?:\*\*)?❌/.test(trimmedLine) ||
+  /^#{1,6}\s/.test(trimmedLine) ||
+  /^🎉/.test(trimmedLine) ||
+  /^🎯/.test(trimmedLine) ||
+  /^\*\*(?:Adult|Child|Paediatric|Pediatric|Infant|Neonate|Toddler|Baby)/.test(trimmedLine) ||
+  /^Price:/i.test(trimmedLine);
+
+const cleanContraindicationSentence = (value: string): string =>
+  capitalizeContraindicationText(
+    value
+      .replace(/\s+\./g, '.')
+      .replace(/\s+/g, ' ')
+      .replace(/^[,;:.()\[\]\s-]+/, '')
+      .replace(/[,;:.()\[\]\s-]+$/, '')
+      .trim(),
+  );
+
+const splitContraindicationSentenceItems = (value: string): string[] =>
+  value
+    .split(/\s*(?:\.(?=\s|$)|;(?=\s|$))\s*/)
+    .map(cleanContraindicationSentence)
+    .filter(Boolean);
+
+const expandContraindicationSegmentToBullets = (segment: string): string[] => {
+  const cleanedSegment = segment
+    .replace(/^\s*[-*]\s*/, '')
+    .replace(/\s+\./g, '.')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (!cleanedSegment) {
+    return [];
+  }
+
+  const groupedMatch =
+    cleanedSegment.match(/^(With .+? use)\s+([A-Z][\s\S]*)$/) ||
+    cleanedSegment.match(/^(When used for .+?)\s+([A-Z][\s\S]*)$/);
+
+  if (groupedMatch) {
+    const label = cleanContraindicationSentence(groupedMatch[1]);
+    const items = splitContraindicationSentenceItems(groupedMatch[2]);
+    if (items.length > 0) {
+      return [`- ${label}:`, ...items.map((item) => `- ${item}`)];
+    }
+  }
+
+  const items = splitContraindicationSentenceItems(cleanedSegment);
+  if (items.length > 1) {
+    return items.map((item) => `- ${item}`);
+  }
+
+  const singleItem = cleanContraindicationSentence(cleanedSegment);
+  return singleItem ? [`- ${singleItem}`] : [];
+};
+
+const normalizeContraindicationsBlockLines = (lines: string[]): string[] =>
+  lines.flatMap((line) => {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      return [];
+    }
+
+    return trimmed
+      .split(/\s*▶\s*/)
+      .flatMap((segment) => expandContraindicationSegmentToBullets(segment));
+  });
+
+const normalizeContraindicationCapitalization = (text: string): string => {
+  const lines = text.split('\n');
+  const normalizedLines: string[] = [];
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    const trimmed = line.trim();
+
+    if (!isContraindicationsHeading(trimmed)) {
+      normalizedLines.push(line);
+      continue;
+    }
+
+    normalizedLines.push(line);
+
+    const blockLines: string[] = [];
+    let innerIndex = index + 1;
+    while (innerIndex < lines.length) {
+      const candidateLine = lines[innerIndex];
+      const candidateTrimmed = candidateLine.trim();
+
+      if (candidateTrimmed && isContraindicationsBlockBoundary(candidateTrimmed)) {
+        break;
+      }
+
+      blockLines.push(candidateLine);
+      innerIndex += 1;
+    }
+
+    const normalizedBlockLines = normalizeContraindicationsBlockLines(blockLines);
+    if (normalizedBlockLines.length > 0) {
+      normalizedLines.push('');
+      normalizedLines.push(...normalizedBlockLines);
+    }
+
+    index = innerIndex - 1;
+  }
+
+  return normalizedLines.join('\n');
+};
+
 const buildPass3ClinicalContextPrompt = (promptContext: Record<string, unknown>): string => {
   const source = compactField(String(promptContext.clinical_context_source || '')) || '';
   const clinicalContext =
@@ -2022,11 +2139,12 @@ ${verificationOutput}`;
         });
       }
 
-      const finalResponse = intent.answerKind === 'sectional'
+      const formattedResponse = intent.answerKind === 'sectional'
         ? fullResponse
         : intent.answerKind === 'brands'
           ? formatDrugBrandsOutput(fullResponse)
           : formatDrugDoseOutput(fullResponse);
+      const finalResponse = normalizeContraindicationCapitalization(formattedResponse);
 
       await this.saveAssistantMessage(sessionId, finalResponse);
       onStreamEvent?.({
