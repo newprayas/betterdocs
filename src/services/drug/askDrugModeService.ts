@@ -544,6 +544,7 @@ const logFullPromptText = (label: string, text: string): void => {
 
 const ASK_DRUG_ROUTE_PATTERNS = [
   /^BY\s+[A-Z]/i,
+  /^INITIALLY\s+BY\s+[A-Z]/i,
   /^TO\s+THE\s+[A-Z]/i,
   /^VIA\s+[A-Z]/i,
   /^FOR\s+[A-Z].*\bADMINISTRATION\b/i,
@@ -584,6 +585,63 @@ const looksLikeIndicationText = (value: string): boolean => {
   if (compact.includes(':')) return false;
   if (!/[A-Za-z]/.test(compact)) return false;
   return compact.split(/\s+/).length >= 2;
+};
+
+const stripParentheticalText = (value: string): string =>
+  compactField(value.replace(/\([^)]*\)/g, ' ')) || '';
+
+const getIndicationCandidateScore = (value: string): number => {
+  const compact = compactField(value) || '';
+  if (!looksLikeIndicationText(compact)) {
+    return Number.NEGATIVE_INFINITY;
+  }
+
+  const scoreText = stripParentheticalText(compact) || compact;
+  const words = scoreText.split(/\s+/).filter(Boolean);
+  const internalCapitalizedWords = words
+    .slice(1)
+    .filter((word) => /^[A-Z][a-z]/.test(word.replace(/^[("']+/, ''))).length;
+
+  let score = 0;
+  if (!/\d/.test(scoreText)) score += 5;
+  if (words.length >= 2 && words.length <= 12) {
+    score += 5;
+  } else if (words.length <= 18) {
+    score += 2;
+  } else {
+    score -= Math.min(8, words.length - 18);
+  }
+  score -= internalCapitalizedWords * 3;
+
+  return score;
+};
+
+const normalizeRecoveredIndicationCandidate = (value: string): string => {
+  const compact = compactField(value) || '';
+  if (!compact) return '';
+
+  const withoutLeadingPageNumber = compact.replace(/^\d{1,4}\s+/, '');
+  const candidateStarts = [0];
+  const boundaryPattern = /\s+(?=[A-Z])/g;
+  let match: RegExpExecArray | null;
+
+  while ((match = boundaryPattern.exec(withoutLeadingPageNumber)) !== null) {
+    candidateStarts.push(match.index);
+  }
+
+  let bestCandidate = withoutLeadingPageNumber;
+  let bestScore = getIndicationCandidateScore(withoutLeadingPageNumber);
+
+  for (const start of candidateStarts) {
+    const candidate = compactField(withoutLeadingPageNumber.slice(start)) || '';
+    const score = getIndicationCandidateScore(candidate);
+    if (score > bestScore) {
+      bestCandidate = candidate;
+      bestScore = score;
+    }
+  }
+
+  return compactField(bestCandidate) || '';
 };
 
 const cleanStructuredNote = (value: string): string | null => {
@@ -650,22 +708,40 @@ const splitTrailingIndication = (
 
   const boundaryPattern = /\s+(?=[A-Z])/g;
   let match: RegExpExecArray | null;
+  let bestSplit: { main: string; trailingIndication: string; score: number } | null = null;
 
   while ((match = boundaryPattern.exec(compact)) !== null) {
     const boundaryIndex = match.index;
     const prefix = compactField(compact.slice(0, boundaryIndex)) || '';
-    const suffix = compactField(compact.slice(boundaryIndex)) || '';
+    const suffix = normalizeRecoveredIndicationCandidate(compact.slice(boundaryIndex));
+    const suffixWithoutParentheses = stripParentheticalText(suffix);
 
     if (!prefix || !suffix) continue;
     if (!looksLikeDoseText(prefix)) continue;
     if (!looksLikeIndicationText(suffix)) continue;
-    if (/\b(?:mg|g|micrograms?|mcg|ml|kg|hours?|dose|doses|daily|required|minutes?|day)\b/i.test(suffix)) {
+    if (
+      /\b(?:mg|g|micrograms?|mcg|ml|kg|hours?|dose|doses|daily|required|minutes?|day)\b/i.test(
+        suffixWithoutParentheses,
+      )
+    ) {
       continue;
     }
 
+    const candidateScore = getIndicationCandidateScore(suffix);
+    if (!Number.isFinite(candidateScore)) continue;
+    if (!bestSplit || candidateScore >= bestSplit.score) {
+      bestSplit = {
+        main: prefix,
+        trailingIndication: suffix,
+        score: candidateScore,
+      };
+    }
+  }
+
+  if (bestSplit) {
     return {
-      main: prefix,
-      trailingIndication: suffix,
+      main: bestSplit.main,
+      trailingIndication: bestSplit.trailingIndication,
     };
   }
 
