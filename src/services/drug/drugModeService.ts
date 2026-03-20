@@ -605,6 +605,11 @@ const logFullPromptText = (label: string, text: string): void => {
 const DRUG_AGE_LABEL_PREFIX =
   '(?:Adult|Elderly|Child|Paediatric|Pediatric|Infant|Neonate|Toddler|Baby)';
 
+const sparkleDrugDoseScheduleLabels = (value: string): string =>
+  value
+    .replace(/(^|\n)\s*(?:✨\s*)?Dose\s*:/gi, '$1✨ Dose :')
+    .replace(/(^|\n)\s*(?:✨\s*)?Schedule\s*:/gi, '$1✨ Schedule :');
+
 const normalizeDrugDoseAgeLine = (line: string): string => {
   const trimmedLine = line.trim();
   if (!trimmedLine) return trimmedLine;
@@ -621,7 +626,7 @@ const normalizeDrugDoseAgeLine = (line: string): string => {
     return `**${ageLabel}:**`;
   }
 
-  return `**${ageLabel}:**\nDose : ${remainder}`;
+  return `**${ageLabel}:**\n✨ Dose : ${remainder}`;
 };
 
 const normalizeDrugInlineLayoutText = (value: string): string =>
@@ -636,7 +641,7 @@ const normalizeDrugInlineLayoutText = (value: string): string =>
     .trim();
 
 const normalizeDrugDoseBlock = (block: string): string =>
-  normalizeDrugInlineLayoutText(block)
+  sparkleDrugDoseScheduleLabels(normalizeDrugInlineLayoutText(block))
     .split('\n')
     .map((line) => line.trim())
     .filter(Boolean)
@@ -1541,9 +1546,6 @@ const buildScheduleTextFromDoseLine = (
 const appendSchedulesToBrandBlock = (
   block: string,
   detail: ParsedBrandDetail,
-  options?: {
-    sparkleDoseAndSchedule?: boolean;
-  },
 ): string => {
   const lines = block.split('\n');
   const schedulesByLineIndex = new Map<number, string>();
@@ -1573,8 +1575,7 @@ const appendSchedulesToBrandBlock = (
       return block;
     }
 
-    const schedulePrefix = options?.sparkleDoseAndSchedule ? '✨ Schedule' : 'Schedule';
-    schedulesByLineIndex.set(index, `${schedulePrefix} : ${scheduleText}`);
+    schedulesByLineIndex.set(index, `✨ Schedule : ${scheduleText}`);
   }
 
   if (schedulesByLineIndex.size === 0) {
@@ -1596,12 +1597,11 @@ const appendSchedulesToBrandBlock = (
 const addAppLevelSchedulesToDoseOutput = (
   body: string,
   promptContext: Record<string, unknown>,
-  options?: {
-    sparkleDoseAndSchedule?: boolean;
-  },
 ): string => {
   const scheduleDetails = collectPromptBrandScheduleDetails(promptContext);
-  if (scheduleDetails.length === 0) return normalizeFinalDrugBrandBlockLayout(body);
+  if (scheduleDetails.length === 0) {
+    return normalizeFinalDrugBrandBlockLayout(sparkleDrugDoseScheduleLabels(body));
+  }
 
   const blocks = body.replace(/\r\n/g, '\n').split(/\n{2,}/);
   let currentHeading = '';
@@ -1622,10 +1622,12 @@ const addAppLevelSchedulesToDoseOutput = (
       return block;
     }
 
-    return appendSchedulesToBrandBlock(block, matchedDetail, options);
+    return appendSchedulesToBrandBlock(block, matchedDetail);
   });
 
-  return normalizeFinalDrugBrandBlockLayout(updatedBlocks.join('\n\n').trim());
+  return normalizeFinalDrugBrandBlockLayout(
+    sparkleDrugDoseScheduleLabels(updatedBlocks.join('\n\n').trim()),
+  );
 };
 
 const capitalizeContraindicationText = (value: string): string =>
@@ -3211,7 +3213,7 @@ Rules:
     }
 
     if (doses.length > 0) {
-      sections.push('', `Dose: ${doses.join(' | ')}`);
+      sections.push('', `✨ Dose : ${doses.join(' | ')}`);
     }
 
     return sections.join('\n');
@@ -3399,7 +3401,6 @@ ${stringifyEntryForPrompt(promptContextForModel)}`;
           const formattedBodyWithSchedules = addAppLevelSchedulesToDoseOutput(
             formattedBody,
             promptContext as Record<string, unknown>,
-            { sparkleDoseAndSchedule: true },
           );
           const prelude = buildDoseResponsePrelude(
             resolvedDrugName,

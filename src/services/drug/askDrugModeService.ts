@@ -1369,7 +1369,7 @@ Rules:
 
         const lines: string[] = [];
         if (indications) lines.push(`- Indications: ${indications}`);
-        if (dose) lines.push(`- Dose: ${dose}`);
+        if (dose) lines.push(`- ✨ Dose : ${dose}`);
 
         return {
           title: sectionLabel(section),

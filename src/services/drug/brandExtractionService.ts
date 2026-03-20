@@ -212,7 +212,7 @@ const buildNoBrandLookupSections = (
     }
 
     if (result.dose) {
-      lines.push('', `Dose: ${result.dose}`);
+      lines.push('', `✨ Dose : ${result.dose}`);
     }
   }
 
