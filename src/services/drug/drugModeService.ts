@@ -309,7 +309,11 @@ const normalizeDrugDoseAgeLine = (line: string): string => {
   if (!match) return trimmedLine;
 
   const [, ageLabel, remainder] = match;
-  return remainder ? `**${ageLabel}:** ${remainder}` : `**${ageLabel}:**`;
+  if (!remainder) {
+    return `**${ageLabel}:**`;
+  }
+
+  return `**${ageLabel}:**\nDose : ${remainder}`;
 };
 
 const normalizeDrugDoseBlock = (block: string): string =>
@@ -411,7 +415,21 @@ const renderDrugDoseBlock = (block: string): string => {
 };
 
 const formatDrugDoseOutput = (raw: string): string => {
-  const normalizedRaw = raw
+  const strippedPreludeRaw = (() => {
+    const lines = raw.replace(/\r\n/g, '\n').split('\n');
+    const firstContentIndex = lines.findIndex((line) => {
+      const trimmedLine = line.trim();
+      return (
+        /^\*\*✅(?!\s*Indications\b)/i.test(trimmedLine) ||
+        /^🎉/.test(trimmedLine) ||
+        /^🔴/.test(trimmedLine)
+      );
+    });
+
+    return firstContentIndex >= 0 ? lines.slice(firstContentIndex).join('\n') : raw;
+  })();
+
+  const normalizedRaw = strippedPreludeRaw
     .replace(/\r\n/g, '\n')
     .replace(new RegExp(`\\*\\*\\s+(?=${DRUG_AGE_LABEL_PREFIX}\\b)`, 'gi'), '**')
     .replace(/([^\n])\s*(?=\*\*✅)/g, '$1\n\n')
@@ -566,7 +584,44 @@ const normalizeContraindicationCapitalization = (text: string): string => {
   return normalizedLines.join('\n');
 };
 
-const buildPass3ClinicalContextPrompt = (promptContext: Record<string, unknown>): string => {
+const cleanDoseSummaryItem = (value: string): string | null => {
+  let cleaned = compactField(value) || '';
+  if (!cleaned) return null;
+
+  cleaned = cleaned
+    .replace(/^(?:and|or)\s+/i, '')
+    .replace(/^[,;:.()\[\]\s-]+/, '')
+    .replace(/[,;:.()\[\]\s-]+$/, '')
+    .trim();
+
+  if (!cleaned) return null;
+  return cleaned;
+};
+
+const extractIndicationLabelsFromAskDrugText = (value: string): string[] => {
+  const compact = compactField(value) || '';
+  if (!compact) return [];
+
+  const matches: string[] = [];
+  const pattern =
+    /(?:^|▶\s*(?:Adult|Child|Elderly|Neonate|Infant|Adolescent|Young person)[^▶]{0,700}?)([^▶]{1,320}?)(?=\s*▶\s*BY\b)/gi;
+
+  for (const match of compact.matchAll(pattern)) {
+    const rawSegment = compactField(match[1] || '');
+    if (!rawSegment) continue;
+
+    for (const part of rawSegment.split(/\s+\|\s+/)) {
+      const cleaned = cleanDoseSummaryItem(part);
+      if (cleaned) {
+        matches.push(cleaned);
+      }
+    }
+  }
+
+  return uniqueStrings(matches);
+};
+
+const extractDoseSummaryIndications = (promptContext: Record<string, unknown>): string[] => {
   const source = compactField(String(promptContext.clinical_context_source || '')) || '';
   const clinicalContext =
     promptContext.clinical_context && typeof promptContext.clinical_context === 'object'
@@ -574,53 +629,104 @@ const buildPass3ClinicalContextPrompt = (promptContext: Record<string, unknown>)
       : null;
 
   if (!clinicalContext) {
-    return JSON.stringify(
-      {
-        clinical_context_source: source || 'unknown',
-        clinical_context: {},
-      },
-      null,
-      2,
-    );
+    return [];
   }
 
   if (source === 'ask_drug_indications_and_dose') {
-    const askDrugClinicalContext: Record<string, unknown> = {
-      title: clinicalContext.title,
-      pages: clinicalContext.pages,
-      contra_indications: clinicalContext.contra_indications,
-    };
+    const structured =
+      clinicalContext.indications_and_dose_structured &&
+      typeof clinicalContext.indications_and_dose_structured === 'object'
+        ? (clinicalContext.indications_and_dose_structured as AskDrugIndicationsAndDoseStructured)
+        : null;
 
-    if (clinicalContext.indications_and_dose_structured !== undefined) {
-      askDrugClinicalContext.indications_and_dose_structured =
-        clinicalContext.indications_and_dose_structured;
-    } else if (clinicalContext.indications_and_dose !== undefined) {
-      askDrugClinicalContext.indications_and_dose = clinicalContext.indications_and_dose;
+    if (structured?.indications?.length) {
+      return uniqueStrings(
+        structured.indications
+          .map((item) => cleanDoseSummaryItem(item.indication))
+          .filter((item): item is string => Boolean(item)),
+      );
     }
 
-    return JSON.stringify(
-      {
-        clinical_context_source: source,
-        clinical_context: askDrugClinicalContext,
-      },
-      null,
-      2,
+    if (typeof clinicalContext.indications_and_dose === 'string') {
+      return extractIndicationLabelsFromAskDrugText(clinicalContext.indications_and_dose);
+    }
+
+    return [];
+  }
+
+  if (typeof clinicalContext.indications !== 'string') {
+    return [];
+  }
+
+  return uniqueStrings(
+    clinicalContext.indications
+      .split(/\s*\|\s*|\n+/)
+      .map((item) => cleanDoseSummaryItem(item))
+      .filter((item): item is string => Boolean(item)),
+  );
+};
+
+const extractDoseSummaryContraindications = (
+  promptContext: Record<string, unknown>,
+): string | undefined => {
+  const source = compactField(String(promptContext.clinical_context_source || '')) || '';
+  const clinicalContext =
+    promptContext.clinical_context && typeof promptContext.clinical_context === 'object'
+      ? (promptContext.clinical_context as Record<string, unknown>)
+      : null;
+
+  if (!clinicalContext) {
+    return undefined;
+  }
+
+  const rawContraindications =
+    source === 'ask_drug_indications_and_dose'
+      ? clinicalContext.contra_indications
+      : clinicalContext.contraindications;
+
+  return typeof rawContraindications === 'string'
+    ? compactField(rawContraindications)
+    : undefined;
+};
+
+const buildDoseResponsePrelude = (
+  drugName: string,
+  promptContext: Record<string, unknown>,
+  requestedDoseAudience: DrugDoseAudience,
+): string => {
+  const lines: string[] = [`**${drugName}** - Generic : ${drugName}`];
+  const clinicalContextSource =
+    compactField(String(promptContext.clinical_context_source || '')) || 'drug_mode_fallback';
+
+  if (clinicalContextSource === 'drug_mode_fallback') {
+    lines.push(
+      '',
+      '⚠️ British National Pharmacopoeia data not found, using regional information',
     );
   }
 
-  return JSON.stringify(
-    {
-      clinical_context_source: source || 'drug_mode_fallback',
-      clinical_context: {
-        pages: clinicalContext.pages,
-        indications: clinicalContext.indications,
-        contraindications: clinicalContext.contraindications,
-        dose: clinicalContext.dose,
-      },
-    },
-    null,
-    2,
+  lines.push(
+    '',
+    requestedDoseAudience === 'child'
+      ? '⚠️ Only **CHILD** dose given, search adult dose separately'
+      : '⚠️ Only **ADULT** dose given, search child dose separately',
   );
+
+  const indications = extractDoseSummaryIndications(promptContext);
+  lines.push('', '**✅ Indications**');
+
+  if (indications.length > 0) {
+    lines.push(...indications.map((indication) => `- ${indication}`));
+  } else {
+    lines.push('- Not found in provided drug dataset.');
+  }
+
+  const contraindications = extractDoseSummaryContraindications(promptContext);
+  if (contraindications) {
+    lines.push('', '**❌ Contraindications**', contraindications);
+  }
+
+  return lines.join('\n').trim();
 };
 
 // ─── PASS 1: Extraction-only prompt (no dose math) ───────────────────────────
@@ -659,14 +765,14 @@ For the DRUG: {{DRUG_NAME}}, extract all brand names with exact verbatim dose te
 
 IMPORTANT RULES:
 - Do NOT convert doses into tablet/capsule/vial counts. Just copy the exact dose text verbatim from clinical_context.
-- Do NOT calculate any dosing schedule. That is done in a separate step.
+- Do NOT calculate any tablet, capsule, vial, ampoule, or unit-count schedule.
 - DO list ONLY the single selected indication with exact verbatim dose text (Adult, Child, etc.) from the clinical context.
 - CRITICAL: ALWAYS output exactly 1 indication (never 0, never more than 1).
 - DO include the price for each brand.
 - DO treat brands as duplicates for dosing when they have the SAME formulation AND the SAME explicit strength, even if the brand names and companies are different.
 - Example of duplicates for dosing: "Tab. Fenac 100 mg - Acme" and "Tab. Clofenac 100 mg - Square" are both TABLET 100 mg, so ONLY the first 100 mg tablet brand should carry the indication and dose lines.
 - For the second and later brands with the same formulation + same strength, show ONLY the brand line and price line, plus "[same strength dosing already listed above]". Do NOT repeat the indication or dose text.
-- If two brands have DIFFERENT mg strengths (e.g. 50 mg and 100 mg), you MUST repeat the full verbatim dose text for EACH strength, even if the source clinical_context uses the same dose description. This is critical because a separate step will calculate different unit counts for different strengths.
+- If two brands have DIFFERENT mg strengths (e.g. 50 mg and 100 mg), you MUST repeat the full verbatim dose text for EACH strength, even if the source clinical_context uses the same dose description.
 - Within each formulation, list ALL brands that keep full indication/dose content first, and only after those list the reference-only same-strength brands that say "[same strength dosing already listed above]".
 
 Formatting:
@@ -698,7 +804,7 @@ And so on for every formulation and brand.`;
 const DRUG_VERIFICATION_SYSTEM_PROMPT = `You are a clinical data verification assistant.
 You will receive the extracted drug data from a previous step, along with the original matched drug entries and clinical context.
 
-Your job is to VERIFY and FIX the extracted data before it goes to the final dose-conversion step, ensuring all formatting and inclusion rules are perfectly followed.
+Your job is to VERIFY, FIX, and FINALIZE the extracted data. The output from this step is the final model-generated body that the app will display below its own title and summary sections.
 
 FORMATTING AND INCLUSION RULES TO CHECK AND FIX:
 1. Missing Formulations Check:
@@ -712,7 +818,7 @@ FORMATTING AND INCLUSION RULES TO CHECK AND FIX:
    - Treat two brand blocks as duplicates for dosing when they have the SAME formulation AND the SAME explicit strength, even if the brand names or companies differ.
    - Example: "Tab. Fenac 100 mg - Acme" and "Tab. Clofenac 100 mg - Square" are both 100 mg tablets, so only one of them should keep the indication and dosing text.
    - For the second and later brands with the same formulation + same strength, keep ONLY the brand line and the price line, plus "[same strength dosing already listed above]". Remove any repeated indication or dose lines if present.
-   - If two brands have DIFFERENT mg strengths (e.g. 50 mg and 100 mg), you MUST repeat the full verbatim dose text for EACH strength, even if the source clinical_context uses the same dose description. This is critical because a separate step will calculate different unit counts for different strengths.
+   - If two brands have DIFFERENT mg strengths (e.g. 50 mg and 100 mg), you MUST repeat the full verbatim dose text for EACH strength, even if the source clinical_context uses the same dose description.
    - Before finalizing, explicitly re-check the entire output for duplicate dosing blocks under the same formulation + same strength and collapse them if any slipped through.
    - Within each formulation, move all brands with full indication/dose content to the top, and place the reference-only same-strength brands below them.
 
@@ -726,119 +832,26 @@ FORMATTING AND INCLUSION RULES TO CHECK AND FIX:
    - If requested_dose_audience is "adult", keep adult dosing lines and elderly dosing lines when present.
    - If requested_dose_audience is "child", keep ONLY child/pediatric/paediatric/infant/neonate/baby/toddler dosing lines.
    - Never mix adult and child dosing in the same verified output.
-   - If the requested dose audience is missing for the selected indication, keep exactly this fallback line and do not substitute the other audience:
-     **Adult:** Not found in provided drug dataset.
-     or
-     **Child:** Not found in provided drug dataset.
+   - If the requested dose audience is missing for the selected indication, keep the same audience label and write "Not found in provided drug dataset."
 
-If these rules are not being followed in the provided extraction output, you MUST FIX the output perfectly. Especially ensure the full verbatim dose text is repeated for each different strength.
+5. Final Output Shape (CRITICAL):
+   - Do NOT calculate tablets, capsules, ampoules, vials, or any other unit counts.
+   - Keep the original dose text verbatim from the clinical context.
+   - Do NOT include the main title, audience notice, indications summary, or contraindications summary. The app will render those.
+   - Output formulation headings and brand blocks only.
+   - Every brand name line MUST start with 🎉 and be wrapped in bold markers.
+   - Every brand name line MUST be on its own line.
+   - Every 🎯 indication line MUST start on a new line.
+   - Every age-group label MUST be on its own line and bolded, e.g. **Adult:**, **Child 12-17 years:**.
+   - Put the dose text on the next line in this exact style:
+     Dose : 0.5-1 g every 4-6 hours; maximum 4 g per day
+   - Every "Price:" line MUST start on its own line.
+   - There MUST be a blank line between each brand block.
+   - There MUST be a blank line before and after each formulation heading (**✅ TABLET**, etc.).
 
-Output ONLY the fixed and verified extracted dataset in the EXACT SAME format as the input extraction. Do not add any conversational text.`;
+If these rules are not being followed in the provided extraction output, you MUST FIX the output perfectly.
 
-// ─── PASS 3: Dose-conversion-only prompt ─────────────────────────────────────
-const DRUG_DOSE_CONVERSION_SYSTEM_PROMPT = `You are a dosing-schedule calculator.
-You will receive an extracted drug data sheet with brand names, indications, and VERBATIM dose text.
-Your ONLY job is to convert each verbatim dose into a practical dosing schedule based on the brand's actual listed strength.
-
-Dose-conversion workflow for EVERY indication + formulation strength:
-1. Identify the exact required mg dose and frequency from the verbatim dose text for that indication.
-2. Identify the actual listed strength of the brand formulation (from the brand line, e.g. "Tab. Pantonix 20 mg").
-3. Convert the mg dose into the correct number of units for that exact strength.
-
-[Never reverse this workflow. Do not start from the brand strength and guess the clinical dose.]
-[Map indication first, then mg dose, then unit count + explicit unit.]
-[Strength-conversion rule: always calculate from the required total dose and the actual strength.]
-[If source says 40 mg daily: 40 mg tablet = 1 tablet + 0 + 0, 20 mg tablet = 1 tablet + 0 + 1 tablet, 10 mg tablet = 2 tablets + 0 + 2 tablets.]
-[CRITICAL: ALWAYS append the unit type (tablet, capsule, amp, vial, suppository) to ALL numbers. Never say just "1" or "2" - say "1 tablet", "2 capsules", "1 amp", etc.]
-[Do not copy a 40 mg once-daily instruction directly onto a 20 mg tablet as 1 tablet + 0 + 0. The unit count must match the listed strength.]
-[Apply this to all formulations: tablets, capsules, dispersible tablets, suppositories, injections, infusions, syrups, suspensions, drops.]
-[Per-indication mapping: keep different mg totals separate. Do not merge 20 mg daily, 40 mg daily, 40 mg twice daily, etc.]
-[Do not write shortcuts like "all above indications (same daily mg totals)" unless truly identical.]
-[If one brand strength covers several indications with different mg totals, list them separately.]
-[Before outputting, sanity-check that units per dose × doses per day match the source mg requirement.]
-[If the source gives a dose range, preserve it in unit form: e.g. 50-100 mg every 4-6 hours with 100 mg tablet → 1/2 or 1 tablet every 4-6 hours.]
-[Use range-based wording when it better matches the source: 1/2 or 1 tablet, 1-2 tablets, etc.]
-[Rectal divided-dose rule: if source says divided doses, split using 1 + 0 + 1 or 1 + 1 + 1 style.]
-[Practical prescribing: do not generate impractical schedules with excessive unit counts. Prefer practical strengths.]
-[Injection/vial rule: if required dose < vial strength, use vial fractions (e.g. 1/2 vial) not full vial.]
-[Do not add administration timing or advice ("after food", "after meals") unless it was present in the input.]
-[For the same formulation and same strength, even across different brand names or companies, show dosing for the first brand only. For later brands of that same formulation + strength, just reference that dosing is already covered above and show price.]
-[Within each formulation, place all brands with full dosing content first. After those, list the reference-only same-strength brands that point upward.]
-[The extracted drug data sheet has already been filtered to the requested dose audience. For "adult", this includes elderly lines when present. Do not add or restore any child or other excluded age-group dosing lines.]
-[If an age-group line says "Not found in provided drug dataset.", preserve that line exactly and do not attempt dose conversion for it.]
-
-CRITICAL FORMATTING RULES — you MUST follow these exactly:
-- If clinical_context_source is "drug_mode_fallback", include this warning line immediately below the title:
-  ⚠️ British National Pharmacopoeia data not found, using regional information
-- If clinical_context_source is "ask_drug_indications_and_dose", do not include the British National Pharmacopoeia fallback warning.
-- Immediately below the main title, include exactly one audience notice line.
-- If requested_dose_audience is "adult", the notice line must be:
-  ⚠️ Only **ADULT** dose given, search child dose separately
-- If requested_dose_audience is "child", the notice line must be:
-  ⚠️ Only **CHILD** dose given, search adult dose separately
-- At the very top, after the title, include a section labeled **✅ Indications**.
-- In **✅ Indications**, list ALL unique indication headers found in the provided clinical context.
-- In **✅ Indications**, include indication headers only (no route, no age group, no dose, no "Usual maximum", no frequency text).
-- Use one bullet line per indication with "- ".
-- Immediately below indications, include a section labeled **❌ Contraindications** when contraindication text is available in clinical context.
-- In **❌ Contraindications**, list all unique contraindication statements from clinical context as bullets.
-- In **❌ Contraindications**, include only contraindication statements (no dosing, no route, no counseling text).
-- In the dosing/formulation sections below, use ONLY the indication(s) present in the extracted drug data sheet input; do not add extra dosing indications from clinical context.
-- Every brand name line MUST start with 🎉 and be wrapped in bold markers, e.g. 🎉 **Tab. Pantonix 20 mg - Incepta**, 🎉 **Inj. Pantonix 40 mg - Incepta**.
-- Every brand name line MUST be on its own line.
-- Every 🎯 indication line MUST start on a NEW line.
-- Age group labels MUST be bolded and include the colon, e.g. **Adult:**, **Child 12-17 years:**, **Infant:**.
-- Every bolded age group line MUST start on a NEW line.
-- Every "Price:" line MUST start on a NEW line.
-- There MUST be a blank line between each brand block.
-- There MUST be a blank line before and after each formulation heading (**✅ TABLET**, etc.).
-- NEVER run multiple items together on one line or in a paragraph. Each element gets its own line.
-- Use newline characters to separate every distinct piece of information.
-
-Output format — convert the input into EXACTLY this style (note: each line below is a SEPARATE line in the output):
-
-**{{DRUG_NAME}}** - Generic : resolved generic name
-
-⚠️ British National Pharmacopoeia data not found, using regional information
-
-⚠️ Only **ADULT** dose given, search child dose separately
-
-**✅ Indications**
-- indication 1
-- indication 2
-
-**❌ Contraindications**
-- contraindication 1
-- contraindication 2
-
-[Always format the main title exactly like this: **{{DRUG_NAME}}** - Generic : resolved generic name]
-[Only the drug name itself should be bold. The text after it should remain normal.]
-[If clinical_context_source is "drug_mode_fallback", include the British National Pharmacopoeia fallback warning immediately after the title.]
-[Always include exactly one audience notice line below the fallback warning when present, otherwise directly below the title, and before **✅ Indications**.]
-[The **✅ Indications** block is mandatory.]
-[If contraindications are present in clinical context, the **❌ Contraindications** block is mandatory.]
-[Formulation headings must be bold and uppercase with a leading check mark emoji: **✅ TABLET**, **✅ INJECTION**, **✅ SUPPOSITORY**]
-
-**✅ TABLET**
-
-🎉 **Tab. Pantonix 20 mg - Incepta**
-Price: 20 tk/tab
-🎯 Helicobacter pylori eradication
-**Adult:** 1 tablet + 0 + 1 tablet — for 7 days for first-line eradication therapy; 10 days for third-line
-🎯 Benign gastric ulcer
-**Adult:** 1 tablet + 0 + 1 tablet — for 8 weeks; increased if necessary up to 2 tablets + 0 + 2 tablets daily
-
-🎉 **Tab. Esonix 20 mg - Square** [same strength dosing already covered above]
-Price: 33 tk/tab
-
-**✅ INJECTION** (be mindful of IV or IM or SC)
-
-🎉 **Inj. Pantonix 40 mg - Incepta**
-Price: 120 tk/vial
-🎯 indication
-**Adult:** 1 vial IV 12 hourly — for gastric ulcer
-
-[ALL answers should be neatly formatted with clear line breaks between every element]`;
+Output ONLY the fixed and verified formulation/brand dataset. Do not add any conversational text.`;
 
 const DRUG_MODE_SECTION_SYSTEM_PROMPT = `You answer drug questions using ONLY the provided structured drug context.
 
@@ -2003,10 +2016,6 @@ Rules:
     return DRUG_EXTRACTION_SYSTEM_PROMPT_TEMPLATE.split('{{DRUG_NAME}}').join(drugName);
   }
 
-  private buildDoseConversionSystemPrompt(drugName: string): string {
-    return DRUG_DOSE_CONVERSION_SYSTEM_PROMPT.split('{{DRUG_NAME}}').join(drugName);
-  }
-
   async sendMessage(
     sessionId: string,
     content: string,
@@ -2180,49 +2189,19 @@ ${stringifyEntryForPrompt(promptContextForModel)}`;
           responseLength: verificationOutput.length,
         });
         logFullPromptText('[DRUG PASS 2 OUTPUT]', verificationOutput);
-
-        // ── PASS 3: Convert verbatim doses into dosing schedules (streaming) ──
         onStreamEvent?.({
           type: 'status',
-          message: 'Calculating dosing schedules...',
+          message: 'Formatting final drug answer...',
         });
 
-        const pass3SystemPrompt = this.buildDoseConversionSystemPrompt(resolvedDrugName);
-        const pass3ClinicalContextPrompt = buildPass3ClinicalContextPrompt(promptContext);
-        const pass3UserPrompt = `Requested dose audience:
-${requestedDoseAudience}
-
-Clinical context source:
-${String((promptContext as Record<string, unknown>).clinical_context_source || 'unknown')}
-
-Clinical context (use this to extract ALL indication headers and contraindication statements for the top summary blocks only):
-${pass3ClinicalContextPrompt}
-
-Here is the extracted drug data sheet. Convert all verbatim doses into practical dosing schedules:
-
-${verificationOutput}`;
-
-        logFullPromptText('[DRUG PASS 3 PROMPT][SYSTEM]', pass3SystemPrompt);
-        logFullPromptText('[DRUG PASS 3 PROMPT][USER]', pass3UserPrompt);
-
-        await groqService.generateStreamingResponse(
-          pass3UserPrompt,
-          pass3SystemPrompt,
-          DRUG_ANSWER_MODEL,
-          {
-            temperature: 0.2,
-            maxTokens: 2400,
-            maxFailoverRetries: 2,
-            retryBackoffMs: 300,
-            onChunk: (chunk) => {
-              fullResponse += chunk;
-            },
-          },
+        const formattedBody = formatDrugDoseOutput(verificationOutput);
+        const prelude = buildDoseResponsePrelude(
+          resolvedDrugName,
+          promptContext as Record<string, unknown>,
+          requestedDoseAudience,
         );
 
-        console.log('[DRUG PASS 3]', 'Dose conversion complete', {
-          responseLength: fullResponse.length,
-        });
+        fullResponse = formattedBody ? `${prelude}\n\n${formattedBody}` : prelude;
       } else if (intent.answerKind === 'brands') {
         onStreamEvent?.({
           type: 'status',
@@ -2282,7 +2261,7 @@ ${verificationOutput}`;
         ? fullResponse
         : intent.answerKind === 'brands'
           ? formatDrugBrandsOutput(fullResponse)
-          : formatDrugDoseOutput(fullResponse);
+          : fullResponse;
       const finalResponse = normalizeContraindicationCapitalization(formattedResponse);
 
       await this.saveAssistantMessage(sessionId, finalResponse);
