@@ -1207,6 +1207,19 @@ Rules:
     return ranked[0]?.entry ?? null;
   }
 
+  private findExactNamedDrug(
+    catalog: AskDrugCatalog,
+    drugName: string,
+  ): AskDrugEntry | null {
+    const query = normalizeCompact(drugName);
+    if (!query) return null;
+
+    const matches = catalog.drugs.filter((entry) => normalizeCompact(entry.title) === query);
+
+    if (matches.length === 0) return null;
+    return matches[0] ?? null;
+  }
+
   private buildSuggestions(catalog: AskDrugCatalog, query: string): string[] {
     return catalog.drugs
       .map((entry) => ({
@@ -1434,14 +1447,7 @@ Rules:
     if (!query) return null;
 
     const activeCatalog = options?.catalog ?? (await this.ensureDatasetReady());
-    const match = this.resolveNamedDrug(activeCatalog, {
-      drug_name: query,
-      sections: ['indications_and_dose'],
-      indication_terms: [],
-      confidence: 1,
-    }, {
-      brandPreparations: options?.brandPreparations,
-    });
+    const match = this.findExactNamedDrug(activeCatalog, query);
 
     if (!match) return null;
 
