@@ -615,7 +615,7 @@ const formatIndicationAndInstructions = (
 
   for (const instruction of instructions) {
     lines.push(`**${instruction.group}:**`);
-    lines.push(`Dose : ${instruction.text}`);
+    lines.push(`✨ Dose : ${instruction.text}`);
   }
 
   return lines;
@@ -675,7 +675,7 @@ const renderNoBrandRouteBlock = (
     `🎯 ${indicationLabel}`,
     ...instructions.flatMap((instruction) => [
       `**${instruction.group}:**`,
-      `Dose : ${instruction.text}`,
+      `✨ Dose : ${instruction.text}`,
     ]),
     '🔴 No brands could be found for this formulation',
   ];

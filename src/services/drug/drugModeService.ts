@@ -1541,6 +1541,9 @@ const buildScheduleTextFromDoseLine = (
 const appendSchedulesToBrandBlock = (
   block: string,
   detail: ParsedBrandDetail,
+  options?: {
+    sparkleDoseAndSchedule?: boolean;
+  },
 ): string => {
   const lines = block.split('\n');
   const schedulesByLineIndex = new Map<number, string>();
@@ -1556,7 +1559,7 @@ const appendSchedulesToBrandBlock = (
       continue;
     }
 
-    const doseLineMatch = trimmedLine.match(/^Dose\s*:\s*(.+)$/i);
+    const doseLineMatch = trimmedLine.match(/^(?:✨\s*)?Dose\s*:\s*(.+)$/i);
     if (!doseLineMatch) {
       continue;
     }
@@ -1570,7 +1573,8 @@ const appendSchedulesToBrandBlock = (
       return block;
     }
 
-    schedulesByLineIndex.set(index, `Schedule : ${scheduleText}`);
+    const schedulePrefix = options?.sparkleDoseAndSchedule ? '✨ Schedule' : 'Schedule';
+    schedulesByLineIndex.set(index, `${schedulePrefix} : ${scheduleText}`);
   }
 
   if (schedulesByLineIndex.size === 0) {
@@ -1592,6 +1596,9 @@ const appendSchedulesToBrandBlock = (
 const addAppLevelSchedulesToDoseOutput = (
   body: string,
   promptContext: Record<string, unknown>,
+  options?: {
+    sparkleDoseAndSchedule?: boolean;
+  },
 ): string => {
   const scheduleDetails = collectPromptBrandScheduleDetails(promptContext);
   if (scheduleDetails.length === 0) return normalizeFinalDrugBrandBlockLayout(body);
@@ -1606,7 +1613,7 @@ const addAppLevelSchedulesToDoseOutput = (
       return block;
     }
 
-    if (!isDrugBrandBlock(block) || !currentHeading || !/(^|\n)Dose\s*:/im.test(block)) {
+    if (!isDrugBrandBlock(block) || !currentHeading || !/(^|\n)(?:✨\s*)?Dose\s*:/im.test(block)) {
       return block;
     }
 
@@ -1615,7 +1622,7 @@ const addAppLevelSchedulesToDoseOutput = (
       return block;
     }
 
-    return appendSchedulesToBrandBlock(block, matchedDetail);
+    return appendSchedulesToBrandBlock(block, matchedDetail, options);
   });
 
   return normalizeFinalDrugBrandBlockLayout(updatedBlocks.join('\n\n').trim());
@@ -3392,6 +3399,7 @@ ${stringifyEntryForPrompt(promptContextForModel)}`;
           const formattedBodyWithSchedules = addAppLevelSchedulesToDoseOutput(
             formattedBody,
             promptContext as Record<string, unknown>,
+            { sparkleDoseAndSchedule: true },
           );
           const prelude = buildDoseResponsePrelude(
             resolvedDrugName,
