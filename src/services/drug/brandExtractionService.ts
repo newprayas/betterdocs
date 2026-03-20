@@ -14,7 +14,7 @@ const BRAND_EXTRACTION_PARSER_MODEL = 'llama-3.3-70b-versatile';
 const BRAND_EXTRACTION_ANSWER_MODEL = 'moonshotai/kimi-k2-instruct-0905';
 const BRAND_EXTRACTION_PROMPT_LOG_CHUNK_SIZE = 4000;
 const MAX_GENERICS = 5;
-const MAX_BRANDS_PER_GENERIC = 3;
+const MAX_BRANDS_PER_GENERIC = 5;
 
 const ASK_DRUG_PARSER_PROMPT = `Extract up to 5 generic drug names from the assistant answer.
 Return ONLY valid JSON with this exact shape:
@@ -65,7 +65,7 @@ Core rules:
 - Use only the provided context.
 - Do not invent brands, companies, prices, doses, strengths, or formulations.
 - If a brand entry includes parsed_details, use parsed_details first and treat details as raw fallback text only.
-- For each generic, list at most 3 brands from the already filtered proprietary list.
+- For each generic, list at most 5 brands from the already filtered proprietary list.
 - Preferred companies are already ordered first in the provided context.
 - Use the generic indications and generic dose context to CALCULATE the dosing schedule for each relevant brand formulation when possible.
 - If multiple brands share the same formulation and same strength pattern, explain the dosing fully for the first one and then mark the later ones as "same ... dosing already covered".

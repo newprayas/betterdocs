@@ -23,7 +23,8 @@ const DRUG_NAME_DENYLIST = new Set(['ACE', 'FDA', 'KN.VDN', 'CNS']);
 const VERIFIED_DRUG_NAMES_URL = '/drug/verified-drug-names.txt';
 const DRUG_SUGGESTION_LIMIT = 8;
 const PREFERRED_MAX_PAGE_COUNT = 4;
-const DRUG_BRAND_RESULT_LIMIT = 5;
+const DRUG_DOSE_BRAND_RESULT_LIMIT = 2;
+const DRUG_BRAND_QUERY_RESULT_LIMIT = 5;
 const PREFERRED_BRAND_COMPANIES = [
   'square',
   'incepta',
@@ -249,8 +250,10 @@ const PROPRIETARY_FORMULATION_PATTERNS: Array<{
   formulation: string;
   releaseType?: 'SR' | 'XR';
 }> = [
-  { pattern: /^(?:SR|XR)\s*Tab(?:let)?\.?/i, formulationRaw: 'SR Tab.', formulation: 'TABLET', releaseType: 'SR' },
-  { pattern: /^(?:SR|XR)\s*Cap(?:sule)?\.?/i, formulationRaw: 'SR Cap.', formulation: 'CAPSULE', releaseType: 'SR' },
+  { pattern: /^SR\s*Tab(?:let)?\.?/i, formulationRaw: 'SR Tab.', formulation: 'TABLET', releaseType: 'SR' },
+  { pattern: /^XR\s*Tab(?:let)?\.?/i, formulationRaw: 'XR Tab.', formulation: 'TABLET', releaseType: 'XR' },
+  { pattern: /^SR\s*Cap(?:sule)?\.?/i, formulationRaw: 'SR Cap.', formulation: 'CAPSULE', releaseType: 'SR' },
+  { pattern: /^XR\s*Cap(?:sule)?\.?/i, formulationRaw: 'XR Cap.', formulation: 'CAPSULE', releaseType: 'XR' },
   { pattern: /^Paed\.?\s*drops?\.?/i, formulationRaw: 'Paed. drops', formulation: 'DROPS' },
   { pattern: /^Tab(?:let)?\.?/i, formulationRaw: 'Tab.', formulation: 'TABLET' },
   { pattern: /^Cap(?:sule)?\.?/i, formulationRaw: 'Cap.', formulation: 'CAPSULE' },
@@ -267,7 +270,7 @@ const PROPRIETARY_FORMULATION_PATTERNS: Array<{
 ];
 
 const PROPRIETARY_NEXT_ITEM_BOUNDARY_PATTERN =
-  /,\s*(?=(?:(?:SR\s*)?(?:Tab(?:let)?\.?|Cap(?:sule)?\.?|Supp(?:o(?:sitory)?)?\.?|Inj(?:ection)?\.?|Amp(?:oule)?\.?|Syrup\.?|Suspn?\.?|Drops?\.?|Paed\.?\s*drops?\.?|Gel\.?|Infusion\.?|Sachet\.?)|\d))/i;
+  /,\s*(?=(?:(?:SR|XR)\s*)?(?:Tab(?:let)?\.?|Cap(?:sule)?\.?|Supp(?:o(?:sitory)?)?\.?|Inj(?:ection)?\.?|Amp(?:oule)?\.?|Syrup\.?|Suspn?\.?|Drops?\.?|Paed\.?\s*drops?\.?|Gel\.?|Infusion\.?|Sachet\.?)|\d)/i;
 
 const standardizeProprietaryFormulation = (
   formulationRaw: string,
@@ -1635,7 +1638,7 @@ Rules:
       this.findRequestedBrandMatch(parsedBrands, requestedBrandQuery);
 
     if (!requestedBrand) {
-      return orderedBrands.slice(0, DRUG_BRAND_RESULT_LIMIT);
+      return orderedBrands.slice(0, DRUG_BRAND_QUERY_RESULT_LIMIT);
     }
 
     const requestedBrandKey = normalizeDrugLookupText(requestedBrand.display_name);
@@ -1643,7 +1646,7 @@ Rules:
       (brand) => normalizeDrugLookupText(brand.display_name) !== requestedBrandKey,
     );
 
-    return [requestedBrand, ...remainingBrands].slice(0, DRUG_BRAND_RESULT_LIMIT);
+    return [requestedBrand, ...remainingBrands].slice(0, DRUG_BRAND_QUERY_RESULT_LIMIT);
   }
 
   private buildSectionPromptContexts(entries: DrugEntry[], intent: DrugModeIntent): Record<string, unknown> {
@@ -1795,7 +1798,7 @@ Rules:
     const primaryEntry = safeEntries[0];
     const filteredBrands = dedupeParsedBrands(
       safeEntries.flatMap((entry) => this.selectPreferredBrandEntries(entry, requestedBrandQuery)),
-    );
+    ).slice(0, DRUG_DOSE_BRAND_RESULT_LIMIT);
     const preferredClinicalContext = await this.buildPreferredClinicalDoseContext(
       safeEntries,
       filteredBrands,
@@ -1833,7 +1836,7 @@ Rules:
         entry_label: `Entry ${index + 1}`,
         pages: entry.pages,
         filtered_proprietary_preparations: toPromptBrandContexts(
-          this.selectPreferredBrandEntries(entry, requestedBrandQuery),
+          this.selectPreferredBrandEntries(entry, requestedBrandQuery).slice(0, DRUG_DOSE_BRAND_RESULT_LIMIT),
         ),
       })),
     };
@@ -1854,7 +1857,7 @@ Rules:
     const otherBrands = allCandidateBrands.filter(
       (brand) => !PREFERRED_BRAND_COMPANIES.includes(normalizeDrugLookupText(brand.company_name)),
     );
-    const filteredBrands = [...preferredBrands, ...otherBrands].slice(0, DRUG_BRAND_RESULT_LIMIT);
+    const filteredBrands = [...preferredBrands, ...otherBrands].slice(0, DRUG_BRAND_QUERY_RESULT_LIMIT);
 
     if (!primaryEntry) {
       return {
@@ -1885,7 +1888,7 @@ Rules:
         entry_label: `Entry ${index + 1}`,
         pages: entry.pages,
         filtered_proprietary_preparations: toPromptBrandContexts(
-          this.selectPreferredBrandEntries(entry, requestedBrandQuery).slice(0, DRUG_BRAND_RESULT_LIMIT),
+          this.selectPreferredBrandEntries(entry, requestedBrandQuery).slice(0, DRUG_BRAND_QUERY_RESULT_LIMIT),
         ),
       })),
     };
@@ -1914,7 +1917,7 @@ Rules:
 
   getFilteredBrandEntries(
     entry: DrugEntry,
-    limit = 3,
+    limit = 5,
   ): ParsedProprietaryPreparation[] {
     return this.selectPreferredBrandEntries(entry).slice(0, Math.max(0, limit));
   }
@@ -1922,7 +1925,7 @@ Rules:
   buildBrandLookupResult(
     query: string,
     entry: DrugEntry,
-    limit = 3,
+    limit = 5,
   ): DrugBrandLookupResult {
     return {
       query,
