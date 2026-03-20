@@ -157,6 +157,49 @@ const sanitizeStructuredIndicationsAndDoseForPrompt = (
   notes: value.notes,
 });
 
+const isAdultDoseGroup = (group: string): boolean =>
+  /^(?:Adult|Elderly)\b/i.test(group.trim());
+
+const isChildDoseGroup = (group: string): boolean =>
+  /^(?:Child|Paediatric|Pediatric|Infant|Neonate|Toddler|Baby|Adolescent|Young person)\b/i.test(
+    group.trim(),
+  );
+
+const filterStructuredIndicationsAndDoseForAudience = (
+  value: AskDrugIndicationsAndDoseStructured,
+  requestedDoseAudience?: DrugDoseAudience,
+): AskDrugIndicationsAndDoseStructured | null => {
+  const filteredIndications = value.indications
+    .map((indication) => {
+      const routes = indication.routes
+        .map((route) => ({
+          ...route,
+          instructions: route.instructions.filter((instruction) =>
+            requestedDoseAudience === 'child'
+              ? isChildDoseGroup(instruction.group)
+              : isAdultDoseGroup(instruction.group),
+          ),
+        }))
+        .filter((route) => route.instructions.length > 0);
+
+      return {
+        ...indication,
+        routes,
+      };
+    })
+    .filter((indication) => indication.routes.length > 0);
+
+  if (filteredIndications.length === 0 && value.notes.length === 0) {
+    return null;
+  }
+
+  return {
+    indications: filteredIndications,
+    notes: value.notes,
+    raw_text: value.raw_text,
+  };
+};
+
 const logDrugAskContextDebugRawText = (
   resolvedGenericName: string,
   matchedAskDrugTitle: string,
@@ -305,12 +348,45 @@ const inferPaediatricProprietaryDetail = (
   standardizedFormulation: FormulationParseResult,
 ): boolean => {
   const normalized = rawText.toLowerCase();
+  const compactNormalized = normalized.replace(/\s+/g, '');
+  const hasLiquidFormulation =
+    /\b(?:syrup|suspn\.?|suspension|drops?)\b/i.test(normalized) ||
+    /\b(?:syrup|suspn\.?|suspension|drops?)\b/i.test(standardizedFormulation.formulationRaw);
+  const hasLiquidConcentration =
+    /(?:mg|mcg|g|iu)(?:\/5ml|5\/ml|\/ml|5ml)/i.test(compactNormalized) ||
+    /(?:mg|mcg|g|iu)5\/ml/i.test(compactNormalized);
+  const hasLiquidPackSize = /\b\d+(?:\.\d+)?\s*ml\b/i.test(normalized) || /\bml\b/i.test(normalized);
   return (
     /\bpaed(?:iatric)?\.?\b/.test(normalized) ||
     /\bpediatric\b/.test(normalized) ||
     /\bpaed\.?\s*drops?\b/.test(normalized) ||
-    /\bpaed\.?/i.test(standardizedFormulation.formulationRaw)
+    /\bpaed\.?/i.test(standardizedFormulation.formulationRaw) ||
+    ((standardizedFormulation.formulation === 'SYRUP' ||
+      standardizedFormulation.formulation === 'SUSPENSION' ||
+      standardizedFormulation.formulation === 'DROPS' ||
+      hasLiquidFormulation) &&
+      (hasLiquidConcentration || hasLiquidPackSize))
   );
+};
+
+const inferStandaloneProprietaryFormulationRaw = (
+  priceUnit?: string,
+): string | undefined => {
+  const normalized = compactField(priceUnit || '')?.toLowerCase() || '';
+  if (!normalized) return undefined;
+
+  if (/\btab(?:let)?\b/i.test(normalized)) return 'Tab.';
+  if (/\bcap(?:sule)?\b/i.test(normalized)) return 'Cap.';
+  if (/\bsupp(?:ository)?\b/i.test(normalized)) return 'Supp.';
+  if (/\bsyrup\b/i.test(normalized)) return 'Syrup';
+  if (/\bsuspn(?:ension)?\b/i.test(normalized) || /\bsusp(?:ension)?\b/i.test(normalized)) return 'Suspn.';
+  if (/\binfusion\b/i.test(normalized)) return 'Infusion';
+  if (/\binj(?:ection)?\b/i.test(normalized) || /\bamp(?:oule)?\b/i.test(normalized)) return 'Inj.';
+  if (/\bdrops?\b/i.test(normalized)) return 'Drops';
+  if (/\bsachet\b/i.test(normalized)) return 'Sachet';
+  if (/\bgel\b/i.test(normalized)) return 'Gel';
+
+  return undefined;
 };
 
 const parseProprietaryDetailSegment = (
@@ -331,8 +407,11 @@ const parseProprietaryDetailSegment = (
   const afterPriceUnit = compactField(priceMatch[2] || '') || undefined;
   const formulationMatch = PROPRIETARY_FORMULATION_PATTERNS.find((item) => item.pattern.test(beforePrice));
 
-  const resolvedFormulationRaw = formulationMatch?.formulationRaw || currentFormulationRaw || '';
+  const priceUnitFormulationRaw = inferStandaloneProprietaryFormulationRaw(afterPriceUnit);
+  const resolvedFormulationRaw =
+    formulationMatch?.formulationRaw || priceUnitFormulationRaw || currentFormulationRaw || '';
   const standardized = standardizeProprietaryFormulation(resolvedFormulationRaw);
+  const effectiveReleaseType = formulationMatch?.releaseType ? standardized.releaseType : undefined;
   const strengthText = compactField(
     formulationMatch
       ? beforePrice.replace(formulationMatch.pattern, '').replace(/^[,;.\s-]+/, '').trim()
@@ -343,11 +422,11 @@ const parseProprietaryDetailSegment = (
     raw_text: cleanedSegment,
     formulation_raw: standardized.formulationRaw,
     formulation: standardized.formulation,
-    release_type: standardized.releaseType,
+    release_type: effectiveReleaseType,
     strength: strengthText || '',
     price: priceMatch[1],
     price_unit: afterPriceUnit,
-    is_modified_release: Boolean(standardized.releaseType),
+    is_modified_release: Boolean(effectiveReleaseType),
     is_paediatric: inferPaediatricProprietaryDetail(cleanedSegment, standardized),
   };
 
@@ -544,6 +623,135 @@ const isDrugFormulationHeadingBlock = (block: string): boolean => {
 const isDrugBrandBlock = (block: string): boolean => {
   const firstLine = block.split('\n').find((line) => line.trim())?.trim() || '';
   return /^🎉/.test(firstLine);
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  Boolean(value && typeof value === 'object' && !Array.isArray(value));
+
+type PaediatricBrandRule = {
+  brandKey: string;
+  displayKey: string;
+  companyKey: string;
+  formulationKey: string;
+  strengthKey: string;
+};
+
+const collectPaediatricBrandRules = (promptContext: Record<string, unknown>): PaediatricBrandRule[] => {
+  const rules: PaediatricBrandRule[] = [];
+  const seen = new Set<string>();
+
+  const addBrand = (value: unknown): void => {
+    if (!isRecord(value)) return;
+
+    const brandKey = normalizeDrugLookupText(String(value.brand_name || ''));
+    const displayKey = normalizeDrugLookupText(String(value.display_name || ''));
+    const companyKey = normalizeDrugLookupText(String(value.company_name || ''));
+    const parsedDetails = Array.isArray(value.parsed_details) ? value.parsed_details : [];
+
+    for (const detailValue of parsedDetails) {
+      if (!isRecord(detailValue) || !detailValue.is_paediatric) continue;
+
+      const formulationKey = normalizeDrugLookupText(
+        String(detailValue.formulation || detailValue.formulation_raw || ''),
+      );
+      const strengthKey = normalizeDrugLookupText(String(detailValue.strength || ''));
+      const ruleKey = `${displayKey}|${formulationKey}|${strengthKey}`;
+      if (seen.has(ruleKey)) continue;
+      seen.add(ruleKey);
+      rules.push({
+        brandKey,
+        displayKey,
+        companyKey,
+        formulationKey,
+        strengthKey,
+      });
+    }
+  };
+
+  const topLevelBrands = promptContext.filtered_proprietary_preparations;
+  if (Array.isArray(topLevelBrands)) {
+    for (const brand of topLevelBrands) {
+      addBrand(brand);
+    }
+  }
+
+  const matchedEntries = promptContext.matched_entries;
+  if (Array.isArray(matchedEntries)) {
+    for (const entry of matchedEntries) {
+      if (!isRecord(entry)) continue;
+      const nestedBrands = entry.filtered_proprietary_preparations;
+      if (!Array.isArray(nestedBrands)) continue;
+      for (const brand of nestedBrands) {
+        addBrand(brand);
+      }
+    }
+  }
+
+  return rules;
+};
+
+const sanitizePaediatricBrandBlocks = (
+  body: string,
+  promptContext: Record<string, unknown>,
+  requestedDoseAudience: DrugDoseAudience,
+): string => {
+  if (requestedDoseAudience !== 'adult') return body;
+
+  const rules = collectPaediatricBrandRules(promptContext);
+  if (rules.length === 0) return body;
+
+  const blocks = body.replace(/\r\n/g, '\n').split(/\n{2,}/);
+  let currentHeading = '';
+
+  return blocks
+    .map((block) => {
+      const headingLine = block
+        .split('\n')
+        .map((line) => line.trim())
+        .find((line) => /^\*\*✅/.test(line));
+      if (headingLine) {
+        currentHeading = normalizeDrugLookupText(headingLine);
+        return block;
+      }
+
+      if (!isDrugBrandBlock(block) || !currentHeading) {
+        return block;
+      }
+
+      const normalizedBlock = normalizeDrugLookupText(block);
+      const brandLine = block
+        .split('\n')
+        .map((line) => line.trim())
+        .find((line) => /^🎉/.test(line));
+      const normalizedBrandLine = normalizeDrugLookupText(brandLine || '');
+
+      const matchedRule = rules.find((rule) => {
+        const brandMatches =
+          (rule.brandKey && normalizedBlock.includes(rule.brandKey)) ||
+          (rule.displayKey && normalizedBlock.includes(rule.displayKey)) ||
+          (rule.companyKey && normalizedBrandLine.includes(rule.companyKey));
+        const headingMatches = currentHeading === rule.formulationKey;
+        const strengthMatches = !rule.strengthKey || normalizedBlock.includes(rule.strengthKey);
+        return Boolean(brandMatches && headingMatches && strengthMatches);
+      });
+
+      if (!matchedRule) {
+        return block;
+      }
+
+      const lines = block
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean);
+      const priceIndex = lines.findIndex((line) => /^Price:/i.test(line));
+      if (priceIndex === -1) {
+        return block;
+      }
+
+      return [...lines.slice(0, priceIndex + 1), '🔴 No adult dosing — paediatric formulation'].join('\n');
+    })
+    .join('\n\n')
+    .trim();
 };
 
 const isReferenceOnlyDrugBrandBlock = (block: string): boolean =>
@@ -962,8 +1170,9 @@ For the DRUG: {{DRUG_NAME}}, extract all brand names with exact verbatim dose te
 [If requested_dose_audience is "adult", include adult dosing lines and elderly dosing lines when present. Exclude child, pediatric, paediatric, infant, neonate, baby, and toddler dosing lines.]
 [If requested_dose_audience is "child", include ONLY child/pediatric/paediatric/infant/neonate/baby/toddler dosing lines when present. Do NOT include adult dosing.]
 [Never include both adult and child dosing in the same extracted output.]
+[If a parsed_details item has is_paediatric: true, it is a hard override. Never apply adult dosing to that formulation, and if adult dosing is otherwise missing for that formulation, show exactly: 🔴 No adult dosing — paediatric formulation.]
+[If the same strength appears on both a paediatric formulation and a non-paediatric formulation, the paediatric formulation must not inherit the non-paediatric adult dose.]
 [If any parsed_details item has is_modified_release: true, only use modified-release oral dosing for that item and never apply immediate-release dosing to it.]
-[If any parsed_details item has is_paediatric: true, do not apply adult dosing to that item. Mark it as exactly: 🔴 No adult dosing — paediatric formulation]
 [If the requested dose audience is missing for the selected indication, write exactly "**Adult:** Not found in provided drug dataset." or "**Child:** Not found in provided drug dataset." as appropriate, and do not substitute the other audience.]
 [If requested_brand_query is present in the input context, that means the user asked by a brand name or alias.]
 [When requested_brand_query is present, do NOT limit the answer to only that brand. Include the requested brand if available, plus the other filtered brands for the resolved generic drug from context.]
@@ -1053,10 +1262,12 @@ FORMATTING AND INCLUSION RULES TO CHECK AND FIX:
 
 4. Dose Audience Rule (CRITICAL):
    - Use requested_dose_audience from context.
-   - If requested_dose_audience is "adult", keep adult dosing lines and elderly dosing lines when present.
-   - If requested_dose_audience is "child", keep ONLY child/pediatric/paediatric/infant/neonate/baby/toddler dosing lines.
-   - Never mix adult and child dosing in the same verified output.
-   - If the requested dose audience is missing for the selected indication, keep the same audience label and write "Not found in provided drug dataset."
+- If requested_dose_audience is "adult", keep adult dosing lines and elderly dosing lines when present.
+- If requested_dose_audience is "child", keep ONLY child/pediatric/paediatric/infant/neonate/baby/toddler dosing lines.
+- Never mix adult and child dosing in the same verified output.
+- If a parsed_details item has is_paediatric: true, it is a hard override. Never apply adult dosing to that formulation, and if adult dosing is otherwise missing for that formulation, show exactly: 🔴 No adult dosing — paediatric formulation.
+- If the same strength appears on both a paediatric formulation and a non-paediatric formulation, the paediatric formulation must not inherit the non-paediatric adult dose.
+- If the requested dose audience is missing for the selected indication, keep the same audience label and write "Not found in provided drug dataset."
 
 5. Final Output Shape (CRITICAL):
    - Do NOT calculate tablets, capsules, ampoules, vials, or any other unit counts.
@@ -1708,6 +1919,7 @@ Rules:
   private async buildPreferredClinicalDoseContext(
     entries: DrugEntry[],
     brandPreparations: ParsedProprietaryPreparation[] = [],
+    requestedDoseAudience?: DrugDoseAudience,
   ): Promise<Record<string, unknown>> {
     const safeEntries = dedupeDrugEntries(entries);
     const primaryEntry = safeEntries[0];
@@ -1734,7 +1946,10 @@ Rules:
         const structuredIndicationsAndDose = hasStructuredIndicationsAndDose(
           askDrugContext.indications_and_dose_structured,
         )
-          ? askDrugContext.indications_and_dose_structured
+          ? filterStructuredIndicationsAndDoseForAudience(
+              askDrugContext.indications_and_dose_structured,
+              requestedDoseAudience,
+            )
           : undefined;
 
         console.log('[DRUG ASK-DRUG CONTEXT]', 'Using ask-drug indications_and_dose context', {
@@ -1793,6 +2008,7 @@ Rules:
   private async buildDosePromptContexts(
     entries: DrugEntry[],
     requestedBrandQuery?: string,
+    requestedDoseAudience?: DrugDoseAudience,
   ): Promise<Record<string, unknown>> {
     const safeEntries = dedupeDrugEntries(entries);
     const primaryEntry = safeEntries[0];
@@ -1802,6 +2018,7 @@ Rules:
     const preferredClinicalContext = await this.buildPreferredClinicalDoseContext(
       safeEntries,
       filteredBrands,
+      requestedDoseAudience,
     );
 
     if (!primaryEntry) {
@@ -2317,7 +2534,11 @@ Rules:
           ? this.buildSectionPromptContexts(matchedEntries, intent)
           : intent.answerKind === 'brands'
             ? this.buildBrandsPromptContexts(matchedEntries, parsed.drug_name)
-            : await this.buildDosePromptContexts(matchedEntries, requestedBrandQuery);
+            : await this.buildDosePromptContexts(
+                matchedEntries,
+                requestedBrandQuery,
+                requestedDoseAudience,
+              );
       const promptContextForModel =
         intent.answerKind === 'dose_with_brands'
           ? {
@@ -2422,7 +2643,11 @@ ${stringifyEntryForPrompt(promptContextForModel)}`;
           message: 'Formatting final drug answer...',
         });
 
-        const formattedBody = formatDrugDoseOutput(verificationOutput);
+        const formattedBody = sanitizePaediatricBrandBlocks(
+          formatDrugDoseOutput(verificationOutput),
+          promptContext as Record<string, unknown>,
+          requestedDoseAudience,
+        );
         const prelude = buildDoseResponsePrelude(
           resolvedDrugName,
           promptContext as Record<string, unknown>,
