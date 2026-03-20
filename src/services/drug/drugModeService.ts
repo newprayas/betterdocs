@@ -1,6 +1,7 @@
 import { groqService } from '@/services/groq/groqService';
 import { getIndexedDBServices } from '@/services/indexedDB';
 import { libraryService } from '@/services/libraryService';
+import { buildDeterministicDoseWithBrandsBody } from './deterministicDoseWithBrands';
 import type {
   AskDrugIndicationsAndDoseStructured,
   DrugCatalog,
@@ -1503,7 +1504,8 @@ const buildScheduleTextFromDoseLine = (
       }
 
       convertedCount += 1;
-      return convertedTextValue;
+      const nextCharacter = source.charAt(matchIndex + fullMatch.length);
+      return /[A-Za-z0-9]/.test(nextCharacter) ? `${convertedTextValue} ` : convertedTextValue;
     },
   );
 
@@ -2735,6 +2737,41 @@ Rules:
     const filteredBrands = dedupeParsedBrands(
       safeEntries.flatMap((entry) => this.selectPreferredBrandEntries(entry, requestedBrandQuery)),
     ).slice(0, DRUG_DOSE_BRAND_RESULT_LIMIT);
+
+    logFullPromptText(
+      '[DRUG DOSE CONTEXT][VERBATIM]',
+      `Matched drug entry or entries:\n${JSON.stringify(
+        {
+          requested_brand_query: compactField(requestedBrandQuery),
+          requested_dose_audience: requestedDoseAudience,
+          matched_entry_count: safeEntries.length,
+          matched_drugs: safeEntries.map((entry) => ({
+            id: entry.id,
+            drug_name: entry.drug_name,
+            pages: entry.pages,
+          })),
+          filtered_proprietary_preparations: filteredBrands.map((brand) => ({
+            brand_name: brand.brand_name,
+            company_name: brand.company_name,
+            display_name: brand.display_name,
+            parsed_details: (brand.parsed_details || []).map((detail) => ({
+              raw_text: detail.raw_text,
+              formulation_raw: detail.formulation_raw,
+              formulation: detail.formulation,
+              strength: detail.strength,
+              price: detail.price,
+              price_unit: detail.price_unit,
+              release_type: detail.release_type,
+              is_paediatric: detail.is_paediatric,
+              is_modified_release: detail.is_modified_release,
+            })),
+          })),
+        },
+        null,
+        2,
+      )}`,
+    );
+
     const preferredClinicalContext = await this.buildPreferredClinicalDoseContext(
       safeEntries,
       filteredBrands,
@@ -3307,80 +3344,119 @@ ${stringifyEntryForPrompt(promptContextForModel)}`;
       let fullResponse = '';
 
       if (intent.answerKind === 'dose_with_brands') {
-        // ── PASS 1: Extract brands + verbatim indications/doses (no conversion) ──
-        onStreamEvent?.({
-          type: 'status',
-          message: 'Extracting drug data...',
-        });
-
-        const pass1SystemPrompt = this.buildExtractionSystemPrompt(resolvedDrugName);
-        logFullPromptText('[DRUG PASS 1 PROMPT][SYSTEM]', pass1SystemPrompt);
-        logFullPromptText('[DRUG PASS 1 PROMPT][USER]', contextPrompt);
-
-        const extractionOutput = await groqService.generateResponseWithGroq(
-          contextPrompt,
-          pass1SystemPrompt,
-          DRUG_ANSWER_MODEL,
-          {
-            temperature: 0.1,
-            maxTokens: 2400,
-          },
-        );
-
-        console.log('[DRUG PASS 1]', 'Extraction complete', {
-          responseLength: extractionOutput.length,
-        });
-        logFullPromptText('[DRUG PASS 1 OUTPUT]', extractionOutput);
-
-        // ── PASS 2: Verification and Formatting Fixes ──
-        onStreamEvent?.({
-          type: 'status',
-          message: 'Verifying drug data rules...',
-        });
-
-        const pass2SystemPrompt = DRUG_VERIFICATION_SYSTEM_PROMPT;
-        const pass2UserPrompt = `${contextPrompt}\n\nHere is the extracted output from Pass 1. Please verify and fix it according to the rules:\n\n${extractionOutput}`;
-
-        logFullPromptText('[DRUG PASS 2 PROMPT][SYSTEM]', pass2SystemPrompt);
-        logFullPromptText('[DRUG PASS 2 PROMPT][USER]', pass2UserPrompt);
-
-        const verificationOutput = await groqService.generateResponseWithGroq(
-          pass2UserPrompt,
-          pass2SystemPrompt,
-          DRUG_ANSWER_MODEL,
-          {
-            temperature: 0.1,
-            maxTokens: 2400,
-          },
-        );
-
-        console.log('[DRUG PASS 2]', 'Verification complete', {
-          responseLength: verificationOutput.length,
-        });
-        logFullPromptText('[DRUG PASS 2 OUTPUT]', verificationOutput);
-        onStreamEvent?.({
-          type: 'status',
-          message: 'Formatting final drug answer...',
-        });
-
-        const formattedBody = sanitizePaediatricBrandBlocks(
-          formatDrugDoseOutput(verificationOutput),
+        const deterministicBody = buildDeterministicDoseWithBrandsBody(
           promptContext as Record<string, unknown>,
-          requestedDoseAudience,
-        );
-        const formattedBodyWithSchedules = addAppLevelSchedulesToDoseOutput(
-          formattedBody,
-          promptContext as Record<string, unknown>,
-        );
-        const prelude = buildDoseResponsePrelude(
-          resolvedDrugName,
-          promptContext as Record<string, unknown>,
+          requestedIndicationQuery || null,
           requestedDoseAudience,
         );
 
-        fullResponse = formattedBodyWithSchedules
-          ? `${prelude}\n\n${formattedBodyWithSchedules}`
-          : prelude;
+        if (deterministicBody) {
+          logFullPromptText(
+            '[DRUG DETERMINISTIC CONTEXT][VERBATIM]',
+            `User question:\n${content}\n\nExtracted user-requested drug or brand:\n${parsed.drug_name}\n\nRequested indication from query:\n${requestedIndicationQuery || 'None'}\n\nRequested dose audience:\n${requestedDoseAudience}\n\nRequested brand query:\n${requestedBrandQuery || 'None'}\n\nResolved generic drug:\n${resolvedDrugName}\n\nMatched drug entry or entries:\n${stringifyEntryForPrompt(promptContextForModel)}`,
+          );
+
+          onStreamEvent?.({
+            type: 'status',
+            message: 'Formatting deterministic drug answer...',
+          });
+
+          logFullPromptText('[DRUG DETERMINISTIC OUTPUT][RAW]', deterministicBody);
+
+          const formattedBody = sanitizePaediatricBrandBlocks(
+            deterministicBody,
+            promptContext as Record<string, unknown>,
+            requestedDoseAudience,
+          );
+          const formattedBodyWithSchedules = addAppLevelSchedulesToDoseOutput(
+            formattedBody,
+            promptContext as Record<string, unknown>,
+          );
+          const prelude = buildDoseResponsePrelude(
+            resolvedDrugName,
+            promptContext as Record<string, unknown>,
+            requestedDoseAudience,
+          );
+
+          fullResponse = formattedBodyWithSchedules
+            ? `${prelude}\n\n${formattedBodyWithSchedules}`
+            : prelude;
+        } else {
+          // ── PASS 1: Extract brands + verbatim indications/doses (no conversion) ──
+          onStreamEvent?.({
+            type: 'status',
+            message: 'Extracting drug data...',
+          });
+
+          const pass1SystemPrompt = this.buildExtractionSystemPrompt(resolvedDrugName);
+          logFullPromptText('[DRUG PASS 1 PROMPT][SYSTEM]', pass1SystemPrompt);
+          logFullPromptText('[DRUG PASS 1 PROMPT][USER]', contextPrompt);
+
+          const extractionOutput = await groqService.generateResponseWithGroq(
+            contextPrompt,
+            pass1SystemPrompt,
+            DRUG_ANSWER_MODEL,
+            {
+              temperature: 0.1,
+              maxTokens: 2400,
+            },
+          );
+
+          console.log('[DRUG PASS 1]', 'Extraction complete', {
+            responseLength: extractionOutput.length,
+          });
+          logFullPromptText('[DRUG PASS 1 OUTPUT]', extractionOutput);
+
+          // ── PASS 2: Verification and Formatting Fixes ──
+          onStreamEvent?.({
+            type: 'status',
+            message: 'Verifying drug data rules...',
+          });
+
+          const pass2SystemPrompt = DRUG_VERIFICATION_SYSTEM_PROMPT;
+          const pass2UserPrompt = `${contextPrompt}\n\nHere is the extracted output from Pass 1. Please verify and fix it according to the rules:\n\n${extractionOutput}`;
+
+          logFullPromptText('[DRUG PASS 2 PROMPT][SYSTEM]', pass2SystemPrompt);
+          logFullPromptText('[DRUG PASS 2 PROMPT][USER]', pass2UserPrompt);
+
+          const verificationOutput = await groqService.generateResponseWithGroq(
+            pass2UserPrompt,
+            pass2SystemPrompt,
+            DRUG_ANSWER_MODEL,
+            {
+              temperature: 0.1,
+              maxTokens: 2400,
+            },
+          );
+
+          console.log('[DRUG PASS 2]', 'Verification complete', {
+            responseLength: verificationOutput.length,
+          });
+          logFullPromptText('[DRUG PASS 2 OUTPUT]', verificationOutput);
+          onStreamEvent?.({
+            type: 'status',
+            message: 'Formatting final drug answer...',
+          });
+
+          const formattedBody = sanitizePaediatricBrandBlocks(
+            formatDrugDoseOutput(verificationOutput),
+            promptContext as Record<string, unknown>,
+            requestedDoseAudience,
+          );
+          const formattedBodyWithSchedules = addAppLevelSchedulesToDoseOutput(
+            formattedBody,
+            promptContext as Record<string, unknown>,
+          );
+          const prelude = buildDoseResponsePrelude(
+            resolvedDrugName,
+            promptContext as Record<string, unknown>,
+            requestedDoseAudience,
+          );
+
+          fullResponse = formattedBodyWithSchedules
+            ? `${prelude}\n\n${formattedBodyWithSchedules}`
+            : prelude;
+        }
       } else if (intent.answerKind === 'brands') {
         onStreamEvent?.({
           type: 'status',
