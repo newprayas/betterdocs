@@ -391,6 +391,18 @@ const inferStandaloneProprietaryFormulationRaw = (
   return undefined;
 };
 
+const stripModifiedReleaseFromFormulationRaw = (
+  formulationRaw?: string,
+): string | undefined => {
+  const normalized = compactField(formulationRaw || '');
+  if (!normalized) return undefined;
+
+  if (/^(?:SR|XR)\s*Tab(?:let)?\.?$/i.test(normalized)) return 'Tab.';
+  if (/^(?:SR|XR)\s*Cap(?:sule)?\.?$/i.test(normalized)) return 'Cap.';
+
+  return normalized;
+};
+
 const parseProprietaryDetailSegment = (
   segment: string,
   currentFormulationRaw?: string,
@@ -434,7 +446,10 @@ const parseProprietaryDetailSegment = (
 
   return {
     detail,
-    nextFormulationRaw: standardized.formulationRaw || currentFormulationRaw,
+    nextFormulationRaw:
+      stripModifiedReleaseFromFormulationRaw(
+        formulationMatch?.formulationRaw || priceUnitFormulationRaw || standardized.formulationRaw,
+      ) || currentFormulationRaw,
   };
 };
 
@@ -481,8 +496,11 @@ const parseProprietaryDetailChunks = (details: string): ParsedBrandDetail[] => {
       const beforePrice = itemText.slice(0, itemPriceMatch.index).replace(/^[,;.\s-]+/, '').trim();
       const afterPrice = compactField(itemPriceMatch[2] || '') || undefined;
       const formulationMatch = PROPRIETARY_FORMULATION_PATTERNS.find((item) => item.pattern.test(beforePrice));
-      const explicitFormulationRaw = formulationMatch?.formulationRaw || currentFormulationRaw || '';
-      const standardized = standardizeProprietaryFormulation(explicitFormulationRaw);
+      const priceUnitFormulationRaw = inferStandaloneProprietaryFormulationRaw(afterPrice);
+      const resolvedFormulationRaw =
+        formulationMatch?.formulationRaw || priceUnitFormulationRaw || currentFormulationRaw || '';
+      const standardized = standardizeProprietaryFormulation(resolvedFormulationRaw);
+      const effectiveReleaseType = formulationMatch?.releaseType ? standardized.releaseType : undefined;
       const strengthText = compactField(
         formulationMatch
           ? beforePrice.replace(formulationMatch.pattern, '').replace(/^[,;.\s-]+/, '').trim()
@@ -493,15 +511,18 @@ const parseProprietaryDetailChunks = (details: string): ParsedBrandDetail[] => {
         raw_text: itemText,
         formulation_raw: standardized.formulationRaw,
         formulation: standardized.formulation,
-        release_type: standardized.releaseType,
+        release_type: effectiveReleaseType,
         strength: strengthText || '',
         price: itemPriceMatch[1],
         price_unit: afterPrice,
-        is_modified_release: Boolean(standardized.releaseType),
+        is_modified_release: Boolean(effectiveReleaseType),
         is_paediatric: inferPaediatricProprietaryDetail(itemText, standardized),
       });
 
-      currentFormulationRaw = standardized.formulationRaw || currentFormulationRaw;
+      currentFormulationRaw =
+        stripModifiedReleaseFromFormulationRaw(
+          formulationMatch?.formulationRaw || priceUnitFormulationRaw || standardized.formulationRaw,
+        ) || currentFormulationRaw;
       cursor = itemEnd + 1;
     }
   }
