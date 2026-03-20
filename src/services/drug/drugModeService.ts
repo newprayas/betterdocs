@@ -375,16 +375,17 @@ const inferStandaloneProprietaryFormulationRaw = (
   const normalized = compactField(priceUnit || '')?.toLowerCase() || '';
   if (!normalized) return undefined;
 
-  if (/\btab(?:let)?\b/i.test(normalized)) return 'Tab.';
-  if (/\bcap(?:sule)?\b/i.test(normalized)) return 'Cap.';
-  if (/\bsupp(?:ository)?\b/i.test(normalized)) return 'Supp.';
-  if (/\bsyrup\b/i.test(normalized)) return 'Syrup';
-  if (/\bsuspn(?:ension)?\b/i.test(normalized) || /\bsusp(?:ension)?\b/i.test(normalized)) return 'Suspn.';
-  if (/\binfusion\b/i.test(normalized)) return 'Infusion';
-  if (/\binj(?:ection)?\b/i.test(normalized) || /\bamp(?:oule)?\b/i.test(normalized)) return 'Inj.';
-  if (/\bdrops?\b/i.test(normalized)) return 'Drops';
-  if (/\bsachet\b/i.test(normalized)) return 'Sachet';
-  if (/\bgel\b/i.test(normalized)) return 'Gel';
+  const compactNormalized = normalized.replace(/[^a-z0-9]+/g, '');
+  if (compactNormalized.startsWith('tab')) return 'Tab.';
+  if (compactNormalized.startsWith('cap')) return 'Cap.';
+  if (compactNormalized.startsWith('supp')) return 'Supp.';
+  if (compactNormalized.startsWith('syrup')) return 'Syrup';
+  if (compactNormalized.startsWith('suspn') || compactNormalized.startsWith('susp')) return 'Suspn.';
+  if (compactNormalized.startsWith('infusion')) return 'Infusion';
+  if (compactNormalized.startsWith('inj') || compactNormalized.startsWith('amp')) return 'Inj.';
+  if (compactNormalized.startsWith('drop')) return 'Drops';
+  if (compactNormalized.startsWith('sachet')) return 'Sachet';
+  if (compactNormalized.startsWith('gel')) return 'Gel';
 
   return undefined;
 };
