@@ -64,6 +64,7 @@ Your job is to produce a Drug Mode style answer for each generic:
 Core rules:
 - Use only the provided context.
 - Do not invent brands, companies, prices, doses, strengths, or formulations.
+- If a brand entry includes parsed_details, use parsed_details first and treat details as raw fallback text only.
 - For each generic, list at most 3 brands from the already filtered proprietary list.
 - Preferred companies are already ordered first in the provided context.
 - Use the generic indications and generic dose context to CALCULATE the dosing schedule for each relevant brand formulation when possible.

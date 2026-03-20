@@ -54,7 +54,20 @@ export interface ParsedProprietaryPreparation {
   company_name: string;
   display_name: string;
   details: string;
+  parsed_details?: ParsedBrandDetail[];
   is_combination: boolean;
+}
+
+export interface ParsedBrandDetail {
+  raw_text: string;
+  formulation_raw: string;
+  formulation: string;
+  release_type?: 'SR' | 'XR';
+  strength: string;
+  price: string;
+  price_unit?: string;
+  is_modified_release: boolean;
+  is_paediatric: boolean;
 }
 
 export interface BrandExtractionParseResult {

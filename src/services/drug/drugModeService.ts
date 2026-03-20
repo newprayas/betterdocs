@@ -7,6 +7,7 @@ import type {
   DrugDatasetConfig,
   DrugDatasetRecord,
   DrugEntry,
+  ParsedBrandDetail,
   DrugModeRequestedField,
   DrugQueryParseResult,
   MessageCreate,
@@ -236,6 +237,194 @@ const dedupeDrugEntries = (entries: DrugEntry[]): DrugEntry[] => {
 const uniquePages = (entries: DrugEntry[]): number[] =>
   Array.from(new Set(entries.flatMap((entry) => entry.pages))).sort((left, right) => left - right);
 
+type FormulationParseResult = {
+  formulationRaw: string;
+  formulation: string;
+  releaseType?: 'SR' | 'XR';
+};
+
+const PROPRIETARY_FORMULATION_PATTERNS: Array<{
+  pattern: RegExp;
+  formulationRaw: string;
+  formulation: string;
+  releaseType?: 'SR' | 'XR';
+}> = [
+  { pattern: /^(?:SR|XR)\s*Tab(?:let)?\.?/i, formulationRaw: 'SR Tab.', formulation: 'TABLET', releaseType: 'SR' },
+  { pattern: /^(?:SR|XR)\s*Cap(?:sule)?\.?/i, formulationRaw: 'SR Cap.', formulation: 'CAPSULE', releaseType: 'SR' },
+  { pattern: /^Paed\.?\s*drops?\.?/i, formulationRaw: 'Paed. drops', formulation: 'DROPS' },
+  { pattern: /^Tab(?:let)?\.?/i, formulationRaw: 'Tab.', formulation: 'TABLET' },
+  { pattern: /^Cap(?:sule)?\.?/i, formulationRaw: 'Cap.', formulation: 'CAPSULE' },
+  { pattern: /^Inj(?:ection)?\.?/i, formulationRaw: 'Inj.', formulation: 'INJECTION' },
+  { pattern: /^Amp(?:oule)?\.?/i, formulationRaw: 'Amp.', formulation: 'INJECTION' },
+  { pattern: /^Suppo?\.?/i, formulationRaw: 'Supp.', formulation: 'SUPPOSITORY' },
+  { pattern: /^Supp(?:ository)?\.?/i, formulationRaw: 'Supp.', formulation: 'SUPPOSITORY' },
+  { pattern: /^Syrup\.?/i, formulationRaw: 'Syrup', formulation: 'SYRUP' },
+  { pattern: /^Suspn?\.?/i, formulationRaw: 'Suspn.', formulation: 'SUSPENSION' },
+  { pattern: /^Drops?\.?/i, formulationRaw: 'Drops', formulation: 'DROPS' },
+  { pattern: /^Gel\.?/i, formulationRaw: 'Gel', formulation: 'GEL' },
+  { pattern: /^Infusion\.?/i, formulationRaw: 'Infusion', formulation: 'INFUSION' },
+  { pattern: /^Sachet\.?/i, formulationRaw: 'Sachet', formulation: 'SACHET' },
+];
+
+const PROPRIETARY_NEXT_ITEM_BOUNDARY_PATTERN =
+  /,\s*(?=(?:(?:SR\s*)?(?:Tab(?:let)?\.?|Cap(?:sule)?\.?|Supp(?:o(?:sitory)?)?\.?|Inj(?:ection)?\.?|Amp(?:oule)?\.?|Syrup\.?|Suspn?\.?|Drops?\.?|Paed\.?\s*drops?\.?|Gel\.?|Infusion\.?|Sachet\.?)|\d))/i;
+
+const standardizeProprietaryFormulation = (
+  formulationRaw: string,
+  releaseType?: 'SR' | 'XR',
+): FormulationParseResult => {
+  const compactRaw = compactField(formulationRaw) || '';
+  if (!compactRaw) {
+    return {
+      formulationRaw: '',
+      formulation: 'UNKNOWN',
+    };
+  }
+
+  const normalized = compactRaw.replace(/\s+/g, ' ').trim();
+  const pattern = PROPRIETARY_FORMULATION_PATTERNS.find((item) => item.pattern.test(normalized));
+  if (!pattern) {
+    return {
+      formulationRaw: normalized,
+      formulation: 'UNKNOWN',
+    };
+  }
+
+  return {
+    formulationRaw: pattern.formulationRaw,
+    formulation: pattern.formulation,
+    releaseType: pattern.releaseType || releaseType,
+  };
+};
+
+const inferPaediatricProprietaryDetail = (
+  rawText: string,
+  standardizedFormulation: FormulationParseResult,
+): boolean => {
+  const normalized = rawText.toLowerCase();
+  return (
+    /\bpaed(?:iatric)?\.?\b/.test(normalized) ||
+    /\bpediatric\b/.test(normalized) ||
+    /\bpaed\.?\s*drops?\b/.test(normalized) ||
+    /\bpaed\.?/i.test(standardizedFormulation.formulationRaw)
+  );
+};
+
+const parseProprietaryDetailSegment = (
+  segment: string,
+  currentFormulationRaw?: string,
+): { detail: ParsedBrandDetail | null; nextFormulationRaw: string | undefined } => {
+  const cleanedSegment = compactField(segment) || '';
+  if (!cleanedSegment) {
+    return { detail: null, nextFormulationRaw: currentFormulationRaw };
+  }
+
+  const priceMatch = cleanedSegment.match(/T\s*k\s*\.?\s*([0-9]+(?:\.[0-9]+)?)(?:\s*\/\s*([^,;]+))?/i);
+  if (!priceMatch || priceMatch.index == null) {
+    return { detail: null, nextFormulationRaw: currentFormulationRaw };
+  }
+
+  const beforePrice = cleanedSegment.slice(0, priceMatch.index).replace(/^[,;.\s-]+/, '').trim();
+  const afterPriceUnit = compactField(priceMatch[2] || '') || undefined;
+  const formulationMatch = PROPRIETARY_FORMULATION_PATTERNS.find((item) => item.pattern.test(beforePrice));
+
+  const resolvedFormulationRaw = formulationMatch?.formulationRaw || currentFormulationRaw || '';
+  const standardized = standardizeProprietaryFormulation(resolvedFormulationRaw);
+  const strengthText = compactField(
+    formulationMatch
+      ? beforePrice.replace(formulationMatch.pattern, '').replace(/^[,;.\s-]+/, '').trim()
+      : beforePrice,
+  );
+
+  const detail: ParsedBrandDetail = {
+    raw_text: cleanedSegment,
+    formulation_raw: standardized.formulationRaw,
+    formulation: standardized.formulation,
+    release_type: standardized.releaseType,
+    strength: strengthText || '',
+    price: priceMatch[1],
+    price_unit: afterPriceUnit,
+    is_modified_release: Boolean(standardized.releaseType),
+    is_paediatric: inferPaediatricProprietaryDetail(cleanedSegment, standardized),
+  };
+
+  return {
+    detail,
+    nextFormulationRaw: standardized.formulationRaw || currentFormulationRaw,
+  };
+};
+
+const parseProprietaryDetailChunks = (details: string): ParsedBrandDetail[] => {
+  const normalized = details.replace(/\r\n/g, '\n').replace(/\s+/g, ' ').trim();
+  if (!normalized) return [];
+
+  const chunks = normalized
+    .split(';')
+    .map((chunk) => chunk.trim())
+    .filter(Boolean);
+
+  const parsed: ParsedBrandDetail[] = [];
+  let currentFormulationRaw: string | undefined;
+
+  for (const chunk of chunks) {
+    let cursor = 0;
+    while (cursor < chunk.length) {
+      while (cursor < chunk.length && /[\s,]/.test(chunk[cursor] || '')) {
+        cursor += 1;
+      }
+      if (cursor >= chunk.length) break;
+
+      const remaining = chunk.slice(cursor);
+      const priceMatch = remaining.match(/T\s*k\s*\.?\s*([0-9]+(?:\.[0-9]+)?)/i);
+      if (!priceMatch || priceMatch.index == null) break;
+
+      const priceStart = cursor + priceMatch.index;
+      const priceEnd = priceStart + priceMatch[0].length;
+      const nextBoundaryMatch = chunk.slice(priceEnd).match(PROPRIETARY_NEXT_ITEM_BOUNDARY_PATTERN);
+      const itemEnd = nextBoundaryMatch?.index != null ? priceEnd + nextBoundaryMatch.index : chunk.length;
+      const itemText = chunk.slice(cursor, itemEnd).replace(/[;,.\s]+$/, '').trim();
+      if (!itemText) {
+        cursor = itemEnd + 1;
+        continue;
+      }
+
+      const itemPriceMatch = itemText.match(/T\s*k\s*\.?\s*([0-9]+(?:\.[0-9]+)?)(?:\s*\/\s*([^,;]+))?/i);
+      if (!itemPriceMatch || itemPriceMatch.index == null) {
+        cursor = itemEnd + 1;
+        continue;
+      }
+
+      const beforePrice = itemText.slice(0, itemPriceMatch.index).replace(/^[,;.\s-]+/, '').trim();
+      const afterPrice = compactField(itemPriceMatch[2] || '') || undefined;
+      const formulationMatch = PROPRIETARY_FORMULATION_PATTERNS.find((item) => item.pattern.test(beforePrice));
+      const explicitFormulationRaw = formulationMatch?.formulationRaw || currentFormulationRaw || '';
+      const standardized = standardizeProprietaryFormulation(explicitFormulationRaw);
+      const strengthText = compactField(
+        formulationMatch
+          ? beforePrice.replace(formulationMatch.pattern, '').replace(/^[,;.\s-]+/, '').trim()
+          : beforePrice,
+      );
+
+      parsed.push({
+        raw_text: itemText,
+        formulation_raw: standardized.formulationRaw,
+        formulation: standardized.formulation,
+        release_type: standardized.releaseType,
+        strength: strengthText || '',
+        price: itemPriceMatch[1],
+        price_unit: afterPrice,
+        is_modified_release: Boolean(standardized.releaseType),
+        is_paediatric: inferPaediatricProprietaryDetail(itemText, standardized),
+      });
+
+      currentFormulationRaw = standardized.formulationRaw || currentFormulationRaw;
+      cursor = itemEnd + 1;
+    }
+  }
+
+  return parsed;
+};
+
 const dedupeParsedBrands = (
   brands: ParsedProprietaryPreparation[],
 ): ParsedProprietaryPreparation[] => {
@@ -247,6 +436,20 @@ const dedupeParsedBrands = (
     return true;
   });
 };
+
+const toPromptBrandContext = (brand: ParsedProprietaryPreparation): Record<string, unknown> => ({
+  brand_name: brand.brand_name,
+  company_name: brand.company_name,
+  display_name: brand.display_name,
+  ...(brand.parsed_details?.length
+    ? { parsed_details: brand.parsed_details }
+    : { details: brand.details }),
+  is_combination: brand.is_combination,
+});
+
+const toPromptBrandContexts = (
+  brands: ParsedProprietaryPreparation[],
+): Record<string, unknown>[] => brands.map(toPromptBrandContext);
 
 type DrugModeAnswerKind = 'sectional' | 'dose_with_brands' | 'brands';
 type DrugDoseAudience = 'adult' | 'child';
@@ -736,17 +939,28 @@ For the DRUG: {{DRUG_NAME}}, extract all brand names with exact verbatim dose te
 [ie; all brands of the generic drug in the context]
 [the app has already filtered and prioritized these brand names when available: Square, Incepta, Healthcare, Opsonin, Beximco, Aristopharma]
 [Use ONLY the filtered proprietary brand entries provided in context. Do not invent extra brands.]
+[If a brand entry includes parsed_details, use parsed_details first and treat the raw details string as fallback text only.]
+[If parsed_details is present, do not use the raw details string unless parsed_details is empty or unusable.]
 [Use ONLY the provided clinical_context as the source for indications and dose text. Do not mix it with any other source.]
 [If clinical_context_source is ask_drug_indications_and_dose, use clinical_context.indications_and_dose_structured when present; otherwise use clinical_context.indications_and_dose.]
 [If clinical_context_source is drug_mode_fallback, use only clinical_context.indications and clinical_context.dose.]
 [Never combine the ask-drug clinical context and the drug-mode clinical context together.]
 [If the context contains multiple matched entries for the same generic drug, use all of them together and combine carefully.]
 [If two matched entries differ, keep the difference clear instead of deleting one.]
+[Route-to-formulation mapping rules:
+  - BY MOUTH USING IMMEDIATE-RELEASE MEDICINES -> immediate-release TABLET or CAPSULE only.
+  - BY MOUTH USING MODIFIED-RELEASE MEDICINES -> modified-release TABLET only, such as SR TABLET or XR TABLET.
+  - BY RECTUM -> SUPPOSITORY only.
+  - BY INTRAVENOUS INFUSION -> INJECTION or INFUSION only when the context explicitly supports intravenous use.
+  - Do not apply oral dosing to suppositories, rectal products, or intravenous products.
+]
 [You will receive an optional requested_indication_query in the input context.]
 [You will receive requested_dose_audience in the input context with value "adult" or "child".]
 [If requested_dose_audience is "adult", include adult dosing lines and elderly dosing lines when present. Exclude child, pediatric, paediatric, infant, neonate, baby, and toddler dosing lines.]
 [If requested_dose_audience is "child", include ONLY child/pediatric/paediatric/infant/neonate/baby/toddler dosing lines when present. Do NOT include adult dosing.]
 [Never include both adult and child dosing in the same extracted output.]
+[If any parsed_details item has is_modified_release: true, only use modified-release oral dosing for that item and never apply immediate-release dosing to it.]
+[If any parsed_details item has is_paediatric: true, do not apply adult dosing to that item. Mark it as exactly: 🔴 No adult dosing — paediatric formulation]
 [If the requested dose audience is missing for the selected indication, write exactly "**Adult:** Not found in provided drug dataset." or "**Child:** Not found in provided drug dataset." as appropriate, and do not substitute the other audience.]
 [If requested_brand_query is present in the input context, that means the user asked by a brand name or alias.]
 [When requested_brand_query is present, do NOT limit the answer to only that brand. Include the requested brand if available, plus the other filtered brands for the resolved generic drug from context.]
@@ -785,8 +999,6 @@ Formatting:
 Price: 20 tk/tab
 🎯 Helicobacter pylori eradication [in combination with other drugs]
 **Adult:** 40 mg twice daily for 7 days for first- and second-line eradication therapy; 10 days for third-line eradication therapy
-🎯 Benign gastric ulcer
-**Adult:** 40 mg daily for 8 weeks; increased if necessary up to 80 mg daily, dose increased in severe cases
 
 🎉 **Tab. Esonix 20 mg - Square** [same strength dosing already listed above]
 Price: 33 tk/tab
@@ -805,6 +1017,15 @@ const DRUG_VERIFICATION_SYSTEM_PROMPT = `You are a clinical data verification as
 You will receive the extracted drug data from a previous step, along with the original matched drug entries and clinical context.
 
 Your job is to VERIFY, FIX, and FINALIZE the extracted data. The output from this step is the final model-generated body that the app will display below its own title and summary sections.
+
+Before finalizing, apply these route-to-formulation checks:
+- BY MOUTH USING IMMEDIATE-RELEASE MEDICINES -> immediate-release TABLET or CAPSULE only.
+- BY MOUTH USING MODIFIED-RELEASE MEDICINES -> modified-release TABLET only, such as SR TABLET or XR TABLET.
+- BY RECTUM -> SUPPOSITORY only.
+- BY INTRAVENOUS INFUSION -> INJECTION or INFUSION only when the context explicitly supports intravenous use.
+- Never apply oral dosing to suppositories, rectal products, or intravenous products.
+- If a parsed_details item has is_modified_release: true, only keep modified-release dosing for that item.
+- If a parsed_details item has is_paediatric: true, do not apply adult dosing to that item. Keep the label exactly: 🔴 No adult dosing — paediatric formulation.
 
 FORMATTING AND INCLUSION RULES TO CHECK AND FIX:
 1. Missing Formulations Check:
@@ -877,6 +1098,7 @@ const DRUG_BRANDS_SYSTEM_PROMPT = `You answer brand-name-only drug queries using
 
 Core rules:
 - Use only "filtered_proprietary_preparations" from the context.
+- If a brand entry includes parsed_details, prefer parsed_details over the raw details string.
 - Include all brand entries provided in "filtered_proprietary_preparations" (this list is already pre-filtered and capped to top results).
 - The list is capped to a maximum of 5 brands and prioritizes preferred companies first when available.
 - Treat each object in "filtered_proprietary_preparations" as ONE distinct brand block.
@@ -1344,7 +1566,7 @@ Rules:
     }
 
     return headers
-      .map((header, index) => {
+      .map((header, index): ParsedProprietaryPreparation | null => {
         const nextBrandStart = headers[index + 1]?.brandStart ?? proprietaryText.length;
         const details = compactField(
           proprietaryText
@@ -1358,6 +1580,7 @@ Rules:
         );
 
         if (!details) return null;
+        const parsedDetails = parseProprietaryDetailChunks(details);
 
         const isCombination =
           /\+\s*[A-Za-z]/.test(header.contextBefore) ||
@@ -1370,6 +1593,7 @@ Rules:
           company_name: header.companyName,
           display_name: `${header.brandName} (${header.companyName})`,
           details,
+          ...(parsedDetails.length > 0 ? { parsed_details: parsedDetails } : {}),
           is_combination: isCombination,
         } satisfies ParsedProprietaryPreparation;
       })
@@ -1593,7 +1817,7 @@ Rules:
         generic_name: cleanDrugDisplayName(primaryEntry.drug_name),
         aliases: uniqueStrings(primaryEntry.aliases),
         pages: primaryEntry.pages,
-        filtered_proprietary_preparations: filteredBrands,
+        filtered_proprietary_preparations: toPromptBrandContexts(filteredBrands),
         ...preferredClinicalContext,
       };
     }
@@ -1602,13 +1826,15 @@ Rules:
       generic_name: cleanDrugDisplayName(primaryEntry.drug_name),
       aliases: uniqueStrings(safeEntries.flatMap((entry) => entry.aliases)),
       pages: uniquePages(safeEntries),
-      filtered_proprietary_preparations: filteredBrands,
+      filtered_proprietary_preparations: toPromptBrandContexts(filteredBrands),
       ...preferredClinicalContext,
       matched_entry_count: safeEntries.length,
       matched_entries: safeEntries.map((entry, index) => ({
         entry_label: `Entry ${index + 1}`,
         pages: entry.pages,
-        filtered_proprietary_preparations: this.selectPreferredBrandEntries(entry, requestedBrandQuery),
+        filtered_proprietary_preparations: toPromptBrandContexts(
+          this.selectPreferredBrandEntries(entry, requestedBrandQuery),
+        ),
       })),
     };
   }
@@ -1645,7 +1871,7 @@ Rules:
         generic_name: cleanDrugDisplayName(primaryEntry.drug_name),
         aliases: uniqueStrings(primaryEntry.aliases),
         pages: primaryEntry.pages,
-        filtered_proprietary_preparations: filteredBrands,
+        filtered_proprietary_preparations: toPromptBrandContexts(filteredBrands),
       };
     }
 
@@ -1653,15 +1879,14 @@ Rules:
       generic_name: cleanDrugDisplayName(primaryEntry.drug_name),
       aliases: uniqueStrings(safeEntries.flatMap((entry) => entry.aliases)),
       pages: uniquePages(safeEntries),
-      filtered_proprietary_preparations: filteredBrands,
+      filtered_proprietary_preparations: toPromptBrandContexts(filteredBrands),
       matched_entry_count: safeEntries.length,
       matched_entries: safeEntries.map((entry, index) => ({
         entry_label: `Entry ${index + 1}`,
         pages: entry.pages,
-        filtered_proprietary_preparations: this.selectPreferredBrandEntries(
-          entry,
-          requestedBrandQuery,
-        ).slice(0, DRUG_BRAND_RESULT_LIMIT),
+        filtered_proprietary_preparations: toPromptBrandContexts(
+          this.selectPreferredBrandEntries(entry, requestedBrandQuery).slice(0, DRUG_BRAND_RESULT_LIMIT),
+        ),
       })),
     };
   }
