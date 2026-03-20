@@ -16,8 +16,8 @@ import type {
 import { MessageSender } from '@/types/message';
 import type { ChatStreamEvent } from '@/services/rag';
 
-const DRUG_QUERY_PARSER_MODEL = 'llama-3.3-70b-versatile';
-const DRUG_ANSWER_MODEL = 'llama-3.3-70b-versatile';
+const DRUG_QUERY_PARSER_MODEL = 'moonshotai/kimi-k2-instruct-0905';
+const DRUG_ANSWER_MODEL = 'moonshotai/kimi-k2-instruct-0905';
 const DRUG_PROMPT_LOG_CHUNK_SIZE = 4000;
 const DRUG_NAME_DENYLIST = new Set(['ACE', 'FDA', 'KN.VDN', 'CNS']);
 const VERIFIED_DRUG_NAMES_URL = '/drug/verified-drug-names.txt';
@@ -602,8 +602,19 @@ const normalizeDrugDoseAgeLine = (line: string): string => {
   return `**${ageLabel}:**\nDose : ${remainder}`;
 };
 
+const normalizeDrugInlineLayoutText = (value: string): string =>
+  value
+    .replace(/\r\n/g, '\n')
+    .replace(
+      new RegExp(`([^\\n])\\s*(?=\\*\\*${DRUG_AGE_LABEL_PREFIX}\\b[^*]{0,80}:\\*\\*)`, 'gi'),
+      '$1\n',
+    )
+    .replace(/([^:\n])\s+(?=Price:)/gi, '$1\n')
+    .replace(/([^\n])\s+(?=🔴\s*No adult dosing — paediatric formulation)/g, '$1\n')
+    .trim();
+
 const normalizeDrugDoseBlock = (block: string): string =>
-  block
+  normalizeDrugInlineLayoutText(block)
     .split('\n')
     .map((line) => line.trim())
     .filter(Boolean)
@@ -829,6 +840,48 @@ const renderDrugDoseBlock = (block: string): string => {
   return lines.join('\n');
 };
 
+const normalizeFinalDrugBrandBlockLayout = (body: string): string => {
+  const blocks = body.replace(/\r\n/g, '\n').split(/\n{2,}/);
+
+  const normalizedBlocks = blocks.map((block) => {
+    if (!isDrugBrandBlock(block)) {
+      return normalizeDrugInlineLayoutText(block);
+    }
+
+    const explodedLines = normalizeDrugInlineLayoutText(block)
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean);
+
+    if (explodedLines.length === 0) return '';
+
+    const brandLine = explodedLines.find((line) => /^🎉/.test(line)) || explodedLines[0];
+    const priceLines = explodedLines.filter((line) => /^Price:/i.test(line));
+    const paediatricNotice =
+      explodedLines.find((line) => /^🔴\s*No adult dosing — paediatric formulation$/i.test(line)) ||
+      null;
+    const referenceOnlyBlock = isReferenceOnlyDrugBrandBlock(explodedLines.join('\n'));
+
+    const remainingLines = explodedLines.filter((line) => {
+      if (line === brandLine) return false;
+      if (/^Price:/i.test(line)) return false;
+      if (/^🔴\s*No adult dosing — paediatric formulation$/i.test(line)) return false;
+      return true;
+    });
+
+    const orderedLines = [
+      brandLine,
+      ...priceLines,
+      ...(!referenceOnlyBlock && paediatricNotice ? [paediatricNotice] : []),
+      ...remainingLines,
+    ];
+
+    return renderDrugDoseBlock(orderedLines.join('\n'));
+  });
+
+  return normalizedBlocks.filter(Boolean).join('\n\n').trim();
+};
+
 const formatDrugDoseOutput = (raw: string): string => {
   const strippedPreludeRaw = (() => {
     const lines = raw.replace(/\r\n/g, '\n').split('\n');
@@ -850,6 +903,7 @@ const formatDrugDoseOutput = (raw: string): string => {
     .replace(/([^\n])\s*(?=\*\*✅)/g, '$1\n\n')
     .replace(/([^\n])\s*(?=🎉)/g, '$1\n\n')
     .replace(/([^\n])\s*(?=🎯)/g, '$1\n')
+    .replace(/([^\n])\s*(?=🔴\s*No adult dosing — paediatric formulation)/g, '$1\n')
     .replace(
       new RegExp(`([^\\n])\\s*(?=\\*\\*${DRUG_AGE_LABEL_PREFIX}\\b[^*]{0,80}:\\*\\*)`, 'gi'),
       '$1\n',
@@ -878,6 +932,699 @@ const formatDrugBrandsOutput = (raw: string): string =>
       return line;
     })
     .join('\n');
+
+type DrugScheduleUnitMeta = {
+  kind: 'discrete' | 'volume_ml';
+  singularLabel: string;
+  pluralLabel: string;
+  mgPerUnit?: number;
+  mgPerMl?: number;
+};
+
+type ParsedDoseAmount = {
+  minMg: number;
+  maxMg: number;
+  perKg: boolean;
+  matchedText: string;
+};
+
+type ParsedMaximumDoseAmount = {
+  index: number;
+  minMg: number;
+  maxMg: number;
+  perKg: boolean;
+  matchedText: string;
+  labelText: string;
+  intervalText: string;
+};
+
+type PromptBrandScheduleDetail = {
+  brandName: string;
+  companyName: string;
+  formulation: string;
+  strength: string;
+  detail: ParsedBrandDetail;
+};
+
+const normalizeScheduleText = (value: string): string =>
+  value.replace(/[–—]/g, '-').replace(/\s+/g, ' ').trim();
+
+const parseMassToMg = (amountText: string, unitText: string): number | null => {
+  const amount = Number.parseFloat(amountText);
+  if (!Number.isFinite(amount)) return null;
+
+  const normalizedUnit = unitText.toLowerCase();
+  if (normalizedUnit === 'g' || normalizedUnit === 'gm' || normalizedUnit === 'gram' || normalizedUnit === 'grams') {
+    return amount * 1000;
+  }
+  if (normalizedUnit === 'mg') {
+    return amount;
+  }
+  if (normalizedUnit === 'mcg' || normalizedUnit === 'microgram' || normalizedUnit === 'micrograms') {
+    return amount / 1000;
+  }
+
+  return null;
+};
+
+const parseLeadingDoseAmount = (text: string): ParsedDoseAmount | null => {
+  const match = text.match(
+    /^\s*([0-9]+(?:\.[0-9]+)?)(?:\s*[-–]\s*([0-9]+(?:\.[0-9]+)?))?\s*(mg|g|gm|gram|grams|mcg|microgram|micrograms)\s*(\/\s*kg)?/i,
+  );
+  if (!match) return null;
+
+  const minMg = parseMassToMg(match[1], match[3]);
+  const maxMg = parseMassToMg(match[2] || match[1], match[3]);
+  if (minMg == null || maxMg == null) return null;
+
+  return {
+    minMg,
+    maxMg,
+    perKg: Boolean(match[4]),
+    matchedText: match[0],
+  };
+};
+
+const parseMaximumDoseAmount = (
+  text: string,
+): ParsedMaximumDoseAmount | null => {
+  const match =
+    /((?:usual\s+)?maximum)\s+([0-9]+(?:\.[0-9]+)?)(?:\s*[-–]\s*([0-9]+(?:\.[0-9]+)?))?\s*(mg|g|gm|gram|grams|mcg|microgram|micrograms)\s*(\/\s*kg)?\s*(per\s+day|\/\s*24\s*hours?)/i.exec(
+      text,
+    );
+  if (!match || match.index == null) return null;
+
+  const minMg = parseMassToMg(match[2], match[4]);
+  const maxMg = parseMassToMg(match[3] || match[2], match[4]);
+  if (minMg == null || maxMg == null) return null;
+
+  return {
+    index: match.index,
+    minMg,
+    maxMg,
+    perKg: Boolean(match[5]),
+    matchedText: match[0],
+    labelText: match[1],
+    intervalText: match[6],
+  };
+};
+
+const clampWeightKg = (value: number): number =>
+  Math.min(100, Math.max(0, value));
+
+const inferRepresentativeWeightKg = (ageLabel?: string | null): number | null => {
+  const normalized = normalizeScheduleText(ageLabel || '');
+  if (!normalized) return null;
+
+  const rangeMatch = normalized.match(/([0-9]+(?:\.[0-9]+)?)\s*[-–]\s*([0-9]+(?:\.[0-9]+)?)\s*kg/i);
+  if (rangeMatch) {
+    const min = Number.parseFloat(rangeMatch[1]);
+    const max = Number.parseFloat(rangeMatch[2]);
+    if (Number.isFinite(min) && Number.isFinite(max)) {
+      return clampWeightKg((min + max) / 2);
+    }
+  }
+
+  const underMatch =
+    normalized.match(/up to\s*([0-9]+(?:\.[0-9]+)?)\s*kg/i) ||
+    normalized.match(/(?:<|less than|under|below)\s*([0-9]+(?:\.[0-9]+)?)\s*kg/i);
+  if (underMatch) {
+    const max = Number.parseFloat(underMatch[1]);
+    if (Number.isFinite(max)) {
+      return clampWeightKg(max / 2);
+    }
+  }
+
+  const aboveMatch =
+    normalized.match(/([0-9]+(?:\.[0-9]+)?)\s*kg\s*(?:and above|or above|and over|or more|and more|and upwards?)/i) ||
+    normalized.match(/(?:>|above|over|more than)\s*([0-9]+(?:\.[0-9]+)?)\s*kg/i);
+  if (aboveMatch) {
+    const min = Number.parseFloat(aboveMatch[1]);
+    if (Number.isFinite(min)) {
+      return clampWeightKg((min + 100) / 2);
+    }
+  }
+
+  const exactMatch = normalized.match(/([0-9]+(?:\.[0-9]+)?)\s*kg/i);
+  if (exactMatch) {
+    const exact = Number.parseFloat(exactMatch[1]);
+    if (Number.isFinite(exact)) {
+      return clampWeightKg(exact);
+    }
+  }
+
+  return null;
+};
+
+const inferRepresentativeWeightNote = (ageLabel?: string | null): string | null => {
+  const normalized = normalizeScheduleText(ageLabel || '');
+  if (!/\bkg\b/i.test(normalized)) return null;
+
+  const representativeWeightKg = inferRepresentativeWeightKg(ageLabel);
+  if (representativeWeightKg == null) return null;
+
+  return `For ${formatScheduleNumber(representativeWeightKg)} kg example, `;
+};
+
+const capitalizeFirst = (value: string): string =>
+  value ? value.charAt(0).toUpperCase() + value.slice(1) : value;
+
+const formatScheduleNumber = (value: number): string => {
+  if (!Number.isFinite(value)) return '';
+
+  const nearestInteger = Math.round(value);
+  if (Math.abs(value - nearestInteger) < 0.02) {
+    return String(nearestInteger);
+  }
+
+  return value.toFixed(2).replace(/\.?0+$/, '');
+};
+
+const formatScheduleRangeText = (
+  minValue: number,
+  maxValue: number,
+  unitLabel: string,
+): string => {
+  const formattedMin = formatScheduleNumber(minValue);
+  const formattedMax = formatScheduleNumber(maxValue);
+  if (!formattedMin || !formattedMax) return '';
+  if (formattedMin === formattedMax) {
+    return `${formattedMin} ${unitLabel}`;
+  }
+  return `${formattedMin}-${formattedMax} ${unitLabel}`;
+};
+
+const parseStrengthDescriptor = (
+  strength: string,
+): {
+  numeratorMg: number;
+  denominatorMl?: number;
+  denominatorText?: string;
+} | null => {
+  const normalized = normalizeScheduleText(strength);
+  if (!normalized || /\+/.test(normalized)) return null;
+
+  const numeratorMatch = normalized.match(
+    /^([0-9]+(?:\.[0-9]+)?)\s*(mg|g|gm|gram|grams|mcg|microgram|micrograms)/i,
+  );
+  if (!numeratorMatch) return null;
+
+  const numeratorMg = parseMassToMg(numeratorMatch[1], numeratorMatch[2]);
+  if (numeratorMg == null) return null;
+
+  const remainder = normalized.slice(numeratorMatch[0].length).trim();
+  if (!remainder.startsWith('/')) {
+    return { numeratorMg };
+  }
+
+  const denominator = remainder.slice(1).trim();
+  const volumeMatch = denominator.match(/^([0-9]+(?:\.[0-9]+)?)?\s*ml\b/i);
+  if (volumeMatch) {
+    return {
+      numeratorMg,
+      denominatorMl: volumeMatch[1] ? Number.parseFloat(volumeMatch[1]) : 1,
+      denominatorText: denominator,
+    };
+  }
+
+  return {
+    numeratorMg,
+    denominatorText: denominator,
+  };
+};
+
+const inferInjectionContainerLabels = (detail: ParsedBrandDetail): { singular: string; plural: string } | null => {
+  const normalizedSources = [detail.price_unit, detail.raw_text, detail.strength]
+    .map((value) => normalizeScheduleText(value || '').toLowerCase())
+    .filter(Boolean);
+
+  for (const source of normalizedSources) {
+    if (/\b(?:amp|amp\.|ampoule|ampoules)\b/.test(source)) {
+      return { singular: 'ampoule', plural: 'ampoules' };
+    }
+    if (/\b(?:vial|vials)\b/.test(source)) {
+      return { singular: 'vial', plural: 'vials' };
+    }
+    if (/\b(?:bottle|bottles)\b/.test(source)) {
+      return { singular: 'bottle', plural: 'bottles' };
+    }
+  }
+
+  const volumeContainerSource = normalizedSources.find((source) =>
+    /(?:^|\/|\b)([0-9]+(?:\.[0-9]+)?)\s*ml\b/.test(source),
+  );
+  if (volumeContainerSource) {
+    return { singular: 'bottle', plural: 'bottles' };
+  }
+
+  return null;
+};
+
+const resolveDrugScheduleUnitMeta = (detail: ParsedBrandDetail): DrugScheduleUnitMeta | null => {
+  const parsedStrength = parseStrengthDescriptor(detail.strength);
+  if (!parsedStrength) return null;
+
+  switch (detail.formulation) {
+    case 'TABLET':
+      return {
+        kind: 'discrete',
+        singularLabel: 'tablet',
+        pluralLabel: 'tablets',
+        mgPerUnit: parsedStrength.numeratorMg,
+      };
+    case 'CAPSULE':
+      return {
+        kind: 'discrete',
+        singularLabel: 'capsule',
+        pluralLabel: 'capsules',
+        mgPerUnit: parsedStrength.numeratorMg,
+      };
+    case 'SUPPOSITORY':
+      return {
+        kind: 'discrete',
+        singularLabel: 'suppository',
+        pluralLabel: 'suppositories',
+        mgPerUnit: parsedStrength.numeratorMg,
+      };
+    case 'SACHET':
+      return {
+        kind: 'discrete',
+        singularLabel: 'sachet',
+        pluralLabel: 'sachets',
+        mgPerUnit: parsedStrength.numeratorMg,
+      };
+    case 'SYRUP':
+    case 'SUSPENSION':
+    case 'DROPS':
+      if (!parsedStrength.denominatorMl || parsedStrength.denominatorMl <= 0) return null;
+      return {
+        kind: 'volume_ml',
+        singularLabel: 'ml',
+        pluralLabel: 'ml',
+        mgPerMl: parsedStrength.numeratorMg / parsedStrength.denominatorMl,
+      };
+    case 'INJECTION':
+    case 'INFUSION': {
+      const container = inferInjectionContainerLabels(detail);
+      if (!container) return null;
+
+      if (
+        parsedStrength.denominatorText &&
+        parsedStrength.denominatorMl == null &&
+        !/\b(?:amp|ampoule|vial|bottle)s?\b/i.test(parsedStrength.denominatorText)
+      ) {
+        return null;
+      }
+
+      return {
+        kind: 'discrete',
+        singularLabel: container.singular,
+        pluralLabel: container.plural,
+        mgPerUnit: parsedStrength.numeratorMg,
+      };
+    }
+    default:
+      return null;
+  }
+};
+
+const extractScheduleHeadingKey = (block: string): string | null => {
+  const headingLine = block
+    .split('\n')
+    .map((line) => line.trim())
+    .find((line) => /^\*\*✅/.test(line));
+  if (!headingLine) return null;
+
+  const normalizedHeading = headingLine.replace(/\*\*/g, '').replace(/^✅\s*/, '').trim();
+  return normalizedHeading || null;
+};
+
+const collectPromptBrandScheduleDetails = (
+  promptContext: Record<string, unknown>,
+): PromptBrandScheduleDetail[] => {
+  const collected: PromptBrandScheduleDetail[] = [];
+  const seen = new Set<string>();
+
+  const addBrandCollection = (value: unknown): void => {
+    if (!isRecord(value)) return;
+
+    const brandName = compactField(String(value.brand_name || '')) || '';
+    const companyName = compactField(String(value.company_name || '')) || '';
+    const parsedDetails = Array.isArray(value.parsed_details) ? value.parsed_details : [];
+    if (!brandName || !companyName || parsedDetails.length === 0) return;
+
+    for (const parsedDetail of parsedDetails) {
+      if (!isRecord(parsedDetail)) continue;
+
+      const detail: ParsedBrandDetail = {
+        raw_text: String(parsedDetail.raw_text || ''),
+        formulation_raw: String(parsedDetail.formulation_raw || ''),
+        formulation: String(parsedDetail.formulation || ''),
+        release_type:
+          parsedDetail.release_type === 'SR' || parsedDetail.release_type === 'XR'
+            ? parsedDetail.release_type
+            : undefined,
+        strength: String(parsedDetail.strength || ''),
+        price: String(parsedDetail.price || ''),
+        price_unit:
+          typeof parsedDetail.price_unit === 'string' ? parsedDetail.price_unit : undefined,
+        is_modified_release: Boolean(parsedDetail.is_modified_release),
+        is_paediatric: Boolean(parsedDetail.is_paediatric),
+      };
+
+      const formulation = compactField(detail.formulation) || '';
+      const strength = compactField(detail.strength) || '';
+      if (!formulation || !strength) continue;
+
+      const key = [
+        normalizeDrugLookupText(brandName),
+        normalizeDrugLookupText(companyName),
+        normalizeDrugLookupText(formulation),
+        normalizeDrugLookupText(strength),
+      ].join('|');
+      if (seen.has(key)) continue;
+      seen.add(key);
+
+      collected.push({
+        brandName,
+        companyName,
+        formulation,
+        strength,
+        detail,
+      });
+    }
+  };
+
+  const topLevelBrands = promptContext.filtered_proprietary_preparations;
+  if (Array.isArray(topLevelBrands)) {
+    for (const brand of topLevelBrands) {
+      addBrandCollection(brand);
+    }
+  }
+
+  const matchedEntries = promptContext.matched_entries;
+  if (Array.isArray(matchedEntries)) {
+    for (const entry of matchedEntries) {
+      if (!isRecord(entry)) continue;
+      const nestedBrands = entry.filtered_proprietary_preparations;
+      if (!Array.isArray(nestedBrands)) continue;
+      for (const brand of nestedBrands) {
+        addBrandCollection(brand);
+      }
+    }
+  }
+
+  return collected;
+};
+
+const matchScheduleDetailForBrandBlock = (
+  block: string,
+  formulationHeading: string,
+  details: PromptBrandScheduleDetail[],
+): ParsedBrandDetail | null => {
+  const brandLine = block
+    .split('\n')
+    .map((line) => line.trim())
+    .find((line) => /^🎉/.test(line));
+  if (!brandLine) return null;
+
+  const normalizedLine = normalizeDrugLookupText(
+    brandLine.replace(/^🎉\s*/, '').replace(/\*\*/g, ''),
+  );
+  const normalizedHeading = normalizeDrugLookupText(formulationHeading);
+  if (!normalizedLine || !normalizedHeading) return null;
+
+  const directMatches = details.filter((detail) => {
+    if (normalizeDrugLookupText(detail.formulation) !== normalizedHeading) return false;
+
+    const brandKey = normalizeDrugLookupText(detail.brandName);
+    const companyKey = normalizeDrugLookupText(detail.companyName);
+    const strengthKey = normalizeDrugLookupText(detail.strength);
+
+    return (
+      (!brandKey || normalizedLine.includes(brandKey)) &&
+      (!companyKey || normalizedLine.includes(companyKey)) &&
+      (!strengthKey || normalizedLine.includes(strengthKey))
+    );
+  });
+
+  if (directMatches.length === 1) {
+    return directMatches[0].detail;
+  }
+
+  const fallbackMatches = details.filter((detail) => {
+    if (normalizeDrugLookupText(detail.formulation) !== normalizedHeading) return false;
+
+    const brandKey = normalizeDrugLookupText(detail.brandName);
+    const companyKey = normalizeDrugLookupText(detail.companyName);
+
+    return (
+      (!brandKey || normalizedLine.includes(brandKey)) &&
+      (!companyKey || normalizedLine.includes(companyKey))
+    );
+  });
+
+  return fallbackMatches.length === 1 ? fallbackMatches[0].detail : null;
+};
+
+const convertDoseAmountToScheduleValue = (
+  parsedDose: ParsedDoseAmount,
+  unitMeta: DrugScheduleUnitMeta,
+  ageLabel?: string | null,
+): { minValue: number; maxValue: number } | null => {
+  const weightKg = parsedDose.perKg ? inferRepresentativeWeightKg(ageLabel) : null;
+  if (parsedDose.perKg && weightKg == null) return null;
+
+  const multiplier = parsedDose.perKg ? weightKg! : 1;
+  const totalMinMg = parsedDose.minMg * multiplier;
+  const totalMaxMg = parsedDose.maxMg * multiplier;
+
+  if (unitMeta.kind === 'volume_ml') {
+    if (!unitMeta.mgPerMl || unitMeta.mgPerMl <= 0) return null;
+    return {
+      minValue: totalMinMg / unitMeta.mgPerMl,
+      maxValue: totalMaxMg / unitMeta.mgPerMl,
+    };
+  }
+
+  if (!unitMeta.mgPerUnit || unitMeta.mgPerUnit <= 0) return null;
+  return {
+    minValue: totalMinMg / unitMeta.mgPerUnit,
+    maxValue: totalMaxMg / unitMeta.mgPerUnit,
+  };
+};
+
+const buildInitialThenScheduleTextFromDoseLine = (
+  doseText: string,
+  detail: ParsedBrandDetail,
+  ageLabel?: string | null,
+): string | null => {
+  const unitMeta = resolveDrugScheduleUnitMeta(detail);
+  if (!unitMeta) return null;
+
+  const normalizedDoseText = normalizeScheduleText(doseText);
+  const initialMatch = /^Initially\s+(.+?)(?:,\s*then\s+)(.+)$/i.exec(normalizedDoseText);
+  if (!initialMatch) return null;
+
+  const initialDose = parseLeadingDoseAmount(initialMatch[1]);
+  if (!initialDose) return null;
+
+  const trailingText = initialMatch[2];
+  const maximumDose = parseMaximumDoseAmount(trailingText) || parseMaximumDoseAmount(normalizedDoseText);
+  const recurringSegment = trailingText.slice(0, maximumDose?.index ?? trailingText.length).trim();
+  const recurringDose = parseLeadingDoseAmount(recurringSegment);
+  if (!recurringDose) return null;
+
+  const convertedInitial = convertDoseAmountToScheduleValue(initialDose, unitMeta, ageLabel);
+  const convertedRecurring = convertDoseAmountToScheduleValue(recurringDose, unitMeta, ageLabel);
+  if (!convertedInitial || !convertedRecurring) return null;
+
+  const representativeWeightPrefix = inferRepresentativeWeightNote(ageLabel) || '';
+  const initialText = formatScheduleRangeText(
+    convertedInitial.minValue,
+    convertedInitial.maxValue,
+    unitMeta.singularLabel,
+  );
+  const recurringText = formatScheduleRangeText(
+    convertedRecurring.minValue,
+    convertedRecurring.maxValue,
+    unitMeta.singularLabel,
+  );
+  if (!initialText || !recurringText) return null;
+
+  const recurringMiddleText = recurringSegment
+    .slice(recurringDose.matchedText.length)
+    .replace(/[;,]\s*$/, '')
+    .trim();
+
+  let scheduleText = `${representativeWeightPrefix}Initially ${initialText}, then ${recurringText}`;
+  if (recurringMiddleText) {
+    scheduleText += ` ${recurringMiddleText.replace(/^[,;]\s*/, '')}`;
+  }
+
+  if (maximumDose) {
+    const convertedMaximum = convertDoseAmountToScheduleValue(maximumDose, unitMeta, ageLabel);
+    if (!convertedMaximum) return null;
+
+    const maximumText = formatScheduleRangeText(
+      convertedMaximum.minValue,
+      convertedMaximum.maxValue,
+      unitMeta.pluralLabel,
+    );
+    if (!maximumText) return null;
+
+    const normalizedInterval = normalizeScheduleText(maximumDose.intervalText)
+      .replace(/^\/\s*/, '/')
+      .replace(/\s+/g, ' ');
+    scheduleText += `; ${capitalizeFirst(maximumDose.labelText)} ${maximumText} ${normalizedInterval}`;
+  }
+
+  return scheduleText;
+};
+
+const buildScheduleTextFromDoseLine = (
+  doseText: string,
+  detail: ParsedBrandDetail,
+  ageLabel?: string | null,
+): string | null => {
+  const unitMeta = resolveDrugScheduleUnitMeta(detail);
+  if (!unitMeta) return null;
+
+  const normalizedDoseText = normalizeScheduleText(doseText);
+  if (/^Initially\b/i.test(normalizedDoseText)) {
+    return buildInitialThenScheduleTextFromDoseLine(normalizedDoseText, detail, ageLabel);
+  }
+
+  const leadingDose = parseLeadingDoseAmount(normalizedDoseText);
+  if (!leadingDose) return null;
+
+  const convertedDose = convertDoseAmountToScheduleValue(leadingDose, unitMeta, ageLabel);
+  if (!convertedDose) return null;
+
+  const maximumDose = parseMaximumDoseAmount(normalizedDoseText);
+  const middleText = normalizedDoseText
+    .slice(leadingDose.matchedText.length, maximumDose?.index ?? normalizedDoseText.length)
+    .replace(/[;,]\s*$/, '')
+    .trim();
+
+  let scheduleText = formatScheduleRangeText(
+    convertedDose.minValue,
+    convertedDose.maxValue,
+    unitMeta.singularLabel,
+  );
+  if (!scheduleText) return null;
+
+  const representativeWeightPrefix = inferRepresentativeWeightNote(ageLabel);
+  if (representativeWeightPrefix) {
+    scheduleText = `${representativeWeightPrefix}${scheduleText}`;
+  }
+
+  if (middleText) {
+    scheduleText += ` ${middleText.replace(/^[,;]\s*/, '')}`;
+  }
+
+  if (maximumDose) {
+    const convertedMaximum = convertDoseAmountToScheduleValue(maximumDose, unitMeta, ageLabel);
+    if (!convertedMaximum) return null;
+
+    const maximumText = formatScheduleRangeText(
+      convertedMaximum.minValue,
+      convertedMaximum.maxValue,
+      unitMeta.pluralLabel,
+    );
+    if (!maximumText) return null;
+
+    const normalizedInterval = normalizeScheduleText(maximumDose.intervalText)
+      .replace(/^\/\s*/, '/')
+      .replace(/\s+/g, ' ');
+    scheduleText += `; ${capitalizeFirst(maximumDose.labelText)} ${maximumText} ${normalizedInterval}`;
+  }
+
+  return scheduleText;
+};
+
+const appendSchedulesToBrandBlock = (
+  block: string,
+  detail: ParsedBrandDetail,
+): string => {
+  const lines = block.split('\n');
+  const schedulesByLineIndex = new Map<number, string>();
+  let currentAgeLabel: string | null = null;
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const trimmedLine = lines[index].trim();
+    const ageLabelMatch = trimmedLine.match(
+      new RegExp(`^\\*\\*(${DRUG_AGE_LABEL_PREFIX}\\b[^*]{0,80}):\\*\\*$`, 'i'),
+    );
+    if (ageLabelMatch) {
+      currentAgeLabel = ageLabelMatch[1];
+      continue;
+    }
+
+    const doseLineMatch = trimmedLine.match(/^Dose\s*:\s*(.+)$/i);
+    if (!doseLineMatch) {
+      continue;
+    }
+
+    const scheduleText = buildScheduleTextFromDoseLine(
+      doseLineMatch[1],
+      detail,
+      currentAgeLabel,
+    );
+    if (!scheduleText) {
+      return block;
+    }
+
+    schedulesByLineIndex.set(index, `Schedule : ${scheduleText}`);
+  }
+
+  if (schedulesByLineIndex.size === 0) {
+    return block;
+  }
+
+  const outputLines: string[] = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    outputLines.push(lines[index]);
+    const scheduleLine = schedulesByLineIndex.get(index);
+    if (scheduleLine) {
+      outputLines.push(scheduleLine);
+    }
+  }
+
+  return outputLines.join('\n');
+};
+
+const addAppLevelSchedulesToDoseOutput = (
+  body: string,
+  promptContext: Record<string, unknown>,
+): string => {
+  const scheduleDetails = collectPromptBrandScheduleDetails(promptContext);
+  if (scheduleDetails.length === 0) return normalizeFinalDrugBrandBlockLayout(body);
+
+  const blocks = body.replace(/\r\n/g, '\n').split(/\n{2,}/);
+  let currentHeading = '';
+
+  const updatedBlocks = blocks.map((block) => {
+    const heading = extractScheduleHeadingKey(block);
+    if (heading) {
+      currentHeading = heading;
+      return block;
+    }
+
+    if (!isDrugBrandBlock(block) || !currentHeading || !/(^|\n)Dose\s*:/im.test(block)) {
+      return block;
+    }
+
+    const matchedDetail = matchScheduleDetailForBrandBlock(block, currentHeading, scheduleDetails);
+    if (!matchedDetail) {
+      return block;
+    }
+
+    return appendSchedulesToBrandBlock(block, matchedDetail);
+  });
+
+  return normalizeFinalDrugBrandBlockLayout(updatedBlocks.join('\n\n').trim());
+};
 
 const capitalizeContraindicationText = (value: string): string =>
   value.replace(/^([a-z])/, (_, firstLetter: string) => firstLetter.toUpperCase());
@@ -2649,13 +3396,19 @@ ${stringifyEntryForPrompt(promptContextForModel)}`;
           promptContext as Record<string, unknown>,
           requestedDoseAudience,
         );
+        const formattedBodyWithSchedules = addAppLevelSchedulesToDoseOutput(
+          formattedBody,
+          promptContext as Record<string, unknown>,
+        );
         const prelude = buildDoseResponsePrelude(
           resolvedDrugName,
           promptContext as Record<string, unknown>,
           requestedDoseAudience,
         );
 
-        fullResponse = formattedBody ? `${prelude}\n\n${formattedBody}` : prelude;
+        fullResponse = formattedBodyWithSchedules
+          ? `${prelude}\n\n${formattedBodyWithSchedules}`
+          : prelude;
       } else if (intent.answerKind === 'brands') {
         onStreamEvent?.({
           type: 'status',
