@@ -29,6 +29,8 @@ type DeterministicSelectedIndication = {
 type DeterministicBrandBlock = {
   heading: string;
   sortOrder: number;
+  intraGroupOrder: number;
+  priority: 0 | 1 | 2;
   content: string;
 };
 
@@ -681,6 +683,18 @@ const renderNoBrandRouteBlock = (
   return renderDrugDoseBlock(lines.join('\n'));
 };
 
+const classifyRenderedBrandBlockPriority = (content: string): 0 | 1 | 2 => {
+  if (/\[same strength dosing already listed above\]/i.test(content)) {
+    return 1;
+  }
+
+  if (/(?:^|\n)🔴\s/m.test(content)) {
+    return 2;
+  }
+
+  return 0;
+};
+
 const groupBlocksByHeading = (
   selectedIndication: AskDrugDoseIndication,
   brands: DeterministicPromptBrand[],
@@ -694,6 +708,7 @@ const groupBlocksByHeading = (
   const duplicateKeySeen = new Set<string>();
   const duplicateKeyHasDose = new Map<string, boolean>();
   let duplicateCollapseCount = 0;
+  let sequence = 0;
 
   for (const brand of brands) {
     for (const detail of brand.parsed_details) {
@@ -732,18 +747,23 @@ const groupBlocksByHeading = (
         duplicateCollapseCount += 1;
       }
 
+      const content = renderBrandBlock(
+        brand,
+        detail,
+        selectedIndication.indication,
+        matchedRouteMappings,
+        requestedDoseAudience,
+        referenceOnly,
+      );
+
       brandBlocks.push({
         heading,
         sortOrder: seenHeadingOrders.get(heading) || headingOrder,
-        content: renderBrandBlock(
-          brand,
-          detail,
-          selectedIndication.indication,
-          matchedRouteMappings,
-          requestedDoseAudience,
-          referenceOnly,
-        ),
+        intraGroupOrder: sequence,
+        priority: classifyRenderedBrandBlockPriority(content),
+        content,
       });
+      sequence += 1;
     }
   }
 
@@ -763,8 +783,11 @@ const groupBlocksByHeading = (
     noBrandBlocks.push({
       heading,
       sortOrder: Math.min(...headingRouteMappings.map((routeMapping) => routeMapping.order)),
+      intraGroupOrder: sequence,
+      priority: 2,
       content: renderNoBrandRouteBlock(selectedIndication.indication, headingRouteMappings),
     });
+    sequence += 1;
   }
 
   console.log('[DRUG DETERMINISTIC]', 'Grouped deterministic dose blocks', {
@@ -784,30 +807,56 @@ const groupBlocksByHeading = (
 const renderGroupedBlocks = (blocks: DeterministicBrandBlock[]): string => {
   if (blocks.length === 0) return '';
 
-  const grouped = new Map<string, { sortOrder: number; contents: string[] }>();
+  const grouped = new Map<string, { sortOrder: number; blocks: DeterministicBrandBlock[] }>();
   for (const block of blocks) {
     const existing = grouped.get(block.heading);
     if (existing) {
       existing.sortOrder = Math.min(existing.sortOrder, block.sortOrder);
-      existing.contents.push(block.content);
+      existing.blocks.push(block);
     } else {
       grouped.set(block.heading, {
         sortOrder: block.sortOrder,
-        contents: [block.content],
+        blocks: [block],
       });
     }
   }
 
   return Array.from(grouped.entries())
     .sort((left, right) => {
+      const leftMinPriority = Math.min(...left[1].blocks.map((block) => block.priority));
+      const rightMinPriority = Math.min(...right[1].blocks.map((block) => block.priority));
+
+      if (leftMinPriority !== rightMinPriority) {
+        return leftMinPriority - rightMinPriority;
+      }
+
+      const leftWarningCount = left[1].blocks.filter((block) => block.priority === 2).length;
+      const rightWarningCount = right[1].blocks.filter((block) => block.priority === 2).length;
+
+      if (leftWarningCount !== rightWarningCount) {
+        return leftWarningCount - rightWarningCount;
+      }
+
       if (left[1].sortOrder !== right[1].sortOrder) {
         return left[1].sortOrder - right[1].sortOrder;
       }
+
       return left[0].localeCompare(right[0]);
     })
     .map(
       ([heading, group]) =>
-        [`**✅ ${heading}**`, ...group.contents]
+        [
+          `**✅ ${heading}**`,
+          ...group.blocks
+            .slice()
+            .sort((left, right) => {
+              if (left.priority !== right.priority) {
+                return left.priority - right.priority;
+              }
+              return left.intraGroupOrder - right.intraGroupOrder;
+            })
+            .map((block) => block.content),
+        ]
           .filter(Boolean)
           .join('\n\n'),
     )
