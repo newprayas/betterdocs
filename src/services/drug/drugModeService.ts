@@ -1442,7 +1442,7 @@ const convertDoseAmountToScheduleValue = (
 };
 
 const DOSE_CLAUSE_MASS_PATTERN =
-  /([0-9]+(?:\.[0-9]+)?)(?:\s*[-–]\s*([0-9]+(?:\.[0-9]+)?))?\s*(mg|g|gm|gram|grams|mcg|microgram|micrograms)\s*(\/\s*kg)?/gi;
+  /([0-9]+(?:\.[0-9]+)?)(?:\s*(?:[-–]|\bto\b)\s*([0-9]+(?:\.[0-9]+)?))?\s*(mg|g|gm|gram|grams|mcg|microgram|micrograms)\s*(\/\s*kg)?/gi;
 
 const isConcentrationLikeMassSuffix = (value: string): boolean =>
   /^\s*\/\s*(?:[0-9]+(?:\.[0-9]+)?\s*)?(?:ml|l)\b/i.test(value) ||
