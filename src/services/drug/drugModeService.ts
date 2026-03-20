@@ -1414,72 +1414,32 @@ const convertDoseAmountToScheduleValue = (
   };
 };
 
-const buildInitialThenScheduleTextFromDoseLine = (
-  doseText: string,
-  detail: ParsedBrandDetail,
-  ageLabel?: string | null,
-): string | null => {
-  const unitMeta = resolveDrugScheduleUnitMeta(detail);
-  if (!unitMeta) return null;
+const DOSE_CLAUSE_MASS_PATTERN =
+  /([0-9]+(?:\.[0-9]+)?)(?:\s*[-–]\s*([0-9]+(?:\.[0-9]+)?))?\s*(mg|g|gm|gram|grams|mcg|microgram|micrograms)\s*(\/\s*kg)?/gi;
 
-  const normalizedDoseText = normalizeScheduleText(doseText);
-  const initialMatch = /^Initially\s+(.+?)(?:,\s*then\s+)(.+)$/i.exec(normalizedDoseText);
-  if (!initialMatch) return null;
+const isConcentrationLikeMassSuffix = (value: string): boolean =>
+  /^\s*\/\s*(?:[0-9]+(?:\.[0-9]+)?\s*)?(?:ml|l)\b/i.test(value) ||
+  /^\s*per\s+(?:[0-9]+(?:\.[0-9]+)?\s*)?(?:ml|l)\b/i.test(value);
 
-  const initialDose = parseLeadingDoseAmount(initialMatch[1]);
-  if (!initialDose) return null;
-
-  const trailingText = initialMatch[2];
-  const maximumDose = parseMaximumDoseAmount(trailingText) || parseMaximumDoseAmount(normalizedDoseText);
-  const recurringSegment = trailingText.slice(0, maximumDose?.index ?? trailingText.length).trim();
-  const recurringDose = parseLeadingDoseAmount(recurringSegment);
-  if (!recurringDose) return null;
-
-  const convertedInitial = convertDoseAmountToScheduleValue(initialDose, unitMeta, ageLabel);
-  const convertedRecurring = convertDoseAmountToScheduleValue(recurringDose, unitMeta, ageLabel);
-  if (!convertedInitial || !convertedRecurring) return null;
-
-  const representativeWeightPrefix = inferRepresentativeWeightNote(ageLabel) || '';
-  const initialText = formatScheduleRangeText(
-    convertedInitial.minValue,
-    convertedInitial.maxValue,
-    unitMeta.singularLabel,
-  );
-  const recurringText = formatScheduleRangeText(
-    convertedRecurring.minValue,
-    convertedRecurring.maxValue,
-    unitMeta.singularLabel,
-  );
-  if (!initialText || !recurringText) return null;
-
-  const recurringMiddleText = recurringSegment
-    .slice(recurringDose.matchedText.length)
-    .replace(/[;,]\s*$/, '')
-    .trim();
-
-  let scheduleText = `${representativeWeightPrefix}Initially ${initialText}, then ${recurringText}`;
-  if (recurringMiddleText) {
-    scheduleText += ` ${recurringMiddleText.replace(/^[,;]\s*/, '')}`;
+const selectScheduleCountUnitLabel = (
+  minValue: number,
+  maxValue: number,
+  unitMeta: DrugScheduleUnitMeta,
+  prefixContext: string,
+): string => {
+  if (/\b(?:usual\s+)?maximum\s*$/i.test(prefixContext)) {
+    return unitMeta.pluralLabel;
   }
 
-  if (maximumDose) {
-    const convertedMaximum = convertDoseAmountToScheduleValue(maximumDose, unitMeta, ageLabel);
-    if (!convertedMaximum) return null;
-
-    const maximumText = formatScheduleRangeText(
-      convertedMaximum.minValue,
-      convertedMaximum.maxValue,
-      unitMeta.pluralLabel,
-    );
-    if (!maximumText) return null;
-
-    const normalizedInterval = normalizeScheduleText(maximumDose.intervalText)
-      .replace(/^\/\s*/, '/')
-      .replace(/\s+/g, ' ');
-    scheduleText += `; ${capitalizeFirst(maximumDose.labelText)} ${maximumText} ${normalizedInterval}`;
+  if (Math.abs(minValue - 1) < 0.02 && Math.abs(maxValue - 1) < 0.02) {
+    return unitMeta.singularLabel;
   }
 
-  return scheduleText;
+  if (maxValue <= 1) {
+    return unitMeta.singularLabel;
+  }
+
+  return unitMeta.pluralLabel;
 };
 
 const buildScheduleTextFromDoseLine = (
@@ -1491,56 +1451,68 @@ const buildScheduleTextFromDoseLine = (
   if (!unitMeta) return null;
 
   const normalizedDoseText = normalizeScheduleText(doseText);
-  if (/^Initially\b/i.test(normalizedDoseText)) {
-    return buildInitialThenScheduleTextFromDoseLine(normalizedDoseText, detail, ageLabel);
-  }
+  let convertedCount = 0;
+  let failedConversion = false;
 
-  const leadingDose = parseLeadingDoseAmount(normalizedDoseText);
-  if (!leadingDose) return null;
+  const convertedText = normalizedDoseText.replace(
+    DOSE_CLAUSE_MASS_PATTERN,
+    (fullMatch, minAmountText, maxAmountText, unitText, perKgText, offset, sourceText) => {
+      const matchIndex = typeof offset === 'number' ? offset : 0;
+      const source = typeof sourceText === 'string' ? sourceText : normalizedDoseText;
+      const suffixText = source.slice(matchIndex + fullMatch.length);
 
-  const convertedDose = convertDoseAmountToScheduleValue(leadingDose, unitMeta, ageLabel);
-  if (!convertedDose) return null;
+      if (isConcentrationLikeMassSuffix(suffixText)) {
+        return fullMatch;
+      }
 
-  const maximumDose = parseMaximumDoseAmount(normalizedDoseText);
-  const middleText = normalizedDoseText
-    .slice(leadingDose.matchedText.length, maximumDose?.index ?? normalizedDoseText.length)
-    .replace(/[;,]\s*$/, '')
-    .trim();
+      const minMg = parseMassToMg(minAmountText, unitText);
+      const maxMg = parseMassToMg(maxAmountText || minAmountText, unitText);
+      if (minMg == null || maxMg == null) {
+        failedConversion = true;
+        return fullMatch;
+      }
 
-  let scheduleText = formatScheduleRangeText(
-    convertedDose.minValue,
-    convertedDose.maxValue,
-    unitMeta.singularLabel,
+      const parsedDose: ParsedDoseAmount = {
+        minMg,
+        maxMg,
+        perKg: Boolean(perKgText),
+        matchedText: fullMatch,
+      };
+
+      const convertedDose = convertDoseAmountToScheduleValue(parsedDose, unitMeta, ageLabel);
+      if (!convertedDose) {
+        failedConversion = true;
+        return fullMatch;
+      }
+
+      const prefixContext = source.slice(Math.max(0, matchIndex - 24), matchIndex);
+      const unitLabel = selectScheduleCountUnitLabel(
+        convertedDose.minValue,
+        convertedDose.maxValue,
+        unitMeta,
+        prefixContext,
+      );
+      const convertedTextValue = formatScheduleRangeText(
+        convertedDose.minValue,
+        convertedDose.maxValue,
+        unitLabel,
+      );
+      if (!convertedTextValue) {
+        failedConversion = true;
+        return fullMatch;
+      }
+
+      convertedCount += 1;
+      return convertedTextValue;
+    },
   );
-  if (!scheduleText) return null;
+
+  if (failedConversion || convertedCount === 0) {
+    return null;
+  }
 
   const representativeWeightPrefix = inferRepresentativeWeightNote(ageLabel);
-  if (representativeWeightPrefix) {
-    scheduleText = `${representativeWeightPrefix}${scheduleText}`;
-  }
-
-  if (middleText) {
-    scheduleText += ` ${middleText.replace(/^[,;]\s*/, '')}`;
-  }
-
-  if (maximumDose) {
-    const convertedMaximum = convertDoseAmountToScheduleValue(maximumDose, unitMeta, ageLabel);
-    if (!convertedMaximum) return null;
-
-    const maximumText = formatScheduleRangeText(
-      convertedMaximum.minValue,
-      convertedMaximum.maxValue,
-      unitMeta.pluralLabel,
-    );
-    if (!maximumText) return null;
-
-    const normalizedInterval = normalizeScheduleText(maximumDose.intervalText)
-      .replace(/^\/\s*/, '/')
-      .replace(/\s+/g, ' ');
-    scheduleText += `; ${capitalizeFirst(maximumDose.labelText)} ${maximumText} ${normalizedInterval}`;
-  }
-
-  return scheduleText;
+  return representativeWeightPrefix ? `${representativeWeightPrefix}${convertedText}` : convertedText;
 };
 
 const appendSchedulesToBrandBlock = (
