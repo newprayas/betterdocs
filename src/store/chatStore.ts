@@ -48,6 +48,7 @@ const DRUG_CONDITION_TARGET_SUFFIX_PATTERN =
   /\b[a-z][a-z-]*(?:itis|osis|opathy|emia|uria|algia|rrhea|rrhoea|iasis)\b/i;
 
 const DRUG_CONTEXT_EXPLICIT_PATTERNS = [
+  /^([A-Za-z][A-Za-z0-9\s+'().\-]{0,80}?)\s+(?:brands?|brand names?|trade names?|dose|doses|dosage|dosing|schedule|regimen|indications?|uses?|side[\s-]?effects?|contra[\s-]?indications?|pregnancy|breast[\s-]?feeding|renal(?:\s+dose|\s+impairment)?|hepatic(?:\s+dose|\s+impairment)?|safety(?:\s+information)?|details?|full details?|all about|everything)\b/i,
   /^(?:what(?:'s| is)?\s+)?(?:the\s+)?(?:dose|dosage|dosing|schedule|regimen|brands?|brand names?|trade names?|companies|prices?|costs?|indications?|uses?|side[\s-]?effects?|contra[\s-]?indications?|pregnancy|breast[\s-]?feeding|renal(?:\s+dose|\s+impairment)?|hepatic(?:\s+dose|\s+impairment)?|safety(?:\s+information)?|details?|full details?|all about|everything)\s+(?:of|for|about)\s+(.+)$/i,
   /^(?:tell\s+me\s+about)\s+(.+)$/i,
 ];

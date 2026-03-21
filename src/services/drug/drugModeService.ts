@@ -254,6 +254,10 @@ const QUERY_DRUG_NAME_PREFIX_PATTERNS = [
   /^(?:what(?:'s| is)?\s+)?(?:the\s+)?(?:indications?|side[\s-]?effects?|contra[\s-]?indications?|cautions?)\s+of\s+/i,
 ];
 
+const QUERY_DRUG_NAME_SUFFIX_PATTERNS = [
+  /\s+(?:dose|doses|dosage|dosing|regimen|schedule|brands?|brand\s*names?|trade\s*names?|price|prices|cost|costs|indications?|uses?|side[\s-]?effects?|contra[\s-]?indications?|cautions?|pregnancy|breast[\s-]?feeding|renal(?:\s+dose|\s+impairment)?|hepatic(?:\s+dose|\s+impairment)?|safety(?:\s+information)?|details?|full details?|all about|everything)\s*$/i,
+];
+
 const sanitizeParsedDrugName = (value: string): string => {
   let cleaned = compactField(value) || '';
   if (!cleaned) return '';
@@ -262,6 +266,11 @@ const sanitizeParsedDrugName = (value: string): string => {
   for (const pattern of QUERY_DRUG_NAME_PREFIX_PATTERNS) {
     cleaned = cleaned.replace(pattern, '');
   }
+
+  for (const pattern of QUERY_DRUG_NAME_SUFFIX_PATTERNS) {
+    cleaned = cleaned.replace(pattern, '');
+  }
+
   cleaned = cleaned.replace(/[?!.,;:]+$/g, '').trim();
 
   return cleaned;
