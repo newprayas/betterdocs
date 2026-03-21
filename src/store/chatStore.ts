@@ -41,6 +41,12 @@ const DRUG_BROAD_QUERY_PATTERN =
 const DRUG_CONTEXTUAL_PRONOUN_PATTERN =
   /\b(it|this|that|same drug|same medicine|same one|this one|that one)\b/i;
 
+const DRUG_CONDITION_TARGET_HINT_PATTERN =
+  /\b(encephalopathy|disease|syndrome|infection|disorder|pain|fever|diabetes|hypertension|asthma|migraine|anemia|anaemia|jaundice|hepatitis|cirrhosis|impairment|failure|obstruction|allergy|allergic|renal|hepatic|cardiac|pulmonary|neuropathy|stroke|seizure|epilepsy|colitis|gastritis|ulcer|pregnancy|lactation|breast[\s-]?feeding)\b/i;
+
+const DRUG_CONDITION_TARGET_SUFFIX_PATTERN =
+  /\b[a-z][a-z-]*(?:itis|osis|opathy|emia|uria|algia|rrhea|rrhoea|iasis)\b/i;
+
 const DRUG_CONTEXT_EXPLICIT_PATTERNS = [
   /^(?:what(?:'s| is)?\s+)?(?:the\s+)?(?:dose|dosage|dosing|schedule|regimen|brands?|brand names?|trade names?|companies|prices?|costs?|indications?|uses?|side[\s-]?effects?|contra[\s-]?indications?|pregnancy|breast[\s-]?feeding|renal(?:\s+dose|\s+impairment)?|hepatic(?:\s+dose|\s+impairment)?|safety(?:\s+information)?|details?|full details?|all about|everything)\s+(?:of|for|about)\s+(.+)$/i,
   /^(?:tell\s+me\s+about)\s+(.+)$/i,
@@ -77,6 +83,12 @@ const inferDrugFollowUpIntent = (content: string): string | null => {
   return null;
 };
 
+const looksLikeConditionTarget = (value: string): boolean => {
+  const compact = value.trim();
+  if (!compact) return false;
+  return DRUG_CONDITION_TARGET_HINT_PATTERN.test(compact) || DRUG_CONDITION_TARGET_SUFFIX_PATTERN.test(compact);
+};
+
 const isLikelyDrugFollowUpQuery = (content: string): boolean => {
   const compact = content.trim();
   if (!compact || DRUG_BROAD_QUERY_PATTERN.test(compact)) return false;
@@ -86,6 +98,19 @@ const isLikelyDrugFollowUpQuery = (content: string): boolean => {
   const hasPronoun = DRUG_CONTEXTUAL_PRONOUN_PATTERN.test(compact);
   const shortQuery = compact.split(/\s+/).length <= 8;
   return (hasIntent && shortQuery) || hasPronoun;
+};
+
+const isDoseForConditionFollowUpQuery = (content: string): boolean => {
+  const compact = content.trim();
+  if (!compact || DRUG_BROAD_QUERY_PATTERN.test(compact)) return false;
+  if (!/\b(dose|doses|dosage|dosing|schedule|regimen|how much|how many)\b/i.test(compact)) return false;
+  if (!/\bfor\b/i.test(compact)) return false;
+  if (DRUG_CONTEXTUAL_PRONOUN_PATTERN.test(compact)) return false;
+
+  const trailingTarget = compact.match(/\bfor\s+(.+)$/i)?.[1];
+  if (!trailingTarget) return false;
+
+  return looksLikeConditionTarget(trailingTarget);
 };
 
 const rewriteObviousDrugFollowUpQuery = (
@@ -352,29 +377,39 @@ export const useChatStore = create<ChatStore>()(
           const sessionMode: SessionChatMode =
             rawSessionMode === 'ask-drug' ? 'drug' : rawSessionMode;
           const priorDrugContext = get().drugContextBySession[sessionId] || null;
+          const contentHasBroadDrugListIntent = DRUG_BROAD_QUERY_PATTERN.test(content);
 
           let effectiveContent = content;
           if (sessionMode === 'drug' && priorDrugContext?.lastDrugName) {
-            const obviousRewrite = rewriteObviousDrugFollowUpQuery(content, priorDrugContext.lastDrugName);
-            if (obviousRewrite) {
-              effectiveContent = obviousRewrite;
-              console.log('[DRUG FOLLOW-UP REWRITE][APP]', {
+            if (isDoseForConditionFollowUpQuery(content)) {
+              effectiveContent = `dose of ${priorDrugContext.lastDrugName}`;
+              console.log('[DRUG FOLLOW-UP REWRITE][DOSE-FOR-CONDITION]', {
                 originalQuery: content,
                 rewrittenQuery: effectiveContent,
                 lastDrugName: priorDrugContext.lastDrugName,
               });
-            } else if (isLikelyDrugFollowUpQuery(content)) {
-              const rewritten = await rewriteAmbiguousDrugFollowUpQuery(
-                content,
-                priorDrugContext.lastDrugName,
-              );
-              if (rewritten) {
-                effectiveContent = rewritten;
-                console.log('[DRUG FOLLOW-UP REWRITE][LLM]', {
+            } else if (!contentHasBroadDrugListIntent) {
+              const obviousRewrite = rewriteObviousDrugFollowUpQuery(content, priorDrugContext.lastDrugName);
+              if (obviousRewrite) {
+                effectiveContent = obviousRewrite;
+                console.log('[DRUG FOLLOW-UP REWRITE][APP]', {
                   originalQuery: content,
                   rewrittenQuery: effectiveContent,
                   lastDrugName: priorDrugContext.lastDrugName,
                 });
+              } else if (isLikelyDrugFollowUpQuery(content)) {
+                const rewritten = await rewriteAmbiguousDrugFollowUpQuery(
+                  content,
+                  priorDrugContext.lastDrugName,
+                );
+                if (rewritten) {
+                  effectiveContent = rewritten;
+                  console.log('[DRUG FOLLOW-UP REWRITE][LLM]', {
+                    originalQuery: content,
+                    rewrittenQuery: effectiveContent,
+                    lastDrugName: priorDrugContext.lastDrugName,
+                  });
+                }
               }
             }
           }
@@ -415,10 +450,25 @@ export const useChatStore = create<ChatStore>()(
                   chatPipeline.sendMessage(sessionId, effectiveContent, onEvent, userMessage);
 
           const explicitDrugName = extractExplicitDrugNameFromQuery(effectiveContent);
+          const explicitDrugContextName =
+            explicitDrugName && !looksLikeConditionTarget(explicitDrugName) ? explicitDrugName : null;
+          const reusedPriorDrugForConditionDose =
+            sessionMode === 'drug' &&
+            Boolean(priorDrugContext?.lastDrugName) &&
+            effectiveContent !== content &&
+            effectiveContent.toLowerCase().startsWith('dose of ');
           const shouldClearDrugContext =
             sessionMode === 'drug' &&
             DRUG_BROAD_QUERY_PATTERN.test(effectiveContent) &&
-            !explicitDrugName;
+            !explicitDrugContextName;
+          const nextDrugContextName =
+            sessionMode !== 'drug'
+              ? null
+              : shouldClearDrugContext
+                ? null
+                : reusedPriorDrugForConditionDose && priorDrugContext?.lastDrugName
+                  ? priorDrugContext.lastDrugName
+                  : explicitDrugContextName;
 
           set(state => {
             const newMessages = [...state.messages, userMessage];
@@ -445,11 +495,11 @@ export const useChatStore = create<ChatStore>()(
                     ? Object.fromEntries(
                         Object.entries(state.drugContextBySession).filter(([key]) => key !== sessionId),
                       )
-                    : explicitDrugName
+                    : nextDrugContextName
                       ? {
                           ...state.drugContextBySession,
                           [sessionId]: {
-                            lastDrugName: explicitDrugName,
+                            lastDrugName: nextDrugContextName,
                             updatedAt: Date.now(),
                           },
                         }
