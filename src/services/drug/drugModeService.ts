@@ -890,6 +890,9 @@ const renderDrugDoseBlock = (block: string): string => {
     .filter(Boolean);
 
   if (lines.length === 0) return '';
+  if (isDrugBrandBlock(block)) {
+    return lines.join('  \n');
+  }
   return lines.join('\n');
 };
 
