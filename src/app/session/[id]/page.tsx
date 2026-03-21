@@ -16,12 +16,7 @@ import {
   JsonUpload,
   DocumentLibrary,
 } from "../../../components/document";
-import {
-  Button,
-  DropdownMenu,
-  DropdownMenuItem,
-  Switch,
-} from "../../../components/ui";
+import { Button, DropdownMenu, DropdownMenuItem, Switch } from "../../../components/ui";
 import { Loading } from "../../../components/ui";
 import { EmptyState } from "../../../components/common";
 import { Header } from "../../../components/layout";
@@ -126,9 +121,10 @@ export default function SessionPage() {
     new Set(),
   );
   const messageInputRef = useRef<HTMLTextAreaElement>(null);
-  const sessionMode = sessionModeBySession[sessionId] || "chat";
+  const rawSessionMode = sessionModeBySession[sessionId] || "chat";
+  const sessionMode: SessionChatMode =
+    rawSessionMode === "ask-drug" ? "drug" : rawSessionMode;
   const isDrugModeEnabled = sessionMode === "drug";
-  const isAskDrugModeEnabled = sessionMode === "ask-drug";
   const isDatasetModeEnabled = sessionMode !== "chat";
   const drugSuggestionPhrases = drugSuggestionsBySession[sessionId] || [];
   const shouldShowPhrasePills =
@@ -137,31 +133,19 @@ export default function SessionPage() {
     ? drugSuggestionPhrases
     : undefined;
   const modeLabel =
-    sessionMode === "drug"
-      ? "Drug Mode"
-      : sessionMode === "ask-drug"
-        ? "Ask Drug Mode"
-        : "Chat Mode";
+    sessionMode === "drug" ? "Drugs" : "Chat Mode";
   const readyTitle =
-    sessionMode === "drug"
-      ? "Drug Mode is ready"
-      : sessionMode === "ask-drug"
-        ? "Ask Drug Mode is ready"
-        : "Start a conversation";
+    sessionMode === "drug" ? "Drugs mode is ready" : "Start a conversation";
   const readyDescription =
     sessionMode === "drug"
-      ? "Ask about drug doses, brand names, indications, cautions, or side effects."
-      : sessionMode === "ask-drug"
-        ? "Ask for indications, side-effects, renal dose, pregnancy advice, hepatic dose, or broad treatment questions."
-        : "Ask a question about your documents to get started";
+      ? "Ask about doses, brands, indications, side-effects, cautions, pregnancy, renal dose, and more."
+      : "Ask a question about your documents to get started";
   const messagePlaceholder =
     isPreparingDrugDataset
       ? "Preparing drug dataset..."
       : isDrugModeEnabled
-        ? "Ask about drugs, doses, brand names, side effects..."
-        : isAskDrugModeEnabled
-          ? "Ask about indications, side-effects, renal dose, pregnancy advice..."
-          : documentsLoading
+        ? "Ask about drugs, doses, brands, indications, side effects..."
+        : documentsLoading
             ? "Loading books..."
             : !hasDocuments
               ? "Please add a book FIRST to chat"
@@ -198,7 +182,7 @@ export default function SessionPage() {
     [messages, sessionId],
   );
   const canExtractBrands =
-    (sessionMode === "chat" || sessionMode === "ask-drug") &&
+    sessionMode === "chat" &&
     !isStreaming &&
     !isReadingSources &&
     Boolean(latestCompletedAssistantMessage);
@@ -443,11 +427,7 @@ export default function SessionPage() {
 
     setIsPreparingDrugDataset(true);
     try {
-      if (mode === "drug") {
-        await drugModeService.warmup();
-      } else {
-        await askDrugModeService.warmup();
-      }
+      await Promise.all([drugModeService.warmup(), askDrugModeService.warmup()]);
       console.log("[SESSION MODE]", "Dataset warmup completed", {
         sessionId,
         mode,
@@ -675,6 +655,10 @@ export default function SessionPage() {
     }
   };
 
+  const handleDrugModeToggle = async () => {
+    await handleSessionModeChange(sessionMode === "drug" ? "chat" : "drug");
+  };
+
   if (isInitialLoad && !currentSession) {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
@@ -724,37 +708,6 @@ export default function SessionPage() {
             className="w-full sm:w-auto min-w-[300px]"
             actions={
               <div className="flex items-center gap-3">
-                <DropdownMenu
-                  trigger={
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={isPreparingDrugDataset}
-                      className="rounded-full"
-                    >
-                      {isPreparingDrugDataset ? "Preparing..." : modeLabel}
-                    </Button>
-                  }
-                >
-                  <DropdownMenuItem
-                    onClick={() => handleSessionModeChange("chat")}
-                    disabled={isPreparingDrugDataset || sessionMode === "chat"}
-                  >
-                    Chat Mode
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={() => handleSessionModeChange("drug")}
-                    disabled={isPreparingDrugDataset || sessionMode === "drug"}
-                  >
-                    Drug Mode
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={() => handleSessionModeChange("ask-drug")}
-                    disabled={isPreparingDrugDataset || sessionMode === "ask-drug"}
-                  >
-                    Ask Drug Mode
-                  </DropdownMenuItem>
-                </DropdownMenu>
                 <DropdownMenu
                   trigger={
                     <Button
@@ -869,32 +822,47 @@ export default function SessionPage() {
                 {/* Phrase Pills */}
                 <div className="relative flex-shrink-0 mt-4 max-w-4xl mx-auto w-full">
                   {!isReadingSources && (
-                    <button
-                      type="button"
-                      onClick={handleSourcesPanelOpen}
-                      onMouseUp={(event) => {
-                        event.currentTarget.blur();
-                      }}
-                      onTouchEnd={(event) => {
-                        event.currentTarget.blur();
-                      }}
-                      className="
-                        sources-scroll-button
-                        absolute bottom-full right-2 mb-2 z-20
-                        inline-flex items-center justify-center
-                        px-3 py-2 sm:px-4 sm:py-2
-                        text-xs sm:text-sm font-medium rounded-full
-                        bg-blue-600 text-white shadow-sm
-                        hover:bg-blue-700 active:bg-blue-700
-                        transition-none
-                        focus:outline-none focus:ring-0 focus:ring-offset-0
-                      "
-                      style={{ WebkitTapHighlightColor: "transparent" }}
-                      aria-label="Manage active sources"
-                      title="Sources"
-                    >
-                      Sources {documentsLoading ? "..." : activeDocumentCount}
-                    </button>
+                    <div className="absolute bottom-full right-2 mb-2 z-20 flex items-center gap-2">
+                      <div className="inline-flex items-center gap-2 rounded-full border border-gray-300 bg-white px-3 py-2 text-xs font-medium text-gray-700 shadow-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 sm:text-sm">
+                        <span>{isPreparingDrugDataset ? "Preparing..." : "Drugs"}</span>
+                        <Switch
+                          checked={isDrugModeEnabled}
+                          onCheckedChange={() => {
+                            void handleDrugModeToggle();
+                          }}
+                          disabled={isPreparingDrugDataset}
+                          size="sm"
+                          aria-label="Toggle drugs mode"
+                        />
+                      </div>
+                      {!isDatasetModeEnabled && (
+                        <button
+                          type="button"
+                          onClick={handleSourcesPanelOpen}
+                          onMouseUp={(event) => {
+                            event.currentTarget.blur();
+                          }}
+                          onTouchEnd={(event) => {
+                            event.currentTarget.blur();
+                          }}
+                          className="
+                            sources-scroll-button
+                            inline-flex items-center justify-center
+                            px-3 py-2 sm:px-4 sm:py-2
+                            text-xs sm:text-sm font-medium rounded-full
+                            bg-blue-600 text-white shadow-sm
+                            hover:bg-blue-700 active:bg-blue-700
+                            transition-none
+                            focus:outline-none focus:ring-0 focus:ring-offset-0
+                          "
+                          style={{ WebkitTapHighlightColor: "transparent" }}
+                          aria-label="Manage active sources"
+                          title="Sources"
+                        >
+                          Sources {documentsLoading ? "..." : activeDocumentCount}
+                        </button>
+                      )}
+                    </div>
                   )}
                   {shouldShowPhrasePills && (
                     <PhrasePills
@@ -939,6 +907,18 @@ export default function SessionPage() {
                 <div className="relative flex-shrink-0 mt-4 max-w-4xl mx-auto w-full">
                   {!isReadingSources && (
                     <div className="absolute bottom-full right-2 mb-2 z-20 flex items-center gap-2">
+                      <div className="inline-flex items-center gap-2 rounded-full border border-gray-300 bg-white px-3 py-2 text-xs font-medium text-gray-700 shadow-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 sm:text-sm">
+                        <span>{isPreparingDrugDataset ? "Preparing..." : "Drugs"}</span>
+                        <Switch
+                          checked={isDrugModeEnabled}
+                          onCheckedChange={() => {
+                            void handleDrugModeToggle();
+                          }}
+                          disabled={isPreparingDrugDataset}
+                          size="sm"
+                          aria-label="Toggle drugs mode"
+                        />
+                      </div>
                       {!isDatasetModeEnabled && (
                         <button
                           type="button"
@@ -966,7 +946,7 @@ export default function SessionPage() {
                           Sources {documentsLoading ? "..." : activeDocumentCount}
                         </button>
                       )}
-                      {(sessionMode === "chat" || sessionMode === "ask-drug") && (
+                      {sessionMode === "chat" && (
                         <button
                           type="button"
                           onClick={handleExtractBrands}

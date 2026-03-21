@@ -14,6 +14,12 @@ import type { SessionChatMode } from '@/types';
 const PRELOAD_SESSION_TIMEOUT_MS = 4000;
 const PIPELINE_TIMEOUT_MS = 90000;
 
+const DRUG_MODE_DIRECT_ROUTE_PATTERN =
+  /\b(dose|doses|dosage|dosing|schedule|regimen|how much|how many|brand|brands|brand name|brand names|trade name|trade names|company|companies|price|prices|cost|costs)\b/i;
+
+const shouldUseDirectDrugModePath = (content: string): boolean =>
+  DRUG_MODE_DIRECT_ROUTE_PATTERN.test(content);
+
 // Helper function to get services (client-side only)
 const getMessageService = () => {
   if (typeof window !== 'undefined') {
@@ -207,9 +213,11 @@ export const useChatStore = create<ChatStore>()(
           const { userId: currentUserId } = useSessionStore.getState();
           const operationId = userIdLogger.logOperationStart('ChatStore', 'sendMessage', currentUserId);
           let isSettled = false;
-          const sessionMode = get().sessionModeBySession[sessionId] || 'chat';
-          const isDrugMode = sessionMode === 'drug';
-          const isAskDrugMode = sessionMode === 'ask-drug';
+          const rawSessionMode = get().sessionModeBySession[sessionId] || 'chat';
+          const sessionMode: SessionChatMode =
+            rawSessionMode === 'ask-drug' ? 'drug' : rawSessionMode;
+          const shouldRouteToDrugMode =
+            sessionMode === 'drug' && shouldUseDirectDrugModePath(content);
 
           const failPipeline = (message: string) => {
             if (isSettled) return;
@@ -235,13 +243,13 @@ export const useChatStore = create<ChatStore>()(
           };
           const pipelineRunner =
             sessionMode === 'drug'
-              ? (onEvent: Parameters<typeof drugModeService.sendMessage>[2]) =>
-                  drugModeService.sendMessage(sessionId, content, onEvent)
-              : sessionMode === 'ask-drug'
-                ? (onEvent: Parameters<typeof askDrugModeService.sendMessage>[2]) =>
+              ? shouldRouteToDrugMode
+                ? (onEvent: Parameters<typeof drugModeService.sendMessage>[2]) =>
+                    drugModeService.sendMessage(sessionId, content, onEvent)
+                : (onEvent: Parameters<typeof askDrugModeService.sendMessage>[2]) =>
                     askDrugModeService.sendMessage(sessionId, content, onEvent)
-                : (onEvent: Parameters<typeof chatPipeline.sendMessage>[2]) =>
-                    chatPipeline.sendMessage(sessionId, content, onEvent, userMessage);
+              : (onEvent: Parameters<typeof chatPipeline.sendMessage>[2]) =>
+                  chatPipeline.sendMessage(sessionId, content, onEvent, userMessage);
 
           set(state => {
             const newMessages = [...state.messages, userMessage];
@@ -252,7 +260,11 @@ export const useChatStore = create<ChatStore>()(
               isReadingSources: true, // Show "Reading sources" instead
               progressPercentage: 0,
               currentProgressStep:
-                sessionMode === 'chat' ? 'Query Rewriting' : 'Drug Dataset',
+                sessionMode === 'chat'
+                  ? 'Query Rewriting'
+                  : shouldRouteToDrugMode
+                    ? 'Drug Dataset'
+                    : 'Ask Drug Query Parsing',
               pipelineStartedAt: Date.now(),
               drugSuggestionsBySession: {
                 ...state.drugSuggestionsBySession,
@@ -489,7 +501,6 @@ export const useChatStore = create<ChatStore>()(
           const { userId: currentUserId } = useSessionStore.getState();
           const operationId = userIdLogger.logOperationStart('ChatStore', 'extractBrandsFromLatestAnswer', currentUserId);
           let isSettled = false;
-          const sessionMode = get().sessionModeBySession[sessionId] || 'chat';
 
           const failPipeline = (message: string) => {
             if (isSettled) return;
@@ -506,8 +517,12 @@ export const useChatStore = create<ChatStore>()(
             });
           };
 
-          if (sessionMode !== 'chat' && sessionMode !== 'ask-drug') {
-            failPipeline('Brand extraction is only available in Chat Mode and Ask Drug Mode.');
+          const rawSessionMode = get().sessionModeBySession[sessionId] || 'chat';
+          const sessionMode: SessionChatMode =
+            rawSessionMode === 'ask-drug' ? 'drug' : rawSessionMode;
+
+          if (sessionMode !== 'chat') {
+            failPipeline('Brand extraction is only available in Chat Mode.');
             return;
           }
 
