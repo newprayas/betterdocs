@@ -256,6 +256,19 @@ const ASK_DRUG_INDICATIONS_ONLY_FORMAT_PROMPT = `Additional formatting mode:
   - then the full detailed route-and-dose breakdown
 - If the prompt says "Requested response format: standard", use the normal detailed formatting rules already defined above.`;
 
+const ASK_DRUG_ALL_DETAILS_FORMAT_PROMPT = `Additional formatting mode:
+- If the prompt says "Requested response format: all_details_supplemental_sections", format ONLY the provided supplemental monograph sections.
+- Do not output the drug title.
+- Do not output an "Indications" section.
+- Do not output a "Contra-indications" section.
+- Do not mention missing sections.
+- For each provided section, use a markdown heading in the form "### Section name".
+- Under each heading, present the content in clear bullet points.
+- For dense semi-structured text such as side-effects, break the content into readable bullets and short sub-bullets where helpful.
+- Preserve important qualifiers such as frequency, route, overdose notes, warnings, and administration details.
+- Never invent facts or add content not present in the dataset context.
+- Keep the answer focused on formatting the supplied text cleanly and completely.`;
+
 const ASK_DRUG_BROAD_INDICATION_SYSTEM_PROMPT = `You answer broad drug-indication questions using ONLY the provided dataset context.
 
 The context for this task contains only:
@@ -1558,15 +1571,69 @@ Rules:
     };
   }
 
-  private buildNamedAllDetailsAnswer(
+  private async formatNamedAllDetailsSupplementalSections(
+    entry: AskDrugEntry,
+    content: string,
+  ): Promise<string> {
+    const supplementalSections = ASK_DRUG_ALL_DETAILS_SECTIONS.filter(
+      (section) => section !== 'indications_and_dose' && section !== 'contra_indications',
+    );
+    const promptContext = this.buildNamedContext(entry, supplementalSections);
+    if (!hasPromptEntryContent(promptContext)) {
+      return '';
+    }
+
+    const prompt = `User question:
+${content}
+
+Resolved drug:
+${entry.title}
+
+Requested sections:
+${supplementalSections.map(sectionLabel).join(', ')}
+
+Requested response format:
+all_details_supplemental_sections
+
+Dataset context:
+${JSON.stringify(promptContext, null, 2)}`;
+
+    const systemPrompt = `${ASK_DRUG_SYSTEM_PROMPT}\n\n${ASK_DRUG_ALL_DETAILS_FORMAT_PROMPT}`;
+
+    logFullPromptText('[ASK DRUG ANSWER PROMPT][SYSTEM]', systemPrompt);
+    logFullPromptText('[ASK DRUG ANSWER PROMPT][USER]', prompt);
+
+    let fullResponse = '';
+    await groqService.generateStreamingResponse(
+      prompt,
+      systemPrompt,
+      ASK_DRUG_ANSWER_MODEL,
+      {
+        temperature: 0.1,
+        maxTokens: 1600,
+        maxFailoverRetries: 2,
+        retryBackoffMs: 300,
+        onChunk: (chunk) => {
+          fullResponse += chunk;
+        },
+      },
+    );
+
+    return fullResponse.trim();
+  }
+
+  private async buildNamedAllDetailsAnswer(
     entry: AskDrugEntry,
     displayTitle: string,
+    content: string,
     fallbackGenericName?: string | null,
     originalDrugName?: string,
-  ): string {
-    const sections = ASK_DRUG_ALL_DETAILS_SECTIONS
+  ): Promise<string> {
+    const deterministicSections = ASK_DRUG_ALL_DETAILS_SECTIONS
+      .filter((section) => section === 'indications_and_dose' || section === 'contra_indications')
       .map((section) => this.formatAllDetailsSection(entry, section))
       .filter((section): section is { title: string; body: string } => Boolean(section));
+    const supplementalSections = await this.formatNamedAllDetailsSupplementalSections(entry, content);
 
     const lines = [`## ${displayTitle}`];
 
@@ -1578,13 +1645,17 @@ Rules:
       );
     }
 
-    if (sections.length === 0) {
+    if (deterministicSections.length === 0 && !supplementalSections) {
       lines.push('', 'No detailed drug information was found in this dataset entry.');
       return lines.join('\n').trim();
     }
 
-    for (const section of sections) {
+    for (const section of deterministicSections) {
       lines.push('', `### ${section.title}`, '', section.body);
+    }
+
+    if (supplementalSections) {
+      lines.push('', supplementalSections);
     }
 
     return lines.join('\n').trim();
@@ -2202,9 +2273,12 @@ Rules:
         }
 
         if (parsed.sections.includes('all_details')) {
-          const deterministicAllDetails = this.buildNamedAllDetailsAnswer(
+          onStreamEvent?.({ type: 'status', message: 'Ask Drug Answer Generation' });
+
+          const deterministicAllDetails = await this.buildNamedAllDetailsAnswer(
             match!,
             fallbackGenericName ? `${match!.title} (${parsed.drug_name})` : match!.title,
+            content,
             fallbackGenericName,
             parsed.drug_name,
           );
