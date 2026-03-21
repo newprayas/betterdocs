@@ -1516,12 +1516,16 @@ Rules:
     options?: {
       brandPreparations?: ParsedProprietaryPreparation[];
     },
-  ): { match: AskDrugEntry | null; matchedDrugName: string | null } {
+  ): { match: AskDrugEntry | null; matchedDrugName: string | null; matchedScore: number } {
     const queries = uniqueStrings(
       candidateDrugNames
         .map((value) => canonicalizeTitleCase(compactField(value) || ''))
         .filter(Boolean),
     );
+
+    let bestMatch: AskDrugEntry | null = null;
+    let bestMatchedDrugName: string | null = null;
+    let bestScore = Number.NEGATIVE_INFINITY;
 
     for (const query of queries) {
       const match = this.resolveNamedDrug(
@@ -1533,16 +1537,19 @@ Rules:
         options,
       );
       if (match) {
-        return {
-          match,
-          matchedDrugName: query,
-        };
+        const score = this.scoreNamedDrugCandidate(query, match, options?.brandPreparations);
+        if (score > bestScore) {
+          bestMatch = match;
+          bestMatchedDrugName = query;
+          bestScore = score;
+        }
       }
     }
 
     return {
-      match: null,
-      matchedDrugName: null,
+      match: bestMatch,
+      matchedDrugName: bestMatchedDrugName,
+      matchedScore: bestScore,
     };
   }
 
