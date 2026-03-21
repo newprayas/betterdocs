@@ -82,7 +82,6 @@ export default function SessionPage() {
     messages,
     isLoading: messagesLoading,
     sendMessage,
-    extractBrandsFromLatestAnswer,
     clearHistory,
     isStreaming,
     isReadingSources,
@@ -169,24 +168,6 @@ export default function SessionPage() {
     [sortedDocuments],
   );
   const activeDocumentCount = activeDocuments.length;
-  const latestCompletedAssistantMessage = useMemo(
-    () =>
-      [...messages]
-        .reverse()
-        .find(
-          (message) =>
-            message.sessionId === sessionId &&
-            String(message.role).toLowerCase() === "assistant" &&
-            Boolean(message.content?.trim()),
-        ) || null,
-    [messages, sessionId],
-  );
-  const canExtractBrands =
-    sessionMode === "chat" &&
-    !isStreaming &&
-    !isReadingSources &&
-    Boolean(latestCompletedAssistantMessage);
-
   const clearActiveElementFocus = () => {
     if (typeof document === "undefined") return;
     const blurActive = () => {
@@ -645,16 +626,6 @@ export default function SessionPage() {
     }, 250);
   };
 
-  const handleExtractBrands = async () => {
-    if (!sessionId || !canExtractBrands) return;
-
-    try {
-      await extractBrandsFromLatestAnswer(sessionId);
-    } catch (error) {
-      console.error("Failed to extract brands from latest answer:", error);
-    }
-  };
-
   const handleDrugModeToggle = async () => {
     await handleSessionModeChange(sessionMode === "drug" ? "chat" : "drug");
   };
@@ -944,48 +915,6 @@ export default function SessionPage() {
                           title="Sources"
                         >
                           Sources {documentsLoading ? "..." : activeDocumentCount}
-                        </button>
-                      )}
-                      {sessionMode === "chat" && (
-                        <button
-                          type="button"
-                          onClick={handleExtractBrands}
-                          onMouseUp={(event) => {
-                            event.currentTarget.blur();
-                          }}
-                          onTouchEnd={(event) => {
-                            event.currentTarget.blur();
-                          }}
-                          disabled={!canExtractBrands}
-                          className="
-                            answer-scroll-button
-                            inline-flex items-center justify-center
-                            px-3 py-2 sm:px-4 sm:py-2
-                            text-xs sm:text-sm font-medium rounded-full
-                            bg-emerald-600 text-white border border-white
-                            hover:bg-emerald-700 active:bg-emerald-700
-                            disabled:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-70
-                            transition-none
-                            focus:outline-none focus:ring-0 focus:ring-offset-0
-                          "
-                          style={{ WebkitTapHighlightColor: "transparent" }}
-                          aria-label="Extract brand names from latest answer"
-                          title="Brands"
-                        >
-                          <svg
-                            className="w-3 h-3 mr-1.5"
-                            fill="none"
-                            viewBox="0 0 24 24"
-                            stroke="currentColor"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
-                            />
-                          </svg>
-                          Brands
                         </button>
                       )}
                       <button
