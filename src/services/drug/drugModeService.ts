@@ -3552,6 +3552,10 @@ Rules:
       .map((candidate) => candidate.name);
   }
 
+  async buildSpellingSuggestions(query: string): Promise<string[]> {
+    return this.buildFallbackSuggestions(query);
+  }
+
   private buildNoMatchMessage(
     content: string,
     parsed: DrugQueryParseResult,

@@ -1626,6 +1626,21 @@ Rules:
       .map((candidate) => candidate.title);
   }
 
+  private async buildFallbackSuggestions(
+    catalog: AskDrugCatalog,
+    query: string,
+  ): Promise<string[]> {
+    const seed = query.trim();
+    if (!seed) return [];
+
+    const [brandSuggestions, catalogSuggestions] = await Promise.all([
+      drugModeService.buildSpellingSuggestions(seed),
+      Promise.resolve(this.buildSuggestions(catalog, seed)),
+    ]);
+
+    return uniqueStrings([...brandSuggestions, ...catalogSuggestions]).slice(0, ASK_DRUG_SUGGESTION_LIMIT);
+  }
+
   private getSectionText(entry: AskDrugEntry, section: AskDrugSectionKey): string | null {
     const value = entry[section];
     return typeof value === 'string' && value.trim() ? value.trim() : null;
@@ -2345,7 +2360,7 @@ ${JSON.stringify(promptContext, null, 2)}`;
         }
 
         if (!match && !fallbackEntry) {
-          const suggestions = this.buildSuggestions(catalog, parsed.drug_name);
+          const suggestions = await this.buildFallbackSuggestions(catalog, parsed.drug_name);
           const noMatchMessage = this.buildNoMatchMessage(parsed, suggestions);
           if (suggestions.length > 0) {
             onStreamEvent?.({ type: 'suggestions', suggestions });
@@ -2523,8 +2538,13 @@ ${JSON.stringify(promptContext, null, 2)}`;
         : this.findBroadMatches(catalog, broadSections, parsed.indication_terms);
 
       if (matches.length === 0) {
+        const suggestionSeed = parsed.drug_name.trim() || parsed.indication_terms.join(' ') || content;
+        const suggestions = await this.buildFallbackSuggestions(catalog, suggestionSeed);
         const noBroadMatchMessage =
           'I could not find matching drugs in this dataset for that condition or section request.';
+        if (suggestions.length > 0) {
+          onStreamEvent?.({ type: 'suggestions', suggestions });
+        }
         await this.saveAssistantMessage(sessionId, noBroadMatchMessage);
         onStreamEvent?.({ type: 'done', content: noBroadMatchMessage });
         return;
