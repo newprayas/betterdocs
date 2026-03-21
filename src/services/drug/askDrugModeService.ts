@@ -330,6 +330,45 @@ const canonicalizeTitleCase = (value: string): string =>
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
     .join(' ');
 
+const ASK_DRUG_NAME_PREFIX_PATTERNS = [
+  /^(?:what(?:'s| is)?\s+)?(?:the\s+)?(?:details|detail|full details|full detail|full information|complete details|everything)\s+(?:of|about)\s+/i,
+  /^(?:what(?:'s| is)?\s+)?(?:the\s+)?(?:indications?|side[\s-]?effects?|contra[\s-]?indications?|renal(?:\s+dose|\s+impairment)?|hepatic(?:\s+dose|\s+impairment)?|pregnancy|breast[\s-]?feeding|safety(?:\s+information)?)\s+(?:of|for)\s+/i,
+  /^(?:tell\s+me\s+about)\s+/i,
+];
+
+const sanitizeParsedDrugName = (value: string): string => {
+  let cleaned = compactField(value) || '';
+  if (!cleaned) return '';
+
+  cleaned = cleaned.replace(/^['"`]+|['"`]+$/g, '').trim();
+  for (const pattern of ASK_DRUG_NAME_PREFIX_PATTERNS) {
+    cleaned = cleaned.replace(pattern, '');
+  }
+  cleaned = cleaned.replace(/[?!.,;:]+$/g, '').trim();
+
+  return cleaned;
+};
+
+const inferDrugNameFromRawQuery = (content: string): string => {
+  const compact = compactField(content) || '';
+  if (!compact) return '';
+
+  const patterns = [
+    /(?:^|\b)(?:details|detail|full details|full detail|full information|complete details|everything)\s+(?:of|about)\s+([A-Za-z][A-Za-z0-9\s+'().\-]{1,80})$/i,
+    /(?:^|\b)tell\s+me\s+about\s+([A-Za-z][A-Za-z0-9\s+'().\-]{1,80})$/i,
+    /(?:^|\b)(?:indications?|side[\s-]?effects?|contra[\s-]?indications?|renal(?:\s+dose|\s+impairment)?|hepatic(?:\s+dose|\s+impairment)?|pregnancy|breast[\s-]?feeding|safety(?:\s+information)?)\s+(?:of|for)\s+([A-Za-z][A-Za-z0-9\s+'().\-]{1,80})$/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = compact.match(pattern)?.[1];
+    if (match) {
+      return sanitizeParsedDrugName(match);
+    }
+  }
+
+  return '';
+};
+
 const COMMON_DRUG_SALT_WORDS = new Set([
   'sulphate',
   'sulfate',
@@ -1061,6 +1100,24 @@ const sectionLabel = (section: AskDrugSectionKey): string => {
   }
 };
 
+const formatSimpleSentence = (value: string): string =>
+  value
+    .replace(/\s+\./g, '.')
+    .replace(/\s+/g, ' ')
+    .replace(/^[,;:.()\[\]\s-]+/, '')
+    .replace(/[,;:.()\[\]\s-]+$/, '')
+    .trim()
+    .replace(/^([a-z])/, (_, firstLetter: string) => firstLetter.toUpperCase());
+
+const splitSimpleSentenceItems = (value: string): string[] =>
+  value
+    .split(/\s*(?:\.(?=\s|$)|;(?=\s|$))\s*/)
+    .map(formatSimpleSentence)
+    .filter(Boolean);
+
+const normalizeAllDetailsSectionBody = (value: string): string =>
+  compactField(value.replace(/\s*▶\s*/g, '\n- ').replace(/\s*→\s*/g, '\n- ')) || value;
+
 export class AskDrugModeService {
   private indexedDBServices = getIndexedDBServices();
 
@@ -1222,13 +1279,16 @@ Rules:
       ),
     );
 
+    const parserDrugName = sanitizeParsedDrugName(String(parsed.drug_name || '').trim());
+    const inferredDrugName = inferDrugNameFromRawQuery(content);
+    const resolvedDrugName = parserDrugName || inferredDrugName;
     const normalizedContent = normalizeText(content);
     const wantsAllDetails =
       /(?:^|\b)(details|detail|everything|full details|full detail|full information|complete details)\b/.test(normalizedContent) &&
-      Boolean(String(parsed.drug_name || '').trim());
+      Boolean(resolvedDrugName);
 
     return {
-      drug_name: canonicalizeTitleCase(String(parsed.drug_name || '').trim()),
+      drug_name: canonicalizeTitleCase(resolvedDrugName),
       sections:
         wantsAllDetails
           ? ['all_details']
@@ -1451,6 +1511,83 @@ Rules:
         ? sanitizeStructuredIndicationsAndDoseForPrompt(structuredIndicationsAndDose)
         : undefined,
     };
+  }
+
+  private extractIndicationsOnly(entry: AskDrugEntry): string[] {
+    if (hasStructuredIndicationsAndDose(entry.indications_and_dose_structured)) {
+      return uniqueStrings(entry.indications_and_dose_structured.indications.map((item) => item.indication));
+    }
+
+    const raw = this.getSectionText(entry, 'indications_and_dose');
+    return raw ? this.extractIndicationCandidatesFromSection(raw) : [];
+  }
+
+  private extractContraindicationBullets(entry: AskDrugEntry): string[] {
+    const raw = this.getSectionText(entry, 'contra_indications');
+    return raw ? splitSimpleSentenceItems(raw) : [];
+  }
+
+  private formatAllDetailsSection(
+    entry: AskDrugEntry,
+    section: AskDrugSectionKey,
+  ): { title: string; body: string } | null {
+    if (section === 'indications_and_dose') {
+      const indications = this.extractIndicationsOnly(entry);
+      if (indications.length === 0) return null;
+      return {
+        title: '✅ Indications',
+        body: indications.map((indication) => `- ${indication}`).join('\n'),
+      };
+    }
+
+    if (section === 'contra_indications') {
+      const items = this.extractContraindicationBullets(entry);
+      if (items.length === 0) return null;
+      return {
+        title: '❌ Contra-indications',
+        body: items.map((item) => `- ${item}`).join('\n'),
+      };
+    }
+
+    const text = this.getSectionText(entry, section);
+    if (!text) return null;
+
+    return {
+      title: sectionLabel(section),
+      body: normalizeAllDetailsSectionBody(text),
+    };
+  }
+
+  private buildNamedAllDetailsAnswer(
+    entry: AskDrugEntry,
+    displayTitle: string,
+    fallbackGenericName?: string | null,
+    originalDrugName?: string,
+  ): string {
+    const sections = ASK_DRUG_ALL_DETAILS_SECTIONS
+      .map((section) => this.formatAllDetailsSection(entry, section))
+      .filter((section): section is { title: string; body: string } => Boolean(section));
+
+    const lines = [`## ${displayTitle}`];
+
+    if (fallbackGenericName && originalDrugName) {
+      lines.push(
+        '',
+        `Resolved via brand-to-generic fallback:`,
+        `${originalDrugName} -> ${fallbackGenericName}`,
+      );
+    }
+
+    if (sections.length === 0) {
+      lines.push('', 'No detailed drug information was found in this dataset entry.');
+      return lines.join('\n').trim();
+    }
+
+    for (const section of sections) {
+      lines.push('', `### ${section.title}`, '', section.body);
+    }
+
+    return lines.join('\n').trim();
   }
 
   private buildDrugModeFallbackDisplayTitle(
@@ -2061,6 +2198,18 @@ Rules:
           const noDataMessage = `I found ${match!.title}, but the requested section is not present in this dataset entry.`;
           await this.saveAssistantMessage(sessionId, noDataMessage);
           onStreamEvent?.({ type: 'done', content: noDataMessage });
+          return;
+        }
+
+        if (parsed.sections.includes('all_details')) {
+          const deterministicAllDetails = this.buildNamedAllDetailsAnswer(
+            match!,
+            fallbackGenericName ? `${match!.title} (${parsed.drug_name})` : match!.title,
+            fallbackGenericName,
+            parsed.drug_name,
+          );
+          await this.saveAssistantMessage(sessionId, deterministicAllDetails);
+          onStreamEvent?.({ type: 'done', content: deterministicAllDetails });
           return;
         }
 
