@@ -890,10 +890,6 @@ const renderDrugDoseBlock = (block: string): string => {
     .filter(Boolean);
 
   if (lines.length === 0) return '';
-  if (isDrugBrandBlock(block)) {
-    return lines.join('  \n');
-  }
-
   return lines.join('\n');
 };
 
@@ -989,6 +985,141 @@ const formatDrugBrandsOutput = (raw: string): string =>
       return line;
     })
     .join('\n');
+
+const normalizeBrandPriceUnitDisplay = (value?: string): string =>
+  (compactField(value) || '')
+    .replace(/(\d)([A-Za-z])/g, '$1 $2')
+    .replace(/([A-Za-z])(\d)/g, '$1 $2')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const cleanBrandStrengthDisplay = (value?: string): string =>
+  (compactField(value) || '').replace(/\s*,\s*$/, '').trim();
+
+const shouldOmitDetailFormulationLabel = (value?: string): boolean => {
+  const normalized = (compactField(value) || '')
+    .replace(/\.+$/g, '')
+    .trim()
+    .toLowerCase();
+
+  return [
+    'tab',
+    'tablet',
+    'cap',
+    'capsule',
+    'syrup',
+    'suspn',
+    'suspension',
+    'supp',
+    'suppo',
+    'suppository',
+    'infusion',
+    'inj',
+    'injection',
+  ].includes(normalized);
+};
+
+const buildDeterministicBrandDetailLabel = (brand: ParsedProprietaryPreparation, detail: ParsedBrandDetail): string => {
+  const detailFormulation = shouldOmitDetailFormulationLabel(detail.formulation_raw)
+    ? ''
+    : compactField(detail.formulation_raw);
+  const strength = cleanBrandStrengthDisplay(detail.strength);
+
+  return compactField(
+    [brand.display_name, detailFormulation, strength].filter(Boolean).join(' '),
+  ) || brand.display_name;
+};
+
+const buildDeterministicBrandPriceLine = (detail: ParsedBrandDetail): string => {
+  const price = compactField(detail.price) || 'Not specified';
+  const unit = normalizeBrandPriceUnitDisplay(detail.price_unit);
+  return unit ? `Price: Tk ${price} / ${unit}` : `Price: Tk ${price}`;
+};
+
+const buildDeterministicBrandsBody = (
+  promptContext: Record<string, unknown>,
+): string => {
+  const rawBrands = Array.isArray(promptContext.filtered_proprietary_preparations)
+    ? promptContext.filtered_proprietary_preparations
+    : [];
+
+  const brands = rawBrands
+    .map((value): ParsedProprietaryPreparation | null => {
+      if (!value || typeof value !== 'object') return null;
+      const record = value as Record<string, unknown>;
+      const parsedDetails = Array.isArray(record.parsed_details)
+        ? record.parsed_details
+            .map((detailValue): ParsedBrandDetail | null => {
+              if (!detailValue || typeof detailValue !== 'object') return null;
+              const detailRecord = detailValue as Record<string, unknown>;
+              const formulation = compactField(String(detailRecord.formulation || ''));
+              const formulationRaw = compactField(String(detailRecord.formulation_raw || ''));
+              const strength = compactField(String(detailRecord.strength || ''));
+              if (!formulation || !formulationRaw || !strength) return null;
+
+              return {
+                raw_text: String(detailRecord.raw_text || ''),
+                formulation_raw: formulationRaw,
+                formulation,
+                release_type:
+                  detailRecord.release_type === 'SR' || detailRecord.release_type === 'XR'
+                    ? detailRecord.release_type
+                    : undefined,
+                strength,
+                price: String(detailRecord.price || ''),
+                price_unit:
+                  typeof detailRecord.price_unit === 'string'
+                    ? compactField(detailRecord.price_unit)
+                    : undefined,
+                is_modified_release: Boolean(detailRecord.is_modified_release),
+                is_paediatric: Boolean(detailRecord.is_paediatric),
+              };
+            })
+            .filter((detail): detail is ParsedBrandDetail => Boolean(detail))
+        : [];
+
+      if (parsedDetails.length === 0) return null;
+
+      return {
+        brand_name: String(record.brand_name || ''),
+        company_name: String(record.company_name || ''),
+        display_name: String(record.display_name || ''),
+        details: String(record.details || ''),
+        parsed_details: parsedDetails,
+        is_combination: Boolean(record.is_combination),
+      } satisfies ParsedProprietaryPreparation;
+    })
+    .filter((brand): brand is ParsedProprietaryPreparation => Boolean(brand));
+
+  if (brands.length === 0) {
+    return '';
+  }
+
+  const grouped = new Map<string, string[]>();
+  const headingOrder: string[] = [];
+
+  for (const brand of brands) {
+    for (const detail of brand.parsed_details || []) {
+      const heading = compactField(detail.formulation) || 'OTHER';
+      const lines = [
+        `🎉 ${buildDeterministicBrandDetailLabel(brand, detail)}`,
+        buildDeterministicBrandPriceLine(detail),
+      ];
+
+      if (!grouped.has(heading)) {
+        grouped.set(heading, []);
+        headingOrder.push(heading);
+      }
+
+      grouped.get(heading)?.push(lines.join('  \n'));
+    }
+  }
+
+  return headingOrder
+    .map((heading) => [`✅ ${heading}`, ...(grouped.get(heading) || [])].join('\n\n'))
+    .join('\n\n')
+    .trim();
+};
 
 type DrugScheduleUnitMeta = {
   kind: 'discrete' | 'volume_ml';
@@ -3415,6 +3546,7 @@ Matched drug entry or entries:
 ${stringifyEntryForPrompt(promptContextForModel)}`;
 
       let fullResponse = '';
+      let brandResponseIsDeterministic = false;
 
       if (intent.answerKind === 'dose_with_brands') {
         const deterministicBody = buildDeterministicDoseWithBrandsBody(
@@ -3535,23 +3667,10 @@ ${stringifyEntryForPrompt(promptContextForModel)}`;
           type: 'status',
           message: 'Formatting brand list...',
         });
+        fullResponse = buildDeterministicBrandsBody(promptContext as Record<string, unknown>);
+        brandResponseIsDeterministic = true;
 
-        const systemPrompt = DRUG_BRANDS_SYSTEM_PROMPT;
-        logFullPromptText('[DRUG BRANDS PROMPT][SYSTEM]', systemPrompt);
-        logFullPromptText('[DRUG BRANDS PROMPT][USER]', contextPrompt);
-
-        const brandOnlyResponse = await groqService.generateResponseWithGroq(
-          contextPrompt,
-          systemPrompt,
-          DRUG_ANSWER_MODEL,
-          {
-            temperature: 0.1,
-            maxTokens: 1800,
-          },
-        );
-        fullResponse = brandOnlyResponse;
-
-        console.log('[DRUG BRANDS]', 'Brand-only answer complete', {
+        console.log('[DRUG BRANDS]', 'Deterministic brand-only answer complete', {
           responseLength: fullResponse.length,
         });
       } else {
@@ -3588,7 +3707,9 @@ ${stringifyEntryForPrompt(promptContextForModel)}`;
       const formattedResponse = intent.answerKind === 'sectional'
         ? fullResponse
         : intent.answerKind === 'brands'
-          ? formatDrugBrandsOutput(fullResponse)
+          ? brandResponseIsDeterministic
+            ? fullResponse
+            : formatDrugBrandsOutput(fullResponse)
           : fullResponse;
       const finalResponse = normalizeContraindicationCapitalization(formattedResponse);
 
