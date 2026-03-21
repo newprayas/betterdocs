@@ -7,6 +7,7 @@ import { chatPipeline } from '../services/rag/chatPipeline';
 import { drugModeService } from '../services/drug';
 import { askDrugModeService } from '../services/drug/askDrugModeService';
 import { brandExtractionService } from '../services/drug';
+import { groqService } from '../services/groq/groqService';
 import { useSessionStore } from './sessionStore';
 import { userIdLogger } from '../utils/userIdDebugLogger';
 import type { SessionChatMode } from '@/types';
@@ -19,6 +20,139 @@ const DRUG_MODE_DIRECT_ROUTE_PATTERN =
 
 const shouldUseDirectDrugModePath = (content: string): boolean =>
   DRUG_MODE_DIRECT_ROUTE_PATTERN.test(content);
+
+const DRUG_FOLLOW_UP_INTENT_PATTERNS: Array<{ pattern: RegExp; normalizedIntent: string }> = [
+  { pattern: /\b(indications?|uses?)\b/i, normalizedIntent: 'indications' },
+  { pattern: /\b(side[\s-]?effects?|adverse effects?)\b/i, normalizedIntent: 'side effects' },
+  { pattern: /\b(contra[\s-]?indications?)\b/i, normalizedIntent: 'contraindications' },
+  { pattern: /\b(pregnancy)\b/i, normalizedIntent: 'pregnancy' },
+  { pattern: /\b(breast[\s-]?feeding)\b/i, normalizedIntent: 'breast feeding' },
+  { pattern: /\b(renal(?:\s+dose|\s+impairment)?)\b/i, normalizedIntent: 'renal impairment' },
+  { pattern: /\b(hepatic(?:\s+dose|\s+impairment)?)\b/i, normalizedIntent: 'hepatic impairment' },
+  { pattern: /\b(safety(?:\s+information)?)\b/i, normalizedIntent: 'safety information' },
+  { pattern: /\b(details?|all about|everything|tell me about|full details?)\b/i, normalizedIntent: 'details' },
+  { pattern: /\b(dose|doses|dosage|dosing|schedule|regimen|how much|how many)\b/i, normalizedIntent: 'dose' },
+  { pattern: /\b(brand|brands|brand names?|trade names?|company|companies|price|prices|cost|costs)\b/i, normalizedIntent: 'brands' },
+];
+
+const DRUG_BROAD_QUERY_PATTERN =
+  /\b(?:drugs?|medicines?)\s+(?:for|used for)\b|\bwhich\s+(?:drug|drugs|medicine|medicines)\b/i;
+
+const DRUG_CONTEXTUAL_PRONOUN_PATTERN =
+  /\b(it|this|that|same drug|same medicine|same one|this one|that one)\b/i;
+
+const DRUG_CONTEXT_EXPLICIT_PATTERNS = [
+  /^(?:what(?:'s| is)?\s+)?(?:the\s+)?(?:dose|dosage|dosing|schedule|regimen|brands?|brand names?|trade names?|companies|prices?|costs?|indications?|uses?|side[\s-]?effects?|contra[\s-]?indications?|pregnancy|breast[\s-]?feeding|renal(?:\s+dose|\s+impairment)?|hepatic(?:\s+dose|\s+impairment)?|safety(?:\s+information)?|details?|full details?|all about|everything)\s+(?:of|for|about)\s+(.+)$/i,
+  /^(?:tell\s+me\s+about)\s+(.+)$/i,
+];
+
+const AMBIGUOUS_DRUG_FOLLOW_UP_MODEL = 'llama-3.3-70b-versatile';
+
+const sanitizeDrugContextName = (value: string): string =>
+  value
+    .trim()
+    .replace(/^['"`]+|['"`]+$/g, '')
+    .replace(/[?!.,;:]+$/g, '')
+    .trim();
+
+const extractExplicitDrugNameFromQuery = (content: string): string | null => {
+  const compact = content.trim();
+  if (!compact || DRUG_BROAD_QUERY_PATTERN.test(compact)) return null;
+
+  for (const pattern of DRUG_CONTEXT_EXPLICIT_PATTERNS) {
+    const match = compact.match(pattern)?.[1];
+    if (match) {
+      const cleaned = sanitizeDrugContextName(match);
+      if (cleaned) return cleaned;
+    }
+  }
+
+  return null;
+};
+
+const inferDrugFollowUpIntent = (content: string): string | null => {
+  for (const { pattern, normalizedIntent } of DRUG_FOLLOW_UP_INTENT_PATTERNS) {
+    if (pattern.test(content)) return normalizedIntent;
+  }
+  return null;
+};
+
+const isLikelyDrugFollowUpQuery = (content: string): boolean => {
+  const compact = content.trim();
+  if (!compact || DRUG_BROAD_QUERY_PATTERN.test(compact)) return false;
+  if (extractExplicitDrugNameFromQuery(compact)) return false;
+
+  const hasIntent = Boolean(inferDrugFollowUpIntent(compact));
+  const hasPronoun = DRUG_CONTEXTUAL_PRONOUN_PATTERN.test(compact);
+  const shortQuery = compact.split(/\s+/).length <= 8;
+  return (hasIntent && shortQuery) || hasPronoun;
+};
+
+const rewriteObviousDrugFollowUpQuery = (
+  content: string,
+  lastDrugName: string,
+): string | null => {
+  const compact = content.trim();
+  if (!compact || DRUG_BROAD_QUERY_PATTERN.test(compact) || extractExplicitDrugNameFromQuery(compact)) {
+    return null;
+  }
+
+  if (DRUG_CONTEXTUAL_PRONOUN_PATTERN.test(compact)) {
+    return compact.replace(DRUG_CONTEXTUAL_PRONOUN_PATTERN, lastDrugName);
+  }
+
+  const intent = inferDrugFollowUpIntent(compact);
+  if (!intent) return null;
+
+  if (/^(?:and\s+|what about\s+)+/i.test(compact) || compact.split(/\s+/).length <= 5) {
+    if (intent === 'details') return `details of ${lastDrugName}`;
+    if (intent === 'brands') return `brands of ${lastDrugName}`;
+    if (intent === 'dose') return `dose of ${lastDrugName}`;
+    return `${intent} of ${lastDrugName}`;
+  }
+
+  return null;
+};
+
+const rewriteAmbiguousDrugFollowUpQuery = async (
+  content: string,
+  lastDrugName: string,
+): Promise<string | null> => {
+  const systemPrompt = `You rewrite short follow-up drug questions only when they clearly refer to the previously discussed drug.
+
+Rules:
+- Return valid JSON only.
+- Output schema: {"action":"rewrite"|"keep","rewritten_query":string}
+- Rewrite only if the user is clearly asking a follow-up about the previous drug.
+- If the user starts a new condition search or unrelated request, keep the original query.
+- Keep the rewritten query short and natural.
+- Do not invent drug names or conditions.
+- If unsure, use "keep".`;
+
+  const prompt = `Previous drug:
+${lastDrugName}
+
+New user query:
+${content}`;
+
+  try {
+    const raw = await groqService.generateResponseWithGroq(
+      prompt,
+      systemPrompt,
+      AMBIGUOUS_DRUG_FOLLOW_UP_MODEL,
+      { temperature: 0, maxTokens: 120, timeoutMs: 8000 },
+    );
+    const jsonMatch = raw.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return null;
+    const parsed = JSON.parse(jsonMatch[0]) as { action?: string; rewritten_query?: string };
+    if (parsed.action !== 'rewrite') return null;
+    const rewritten = String(parsed.rewritten_query || '').trim();
+    return rewritten || null;
+  } catch (error) {
+    console.warn('[DRUG FOLLOW-UP REWRITE] Ambiguous rewrite skipped:', error);
+    return null;
+  }
+};
 
 // Helper function to get services (client-side only)
 const getMessageService = () => {
@@ -75,6 +209,7 @@ export const useChatStore = create<ChatStore>()(
         rateLimitWaitSeconds: 0,
         sessionModeBySession: {},
         drugSuggestionsBySession: {},
+        drugContextBySession: {},
 
         // Actions
         loadMessages: async (sessionId: string) => {
@@ -216,8 +351,36 @@ export const useChatStore = create<ChatStore>()(
           const rawSessionMode = get().sessionModeBySession[sessionId] || 'chat';
           const sessionMode: SessionChatMode =
             rawSessionMode === 'ask-drug' ? 'drug' : rawSessionMode;
+          const priorDrugContext = get().drugContextBySession[sessionId] || null;
+
+          let effectiveContent = content;
+          if (sessionMode === 'drug' && priorDrugContext?.lastDrugName) {
+            const obviousRewrite = rewriteObviousDrugFollowUpQuery(content, priorDrugContext.lastDrugName);
+            if (obviousRewrite) {
+              effectiveContent = obviousRewrite;
+              console.log('[DRUG FOLLOW-UP REWRITE][APP]', {
+                originalQuery: content,
+                rewrittenQuery: effectiveContent,
+                lastDrugName: priorDrugContext.lastDrugName,
+              });
+            } else if (isLikelyDrugFollowUpQuery(content)) {
+              const rewritten = await rewriteAmbiguousDrugFollowUpQuery(
+                content,
+                priorDrugContext.lastDrugName,
+              );
+              if (rewritten) {
+                effectiveContent = rewritten;
+                console.log('[DRUG FOLLOW-UP REWRITE][LLM]', {
+                  originalQuery: content,
+                  rewrittenQuery: effectiveContent,
+                  lastDrugName: priorDrugContext.lastDrugName,
+                });
+              }
+            }
+          }
+
           const shouldRouteToDrugMode =
-            sessionMode === 'drug' && shouldUseDirectDrugModePath(content);
+            sessionMode === 'drug' && shouldUseDirectDrugModePath(effectiveContent);
 
           const failPipeline = (message: string) => {
             if (isSettled) return;
@@ -236,7 +399,7 @@ export const useChatStore = create<ChatStore>()(
 
           const userMessage: Message = {
             id: crypto.randomUUID(),
-            content,
+            content: effectiveContent,
             role: MessageSender.USER,
             timestamp: new Date(),
             sessionId,
@@ -245,11 +408,17 @@ export const useChatStore = create<ChatStore>()(
             sessionMode === 'drug'
               ? shouldRouteToDrugMode
                 ? (onEvent: Parameters<typeof drugModeService.sendMessage>[2]) =>
-                    drugModeService.sendMessage(sessionId, content, onEvent)
+                    drugModeService.sendMessage(sessionId, effectiveContent, onEvent)
                 : (onEvent: Parameters<typeof askDrugModeService.sendMessage>[2]) =>
-                    askDrugModeService.sendMessage(sessionId, content, onEvent)
+                    askDrugModeService.sendMessage(sessionId, effectiveContent, onEvent)
               : (onEvent: Parameters<typeof chatPipeline.sendMessage>[2]) =>
-                  chatPipeline.sendMessage(sessionId, content, onEvent, userMessage);
+                  chatPipeline.sendMessage(sessionId, effectiveContent, onEvent, userMessage);
+
+          const explicitDrugName = extractExplicitDrugNameFromQuery(effectiveContent);
+          const shouldClearDrugContext =
+            sessionMode === 'drug' &&
+            DRUG_BROAD_QUERY_PATTERN.test(effectiveContent) &&
+            !explicitDrugName;
 
           set(state => {
             const newMessages = [...state.messages, userMessage];
@@ -270,6 +439,22 @@ export const useChatStore = create<ChatStore>()(
                 ...state.drugSuggestionsBySession,
                 [sessionId]: [],
               },
+              drugContextBySession:
+                sessionMode === 'drug'
+                  ? shouldClearDrugContext
+                    ? Object.fromEntries(
+                        Object.entries(state.drugContextBySession).filter(([key]) => key !== sessionId),
+                      )
+                    : explicitDrugName
+                      ? {
+                          ...state.drugContextBySession,
+                          [sessionId]: {
+                            lastDrugName: explicitDrugName,
+                            updatedAt: Date.now(),
+                          },
+                        }
+                      : state.drugContextBySession
+                  : state.drugContextBySession,
               // Update cache immediately
               messageCache: {
                 ...state.messageCache,
@@ -720,6 +905,9 @@ export const useChatStore = create<ChatStore>()(
             set(state => ({
               messages: [],
               error: null,
+              drugContextBySession: Object.fromEntries(
+                Object.entries(state.drugContextBySession).filter(([key]) => key !== sessionId)
+              ),
               // Clear from cache
               messageCache: {
                 ...state.messageCache,
@@ -873,6 +1061,7 @@ export const useChatStore = create<ChatStore>()(
         name: 'chat-store',
         partialize: (state) => ({
           sessionModeBySession: state.sessionModeBySession,
+          drugContextBySession: state.drugContextBySession,
         }),
       }
     )

@@ -402,12 +402,72 @@ const COMMON_DRUG_SALT_WORDS = new Set([
   'bromide',
 ]);
 
+const COMMON_DRUG_SALT_ALIASES: Record<string, string[]> = {
+  sulphate: ['sulphate', 'sulfate'],
+  sulfate: ['sulfate', 'sulphate'],
+  hydrochloride: ['hydrochloride', 'hcl'],
+  hcl: ['hcl', 'hydrochloride'],
+};
+
 const stripCommonDrugSaltWords = (value: string): string =>
   value
     .trim()
     .split(/\s+/)
     .filter((part) => part && !COMMON_DRUG_SALT_WORDS.has(part.toLowerCase()))
     .join(' ');
+
+const expandDrugSaltAliases = (value: string): string[] => {
+  const compact = compactField(value) || '';
+  if (!compact) return [];
+
+  const variants = new Set<string>([compact]);
+  const parts = compact.split(/\s+/);
+
+  parts.forEach((part, index) => {
+    const aliases = COMMON_DRUG_SALT_ALIASES[part.toLowerCase()];
+    if (!aliases || aliases.length === 0) return;
+
+    aliases.forEach((alias) => {
+      const nextParts = [...parts];
+      nextParts[index] = alias;
+      const variant = compactField(nextParts.join(' '));
+      if (variant) {
+        variants.add(variant);
+      }
+    });
+  });
+
+  return Array.from(variants);
+};
+
+const buildAskDrugNameCandidates = (...values: Array<string | null | undefined>): string[] => {
+  const candidates = new Set<string>();
+
+  values.forEach((value) => {
+    const compact = compactField(value) || '';
+    if (!compact) return;
+
+    const baseVariants = new Set<string>([
+      compact,
+      canonicalizeTitleCase(compact),
+      stripCommonDrugSaltWords(compact),
+      canonicalizeTitleCase(stripCommonDrugSaltWords(compact)),
+    ]);
+
+    Array.from(baseVariants)
+      .filter(Boolean)
+      .forEach((variant) => {
+        expandDrugSaltAliases(variant).forEach((aliasVariant) => {
+          const canonical = canonicalizeTitleCase(aliasVariant);
+          if (canonical) {
+            candidates.add(canonical);
+          }
+        });
+      });
+  });
+
+  return Array.from(candidates);
+};
 
 const toDrugCoreTokens = (value: string): string[] =>
   stripCommonDrugSaltWords(value)
@@ -444,6 +504,37 @@ const inferBrandFormulationFamilies = (
   const families = new Set<AskDrugFormulationFamily>();
 
   for (const brand of brandPreparations) {
+    for (const detail of brand.parsed_details || []) {
+      const formulation = compactField(
+        `${detail.formulation_raw} ${detail.formulation} ${detail.release_type || ''}`,
+      ) || '';
+
+      if (/\b(?:tablet|tab|capsule|cap|syrup|suspension|oral|lozenge|granules)\b/i.test(formulation)) {
+        families.add('oral');
+      }
+      if (/\b(?:injection|inj|infusion|iv|im)\b/i.test(formulation)) {
+        families.add('injection');
+      }
+      if (/\b(?:suppository|supp|pessary|enema|rectal)\b/i.test(formulation)) {
+        families.add('rectal');
+      }
+      if (/\b(?:gel|cream|ointment|lotion|liniment|spray|foam|paint|patch)\b/i.test(formulation)) {
+        families.add('topical');
+      }
+      if (/\b(?:eye|ophthalmic|ocular)\b/i.test(formulation)) {
+        families.add('ophthalmic');
+      }
+      if (/\b(?:ear|otic|aural)\b/i.test(formulation)) {
+        families.add('otic');
+      }
+      if (/\b(?:nasal|intranasal)\b/i.test(formulation)) {
+        families.add('nasal');
+      }
+      if (/\b(?:inhalation|inhaler|neb|respule)\b/i.test(formulation)) {
+        families.add('inhalation');
+      }
+    }
+
     const details = compactField(`${brand.display_name} ${brand.details}`) || '';
     if (!details) continue;
 
@@ -1352,8 +1443,12 @@ Rules:
 
     if (brandFamilies.size > 0 && candidateFamilies.size > 0) {
       const overlapCount = Array.from(brandFamilies).filter((family) => candidateFamilies.has(family)).length;
+      const missingBrandFamilyCount = Array.from(brandFamilies).filter(
+        (family) => !candidateFamilies.has(family),
+      ).length;
       if (overlapCount > 0) {
         score += overlapCount * 220;
+        score -= missingBrandFamilyCount * 180;
       } else {
         score -= 260;
       }
@@ -1412,6 +1507,43 @@ Rules:
       .sort((left, right) => right.score - left.score);
 
     return ranked[0]?.entry ?? null;
+  }
+
+  private resolveNamedDrugByCandidates(
+    catalog: AskDrugCatalog,
+    parsed: AskDrugQueryParseResult,
+    candidateDrugNames: string[],
+    options?: {
+      brandPreparations?: ParsedProprietaryPreparation[];
+    },
+  ): { match: AskDrugEntry | null; matchedDrugName: string | null } {
+    const queries = uniqueStrings(
+      candidateDrugNames
+        .map((value) => canonicalizeTitleCase(compactField(value) || ''))
+        .filter(Boolean),
+    );
+
+    for (const query of queries) {
+      const match = this.resolveNamedDrug(
+        catalog,
+        {
+          ...parsed,
+          drug_name: query,
+        },
+        options,
+      );
+      if (match) {
+        return {
+          match,
+          matchedDrugName: query,
+        };
+      }
+    }
+
+    return {
+      match: null,
+      matchedDrugName: null,
+    };
   }
 
   private resolveNamedDrugConservatively(
@@ -1837,30 +1969,42 @@ ${JSON.stringify(promptContext, null, 2)}`;
     if (!query) return null;
 
     const activeCatalog = options?.catalog ?? (await this.ensureDatasetReady());
-    const saltStrippedQuery = canonicalizeTitleCase(stripCommonDrugSaltWords(query));
-    const candidateQueries = uniqueStrings(
-      [query, saltStrippedQuery].map((value) => canonicalizeTitleCase(value)).filter(Boolean),
-    );
+    const candidateQueries = buildAskDrugNameCandidates(query);
 
-    let match: AskDrugEntry | null = null;
+    let bestMatch: AskDrugEntry | null = null;
+    let bestScore = Number.NEGATIVE_INFINITY;
+
     for (const candidateQuery of candidateQueries) {
-      match = this.findExactNamedDrug(activeCatalog, candidateQuery);
-      if (match) {
-        break;
+      const exactMatch = this.findExactNamedDrug(activeCatalog, candidateQuery);
+      if (exactMatch) {
+        const exactScore = this.scoreNamedDrugCandidate(
+          candidateQuery,
+          exactMatch,
+          options?.brandPreparations,
+        );
+        if (exactScore > bestScore) {
+          bestMatch = exactMatch;
+          bestScore = exactScore;
+        }
       }
-    }
 
-    if (!match) {
-      for (const candidateQuery of candidateQueries) {
-        match = this.resolveNamedDrugConservatively(activeCatalog, candidateQuery, {
-          brandPreparations: options?.brandPreparations,
-        });
-        if (match) {
-          break;
+      const conservativeMatch = this.resolveNamedDrugConservatively(activeCatalog, candidateQuery, {
+        brandPreparations: options?.brandPreparations,
+      });
+      if (conservativeMatch) {
+        const conservativeScore = this.scoreNamedDrugCandidate(
+          candidateQuery,
+          conservativeMatch,
+          options?.brandPreparations,
+        );
+        if (conservativeScore > bestScore) {
+          bestMatch = conservativeMatch;
+          bestScore = conservativeScore;
         }
       }
     }
 
+    const match = bestMatch;
     if (!match) return null;
 
     const indicationsAndDose = this.getSectionText(match, 'indications_and_dose');
@@ -2166,19 +2310,29 @@ ${JSON.stringify(promptContext, null, 2)}`;
         const fallbackGenericName = fallbackEntry
           ? drugModeService.getResolvedGenericName(fallbackEntry)
           : null;
-        const effectiveParsed =
-          fallbackGenericName
-            ? {
-                ...parsed,
-                drug_name: fallbackGenericName,
-              }
-            : parsed;
-        const match = this.resolveNamedDrug(catalog, effectiveParsed);
+        const fallbackBrandPreparations = fallbackEntry
+          ? drugModeService.getFilteredBrandEntries(fallbackEntry, 12)
+          : [];
+        const candidateDrugNames = buildAskDrugNameCandidates(
+          parsed.drug_name,
+          fallbackGenericName,
+        );
+        const { match, matchedDrugName } = this.resolveNamedDrugByCandidates(
+          catalog,
+          parsed,
+          candidateDrugNames,
+          {
+            brandPreparations: fallbackBrandPreparations,
+          },
+        );
 
         if (fallbackGenericName) {
           console.log('[ASK DRUG FALLBACK]', 'Resolved named query through drug mode dataset first', {
             originalDrugName: parsed.drug_name,
             fallbackGenericName,
+            brandFormulationFamilies: Array.from(inferBrandFormulationFamilies(fallbackBrandPreparations)),
+            attemptedAskDrugNames: candidateDrugNames,
+            matchedAskDrugQuery: matchedDrugName,
             matchedAskDrugTitle: match?.title ?? null,
           });
         }
@@ -2287,7 +2441,7 @@ ${JSON.stringify(promptContext, null, 2)}`;
           return;
         }
 
-        const requestedResponseFormat = this.shouldRenderIndicationsSummaryPlusDose(effectiveParsed, requestedSections)
+        const requestedResponseFormat = this.shouldRenderIndicationsSummaryPlusDose(parsed, requestedSections)
           ? 'indications_summary_plus_dose'
           : 'standard';
         const displayTitle = fallbackGenericName

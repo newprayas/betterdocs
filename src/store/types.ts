@@ -46,6 +46,13 @@ export interface ChatStore {
   rateLimitWaitSeconds: number;
   sessionModeBySession: Record<string, SessionChatMode>;
   drugSuggestionsBySession: Record<string, string[]>;
+  drugContextBySession: Record<
+    string,
+    {
+      lastDrugName: string;
+      updatedAt: number;
+    }
+  >;
 
   // Actions
   loadMessages: (sessionId: string) => Promise<void>;

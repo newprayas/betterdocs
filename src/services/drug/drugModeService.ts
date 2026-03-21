@@ -605,6 +605,8 @@ interface DrugSearchCandidates {
   preferredStrictMatches: DrugEntry[];
   normalizedMatches: DrugEntry[];
   preferredNormalizedMatches: DrugEntry[];
+  baseIdentityMatches: DrugEntry[];
+  preferredBaseIdentityMatches: DrugEntry[];
   fuzzyTitleMatches: DrugEntry[];
   preferredFuzzyTitleMatches: DrugEntry[];
   proprietaryStrictMatches: DrugEntry[];
@@ -3076,7 +3078,7 @@ Rules:
 
   async findDrugEntryByName(query: string, catalog?: DrugCatalog): Promise<DrugEntry | null> {
     const activeCatalog = catalog ?? (await this.ensureDatasetReady());
-    return this.findTopExactMatch(activeCatalog, {
+    return this.findTopResolvedMatch(activeCatalog, {
       drug_name: canonicalizeDrugQueryCase(query),
       requested_indication: '',
       confidence: 1,
@@ -3110,18 +3112,26 @@ Rules:
     if (!trimmedQuery) return false;
 
     const cleanedQuery = stripDrugNameQualifiers(trimmedQuery);
-    if (stripDrugNameQualifiers(entry.drug_name.trim()) === cleanedQuery) return true;
-
-    return false;
+    const candidates = [entry.drug_name, ...entry.aliases].map((value) =>
+      stripDrugNameQualifiers(value.trim()),
+    );
+    return candidates.includes(cleanedQuery);
   }
 
   private entryHasExactNormalizedMatch(entry: DrugEntry, query: string): boolean {
     const normalizedQuery = normalizeDrugIdentity(query);
     if (!normalizedQuery) return false;
 
-    if (normalizeDrugIdentity(entry.drug_name) === normalizedQuery) return true;
+    const candidates = [entry.drug_name, ...entry.aliases].map((value) => normalizeDrugIdentity(value));
+    return candidates.includes(normalizedQuery);
+  }
 
-    return false;
+  private entryHasBaseIdentityMatch(entry: DrugEntry, query: string): boolean {
+    const normalizedBaseQuery = normalizeDrugBaseIdentity(query);
+    if (!normalizedBaseQuery) return false;
+
+    const candidates = [entry.drug_name, ...entry.aliases].map((value) => normalizeDrugBaseIdentity(value));
+    return candidates.includes(normalizedBaseQuery);
   }
 
   private entryHasFuzzyTitleMatch(entry: DrugEntry, query: string): boolean {
@@ -3158,6 +3168,8 @@ Rules:
         preferredStrictMatches: [],
         normalizedMatches: [],
         preferredNormalizedMatches: [],
+        baseIdentityMatches: [],
+        preferredBaseIdentityMatches: [],
         fuzzyTitleMatches: [],
         preferredFuzzyTitleMatches: [],
         proprietaryStrictMatches: [],
@@ -3176,28 +3188,39 @@ Rules:
     const preferredStrictMatches = strictMatches.filter(
       (entry) => entry.pages.length <= PREFERRED_MAX_PAGE_COUNT,
     );
-    const normalizedMatches =
+    const proprietaryStrictMatches =
       strictMatches.length > 0
+        ? []
+        : searchableEntries.filter((entry) => this.entryHasProprietaryPhraseMatch(entry, query));
+    const normalizedMatches =
+      strictMatches.length > 0 || proprietaryStrictMatches.length > 0
         ? []
         : searchableEntries.filter((entry) => this.entryHasExactNormalizedMatch(entry, query));
     const preferredNormalizedMatches = normalizedMatches.filter(
       (entry) => entry.pages.length <= PREFERRED_MAX_PAGE_COUNT,
     );
-    const proprietaryStrictMatches =
-      strictMatches.length > 0 || normalizedMatches.length > 0
-        ? []
-        : searchableEntries.filter((entry) => this.entryHasProprietaryPhraseMatch(entry, query));
     const proprietaryNormalizedMatches =
       strictMatches.length > 0 ||
-      normalizedMatches.length > 0 ||
-      proprietaryStrictMatches.length > 0
+      proprietaryStrictMatches.length > 0 ||
+      normalizedMatches.length > 0
         ? []
         : searchableEntries.filter((entry) => this.entryHasProprietaryNormalizedMatch(entry, query));
+    const baseIdentityMatches =
+      strictMatches.length > 0 ||
+      proprietaryStrictMatches.length > 0 ||
+      normalizedMatches.length > 0 ||
+      proprietaryNormalizedMatches.length > 0
+        ? []
+        : searchableEntries.filter((entry) => this.entryHasBaseIdentityMatch(entry, query));
+    const preferredBaseIdentityMatches = baseIdentityMatches.filter(
+      (entry) => entry.pages.length <= PREFERRED_MAX_PAGE_COUNT,
+    );
     const fuzzyTitleMatches =
       strictMatches.length > 0 ||
-      normalizedMatches.length > 0 ||
       proprietaryStrictMatches.length > 0 ||
-      proprietaryNormalizedMatches.length > 0
+      normalizedMatches.length > 0 ||
+      proprietaryNormalizedMatches.length > 0 ||
+      baseIdentityMatches.length > 0
         ? []
         : searchableEntries.filter((entry) => this.entryHasFuzzyTitleMatch(entry, query));
     const preferredFuzzyTitleMatches = fuzzyTitleMatches.filter(
@@ -3209,6 +3232,8 @@ Rules:
       preferredStrictMatches,
       normalizedMatches,
       preferredNormalizedMatches,
+      baseIdentityMatches,
+      preferredBaseIdentityMatches,
       fuzzyTitleMatches,
       preferredFuzzyTitleMatches,
       proprietaryStrictMatches,
@@ -3228,6 +3253,48 @@ Rules:
       candidates.normalizedMatches,
       candidates.proprietaryStrictMatches,
       candidates.proprietaryNormalizedMatches,
+      candidates.preferredFuzzyTitleMatches,
+      candidates.fuzzyTitleMatches,
+    ];
+
+    const activeGroup = rankedGroups.find((group) => group.length > 0) ?? [];
+    if (activeGroup.length === 0) return [];
+
+    const primaryEntry = activeGroup[0];
+    const primaryNormalizedDrugIdentity = normalizeDrugIdentity(primaryEntry.drug_name);
+    const primaryNormalizedBaseIdentity = normalizeDrugBaseIdentity(primaryEntry.drug_name);
+    const searchableEntries = catalog.entries.filter(
+      (entry) => !DRUG_NAME_DENYLIST.has(entry.drug_name.trim().toUpperCase()),
+    );
+    const relatedMatches = searchableEntries.filter((entry) => {
+      const normalizedDrugIdentity = normalizeDrugIdentity(entry.drug_name);
+      if (normalizedDrugIdentity === primaryNormalizedDrugIdentity) {
+        return true;
+      }
+
+      return (
+        primaryNormalizedBaseIdentity.length > 0 &&
+        normalizeDrugBaseIdentity(entry.drug_name) === primaryNormalizedBaseIdentity
+      );
+    });
+
+    return dedupeDrugEntries(relatedMatches.length > 0 ? relatedMatches : [primaryEntry]);
+  }
+
+  private collectTopResolvedMatches(
+    catalog: DrugCatalog,
+    parsed: DrugQueryParseResult,
+  ): DrugEntry[] {
+    const candidates = this.collectSearchCandidates(catalog, parsed);
+    const rankedGroups = [
+      candidates.preferredStrictMatches,
+      candidates.strictMatches,
+      candidates.proprietaryStrictMatches,
+      candidates.preferredNormalizedMatches,
+      candidates.normalizedMatches,
+      candidates.proprietaryNormalizedMatches,
+      candidates.preferredBaseIdentityMatches,
+      candidates.baseIdentityMatches,
       candidates.preferredFuzzyTitleMatches,
       candidates.fuzzyTitleMatches,
     ];
@@ -3302,6 +3369,61 @@ Rules:
         aliases: entry.aliases,
         pages: entry.pages,
       })),
+    });
+
+    return finalMatch;
+  }
+
+  private findTopResolvedMatch(
+    catalog: DrugCatalog,
+    parsed: DrugQueryParseResult,
+  ): DrugEntry | null {
+    const query = parsed.drug_name.trim();
+    if (!query) return null;
+    const candidates = this.collectSearchCandidates(catalog, parsed);
+    const topMatches = this.collectTopResolvedMatches(catalog, parsed);
+    const finalMatch = topMatches[0] ?? null;
+
+    console.log('[DRUG SEARCH]', 'Staged combined lookup', {
+      query,
+      confidence: parsed.confidence,
+      strictCandidateCount: candidates.strictMatches.length,
+      preferredStrictCandidateCount: candidates.preferredStrictMatches.length,
+      proprietaryStrictCandidateCount: candidates.proprietaryStrictMatches.length,
+      normalizedCandidateCount: candidates.normalizedMatches.length,
+      preferredNormalizedCandidateCount: candidates.preferredNormalizedMatches.length,
+      proprietaryNormalizedCandidateCount: candidates.proprietaryNormalizedMatches.length,
+      baseIdentityCandidateCount: candidates.baseIdentityMatches.length,
+      preferredBaseIdentityCandidateCount: candidates.preferredBaseIdentityMatches.length,
+      fuzzyTitleCandidateCount: candidates.fuzzyTitleMatches.length,
+      preferredFuzzyTitleCandidateCount: candidates.preferredFuzzyTitleMatches.length,
+      selectedMatchCount: topMatches.length,
+      selectedMatch: finalMatch
+        ? {
+            drug_name: finalMatch.drug_name,
+            aliases: finalMatch.aliases,
+            pages: finalMatch.pages,
+          }
+        : null,
+      topCandidates: [
+        ...candidates.preferredStrictMatches,
+        ...candidates.strictMatches,
+        ...candidates.proprietaryStrictMatches,
+        ...candidates.preferredNormalizedMatches,
+        ...candidates.normalizedMatches,
+        ...candidates.proprietaryNormalizedMatches,
+        ...candidates.preferredBaseIdentityMatches,
+        ...candidates.baseIdentityMatches,
+        ...candidates.preferredFuzzyTitleMatches,
+        ...candidates.fuzzyTitleMatches,
+      ]
+        .filter((entry, index, array) => array.findIndex((item) => item.id === entry.id) === index)
+        .slice(0, 5)
+        .map((entry) => ({
+          drug_name: entry.drug_name,
+          aliases: entry.aliases,
+          pages: entry.pages,
+        })),
     });
 
     return finalMatch;
@@ -3453,7 +3575,10 @@ Rules:
         type: 'status',
         message: 'Drug Search',
       });
-      const matchedEntries = this.collectTopExactMatches(catalog, parsed);
+      const matchedEntries =
+        intent.answerKind === 'brands'
+          ? this.collectTopExactMatches(catalog, parsed)
+          : this.collectTopResolvedMatches(catalog, parsed);
       const match = matchedEntries[0] ?? null;
 
       console.log('[DRUG SEARCH]', 'Final matched entries', {
