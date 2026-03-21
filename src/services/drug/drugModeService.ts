@@ -89,8 +89,11 @@ const COMMON_DRUG_SALT_WORDS = new Set([
 
 const stripDrugNameQualifiers = (value: string): string =>
   value
+    .replace(/\[[^\]]*\)?/g, ' ')
     .replace(/\[[^\]]*\]/g, ' ')
+    .replace(/\([^\)]*\)/g, ' ')
     .replace(/\([^)]+\)$/g, ' ')
+    .replace(/\)+$/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 
@@ -2778,6 +2781,37 @@ Rules:
     return [requestedBrand, ...remainingBrands].slice(0, DRUG_BRAND_QUERY_RESULT_LIMIT);
   }
 
+  private scoreDrugDuplicateCandidate(entry: DrugEntry): number {
+    const proprietaryText = compactField(entry.proprietary_preparations);
+    const parsedBrands = proprietaryText ? this.parseProprietaryPreparations(entry) : [];
+
+    let score = 0;
+    if (parsedBrands.length > 0) {
+      score += 1_000_000;
+      score += Math.min(parsedBrands.length, 20) * 5_000;
+    } else if (proprietaryText) {
+      score += 5_000;
+    }
+
+    if (compactField(entry.dose)) score += 500;
+    if (compactField(entry.indications)) score += 200;
+    if (compactField(entry.cautions)) score += 100;
+    if (compactField(entry.contraindications)) score += 100;
+    if (compactField(entry.side_effects)) score += 100;
+    if (compactField(entry.interactions)) score += 50;
+    if (compactField(entry.notes)) score += 25;
+
+    return score;
+  }
+
+  private rankDrugDuplicateCandidates(entries: DrugEntry[]): DrugEntry[] {
+    return [...entries].sort((left, right) => {
+      const scoreGap = this.scoreDrugDuplicateCandidate(right) - this.scoreDrugDuplicateCandidate(left);
+      if (scoreGap !== 0) return scoreGap;
+      return left.id.localeCompare(right.id);
+    });
+  }
+
   private buildSectionPromptContexts(entries: DrugEntry[], intent: DrugModeIntent): Record<string, unknown> {
     const safeEntries = dedupeDrugEntries(entries);
     const primaryEntry = safeEntries[0];
@@ -3260,7 +3294,7 @@ Rules:
     const activeGroup = rankedGroups.find((group) => group.length > 0) ?? [];
     if (activeGroup.length === 0) return [];
 
-    const primaryEntry = activeGroup[0];
+    const primaryEntry = this.rankDrugDuplicateCandidates(activeGroup)[0];
     const primaryNormalizedDrugIdentity = normalizeDrugIdentity(primaryEntry.drug_name);
     const primaryNormalizedBaseIdentity = normalizeDrugBaseIdentity(primaryEntry.drug_name);
     const searchableEntries = catalog.entries.filter(
@@ -3278,7 +3312,9 @@ Rules:
       );
     });
 
-    return dedupeDrugEntries(relatedMatches.length > 0 ? relatedMatches : [primaryEntry]);
+    return dedupeDrugEntries(
+      this.rankDrugDuplicateCandidates(relatedMatches.length > 0 ? relatedMatches : [primaryEntry]),
+    );
   }
 
   private collectTopResolvedMatches(
@@ -3302,7 +3338,7 @@ Rules:
     const activeGroup = rankedGroups.find((group) => group.length > 0) ?? [];
     if (activeGroup.length === 0) return [];
 
-    const primaryEntry = activeGroup[0];
+    const primaryEntry = this.rankDrugDuplicateCandidates(activeGroup)[0];
     const primaryNormalizedDrugIdentity = normalizeDrugIdentity(primaryEntry.drug_name);
     const primaryNormalizedBaseIdentity = normalizeDrugBaseIdentity(primaryEntry.drug_name);
     const searchableEntries = catalog.entries.filter(
@@ -3320,7 +3356,9 @@ Rules:
       );
     });
 
-    return dedupeDrugEntries(relatedMatches.length > 0 ? relatedMatches : [primaryEntry]);
+    return dedupeDrugEntries(
+      this.rankDrugDuplicateCandidates(relatedMatches.length > 0 ? relatedMatches : [primaryEntry]),
+    );
   }
 
   private findTopExactMatch(
