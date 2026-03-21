@@ -3191,6 +3191,34 @@ Rules:
     return normalizeDrugLookupText(entry.proprietary_preparations || '').includes(normalizedQuery);
   }
 
+  private entryMatchesCoreIdentity(entry: DrugEntry, query: string): boolean {
+    const normalizedQuery = normalizeDrugIdentity(query);
+    const normalizedBaseQuery = normalizeDrugBaseIdentity(query);
+    if (!normalizedQuery && !normalizedBaseQuery) return false;
+
+    const candidates = [entry.drug_name, ...entry.aliases].flatMap((value) => [
+      normalizeDrugIdentity(value),
+      normalizeDrugBaseIdentity(value),
+    ]);
+
+    return candidates.includes(normalizedQuery) || candidates.includes(normalizedBaseQuery);
+  }
+
+  private collectCoreIdentityMatches(
+    catalog: DrugCatalog,
+    parsed: DrugQueryParseResult,
+  ): DrugEntry[] {
+    const query = parsed.drug_name.trim();
+    if (!query) return [];
+
+    const searchableEntries = catalog.entries.filter((entry) => {
+      return !DRUG_NAME_DENYLIST.has(entry.drug_name.trim().toUpperCase());
+    });
+
+    const matches = searchableEntries.filter((entry) => this.entryMatchesCoreIdentity(entry, query));
+    return this.rankDrugDuplicateCandidates(dedupeDrugEntries(matches));
+  }
+
   private collectSearchCandidates(
     catalog: DrugCatalog,
     parsed: DrugQueryParseResult,
@@ -3279,6 +3307,9 @@ Rules:
     catalog: DrugCatalog,
     parsed: DrugQueryParseResult,
   ): DrugEntry[] {
+    const coreMatches = this.collectCoreIdentityMatches(catalog, parsed);
+    if (coreMatches.length > 0) return coreMatches;
+
     const candidates = this.collectSearchCandidates(catalog, parsed);
     const rankedGroups = [
       candidates.preferredStrictMatches,
@@ -3321,6 +3352,9 @@ Rules:
     catalog: DrugCatalog,
     parsed: DrugQueryParseResult,
   ): DrugEntry[] {
+    const coreMatches = this.collectCoreIdentityMatches(catalog, parsed);
+    if (coreMatches.length > 0) return coreMatches;
+
     const candidates = this.collectSearchCandidates(catalog, parsed);
     const rankedGroups = [
       candidates.preferredStrictMatches,
