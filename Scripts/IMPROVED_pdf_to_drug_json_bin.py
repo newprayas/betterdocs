@@ -51,8 +51,17 @@ SECTION_HEADERS = {
     "note": "notes",
     "notes": "notes",
     "interactions": "interactions",
+    "special caution": "cautions",
+    "special cautions": "cautions",
+    "route of administration": "notes",
+    "route": "notes",
     "proprietary preparations": "proprietary_preparations",
     "proprietary preparation": "proprietary_preparations",
+    "preparations": "proprietary_preparations",
+    "preparation": "proprietary_preparations",
+    "generic preparation": "proprietary_preparations",
+    "generic preparations": "proprietary_preparations",
+    "doses": "dose",
 }
 
 NON_DRUG_HEADERS = {
@@ -65,8 +74,17 @@ NON_DRUG_HEADERS = {
     "note",
     "notes",
     "interactions",
+    "special caution",
+    "special cautions",
+    "route of administration",
+    "route",
     "proprietary preparations",
     "proprietary preparation",
+    "preparations",
+    "preparation",
+    "generic preparation",
+    "generic preparations",
+    "doses",
 }
 
 SECTION_HEADER_NOISE_KEYWORDS = {
@@ -96,7 +114,7 @@ CONTENTS_LINE_PATTERN = re.compile(
 )
 
 MAJOR_SECTION_PATTERN = re.compile(r"^\d+\.\s+[A-Z][A-Z0-9 /&().' -]{5,}$")
-NUMBERED_SUBSECTION_PATTERN = re.compile(r"^\d+\.\d+(?:\.\d+)+\.?\s*[A-Z]")
+NUMBERED_SUBSECTION_PATTERN = re.compile(r"^\d+\.\d+(?:\.\d+)*\.?\s*[A-Z]")
 
 
 def sha256_hex(data: bytes) -> str:
@@ -294,10 +312,55 @@ def is_drug_heading(line: str) -> bool:
     uppercase_ratio = sum(1 for ch in core_text if ch.isupper()) / max(
         1, sum(1 for ch in core_text if ch.isalpha())
     )
-    if uppercase_ratio < 0.7:
+    if uppercase_ratio < 0.6:
         return False
 
-    if not re.fullmatch(r"[A-Za-z0-9 \-,'/().\[\]&]+", text):
+    if not re.fullmatch(r"[A-Za-z0-9 \-,'/().\[\]&*]+", text):
+        return False
+
+    return True
+
+
+WEAK_HEADING_LOWERCASE_WORDS = {
+    "has",
+    "have",
+    "had",
+    "been",
+    "being",
+    "is",
+    "are",
+    "was",
+    "were",
+    "with",
+    "without",
+    "during",
+    "after",
+    "before",
+    "either",
+    "shortly",
+    "also",
+    "than",
+    "that",
+    "which",
+}
+
+
+def is_very_strong_drug_heading(line: str) -> bool:
+    if not is_drug_heading(line):
+        return False
+
+    text = strip_heading_prefix(normalize_space(line))
+    core_text = normalize_space(re.sub(r"\([^)]*\)", " ", text))
+    lowercase_words = re.findall(r"\b[a-z]{2,}\b", core_text)
+    if any(word in WEAK_HEADING_LOWERCASE_WORDS for word in lowercase_words):
+        return False
+
+    alpha_chars = [ch for ch in core_text if ch.isalpha()]
+    if not alpha_chars:
+        return False
+
+    uppercase_ratio = sum(1 for ch in alpha_chars if ch.isupper()) / len(alpha_chars)
+    if uppercase_ratio < 0.85:
         return False
 
     return True
@@ -309,12 +372,14 @@ def is_heading_continuation(line: str) -> bool:
         return False
     if not text.startswith("("):
         return False
+    if re.search(r"\bsee\b", text, re.IGNORECASE):
+        return False
 
     letters_only = re.sub(r"[^A-Za-z]", "", text)
     if len(letters_only) < 3:
         return False
 
-    return bool(re.fullmatch(r"\([A-Za-z0-9 \-,'/.&]+\)(?:\s*\[[A-Z]+\])*$", text))
+    return bool(re.fullmatch(r"\([A-Za-z0-9 \-,'/.&*]+\)(?:\s*\[[A-Z*]+\])*$", text))
 
 
 def extract_pdf_lines(pdf_path: Path) -> Tuple[List[Dict[str, Any]], int]:
@@ -352,6 +417,18 @@ def split_into_blocks(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             continue
 
         if is_drug_heading(text):
+            if current and not current["lines"]:
+                current["heading"] = normalize_space(
+                    f"{current['heading']} {strip_heading_prefix(text)}"
+                )
+                if row["page"] not in current["pages"]:
+                    current["pages"].append(row["page"])
+                continue
+            if current and current["lines"] and not is_very_strong_drug_heading(text):
+                current["lines"].append(text)
+                if row["page"] not in current["pages"]:
+                    current["pages"].append(row["page"])
+                continue
             if current and current["lines"]:
                 blocks.append(current)
             current = {
@@ -360,6 +437,18 @@ def split_into_blocks(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                 "lines": [],
             }
             continue
+
+        if current and not current["lines"]:
+            core = normalize_space(re.sub(r"\([^)]*\)", " ", text))
+            letters = re.sub(r"[^A-Za-z]", "", core)
+            upper_ratio = sum(1 for c in letters if c.isupper()) / max(1, len(letters))
+            if upper_ratio >= 0.75 and len(letters) >= 3 and not is_structural_boundary(text):
+                current["heading"] = normalize_space(
+                    f"{current['heading']} {strip_heading_prefix(text)}"
+                )
+                if row["page"] not in current["pages"]:
+                    current["pages"].append(row["page"])
+                continue
 
         if current is None:
             continue
@@ -471,6 +560,11 @@ def sanitize_section_value(text: str) -> Optional[str]:
     return compact or None
 
 
+def is_cross_reference_remainder(text: str) -> bool:
+    compact = normalize_space(text).lower()
+    return compact.startswith("see ")
+
+
 def join_section_lines(parts: List[str]) -> Optional[str]:
     text = ""
     for part in parts:
@@ -537,10 +631,18 @@ def parse_block(block: Dict[str, Any], document_id: str, index: int) -> Optional
             if remainder:
                 cleaned_remainder = sanitize_section_value(remainder)
                 if cleaned_remainder:
-                    for key in current_sections:
+                    target_sections = (
+                        [current_sections[-1]]
+                        if len(current_sections) > 1 and is_cross_reference_remainder(cleaned_remainder)
+                        else current_sections
+                    )
+                    for key in target_sections:
                         sections[key].append(cleaned_remainder)
             raw_lines.append(line)
             continue
+
+        if current_sections == ["proprietary_preparations"] and is_drug_heading(line):
+            break
 
         if consumed:
             raw_lines.append(line)
