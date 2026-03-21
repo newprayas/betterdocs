@@ -67,6 +67,26 @@ const normalizeDrugLookupText = (value: string): string =>
     .replace(/[^a-z0-9]+/g, '')
     .trim();
 
+const COMMON_DRUG_SALT_WORDS = new Set([
+  'sulphate',
+  'sulfate',
+  'hydrochloride',
+  'hcl',
+  'sodium',
+  'phosphate',
+  'acetate',
+  'nitrate',
+  'tartrate',
+  'maleate',
+  'mesylate',
+  'succinate',
+  'citrate',
+  'lactate',
+  'gluconate',
+  'chloride',
+  'bromide',
+]);
+
 const stripDrugNameQualifiers = (value: string): string =>
   value
     .replace(/\[[^\]]*\]/g, ' ')
@@ -74,8 +94,18 @@ const stripDrugNameQualifiers = (value: string): string =>
     .replace(/\s+/g, ' ')
     .trim();
 
+const stripCommonDrugSaltWords = (value: string): string =>
+  value
+    .trim()
+    .split(/\s+/)
+    .filter((part) => part && !COMMON_DRUG_SALT_WORDS.has(part.toLowerCase()))
+    .join(' ');
+
 const normalizeDrugIdentity = (value: string): string =>
   normalizeDrugLookupText(stripDrugNameQualifiers(value));
+
+const normalizeDrugBaseIdentity = (value: string): string =>
+  normalizeDrugLookupText(stripCommonDrugSaltWords(stripDrugNameQualifiers(value)));
 
 const isPlausibleDrugName = (value: string): boolean => {
   const trimmed = value.trim();
@@ -3071,12 +3101,25 @@ Rules:
     const activeGroup = rankedGroups.find((group) => group.length > 0) ?? [];
     if (activeGroup.length === 0) return [];
 
-    const primaryNormalizedDrugIdentity = normalizeDrugIdentity(activeGroup[0].drug_name);
-    const relatedMatches = activeGroup.filter(
-      (entry) => normalizeDrugIdentity(entry.drug_name) === primaryNormalizedDrugIdentity,
+    const primaryEntry = activeGroup[0];
+    const primaryNormalizedDrugIdentity = normalizeDrugIdentity(primaryEntry.drug_name);
+    const primaryNormalizedBaseIdentity = normalizeDrugBaseIdentity(primaryEntry.drug_name);
+    const searchableEntries = catalog.entries.filter(
+      (entry) => !DRUG_NAME_DENYLIST.has(entry.drug_name.trim().toUpperCase()),
     );
+    const relatedMatches = searchableEntries.filter((entry) => {
+      const normalizedDrugIdentity = normalizeDrugIdentity(entry.drug_name);
+      if (normalizedDrugIdentity === primaryNormalizedDrugIdentity) {
+        return true;
+      }
 
-    return dedupeDrugEntries(relatedMatches.length > 0 ? relatedMatches : [activeGroup[0]]);
+      return (
+        primaryNormalizedBaseIdentity.length > 0 &&
+        normalizeDrugBaseIdentity(entry.drug_name) === primaryNormalizedBaseIdentity
+      );
+    });
+
+    return dedupeDrugEntries(relatedMatches.length > 0 ? relatedMatches : [primaryEntry]);
   }
 
   private findTopExactMatch(

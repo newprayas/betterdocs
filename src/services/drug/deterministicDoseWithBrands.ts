@@ -607,6 +607,81 @@ const selectIndication = (
   };
 };
 
+const scorePerDetailIndicationCoverage = (
+  indication: AskDrugDoseIndication,
+  detail: ParsedBrandDetail,
+  requestedDoseAudience: DrugDoseAudience,
+  requestedIndicationQuery?: string,
+): number => {
+  const routeMappings = collectRouteMappingsForDetail(detail, buildRouteMappings(indication));
+  const instructions = collectInstructionsForRouteMappings(routeMappings);
+  if (instructions.length === 0) return Number.NEGATIVE_INFINITY;
+
+  let score = scoreIndicationMatch(indication.indication, requestedIndicationQuery);
+  score += routeMappings.length * 80;
+  score += instructions.length * 30;
+
+  if (detailCountsForRequestedAudience(detail, requestedDoseAudience)) {
+    score += 40;
+  }
+
+  return score;
+};
+
+const selectIndicationForDetail = (
+  indications: AskDrugDoseIndication[],
+  preferredIndication: AskDrugDoseIndication,
+  detail: ParsedBrandDetail,
+  requestedDoseAudience: DrugDoseAudience,
+  requestedIndicationQuery?: string,
+): { indication: AskDrugDoseIndication; routeMappings: RouteMapping[] } | null => {
+  const preferredRouteMappings = collectRouteMappingsForDetail(
+    detail,
+    buildRouteMappings(preferredIndication),
+  );
+  if (collectInstructionsForRouteMappings(preferredRouteMappings).length > 0) {
+    return {
+      indication: preferredIndication,
+      routeMappings: preferredRouteMappings,
+    };
+  }
+
+  const fallbackCandidates = indications
+    .filter((indication) => indication !== preferredIndication)
+    .map((indication, index) => {
+      const routeMappings = collectRouteMappingsForDetail(detail, buildRouteMappings(indication));
+      return {
+        indication,
+        routeMappings,
+        score: scorePerDetailIndicationCoverage(
+          indication,
+          detail,
+          requestedDoseAudience,
+          requestedIndicationQuery,
+        ),
+        index,
+      };
+    })
+    .filter((candidate) => Number.isFinite(candidate.score))
+    .sort((left, right) => {
+      if (right.score !== left.score) return right.score - left.score;
+      return left.index - right.index;
+    });
+
+  const bestFallback = fallbackCandidates[0];
+  if (!bestFallback) {
+    return {
+      indication: preferredIndication,
+      routeMappings: preferredRouteMappings,
+    };
+  }
+
+  return {
+    indication: bestFallback.indication,
+    routeMappings: bestFallback.routeMappings,
+  };
+};
+
 const formatIndicationAndInstructions = (
   indicationLabel: string,
   instructions: AskDrugDoseInstruction[],
@@ -696,9 +771,11 @@ const classifyRenderedBrandBlockPriority = (content: string): 0 | 1 | 2 => {
 };
 
 const groupBlocksByHeading = (
+  indications: AskDrugDoseIndication[],
   selectedIndication: AskDrugDoseIndication,
   brands: DeterministicPromptBrand[],
   requestedDoseAudience: DrugDoseAudience,
+  requestedIndicationQuery?: string,
 ): DeterministicBrandBlock[] => {
   const routeMappings = buildRouteMappings(selectedIndication);
   const brandBlocks: DeterministicBrandBlock[] = [];
@@ -713,7 +790,16 @@ const groupBlocksByHeading = (
   for (const brand of brands) {
     for (const detail of brand.parsed_details) {
       const heading = detail.formulation;
-      const matchedRouteMappings = collectRouteMappingsForDetail(detail, routeMappings);
+      const matchedIndicationSelection = selectIndicationForDetail(
+        indications,
+        selectedIndication,
+        detail,
+        requestedDoseAudience,
+        requestedIndicationQuery,
+      );
+      const matchedRouteMappings = matchedIndicationSelection?.routeMappings || [];
+      const matchedIndicationLabel =
+        matchedIndicationSelection?.indication.indication || selectedIndication.indication;
       const headingOrder = matchedRouteMappings[0]?.order ?? Number.MAX_SAFE_INTEGER;
       if (!seenHeadingOrders.has(heading)) {
         seenHeadingOrders.set(heading, headingOrder);
@@ -750,7 +836,7 @@ const groupBlocksByHeading = (
       const content = renderBrandBlock(
         brand,
         detail,
-        selectedIndication.indication,
+        matchedIndicationLabel,
         matchedRouteMappings,
         requestedDoseAudience,
         referenceOnly,
@@ -944,9 +1030,11 @@ export const buildDeterministicDoseWithBrandsBody = (
   });
 
   const groupedBlocks = groupBlocksByHeading(
+    context.indications,
     selected.indication,
     context.brands,
     requestedDoseAudience,
+    compactField(requestedIndicationQuery || undefined),
   );
   const rendered = renderGroupedBlocks(groupedBlocks);
 

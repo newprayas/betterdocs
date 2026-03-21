@@ -330,6 +330,39 @@ const canonicalizeTitleCase = (value: string): string =>
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
     .join(' ');
 
+const COMMON_DRUG_SALT_WORDS = new Set([
+  'sulphate',
+  'sulfate',
+  'hydrochloride',
+  'hcl',
+  'sodium',
+  'phosphate',
+  'acetate',
+  'nitrate',
+  'tartrate',
+  'maleate',
+  'mesylate',
+  'succinate',
+  'citrate',
+  'lactate',
+  'gluconate',
+  'chloride',
+  'bromide',
+]);
+
+const stripCommonDrugSaltWords = (value: string): string =>
+  value
+    .trim()
+    .split(/\s+/)
+    .filter((part) => part && !COMMON_DRUG_SALT_WORDS.has(part.toLowerCase()))
+    .join(' ');
+
+const toDrugCoreTokens = (value: string): string[] =>
+  stripCommonDrugSaltWords(value)
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((token) => token.length > 2);
+
 const tokenize = (value: string): string[] =>
   normalizeText(value)
     .split(/\s+/)
@@ -554,6 +587,28 @@ const ASK_DRUG_DOSE_GROUP_PATTERN =
   /^(?:Adult|Child|Elderly|Neonate|Infant|Adolescent|Young person|All ages?)(?:\b|[\s(0-9-])/i;
 const ASK_DRUG_NOTE_PATTERN =
   /(?:UNLICENSED USE\b|Not licensed\b|In children\s+[A-Z]|In adults?\s+[A-Z]|Cautionary and advisory labels\b)/i;
+const ASK_DRUG_SINGLE_WORD_INDICATIONS = new Set([
+  'pain',
+  'pyrexia',
+  'fever',
+  'migraine',
+  'angina',
+  'asthma',
+  'anxiety',
+  'depression',
+  'constipation',
+  'diarrhoea',
+  'diarrhea',
+  'vomiting',
+  'nausea',
+  'epilepsy',
+  'hypertension',
+  'hypotension',
+  'anaphylaxis',
+  'malaria',
+  'insomnia',
+  'schizophrenia',
+]);
 
 const looksLikeRouteSegment = (value: string): boolean =>
   ASK_DRUG_ROUTE_PATTERNS.some((pattern) => pattern.test(compactField(value) || ''));
@@ -584,7 +639,10 @@ const looksLikeIndicationText = (value: string): boolean => {
   }
   if (compact.includes(':')) return false;
   if (!/[A-Za-z]/.test(compact)) return false;
-  return compact.split(/\s+/).length >= 2;
+  const words = compact.split(/\s+/).filter(Boolean);
+  if (words.length >= 2) return true;
+  if (words.length !== 1) return false;
+  return ASK_DRUG_SINGLE_WORD_INDICATIONS.has(normalizeText(compact));
 };
 
 const stripParentheticalText = (value: string): string =>
@@ -1283,6 +1341,54 @@ Rules:
     return ranked[0]?.entry ?? null;
   }
 
+  private resolveNamedDrugConservatively(
+    catalog: AskDrugCatalog,
+    query: string,
+    options?: {
+      brandPreparations?: ParsedProprietaryPreparation[];
+    },
+  ): AskDrugEntry | null {
+    const trimmedQuery = query.trim();
+    if (!trimmedQuery) return null;
+
+    const ranked = catalog.drugs
+      .map((entry) => ({
+        entry,
+        score: this.scoreNamedDrugCandidate(trimmedQuery, entry, options?.brandPreparations),
+      }))
+      .filter((candidate) => candidate.score >= 120)
+      .sort((left, right) => right.score - left.score);
+
+    const top = ranked[0];
+    if (!top) return null;
+
+    const next = ranked[1];
+    const queryTokens = new Set(toDrugCoreTokens(trimmedQuery));
+    const candidateTokens = new Set(toDrugCoreTokens(top.entry.title));
+    const overlapCount = Array.from(queryTokens).filter((token) => candidateTokens.has(token)).length;
+    const hasPrefixOverlap = Array.from(queryTokens).some((queryToken) =>
+      Array.from(candidateTokens).some(
+        (candidateToken) =>
+          queryToken.startsWith(candidateToken) || candidateToken.startsWith(queryToken),
+      ),
+    );
+    const scoreGap = top.score - (next?.score ?? Number.NEGATIVE_INFINITY);
+
+    if (queryTokens.size === 0 || candidateTokens.size === 0) {
+      return null;
+    }
+
+    if (overlapCount > 0) {
+      return top.entry;
+    }
+
+    if (hasPrefixOverlap && top.score >= 220 && scoreGap >= 80) {
+      return top.entry;
+    }
+
+    return null;
+  }
+
   private findExactNamedDrug(
     catalog: AskDrugCatalog,
     drugName: string,
@@ -1523,7 +1629,29 @@ Rules:
     if (!query) return null;
 
     const activeCatalog = options?.catalog ?? (await this.ensureDatasetReady());
-    const match = this.findExactNamedDrug(activeCatalog, query);
+    const saltStrippedQuery = canonicalizeTitleCase(stripCommonDrugSaltWords(query));
+    const candidateQueries = uniqueStrings(
+      [query, saltStrippedQuery].map((value) => canonicalizeTitleCase(value)).filter(Boolean),
+    );
+
+    let match: AskDrugEntry | null = null;
+    for (const candidateQuery of candidateQueries) {
+      match = this.findExactNamedDrug(activeCatalog, candidateQuery);
+      if (match) {
+        break;
+      }
+    }
+
+    if (!match) {
+      for (const candidateQuery of candidateQueries) {
+        match = this.resolveNamedDrugConservatively(activeCatalog, candidateQuery, {
+          brandPreparations: options?.brandPreparations,
+        });
+        if (match) {
+          break;
+        }
+      }
+    }
 
     if (!match) return null;
 
