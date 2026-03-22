@@ -161,6 +161,12 @@ const inferRequestedIndicationFromQuery = (content: string): string | null => {
   return cleaned;
 };
 
+const stripTrailingRequestedDoseAudience = (value: string): string => {
+  const trimmed = compactField(value) || '';
+  if (!trimmed) return '';
+  return trimmed.replace(/\s+for\s+(adult|child)\s*$/i, '').trim();
+};
+
 const hasMinimumSuggestionLength = (value: string): boolean =>
   normalizeDrugLookupText(value).length > 2;
 
@@ -477,6 +483,23 @@ const inferStandaloneProprietaryFormulationRaw = (
   return undefined;
 };
 
+const stripProprietaryRouteNoise = (value: string): string => {
+  const normalized = compactField(value) || '';
+  if (!normalized) return '';
+
+  return normalized
+    .replace(
+      /^\(?\s*(?:iv|im|sc|s\/c|subcutaneous|intravenous|intramuscular)\s*(?:infusion|injection)?\s*\)?[,.\s-]*/i,
+      '',
+    )
+    .replace(
+      /\(?\s*(?:iv|im|sc|s\/c|subcutaneous|intravenous|intramuscular)\s*(?:infusion|injection)?\s*\)?[,.\s-]*$/i,
+      '',
+    )
+    .replace(/^[,;.\s-]+|[,;.\s-]+$/g, '')
+    .trim();
+};
+
 const stripModifiedReleaseFromFormulationRaw = (
   formulationRaw?: string,
 ): string | undefined => {
@@ -512,7 +535,7 @@ const parseProprietaryDetailSegment = (
     formulationMatch?.formulationRaw || priceUnitFormulationRaw || currentFormulationRaw || '';
   const standardized = standardizeProprietaryFormulation(resolvedFormulationRaw);
   const effectiveReleaseType = formulationMatch?.releaseType ? standardized.releaseType : undefined;
-  const strengthText = compactField(
+  const strengthText = stripProprietaryRouteNoise(
     formulationMatch
       ? beforePrice.replace(formulationMatch.pattern, '').replace(/^[,;.\s-]+/, '').trim()
       : beforePrice,
@@ -587,7 +610,7 @@ const parseProprietaryDetailChunks = (details: string): ParsedBrandDetail[] => {
         formulationMatch?.formulationRaw || priceUnitFormulationRaw || currentFormulationRaw || '';
       const standardized = standardizeProprietaryFormulation(resolvedFormulationRaw);
       const effectiveReleaseType = formulationMatch?.releaseType ? standardized.releaseType : undefined;
-      const strengthText = compactField(
+      const strengthText = stripProprietaryRouteNoise(
         formulationMatch
           ? beforePrice.replace(formulationMatch.pattern, '').replace(/^[,;.\s-]+/, '').trim()
           : beforePrice,
@@ -2490,8 +2513,12 @@ Rules:
     const parserDrugName = sanitizeParsedDrugName(String(parsed.drug_name || ''));
     const inferredDrugName = inferDrugNameFromRawQuery(content);
     const resolvedDrugName = parserDrugName || inferredDrugName;
-    const parserRequestedIndication = compactField(String(parsed.requested_indication || '')) || '';
-    const inferredRequestedIndication = inferRequestedIndicationFromQuery(content);
+    const parserRequestedIndication = stripTrailingRequestedDoseAudience(
+      compactField(String(parsed.requested_indication || '')) || '',
+    );
+    const inferredRequestedIndication = stripTrailingRequestedDoseAudience(
+      inferRequestedIndicationFromQuery(content) || '',
+    );
     const resolvedRequestedIndication =
       inferredRequestedIndication &&
       (!parserRequestedIndication ||
