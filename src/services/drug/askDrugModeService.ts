@@ -2,7 +2,7 @@ import { groqService } from '@/services/groq/groqService';
 import { getIndexedDBServices } from '@/services/indexedDB';
 import { libraryService } from '@/services/libraryService';
 import { drugModeService } from './drugModeService';
-import { decorateIndicationLinks } from './drugActionLinks';
+import { decorateIndicationLinks, shouldDecorateIndicationLinksForQuery } from './drugActionLinks';
 import type {
   AskDrugBroadMatch,
   AskDrugCatalog,
@@ -2459,7 +2459,7 @@ ${JSON.stringify(promptContext, null, 2)}`;
             fallbackGenericName,
             parsed.drug_name,
           );
-          const decoratedAllDetails = decorateIndicationLinks(deterministicAllDetails, parsed.drug_name);
+          const decoratedAllDetails = deterministicAllDetails;
           await this.saveAssistantMessage(sessionId, decoratedAllDetails);
           onStreamEvent?.({ type: 'done', content: decoratedAllDetails });
           return;
@@ -2515,7 +2515,9 @@ ${JSON.stringify(promptContext, null, 2)}`;
           },
         );
 
-        const decoratedResponse = decorateIndicationLinks(fullResponse, parsed.drug_name);
+        const decoratedResponse = shouldDecorateIndicationLinksForQuery(content)
+          ? decorateIndicationLinks(fullResponse, parsed.drug_name)
+          : fullResponse;
         await this.saveAssistantMessage(sessionId, decoratedResponse);
         onStreamEvent?.({ type: 'done', content: decoratedResponse });
         return;
@@ -2596,7 +2598,9 @@ ${JSON.stringify(
         },
       );
 
-      const decoratedResponse = decorateIndicationLinks(fullResponse, parsed.drug_name);
+      const decoratedResponse = shouldDecorateIndicationLinksForQuery(content)
+        ? decorateIndicationLinks(fullResponse, parsed.drug_name)
+        : fullResponse;
       await this.saveAssistantMessage(sessionId, decoratedResponse);
       onStreamEvent?.({ type: 'done', content: decoratedResponse });
     } catch (error) {

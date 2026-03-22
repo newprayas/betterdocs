@@ -37,6 +37,15 @@ const buildDrugIndicationActionHref = (drugName: string, indication: string): st
   return `${DRUG_ACTION_LINK_PROTOCOL}//${DRUG_ACTION_LINK_HOST}?${params.toString()}`;
 };
 
+const DRUG_DOSE_STYLE_QUERY_PATTERN =
+  /\b(dose|doses|dosage|dosing|schedule|regimen|how much|how many)\b/i;
+
+export const shouldDecorateIndicationLinksForQuery = (query: string): boolean => {
+  const compact = query.trim();
+  if (!compact) return false;
+  return DRUG_DOSE_STYLE_QUERY_PATTERN.test(compact);
+};
+
 export const buildDrugIndicationFollowUpQuery = (drugName: string, indication: string): string => {
   const drug = compactField(drugName);
   const target = compactField(indication);

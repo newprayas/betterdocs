@@ -2,7 +2,7 @@ import { groqService } from '@/services/groq/groqService';
 import { getIndexedDBServices } from '@/services/indexedDB';
 import { libraryService } from '@/services/libraryService';
 import { buildDeterministicDoseWithBrandsBody } from './deterministicDoseWithBrands';
-import { decorateIndicationLinks } from './drugActionLinks';
+import { decorateIndicationLinks, shouldDecorateIndicationLinksForQuery } from './drugActionLinks';
 import type {
   AskDrugIndicationsAndDoseStructured,
   DrugCatalog,
@@ -3986,7 +3986,11 @@ ${stringifyEntryForPrompt(promptContextForModel)}`;
             : formatDrugBrandsOutput(fullResponse)
           : fullResponse;
       const normalizedResponse = normalizeContraindicationCapitalization(formattedResponse);
-      const finalResponse = decorateIndicationLinks(normalizedResponse, parsed.drug_name);
+      const finalResponse =
+        intent.answerKind === 'dose_with_brands' &&
+        shouldDecorateIndicationLinksForQuery(content)
+          ? decorateIndicationLinks(normalizedResponse, parsed.drug_name)
+          : normalizedResponse;
 
       await this.saveAssistantMessage(sessionId, finalResponse);
       onStreamEvent?.({
