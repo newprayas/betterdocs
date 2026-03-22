@@ -618,6 +618,18 @@ const scorePerDetailIndicationCoverage = (
   const instructions = collectInstructionsForRouteMappings(routeMappings);
   if (instructions.length === 0) return Number.NEGATIVE_INFINITY;
 
+  if (requestedIndicationQuery) {
+    const requestedCompact = normalizeCompact(requestedIndicationQuery);
+    const indicationCompact = normalizeCompact(indication.indication);
+    if (
+      indicationCompact !== requestedCompact &&
+      !indicationCompact.includes(requestedCompact) &&
+      !requestedCompact.includes(indicationCompact)
+    ) {
+      return Number.NEGATIVE_INFINITY;
+    }
+  }
+
   let score = scoreIndicationMatch(indication.indication, requestedIndicationQuery);
   score += routeMappings.length * 80;
   score += instructions.length * 30;
@@ -640,6 +652,13 @@ const selectIndicationForDetail = (
     detail,
     buildRouteMappings(preferredIndication),
   );
+  if (requestedIndicationQuery) {
+    return {
+      indication: preferredIndication,
+      routeMappings: preferredRouteMappings,
+    };
+  }
+
   if (collectInstructionsForRouteMappings(preferredRouteMappings).length > 0) {
     return {
       indication: preferredIndication,

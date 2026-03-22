@@ -118,6 +118,44 @@ const isPlausibleDrugName = (value: string): boolean => {
   return /[A-Za-z]/.test(trimmed);
 };
 
+const DRUG_REQUESTED_INDICATION_HINT_PATTERN =
+  /\b(encephalopathy|disease|syndrome|infection|disorder|pain|fever|diabetes|hypertension|asthma|migraine|anemia|anaemia|jaundice|hepatitis|cirrhosis|impairment|failure|obstruction|allergy|allergic|renal|hepatic|cardiac|pulmonary|neuropathy|stroke|seizure|epilepsy|colitis|gastritis|ulcer|pregnancy|lactation|breast[\s-]?feeding)\b/i;
+
+const DRUG_REQUESTED_INDICATION_SUFFIX_PATTERN =
+  /\b[a-z][a-z-]*(?:itis|osis|opathy|emia|uria|algia|rrhea|rrhoea|iasis)\b/i;
+
+const looksLikeRequestedDrugIndication = (value: string): boolean => {
+  const compact = value.trim();
+  if (!compact) return false;
+  if (/^(?:adult|adults|child|children|infant|infants|neonate|neonates|baby|babies|toddler|toddlers|patient|patients)\b/i.test(compact)) {
+    return false;
+  }
+
+  return (
+    DRUG_REQUESTED_INDICATION_HINT_PATTERN.test(compact) ||
+    DRUG_REQUESTED_INDICATION_SUFFIX_PATTERN.test(compact)
+  );
+};
+
+const inferRequestedIndicationFromQuery = (content: string): string | null => {
+  const compact = content.trim();
+  if (!compact || !/\b(dose|doses|dosage|dosing|schedule|regimen|how much|how many)\b/i.test(compact)) {
+    return null;
+  }
+
+  const trailingMatch =
+    compact.match(/\bfor\s+(.+)$/i)?.[1] ||
+    compact.match(/\bin\s+(.+)$/i)?.[1] ||
+    compact.match(/\babout\s+(.+)$/i)?.[1];
+
+  const cleaned = compactField(trailingMatch || '');
+  if (!cleaned || !looksLikeRequestedDrugIndication(cleaned)) {
+    return null;
+  }
+
+  return cleaned;
+};
+
 const hasMinimumSuggestionLength = (value: string): boolean =>
   normalizeDrugLookupText(value).length > 2;
 
@@ -2038,31 +2076,7 @@ const prioritizeDoseSummaryIndications = (
   indications: string[],
   requestedIndicationQuery?: string | null,
 ): string[] => {
-  const query = compactField(requestedIndicationQuery || undefined);
-  if (!query) return indications;
-
-  const queryCompact = normalizeDrugLookupText(query);
-  const scored = indications.map((indication, index) => {
-    const labelCompact = normalizeDrugLookupText(indication);
-    let score = 0;
-
-    if (labelCompact === queryCompact) {
-      score = 4;
-    } else if (labelCompact.includes(queryCompact) || queryCompact.includes(labelCompact)) {
-      score = 3;
-    } else if (labelCompact.split(' ').some((part) => queryCompact.includes(part))) {
-      score = 2;
-    }
-
-    return { indication, score, index };
-  });
-
-  scored.sort((left, right) => {
-    if (right.score !== left.score) return right.score - left.score;
-    return left.index - right.index;
-  });
-
-  return scored.map((item) => item.indication);
+  return indications;
 };
 
 const buildDoseResponsePrelude = (
@@ -2459,9 +2473,18 @@ Rules:
     const parserDrugName = sanitizeParsedDrugName(String(parsed.drug_name || ''));
     const inferredDrugName = inferDrugNameFromRawQuery(content);
     const resolvedDrugName = parserDrugName || inferredDrugName;
+    const parserRequestedIndication = compactField(String(parsed.requested_indication || '')) || '';
+    const inferredRequestedIndication = inferRequestedIndicationFromQuery(content);
+    const resolvedRequestedIndication =
+      inferredRequestedIndication &&
+      (!parserRequestedIndication ||
+        normalizeDrugLookupText(inferredRequestedIndication).length >=
+          normalizeDrugLookupText(parserRequestedIndication).length)
+        ? inferredRequestedIndication
+        : parserRequestedIndication;
     const safeParsed: DrugQueryParseResult = {
       drug_name: canonicalizeDrugQueryCase(resolvedDrugName),
-      requested_indication: compactField(String(parsed.requested_indication || '')) || '',
+      requested_indication: resolvedRequestedIndication,
       confidence:
         typeof parsed.confidence === 'number'
           ? Math.max(0, Math.min(1, parsed.confidence))
