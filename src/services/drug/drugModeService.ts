@@ -2034,10 +2034,42 @@ const extractDoseSummaryContraindications = (
     : undefined;
 };
 
+const prioritizeDoseSummaryIndications = (
+  indications: string[],
+  requestedIndicationQuery?: string | null,
+): string[] => {
+  const query = compactField(requestedIndicationQuery || undefined);
+  if (!query) return indications;
+
+  const queryCompact = normalizeDrugLookupText(query);
+  const scored = indications.map((indication, index) => {
+    const labelCompact = normalizeDrugLookupText(indication);
+    let score = 0;
+
+    if (labelCompact === queryCompact) {
+      score = 4;
+    } else if (labelCompact.includes(queryCompact) || queryCompact.includes(labelCompact)) {
+      score = 3;
+    } else if (labelCompact.split(' ').some((part) => queryCompact.includes(part))) {
+      score = 2;
+    }
+
+    return { indication, score, index };
+  });
+
+  scored.sort((left, right) => {
+    if (right.score !== left.score) return right.score - left.score;
+    return left.index - right.index;
+  });
+
+  return scored.map((item) => item.indication);
+};
+
 const buildDoseResponsePrelude = (
   drugName: string,
   promptContext: Record<string, unknown>,
   requestedDoseAudience: DrugDoseAudience,
+  requestedIndicationQuery?: string | null,
 ): string => {
   const lines: string[] = [`**${drugName}** - Generic : ${drugName}`];
   const clinicalContextSource =
@@ -2057,7 +2089,10 @@ const buildDoseResponsePrelude = (
       : '⚠️ Only **ADULT** dose given, search child dose separately',
   );
 
-  const indications = extractDoseSummaryIndications(promptContext);
+  const indications = prioritizeDoseSummaryIndications(
+    extractDoseSummaryIndications(promptContext),
+    requestedIndicationQuery,
+  );
   lines.push('', '**✅ Indications**');
 
   if (indications.length > 0) {
@@ -3795,6 +3830,7 @@ ${stringifyEntryForPrompt(promptContextForModel)}`;
             resolvedDrugName,
             promptContext as Record<string, unknown>,
             requestedDoseAudience,
+            requestedIndicationQuery || null,
           );
 
           fullResponse = formattedBodyWithSchedules
@@ -3870,6 +3906,7 @@ ${stringifyEntryForPrompt(promptContextForModel)}`;
             resolvedDrugName,
             promptContext as Record<string, unknown>,
             requestedDoseAudience,
+            requestedIndicationQuery || null,
           );
 
           fullResponse = formattedBodyWithSchedules

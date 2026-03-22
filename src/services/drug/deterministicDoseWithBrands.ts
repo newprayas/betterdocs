@@ -31,6 +31,7 @@ type DeterministicBrandBlock = {
   sortOrder: number;
   intraGroupOrder: number;
   priority: 0 | 1 | 2;
+  queryPriority: 0 | 1;
   content: string;
 };
 
@@ -841,12 +842,18 @@ const groupBlocksByHeading = (
         requestedDoseAudience,
         referenceOnly,
       );
+      const queryPriority: 0 | 1 =
+        requestedIndicationQuery &&
+        scoreIndicationMatch(matchedIndicationLabel, requestedIndicationQuery) >= 300
+          ? 0
+          : 1;
 
       brandBlocks.push({
         heading,
         sortOrder: seenHeadingOrders.get(heading) || headingOrder,
         intraGroupOrder: sequence,
         priority: classifyRenderedBrandBlockPriority(content),
+        queryPriority,
         content,
       });
       sequence += 1;
@@ -871,6 +878,8 @@ const groupBlocksByHeading = (
       sortOrder: Math.min(...headingRouteMappings.map((routeMapping) => routeMapping.order)),
       intraGroupOrder: sequence,
       priority: 2,
+      // Keep no-dose fallback blocks after real dosing blocks, even for a matching indication.
+      queryPriority: 1,
       content: renderNoBrandRouteBlock(selectedIndication.indication, headingRouteMappings),
     });
     sequence += 1;
@@ -909,6 +918,13 @@ const renderGroupedBlocks = (blocks: DeterministicBrandBlock[]): string => {
 
   return Array.from(grouped.entries())
     .sort((left, right) => {
+      const leftMinQueryPriority = Math.min(...left[1].blocks.map((block) => block.queryPriority));
+      const rightMinQueryPriority = Math.min(...right[1].blocks.map((block) => block.queryPriority));
+
+      if (leftMinQueryPriority !== rightMinQueryPriority) {
+        return leftMinQueryPriority - rightMinQueryPriority;
+      }
+
       const leftMinPriority = Math.min(...left[1].blocks.map((block) => block.priority));
       const rightMinPriority = Math.min(...right[1].blocks.map((block) => block.priority));
 
@@ -936,6 +952,9 @@ const renderGroupedBlocks = (blocks: DeterministicBrandBlock[]): string => {
           ...group.blocks
             .slice()
             .sort((left, right) => {
+              if (left.queryPriority !== right.queryPriority) {
+                return left.queryPriority - right.queryPriority;
+              }
               if (left.priority !== right.priority) {
                 return left.priority - right.priority;
               }
@@ -987,13 +1006,34 @@ export const buildDeterministicDoseWithBrandsBody = (
     return null;
   }
 
+  const normalizedRequestedIndicationQuery = compactField(requestedIndicationQuery || undefined);
+  const prioritizedIndications = normalizedRequestedIndicationQuery
+    ? [...context.indications].sort((left, right) => {
+        const leftLabel = normalizeCompact(left.indication);
+        const rightLabel = normalizeCompact(right.indication);
+        const queryLabel = normalizeCompact(normalizedRequestedIndicationQuery);
+
+        const score = (label: string): number => {
+          if (!label || !queryLabel) return 0;
+          if (label === queryLabel) return 4;
+          if (label.includes(queryLabel) || queryLabel.includes(label)) return 3;
+          return 1;
+        };
+
+        const leftScore = score(leftLabel);
+        const rightScore = score(rightLabel);
+        if (leftScore !== rightScore) return rightScore - leftScore;
+        return 0;
+      })
+    : context.indications;
+
   logDeterministicText(
     '[DRUG DETERMINISTIC PARSED INDICATIONS]',
     `Parsed indications and dose:\n${JSON.stringify(
       {
         generic_name: context.genericName,
-        indication_count: context.indications.length,
-        indications: summarizeStructuredIndicationsForLog(context.indications),
+        indication_count: prioritizedIndications.length,
+        indications: summarizeStructuredIndicationsForLog(prioritizedIndications),
       },
       null,
       2,
@@ -1030,7 +1070,7 @@ export const buildDeterministicDoseWithBrandsBody = (
   });
 
   const groupedBlocks = groupBlocksByHeading(
-    context.indications,
+    prioritizedIndications,
     selected.indication,
     context.brands,
     requestedDoseAudience,
