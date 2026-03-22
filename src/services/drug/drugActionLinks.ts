@@ -37,6 +37,14 @@ const buildDrugIndicationActionHref = (drugName: string, indication: string): st
   return `${DRUG_ACTION_LINK_PROTOCOL}//${DRUG_ACTION_LINK_HOST}?${params.toString()}`;
 };
 
+const escapeMarkdownLinkText = (value: string): string =>
+  value
+    .replace(/\\/g, '\\\\')
+    .replace(/\[/g, '\\[')
+    .replace(/\]/g, '\\]')
+    .replace(/\(/g, '\\(')
+    .replace(/\)/g, '\\)');
+
 const DRUG_DOSE_STYLE_QUERY_PATTERN =
   /\b(dose|doses|dosage|dosing|schedule|regimen|how much|how many)\b/i;
 
@@ -95,20 +103,10 @@ const linkifyIndicationLine = (line: string, drugName: string): string => {
   const bulletMatch = trimmed.match(/^([-*•])\s+(.*)$/);
   const bullet = bulletMatch?.[1] || '';
   const content = bulletMatch?.[2] || trimmed;
-  const segments = content
-    .split(/\s*\|\s*/)
-    .map((segment) => segment.trim())
-    .filter(Boolean);
+  const href = buildDrugIndicationActionHref(drugName, content);
+  if (!href) return line;
 
-  if (segments.length === 0) return line;
-
-  const linkedSegments = segments.map((segment) => {
-    const href = buildDrugIndicationActionHref(drugName, segment);
-    if (!href) return segment;
-    return `[${segment}](${href})`;
-  });
-
-  const rebuilt = linkedSegments.join(' | ');
+  const rebuilt = `[${escapeMarkdownLinkText(content)}](${href})`;
   return bullet ? `${bullet} ${rebuilt}` : rebuilt;
 };
 
