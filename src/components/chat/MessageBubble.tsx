@@ -277,7 +277,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
                           });
                           onDrugActionClick(query);
                         }}
-                        className="text-left text-blue-500 hover:text-blue-600 underline"
+                        className="text-left text-blue-500 hover:text-blue-600 underline underline-offset-4 decoration-1 decoration-blue-400/80 hover:decoration-blue-500/90"
                       >
                         {children}
                       </button>
@@ -286,7 +286,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
                         href={href}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-blue-500 hover:text-blue-600 underline"
+                        className="text-blue-500 hover:text-blue-600 underline underline-offset-4 decoration-1 decoration-blue-400/80 hover:decoration-blue-500/90"
                       >
                         {children}
                       </a>
