@@ -18,11 +18,13 @@ const MessageBubble = dynamic(
 interface ChatListProps {
   sessionId: string;
   className?: string;
+  onDrugActionClick?: (query: string) => void;
 }
 
 export const ChatList: React.FC<ChatListProps> = ({
   sessionId,
   className,
+  onDrugActionClick,
 }) => {
   const { messages, isStreaming, streamingContent, streamingCitations, isReadingSources, progressPercentage, currentProgressStep } = useChatStore();
   const isLoading = false; // Loading is now handled at the parent level
@@ -95,7 +97,7 @@ export const ChatList: React.FC<ChatListProps> = ({
                 data-chat-message-id={message.id}
                 data-chat-message-role={message.role}
               >
-                <MessageBubble message={message} />
+                <MessageBubble message={message} onDrugActionClick={onDrugActionClick} />
               </div>
             </React.Fragment>
           );
@@ -123,6 +125,7 @@ export const ChatList: React.FC<ChatListProps> = ({
               citations: streamingCitations,
             }}
             isStreaming={true}
+            onDrugActionClick={onDrugActionClick}
           />
         )}
         
@@ -172,7 +175,8 @@ export const StreamingChatList: React.FC<{
   streamingContent?: string;
   streamingCitations?: any[];
   className?: string;
-}> = ({ messages, streamingContent, streamingCitations, className }) => {
+  onDrugActionClick?: (query: string) => void;
+}> = ({ messages, streamingContent, streamingCitations, className, onDrugActionClick }) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll to bottom when new messages arrive or streaming updates
@@ -207,7 +211,7 @@ export const StreamingChatList: React.FC<{
               {showDateDivider && (
                 <DateDivider date={message.timestamp || new Date()} />
               )}
-              <MessageBubble message={message} />
+              <MessageBubble message={message} onDrugActionClick={onDrugActionClick} />
             </React.Fragment>
           );
         })}
@@ -224,6 +228,7 @@ export const StreamingChatList: React.FC<{
               citations: streamingCitations,
             }}
             isStreaming={true}
+            onDrugActionClick={onDrugActionClick}
           />
         )}
         

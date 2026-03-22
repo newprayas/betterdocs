@@ -396,6 +396,30 @@ export default function SessionPage() {
     }
   };
 
+  const handleDrugActionClick = async (query: string) => {
+    if (!sessionId) return;
+
+    try {
+      console.log("[DRUG ACTION][SESSION PAGE] dispatch", {
+        sessionId,
+        query,
+      });
+      useChatStore.getState().markSkipNextDrugFollowUpRewriteForSession(sessionId);
+      setMessageInput("");
+      await sendMessage(sessionId, query);
+      console.log("[DRUG ACTION][SESSION PAGE] sent", {
+        sessionId,
+        query,
+      });
+    } catch (error) {
+      console.error("[DRUG ACTION][SESSION PAGE] failed to send drug action query:", {
+        sessionId,
+        query,
+        error,
+      });
+    }
+  };
+
   const handleSessionModeChange = async (mode: SessionChatMode) => {
     console.log("[SESSION MODE]", "Mode changed from session page", {
       sessionId,
@@ -871,6 +895,7 @@ export default function SessionPage() {
                   <ChatList
                     sessionId={sessionId}
                     className="max-w-4xl mx-auto"
+                    onDrugActionClick={handleDrugActionClick}
                   />
                 </div>
 

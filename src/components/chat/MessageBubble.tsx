@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import { Message, Citation } from "../../types";
@@ -7,18 +7,46 @@ import { MessageSender } from "../../types/message";
 import { CitationPanel } from "./CitationPanel";
 import { formatTime } from "../../utils/date";
 import clsx from "clsx";
+import {
+  buildDrugIndicationFollowUpQuery,
+  isDrugActionHref,
+  parseDrugActionHref,
+} from "../../services/drug/drugActionLinks";
 
 interface MessageBubbleProps {
   message: Message;
   isStreaming?: boolean;
   className?: string;
+  onDrugActionClick?: (query: string) => void;
 }
 
 // 1. Wrap the component in React.memo to prevent re-renders on parent state changes (like typing)
 export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
-  ({ message, isStreaming = false, className }) => {
+  ({ message, isStreaming = false, className, onDrugActionClick }) => {
     const isUser = message.role === "user";
     const [isCopied, setIsCopied] = useState(false);
+    const logDrugAction = (...args: unknown[]) => {
+      console.log("[DRUG ACTION][MESSAGE BUBBLE]", ...args);
+    };
+    const transformMarkdownUrl = (url: string): string => {
+      if (url.startsWith("drug-action:")) {
+        logDrugAction("url transform keep", {
+          messageId: message.id,
+          url,
+        });
+        return url;
+      }
+
+      const transformed = defaultUrlTransform(url);
+      if (url !== transformed) {
+        logDrugAction("url transform sanitize", {
+          messageId: message.id,
+          url,
+          transformed,
+        });
+      }
+      return transformed;
+    };
 
     // 2. Memoize the content processing so it only runs when content/citations change
     const processedContent = useMemo(() => {
@@ -67,6 +95,60 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
       } catch (error) {
         console.error("Failed to copy response:", error);
       }
+    };
+
+    const handleMessageContentClickCapture = (event: React.MouseEvent<HTMLDivElement>) => {
+      const target = event.target as HTMLElement | null;
+      const anchor = target?.closest('a[href]') as HTMLAnchorElement | null;
+      if (!anchor) {
+        return;
+      }
+
+      const href = anchor.getAttribute('href') || '';
+      const hrefLooksLikeDrugAction =
+        href.startsWith("drug-action:") || isDrugActionHref(href);
+      const parsed = parseDrugActionHref(href);
+      logDrugAction("click capture", {
+        messageId: message.id,
+        isUser,
+        hasHandler: Boolean(onDrugActionClick),
+        href,
+        hrefLooksLikeDrugAction,
+        parsed,
+      });
+
+      if (!parsed && !hrefLooksLikeDrugAction) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+
+      if (!parsed) {
+        logDrugAction("click capture blocked", {
+          messageId: message.id,
+          reason: "href looked like drug action but could not be parsed",
+          href,
+        });
+        return;
+      }
+
+      if (!onDrugActionClick) {
+        logDrugAction("click capture blocked", {
+          messageId: message.id,
+          reason: "no handler",
+        });
+        return;
+      }
+
+      const query = buildDrugIndicationFollowUpQuery(parsed.drugName, parsed.indication);
+      logDrugAction("click capture dispatch", {
+        messageId: message.id,
+        query,
+      });
+      onDrugActionClick(
+        query,
+      );
     };
 
     // 3. REMOVED: All IndentationAnalyzer calls and console.logs
@@ -124,10 +206,12 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
                   ? "text-white prose-p:text-white prose-strong:text-white prose-li:text-white prose-headings:text-white"
                   : "text-gray-900 prose-p:text-gray-900 prose-li:text-gray-900 prose-strong:text-black prose-headings:text-black dark:text-gray-100 dark:prose-p:text-gray-200 dark:prose-li:text-gray-200 dark:prose-strong:text-white dark:prose-headings:text-white",
               )}
+              onClickCapture={handleMessageContentClickCapture}
             >
               <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
                 rehypePlugins={[rehypeHighlight]}
+                urlTransform={transformMarkdownUrl}
                 components={{
                   // Custom strong component to override any conflicting styles
                   strong: ({ node, className, children, ...props }: any) => (
@@ -156,16 +240,58 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
                       </code>
                     );
                   },
-                  a: ({ href, children }) => (
-                    <a
-                      href={href}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-blue-500 hover:text-blue-600 underline"
-                    >
-                      {children}
-                    </a>
-                  ),
+                  a: ({ href, children }) => {
+                    const normalizedHref = href || "";
+                    const isActionLink =
+                      normalizedHref.startsWith("drug-action:") ||
+                      isDrugActionHref(normalizedHref);
+
+                    logDrugAction("link render", {
+                      messageId: message.id,
+                      href: normalizedHref,
+                      isActionLink,
+                      hasHandler: Boolean(onDrugActionClick),
+                    });
+
+                    return isActionLink ? (
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          const parsed = parseDrugActionHref(normalizedHref);
+                          logDrugAction("button click", {
+                            messageId: message.id,
+                            href: normalizedHref,
+                            hasHandler: Boolean(onDrugActionClick),
+                            parsed,
+                          });
+                          if (!parsed || !onDrugActionClick) return;
+                          const query = buildDrugIndicationFollowUpQuery(
+                            parsed.drugName,
+                            parsed.indication,
+                          );
+                          logDrugAction("button dispatch", {
+                            messageId: message.id,
+                            query,
+                          });
+                          onDrugActionClick(query);
+                        }}
+                        className="text-left text-blue-500 hover:text-blue-600 underline"
+                      >
+                        {children}
+                      </button>
+                    ) : (
+                      <a
+                        href={href}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-500 hover:text-blue-600 underline"
+                      >
+                        {children}
+                      </a>
+                    );
+                  },
                   ul: ({ node, className, children, ...props }) => (
                     <ul
                       className={clsx(

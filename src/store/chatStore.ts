@@ -235,6 +235,7 @@ export const useChatStore = create<ChatStore>()(
         rateLimitWaitSeconds: 0,
         sessionModeBySession: {},
         drugSuggestionsBySession: {},
+        skipNextDrugFollowUpRewriteBySession: {},
         drugContextBySession: {},
 
         // Actions
@@ -378,11 +379,32 @@ export const useChatStore = create<ChatStore>()(
           const sessionMode: SessionChatMode =
             rawSessionMode === 'ask-drug' ? 'drug' : rawSessionMode;
           const priorDrugContext = get().drugContextBySession[sessionId] || null;
+          const skipNextDrugFollowUpRewrite =
+            get().skipNextDrugFollowUpRewriteBySession[sessionId] || false;
           const contentHasBroadDrugListIntent = DRUG_BROAD_QUERY_PATTERN.test(content);
+          const originalExplicitDrugName = extractExplicitDrugNameFromQuery(content);
+          const originalExplicitDrugContextName =
+            originalExplicitDrugName && !looksLikeConditionTarget(originalExplicitDrugName)
+              ? originalExplicitDrugName
+              : null;
 
           let effectiveContent = content;
-          if (sessionMode === 'drug' && priorDrugContext?.lastDrugName) {
-            if (isDoseForConditionFollowUpQuery(content)) {
+          if (skipNextDrugFollowUpRewrite) {
+            console.log('[DRUG FOLLOW-UP REWRITE][SKIP][CLICKED-ACTION]', {
+              sessionId,
+              originalQuery: content,
+              effectiveContent,
+              lastDrugName: priorDrugContext?.lastDrugName || null,
+            });
+
+            set((state) => ({
+              skipNextDrugFollowUpRewriteBySession: {
+                ...state.skipNextDrugFollowUpRewriteBySession,
+                [sessionId]: false,
+              },
+            }));
+          } else if (sessionMode === 'drug' && priorDrugContext?.lastDrugName) {
+            if (isDoseForConditionFollowUpQuery(content) && !originalExplicitDrugContextName) {
               effectiveContent = `dose of ${priorDrugContext.lastDrugName}`;
               console.log('[DRUG FOLLOW-UP REWRITE][DOSE-FOR-CONDITION]', {
                 originalQuery: content,
@@ -1100,6 +1122,18 @@ export const useChatStore = create<ChatStore>()(
             drugSuggestionsBySession: {
               ...state.drugSuggestionsBySession,
               [sessionId]: [],
+            },
+          }));
+        },
+
+        markSkipNextDrugFollowUpRewriteForSession: (sessionId: string) => {
+          console.log('[DRUG FOLLOW-UP REWRITE][MARK][CLICKED-ACTION]', {
+            sessionId,
+          });
+          set((state) => ({
+            skipNextDrugFollowUpRewriteBySession: {
+              ...state.skipNextDrugFollowUpRewriteBySession,
+              [sessionId]: true,
             },
           }));
         },

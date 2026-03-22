@@ -46,6 +46,7 @@ export interface ChatStore {
   rateLimitWaitSeconds: number;
   sessionModeBySession: Record<string, SessionChatMode>;
   drugSuggestionsBySession: Record<string, string[]>;
+  skipNextDrugFollowUpRewriteBySession: Record<string, boolean>;
   drugContextBySession: Record<
     string,
     {
@@ -74,6 +75,7 @@ export interface ChatStore {
   setSessionModeForSession: (sessionId: string, mode: SessionChatMode) => void;
   setDrugSuggestionsForSession: (sessionId: string, suggestions: string[]) => void;
   clearDrugSuggestionsForSession: (sessionId: string) => void;
+  markSkipNextDrugFollowUpRewriteForSession: (sessionId: string) => void;
   getSessionMode: (sessionId: string) => SessionChatMode;
 }
 
