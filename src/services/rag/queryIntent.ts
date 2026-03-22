@@ -6,6 +6,8 @@ export type QueryIntent =
   | 'difference_between'
   | 'investigations'
   | 'treatment_rx'
+  | 'complications'
+  | 'prognosis'
   | 'clinical_features_history_exam'
   | 'how_to_procedure'
   | 'generic_fallback';
@@ -65,6 +67,24 @@ const INTENT_RULES: IntentRule[] = [
       /\brx\b/i,
       /\btx\b/i,
       /\btherapeutic\b/i,
+    ],
+  },
+  {
+    intent: 'complications',
+    patterns: [
+      /\bcomplications?\b/i,
+      /\bsequelae\b/i,
+      /\bconsequences?\b/i,
+      /\badverse\s+outcomes?\b/i,
+    ],
+  },
+  {
+    intent: 'prognosis',
+    patterns: [
+      /\bprognosis\b/i,
+      /\boutcomes?\b/i,
+      /\boutlook\b/i,
+      /\bcourse\b/i,
     ],
   },
   {

@@ -26,3 +26,19 @@ export interface PageGroup {
     similarity: number;
   }>;
 }
+
+export interface StructuredAnswerSection {
+  title: string;
+  claims?: string[];
+  subsections?: StructuredAnswerSubsection[];
+}
+
+export interface StructuredAnswerSubsection {
+  title: string;
+  claims: string[];
+}
+
+export interface StructuredAnswerResponse {
+  title?: string;
+  sections: StructuredAnswerSection[];
+}

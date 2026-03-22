@@ -1123,6 +1123,17 @@ export class CitationService {
     if (citationMatches.length === 0) {
       const warning = 'No explicit inline citations found in model output; skipping derived citations to avoid unsupported references.';
       console.warn('[SIMPLIFIED NO EXPLICIT CITATIONS]', warning);
+
+      // Conservative recovery path:
+      // If the response is clearly grounded in the retrieved page groups, derive
+      // citations from the response text instead of forcing a false "not found" fallback.
+      const derived = this.deriveCitationsFromResponseContent(normalizedResponse, pageGroups);
+      if (derived.citations.length > 0) {
+        console.log('[SIMPLIFIED DERIVED CITATIONS]', `Recovered ${derived.citations.length} citation(s) from response content.`);
+        console.log('=== SIMPLIFIED CITATION PROCESSING END ===\n');
+        return derived;
+      }
+
       console.log('=== SIMPLIFIED CITATION PROCESSING END ===\n');
       return {
         citations: [],
@@ -1346,6 +1357,7 @@ export class CitationService {
     const lines = response.split('\n');
     const taggedLines: string[] = [];
     const markerOrder: number[] = [];
+    let activeHeading = '';
 
     const pushMarkerOrder = (idx: number) => {
       if (!markerOrder.includes(idx)) markerOrder.push(idx);
@@ -1357,13 +1369,26 @@ export class CitationService {
         taggedLines.push(originalLine);
         continue;
       }
-      if (trimmed.length < 40) {
+
+      const headingMatch = trimmed.match(/^(#{1,6}\s+|(?:\*\*)?)([A-Za-z][^:*]{2,80}?)(?:\*\*)?:?\s*$/);
+      const isHeadingLine =
+        /^#{1,6}\s/.test(trimmed) ||
+        (/^[A-Za-z][^:*]{2,80}:?$/.test(trimmed) && !/^[-*•]\s+/.test(trimmed) && !/^\d+\.\s+/.test(trimmed)) ||
+        Boolean(headingMatch);
+
+      // Skip obvious headings/separators/code blocks, but remember the active heading
+      // so short claims underneath it can borrow the section context for scoring.
+      if (isHeadingLine) {
+        activeHeading = trimmed
+          .replace(/^#{1,6}\s+/, '')
+          .replace(/^\*\*|\*\*$/g, '')
+          .replace(/:$/, '')
+          .trim();
         taggedLines.push(originalLine);
         continue;
       }
 
-      // Skip obvious headings/separators/code blocks.
-      if (/^#{1,6}\s/.test(trimmed) || /^[-*_]{3,}$/.test(trimmed) || /^```/.test(trimmed)) {
+      if (/^[-*_]{3,}$/.test(trimmed) || /^```/.test(trimmed)) {
         taggedLines.push(originalLine);
         continue;
       }
@@ -1380,18 +1405,27 @@ export class CitationService {
         .replace(/^\u2705\s+/, '')
         .trim();
 
+      const contextualLine = activeHeading
+        ? `${activeHeading} ${lineForMatch}`.trim()
+        : lineForMatch;
+
+      if (contextualLine.length < 12) {
+        taggedLines.push(originalLine);
+        continue;
+      }
+
       let bestIndex = -1;
       let bestScore = 0;
 
       for (let i = 0; i < candidates.length; i++) {
-        const score = this.quickLineSourceScore(lineForMatch, candidates[i].combinedContent);
+        const score = this.quickLineSourceScore(contextualLine, candidates[i].combinedContent);
         if (score > bestScore) {
           bestScore = score;
           bestIndex = i;
         }
       }
 
-      if (bestIndex >= 0 && bestScore >= 0.12) {
+      if (bestIndex >= 0 && bestScore >= 0.1) {
         pushMarkerOrder(bestIndex);
         const marker = `[§${bestIndex}]`;
         const lineWithMarker = /[.,;:!?]\s*$/.test(originalLine)

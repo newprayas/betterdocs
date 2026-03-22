@@ -16,7 +16,7 @@ import { postProcessRetrievalResults } from './retrievalPostprocess';
 import { MessageSender, type MessageCreate, type Message } from '@/types';
 import type { Document, RouteIndexRecord } from '@/types';
 import type { ChatStreamEvent } from '../gemini/chatService';
-import type { SimplifiedCitationGroup } from '@/types/citation';
+import type { SimplifiedCitationGroup, StructuredAnswerResponse } from '@/types/citation';
 import type { EmbeddingChunk, VectorSearchResult } from '@/types/embedding';
 import { cosineSimilarity, calculateVectorNorm } from '@/utils/vectorUtils';
 
@@ -53,6 +53,15 @@ interface SimplifiedGenerationMetrics {
   contractPassAfterFix: boolean;
   hadNumberingFix: boolean;
   hadMissingSectionFill: boolean;
+}
+
+interface StructuredSourceGroup {
+  key: string;
+  order: number;
+  documentTitle: string;
+  page?: number;
+  heading: string | null;
+  content: string;
 }
 
 interface SessionWarmCacheEntry {
@@ -908,6 +917,7 @@ export class ChatPipeline {
     return (
       normalized.includes('i cannot answer this question based on the provided documents') ||
       normalized.includes('cannot answer this question based on the provided documents') ||
+      normalized.includes('not found in provided sources') ||
       normalized.includes('insufficient information in the provided documents') ||
       normalized.includes('not enough information in the provided documents')
     );
@@ -2149,7 +2159,7 @@ ${normalizedOriginal}
     onStreamEvent?: (event: ChatStreamEvent) => void
   ): Promise<SimplifiedGenerationMetrics | null> {
     console.log('\n=== SIMPLIFIED CONTEXTUAL RESPONSE MODE (WITH RAG) ===');
-    console.log('[SIMPLIFIED RAG MODE]', 'Generating response with simplified page-based citations');
+    console.log('[SIMPLIFIED RAG MODE]', 'Generating response with app-level citations');
     console.log('[SIMPLIFIED CONTEXT]', `Providing ${searchResults.length} context sources to LLM`);
 
     // Get session for system prompt
@@ -2221,8 +2231,12 @@ ${normalizedOriginal}
         onStreamEvent({ type: 'status', message: 'Answer Formatting' });
       }
 
+      const structuredResponse = this.parseStructuredAnswerResponse(fullResponse);
+      const responseBody = structuredResponse
+        ? this.renderStructuredAnswerMarkdown(structuredResponse, answerContract, searchResults)
+        : fullResponse.trim();
       const firstContractStartMs = Date.now();
-      const firstContractPass = applyAnswerContract(fullResponse.trim(), answerContract);
+      const firstContractPass = applyAnswerContract(responseBody, answerContract);
       postprocessMs += Date.now() - firstContractStartMs;
       contractPassBeforeFix = firstContractPass.passBeforeFix;
       contractPassAfterFix = firstContractPass.passAfterFix;
@@ -2230,6 +2244,11 @@ ${normalizedOriginal}
       hadMissingSectionFill = firstContractPass.hadMissingSectionFill;
 
       let responseForCitation = firstContractPass.content;
+      if (structuredResponse) {
+        console.log('[STRUCTURED RESPONSE PARSE]', `Parsed ${structuredResponse.sections.length} section(s) from model output.`);
+      } else if ((fullResponse || '').trim().startsWith('{')) {
+        console.warn('[STRUCTURED RESPONSE PARSE]', 'Model output looked like JSON but could not be parsed. Falling back to contract normalization.');
+      }
       const firstPassRateLimitNotice = this.extractRateLimitNotice(responseForCitation);
       if (firstPassRateLimitNotice) {
         console.warn('[RATE LIMIT SURFACE]', 'Returning rate-limit notice directly (skipping citation pipeline).');
@@ -2259,113 +2278,26 @@ ${normalizedOriginal}
         };
       }
 
-      let isNoEvidenceResponse = this.isInsufficientEvidenceResponse(responseForCitation);
-      let citationResult: SimplifiedCitationGroup = citationService.processSimplifiedCitations(responseForCitation, searchResults);
+      const citationResult = citationService.processSimplifiedCitations(responseForCitation, searchResults);
+      let citationMetadata = citationResult.citations.length > 0
+        ? citationService.convertSimplifiedToMessageCitations(citationResult.citations)
+        : this.buildFallbackCitationsFromSearchResults(searchResults, Math.min(6, searchResults.length));
+      let responseForCitationConsistency = citationResult.renumberedResponse || responseForCitation;
+      const isNoEvidenceResponse = this.isInsufficientEvidenceResponse(responseForCitationConsistency);
 
-      // Convert simplified citations to message citation format for storage
-      let citationMetadata = citationService.convertSimplifiedToMessageCitations(citationResult.citations);
-      let responseForCitationConsistency = citationResult.renumberedResponse;
-
-      // Retry once with stronger citation instructions when output has no verifiable citations.
-      if (!isNoEvidenceResponse && citationMetadata.length === 0) {
-        console.warn('[CITATION RETRY]', 'Initial response had no verifiable citations. Retrying once with strict citation instructions.');
-
-        let retryResponse = '';
-        const retryPrompt = `
-<CONTEXT_SOURCES>
-${context}
-</CONTEXT_SOURCES>
-
-Conversation History:
-${recentMessages}
-
-New Question: ${content}
-
-Answer Intent: ${queryIntent}
-
-IMPORTANT RETRY RULES:
-- Regenerate the answer using ONLY the context above.
-- Every factual paragraph or bullet MUST end with at least one citation marker like [1] or [2].
-- Do NOT use "Citation:" labels. Use inline [n] markers only.
-- If a point cannot be supported by context, do not include that point.
-- Keep output well formatted with short headings and bullets.
-- No horizontal rules (\`---\`) and no skipped numbering.
-- Follow this contract exactly:
-${contractInstruction}
-`.trim();
-
-        await groqService.generateStreamingResponse(
-          retryPrompt,
-          systemPrompt,
-          groqModel,
-          {
-            temperature: 0.1,
-            maxTokens,
-            maxFailoverRetries: 2,
-            retryBackoffMs: 300,
-            onChunk: (chunk: string) => {
-              retryResponse += chunk;
-            }
-          }
-        );
-
-        console.log('[CITATION RETRY COMPLETE]', `Generated ${retryResponse.length} characters`);
-
-        if (retryResponse.trim()) {
-          const retryContractStartMs = Date.now();
-          const retryContractPass = applyAnswerContract(retryResponse.trim(), answerContract);
-          postprocessMs += Date.now() - retryContractStartMs;
-          contractPassBeforeFix = retryContractPass.passBeforeFix;
-          contractPassAfterFix = retryContractPass.passAfterFix;
-          hadNumberingFix = hadNumberingFix || retryContractPass.hadNumberingFix;
-          hadMissingSectionFill = hadMissingSectionFill || retryContractPass.hadMissingSectionFill;
-
-          responseForCitation = retryContractPass.content;
-          const retryRateLimitNotice = this.extractRateLimitNotice(responseForCitation);
-          if (retryRateLimitNotice) {
-            console.warn('[RATE LIMIT SURFACE]', 'Retry hit rate limit. Returning rate-limit notice directly.');
-
-            const assistantMessage: MessageCreate = {
-              sessionId,
-              content: retryRateLimitNotice,
-              role: MessageSender.ASSISTANT,
-            };
-            await this.indexedDBServices.messageService.createMessage(assistantMessage);
-
-            if (onStreamEvent) {
-              onStreamEvent({
-                type: 'done',
-                content: retryRateLimitNotice,
-                citations: undefined
-              });
-            }
-
-            console.log('=== SIMPLIFIED CONTEXTUAL RESPONSE MODE END ===\n');
-            return {
-              postprocessMs,
-              contractPassBeforeFix,
-              contractPassAfterFix,
-              hadNumberingFix,
-              hadMissingSectionFill,
-            };
-          }
-
-          isNoEvidenceResponse = this.isInsufficientEvidenceResponse(responseForCitation);
-          citationResult = citationService.processSimplifiedCitations(responseForCitation, searchResults);
-          citationMetadata = citationService.convertSimplifiedToMessageCitations(citationResult.citations);
-          responseForCitationConsistency = citationResult.renumberedResponse;
-        }
-      }
-
-      // If model explicitly says evidence is insufficient, do not attach normal source cards.
-      if (isNoEvidenceResponse) {
-        citationMetadata = [];
-      }
-
-      // Strict grounding gate:
-      // remove substantial lines that have no inline citations and fail closed if no verifiable citations remain.
+      // Final hard guard: ensure text citation markers and reference panel are always in sync.
+      const consistentCitationOutput = this.enforceCitationConsistency(
+        responseForCitationConsistency,
+        citationMetadata
+      );
+      const citationBackfilledContent = !isNoEvidenceResponse
+        ? this.backfillMissingInlineCitations(
+            consistentCitationOutput.content,
+            consistentCitationOutput.citations
+          )
+        : consistentCitationOutput.content;
       if (!isNoEvidenceResponse) {
-        const groundingPass = this.removeUncitedSubstantiveLines(responseForCitationConsistency);
+        const groundingPass = this.removeUncitedSubstantiveLines(citationBackfilledContent);
         responseForCitationConsistency = groundingPass.content;
         if (groundingPass.dropped > 0) {
           console.warn(
@@ -2373,24 +2305,12 @@ ${contractInstruction}
             `Removed ${groundingPass.dropped} uncited substantive line(s).`
           );
         }
-      }
-
-      if (!isNoEvidenceResponse && (citationMetadata.length === 0 || !this.hasInlineCitations(responseForCitationConsistency))) {
-        console.warn('[STRICT CITATION MODE]', 'No explicit verifiable citations found after validation. Returning grounded insufficiency response.');
-        responseForCitationConsistency = buildContractFallbackResponse(
-          answerContract,
-          'I cannot provide a fully grounded answer from the provided documents because explicit, verifiable citations were not found.'
-        );
+      } else {
         citationMetadata = [];
+        responseForCitationConsistency = citationBackfilledContent;
       }
-
-      // Final hard guard: ensure text citation markers and reference panel are always in sync.
-      const consistentCitationOutput = this.enforceCitationConsistency(
-        responseForCitationConsistency,
-        citationMetadata
-      );
       const responseWithQueryHeader = this.prependAnsweredQueryHeader(
-        consistentCitationOutput.content,
+        responseForCitationConsistency,
         content
       );
 
@@ -2437,32 +2357,28 @@ ${contractInstruction}
    * Get simplified system prompt for page-based citation system
    */
   private getSimplifiedSystemPrompt(searchResults?: any[], contractInstruction?: string): string {
-    const availableSources = searchResults?.length || 0;
-
     return `You are a medical RAG assistant.
 
 You MUST follow these rules:
 1) Use ONLY the provided context sources. No external knowledge.
 2) If context is insufficient, say: "I cannot answer this question based on the provided documents."
-3) Every factual paragraph or bullet MUST end with inline citations like [1], [2].
-4) Use only citation numbers from 1 to ${availableSources}.
-5) Do not invent citation numbers.
-6) Do not use "Citation:" labels; use inline [n] markers only.
-7) If a statement cannot be cited, do not include it.
-8) Conversation continuity rule: if the new question is a short follow-up that is clearly related to the previous user question, continue with the same medical topic/condition unless the user explicitly changes topic.
+3) Return STRICT MARKDOWN ONLY.
+4) Do not include citation markers, bracket numbers, code fences, or commentary.
+5) Conversation continuity rule: if the new question is a short follow-up that is clearly related to the previous user question, continue with the same medical topic/condition unless the user explicitly changes topic.
 
 Output format requirements:
-- Never use markdown tables.
-- Use section headers plus bullet points only.
-- Do not use long plain paragraphs.
-- Keep each section focused and scannable.
-- Every bullet or numbered item must start on its own new line.
-- Never keep multiple bullet-marker items inside one paragraph or one list line.
-- If a line starts with a topic and then lists details, put the topic on its own line and place the details as indented sub-bullets.
-- Do NOT use horizontal separators like ---.
-- Do NOT skip numbering in ordered lists.
-- Do NOT leave empty section headers.
-- If a required section is not present in sources, keep the section and write: "Not found in provided sources."
+- Use only the section titles from the contract below.
+- Use subsections when the source naturally breaks into groups, subtypes, or distinctions.
+- Use the same page and adjacent pages (page N, N-1, N+1) as a continuity signal: if the topic is clearly continuing, keep those facts under the same heading or subsection.
+- If the source heading or section cue changes, start a new subsection instead of merging the ideas.
+- Prefer smaller, source-faithful subsections over one large mixed subsection.
+- Do not merge preoperative, intraoperative, postoperative, early, medium, and late content into one bucket unless the source explicitly groups them together.
+- Only output claims that are explicitly present in the retrieved text. Do not add interpretation, thresholds, or conclusions unless the exact wording or a near-verbatim line appears in the source.
+- If a claim is not explicitly supported by the retrieved text, omit it.
+- If a source sentence or paragraph contains multiple connected qualifiers, keep them together in one claim or subsection when they are all explicitly present.
+- Use plain bullet points for claims.
+- Keep subheadings short and specific.
+- If a required section is missing from sources, include the section and write "Not found in provided sources." under it.
 
 Coverage requirements:
 - Do NOT summarize when the source contains detailed points.
@@ -2477,10 +2393,9 @@ Medical shorthand:
 - dx => diagnosis
 - inv => investigations
 - "clinical features" => history + examination (not investigations)
-
 ${contractInstruction ? `\n${contractInstruction}\n` : ''}
 
-Goal: accurate, full-detail, source-grounded answer with correct citations.`;
+Goal: accurate, full-detail, source-grounded answer; citations and references are added by the app after generation.`;
   }
 
   /**
@@ -2498,6 +2413,9 @@ Goal: accurate, full-detail, source-grounded answer with correct citations.`;
 
     const contextParts: string[] = [];
     contextParts.push('Retrieved Context Sources:\n');
+    contextParts.push('Grouping hint: content from the same page and adjacent pages (page N, N-1, N+1) often belongs to the same heading or subsection when the topic continues.');
+    contextParts.push('Grouping rule: if the source heading or section cue changes, start a new subsection instead of merging the ideas.');
+    contextParts.push('');
 
     for (let i = 0; i < searchResults.length; i++) {
       const result = searchResults[i];
@@ -2535,6 +2453,7 @@ Goal: accurate, full-detail, source-grounded answer with correct citations.`;
 
       // Create content preview for better source identification
       const contentPreview = this.createContentPreview(chunk.content);
+      const sectionCue = this.createSectionCue(chunk.content);
       const similarityScore = result.similarity ? ` (Similarity: ${(result.similarity * 100).toFixed(1)}%)` : '';
 
       console.log(`[CONTEXT SOURCE ${i + 1}]`, {
@@ -2550,6 +2469,7 @@ Goal: accurate, full-detail, source-grounded answer with correct citations.`;
       contextParts.push(`<SOURCE ${i + 1}>`);
       contextParts.push(`Source ID: [${i + 1}]`);
       contextParts.push(`Document: ${document.title}${pageInfo}${similarityScore}`);
+      contextParts.push(`Section cue: ${sectionCue || 'No explicit heading detected'}`);
       contextParts.push(`Preview: ${contentPreview}`);
       contextParts.push('');
       contextParts.push('Full Content:');
@@ -2590,6 +2510,348 @@ Goal: accurate, full-detail, source-grounded answer with correct citations.`;
     }
 
     return truncated + '...';
+  }
+
+  /**
+   * Try to extract a short heading-like cue from the start of a chunk.
+   * This helps the model keep distinct source sections separate when the
+   * retrieved chunk spans multiple nearby pages.
+   */
+  private createSectionCue(content: string, maxLength: number = 80): string {
+    const lines = (content || '')
+      .replace(/\r\n/g, '\n')
+      .split('\n')
+      .map((line) => line.replace(/[ \t]+/g, ' ').trim())
+      .filter(Boolean)
+      .slice(0, 12);
+
+    for (const line of lines) {
+      const clean = line
+        .replace(/^#{1,6}\s+/, '')
+        .replace(/^\d+\s+/, '')
+        .replace(/\s*\([^)]*\)\s*$/g, '')
+        .replace(/[.:;]+$/g, '')
+        .trim();
+
+      if (!clean) continue;
+      if (/^(page\s+\d+|figure\s+\d+|table\s+\d+|part\s+\d+|chapter\s+\d+)$/i.test(clean)) continue;
+
+      const wordCount = clean.split(/\s+/).filter(Boolean).length;
+      const hasLetters = /[A-Za-z]/.test(clean);
+      if (!hasLetters || wordCount < 2 || wordCount > 10 || clean.length < 6 || clean.length > maxLength) {
+        continue;
+      }
+
+      return clean;
+    }
+
+    return '';
+  }
+
+  /**
+   * Parse a structured JSON answer returned by the model.
+   */
+  private parseStructuredAnswerResponse(raw: string): StructuredAnswerResponse | null {
+    const trimmed = (raw || '').trim();
+    if (!trimmed) return null;
+
+    const candidates: string[] = [trimmed];
+    const fencedMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
+    if (fencedMatch?.[1]) {
+      candidates.push(fencedMatch[1].trim());
+    }
+
+    const objectMatch = trimmed.match(/\{[\s\S]*\}/);
+    if (objectMatch?.[0]) {
+      candidates.push(objectMatch[0]);
+    }
+
+    for (const candidate of candidates) {
+      try {
+        const parsed = JSON.parse(candidate) as any;
+        const normalized = this.normalizeStructuredAnswerResponse(parsed);
+        if (normalized) return normalized;
+      } catch {
+        continue;
+      }
+    }
+
+    return null;
+  }
+
+  private normalizeStructuredAnswerResponse(value: any): StructuredAnswerResponse | null {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+
+    const rawSections = Array.isArray(value.sections) ? value.sections : null;
+    if (!rawSections || rawSections.length === 0) return null;
+
+    const sections = rawSections
+      .map((section: unknown): { title: string; claims?: string[]; subsections?: { title: string; claims: string[] }[] } | null => {
+        if (!section || typeof section !== 'object') return null;
+
+        const typedSection = section as {
+          title?: unknown;
+          claims?: unknown;
+          bullets?: unknown;
+          points?: unknown;
+          subsections?: unknown;
+          subheadings?: unknown;
+        };
+        const title = this.normalizeStructuredSectionTitle(typedSection.title);
+        if (!title) return null;
+
+        const claims = this.normalizeStructuredClaims(
+          typedSection.claims ?? typedSection.bullets ?? typedSection.points
+        );
+        const subsections = this.normalizeStructuredSubsections(
+          typedSection.subsections ?? typedSection.subheadings
+        );
+        return {
+          title,
+          ...(claims.length > 0 ? { claims } : {}),
+          ...(subsections.length > 0 ? { subsections } : {}),
+        };
+      })
+      .filter(
+        (
+          section: { title: string; claims?: string[]; subsections?: { title: string; claims: string[] }[] } | null
+        ): section is { title: string; claims?: string[]; subsections?: { title: string; claims: string[] }[] } =>
+          Boolean(section)
+      );
+
+    if (sections.length === 0) return null;
+
+    const title = typeof value.title === 'string' ? value.title.trim() : undefined;
+    return title ? { title, sections } : { sections };
+  }
+
+  private normalizeStructuredSectionTitle(title: unknown): string {
+    if (typeof title !== 'string') return '';
+    return title.replace(/\s+/g, ' ').trim();
+  }
+
+  private normalizeStructuredClaims(claims: unknown): string[] {
+    const values = Array.isArray(claims) ? claims : typeof claims === 'string' ? [claims] : [];
+    const normalized: string[] = [];
+
+    for (const value of values) {
+      if (typeof value !== 'string') continue;
+      const lines = value
+        .replace(/\r\n/g, '\n')
+        .split('\n')
+        .map((line) => line.trim())
+        .map((line) => line.replace(/^[-*•]\s+/, '').replace(/^\d+\.\s+/, '').trim())
+        .filter(Boolean);
+
+      for (const line of lines) {
+        if (line) normalized.push(line.replace(/\s+/g, ' ').trim());
+      }
+    }
+
+    return normalized;
+  }
+
+  private normalizeStructuredSubsections(subsections: unknown): Array<{ title: string; claims: string[] }> {
+    const values = Array.isArray(subsections) ? subsections : [];
+    const normalized: Array<{ title: string; claims: string[] }> = [];
+
+    for (const subsection of values) {
+      if (!subsection || typeof subsection !== 'object') continue;
+
+      const typedSubsection = subsection as { title?: unknown; claims?: unknown; bullets?: unknown; points?: unknown };
+      const title = this.normalizeStructuredSectionTitle(typedSubsection.title);
+      if (!title) continue;
+
+      const claims = this.normalizeStructuredClaims(
+        typedSubsection.claims ?? typedSubsection.bullets ?? typedSubsection.points
+      );
+      normalized.push({
+        title,
+        claims,
+      });
+    }
+
+    return normalized;
+  }
+
+  private renderStructuredAnswerMarkdown(
+    structured: StructuredAnswerResponse,
+    contract: AnswerContract,
+    searchResults: VectorSearchResult[]
+  ): string {
+    const structuredSections = new Map<string, string[]>();
+    const structuredSubsections = new Map<string, Array<{ title: string; claims: string[] }>>();
+    for (const section of structured.sections) {
+      const key = this.normalizeStructuredSectionTitle(section.title).toLowerCase();
+      if (!key) continue;
+      const currentClaims = structuredSections.get(key) || [];
+      currentClaims.push(...(section.claims || []));
+      structuredSections.set(key, currentClaims);
+
+      if (section.subsections && section.subsections.length > 0) {
+        const currentSubsections = structuredSubsections.get(key) || [];
+        currentSubsections.push(...section.subsections);
+        structuredSubsections.set(key, currentSubsections);
+      }
+    }
+
+    const lines: string[] = [];
+
+    for (const requiredSection of contract.sections) {
+      const key = this.normalizeStructuredSectionTitle(requiredSection.title).toLowerCase();
+      const claims = structuredSections.get(key) || [];
+      const subsections = structuredSubsections.get(key) || [];
+
+      lines.push(`## ${requiredSection.title}`);
+      const supportedClaims = claims.filter((claim) => this.isExplicitlySupportedClaim(claim, searchResults));
+      const supportedSubsections = subsections
+        .map((subsection) => ({
+          title: subsection.title,
+          claims: subsection.claims.filter((claim) => this.isExplicitlySupportedClaim(claim, searchResults)),
+        }))
+        .filter((subsection) => subsection.claims.length > 0);
+
+      if (supportedClaims.length === 0 && supportedSubsections.length === 0) {
+        lines.push('- Not found in provided sources.');
+      } else if (supportedSubsections.length === 0) {
+        for (const claim of supportedClaims) {
+          lines.push(`- ${claim}`);
+        }
+      } else {
+        if (supportedClaims.length > 0) {
+          for (const claim of supportedClaims) {
+            lines.push(`- ${claim}`);
+          }
+          lines.push('');
+        }
+
+        for (const subsection of supportedSubsections) {
+          lines.push(`### ${subsection.title}`);
+          for (const claim of subsection.claims) {
+            lines.push(`- ${claim}`);
+          }
+          lines.push('');
+        }
+      }
+      lines.push('');
+    }
+
+    return lines.join('\n').trim();
+  }
+
+  private isExplicitlySupportedClaim(claim: string, searchResults: VectorSearchResult[]): boolean {
+    const normalizedClaim = this.normalizeExplicitComparisonText(claim);
+    if (!normalizedClaim) return false;
+
+    if (normalizedClaim.length < 3) return false;
+
+    const claimWords = new Set(
+      normalizedClaim
+        .split(' ')
+        .filter((word) => word.length > 2 && !this.isStructuredStopWord(word))
+    );
+    if (claimWords.size === 0) return false;
+
+    for (const result of searchResults) {
+      const sourceText = `${result.document?.title || ''}\n${result.chunk?.content || ''}`;
+      const normalizedSource = this.normalizeExplicitComparisonText(sourceText);
+      if (!normalizedSource) continue;
+
+      if (normalizedSource.includes(normalizedClaim)) {
+        return true;
+      }
+
+      const sentenceScore = this.scoreClaimAgainstSourceSentences(normalizedClaim, sourceText);
+      if (sentenceScore >= 0.7) {
+        return true;
+      }
+
+      const paragraphScore = this.scoreClaimAgainstSourceParagraph(normalizedClaim, sourceText);
+      if (paragraphScore >= 0.58) {
+        return true;
+      }
+
+      const overlapScore = this.scoreTokenOverlap(claimWords, normalizedSource);
+      if (overlapScore >= 0.72) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  private scoreClaimAgainstSourceSentences(claim: string, sourceText: string): number {
+    const sentences = sourceText
+      .replace(/\r\n/g, '\n')
+      .split(/(?<=[.!?])\s+|\n+/)
+      .map((sentence) => this.normalizeExplicitComparisonText(sentence))
+      .filter(Boolean);
+
+    let best = 0;
+    for (const sentence of sentences) {
+      const score = this.scoreTokenOverlap(
+        new Set(claim.split(' ').filter((word) => word.length > 2 && !this.isStructuredStopWord(word))),
+        sentence
+      );
+      if (score > best) best = score;
+    }
+    return best;
+  }
+
+  private scoreClaimAgainstSourceParagraph(claim: string, sourceText: string): number {
+    const paragraphs = sourceText
+      .replace(/\r\n/g, '\n')
+      .split(/\n{2,}/)
+      .map((paragraph) => this.normalizeExplicitComparisonText(paragraph))
+      .filter(Boolean);
+
+    let best = 0;
+    const claimWords = new Set(
+      claim.split(' ').filter((word) => word.length > 2 && !this.isStructuredStopWord(word))
+    );
+
+    for (const paragraph of paragraphs) {
+      const score = this.scoreTokenOverlap(claimWords, paragraph);
+      if (score > best) best = score;
+    }
+    return best;
+  }
+
+  private scoreTokenOverlap(claimWords: Set<string>, sourceText: string): number;
+  private scoreTokenOverlap(claimWords: Set<string>, sourceText: string): number {
+    const normalizedSource = this.normalizeExplicitComparisonText(sourceText);
+    if (!normalizedSource) return 0;
+
+    const sourceWords = new Set(
+      normalizedSource.split(' ').filter((word) => word.length > 2 && !this.isStructuredStopWord(word))
+    );
+    if (claimWords.size === 0 || sourceWords.size === 0) return 0;
+
+    let intersection = 0;
+    claimWords.forEach((word) => {
+      if (sourceWords.has(word)) intersection += 1;
+    });
+
+    const score = intersection / Math.sqrt(claimWords.size * sourceWords.size);
+    return Math.min(1, score);
+  }
+
+  private normalizeExplicitComparisonText(text: string): string {
+    return (text || '')
+      .toLowerCase()
+      .replace(/[\u00A0\u2007\u202F]/g, ' ')
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  private isStructuredStopWord(word: string): boolean {
+    return new Set([
+      'the', 'and', 'or', 'for', 'from', 'with', 'without', 'into', 'onto', 'over', 'under',
+      'that', 'this', 'these', 'those', 'were', 'was', 'are', 'is', 'be', 'been', 'being',
+      'only', 'also', 'when', 'then', 'than', 'such', 'may', 'can', 'will', 'would', 'should',
+      'could', 'there', 'their', 'them', 'they', 'its', 'it', 'as', 'at', 'by', 'of', 'to', 'in'
+    ]).has(word);
   }
 
   /**
@@ -2719,6 +2981,106 @@ Goal: accurate, full-detail, source-grounded answer with correct citations.`;
       content: normalized.replace(/ +([.,;:!])/g, '$1').trim(),
       citations: compactedCitations,
     };
+  }
+
+  /**
+   * Backfill citations onto substantive lines when the model produced grounded
+   * content but skipped inline markers on some bullets or sentences.
+   */
+  private backfillMissingInlineCitations(
+    content: string,
+    citations: Array<{ excerpt?: string; document?: string; page?: number }>
+  ): string {
+    if (!content || !citations || citations.length === 0) {
+      return content;
+    }
+
+    const hasCitationMarker = (line: string): boolean => /\[\s*\d+(?:\s*,\s*\d+)*[^\]]*\]/.test(line);
+    const isStructuralLine = (line: string): boolean =>
+      /^#{1,6}\s/.test(line.trim()) ||
+      /^\*\*[^*]+\*\*:?\s*$/.test(line.trim()) ||
+      /^[-*•]\s*$/.test(line.trim()) ||
+      /^\d+\.\s*$/.test(line.trim()) ||
+      /^---+$/.test(line.trim()) ||
+      line.trim().endsWith(':');
+
+    const normalize = (text: string): string =>
+      text
+        .toLowerCase()
+        .replace(/[\u00A0\u2007\u202F]/g, ' ')
+        .replace(/[^a-z0-9\s]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+    const scoreLineAgainstSource = (line: string, sourceText: string): number => {
+      const a = normalize(line);
+      const b = normalize(sourceText);
+      if (!a || !b) return 0;
+
+      const wordsA = new Set(a.split(' ').filter((w) => w.length > 2));
+      const wordsB = new Set(b.split(' ').filter((w) => w.length > 2));
+      if (wordsA.size === 0 || wordsB.size === 0) return 0;
+
+      let intersection = 0;
+      wordsA.forEach((w) => {
+        if (wordsB.has(w)) intersection += 1;
+      });
+
+      let bonus = 0;
+      for (const token of Array.from(wordsA).filter((w) => w.length >= 6).slice(0, 6)) {
+        if (b.includes(token)) bonus += 0.02;
+      }
+
+      return Math.min(1, intersection / Math.sqrt(wordsA.size * wordsB.size) + bonus);
+    };
+
+    const lines = content.split('\n');
+    const annotated = lines.map((line) => {
+      const trimmed = line.trim();
+      if (!trimmed || hasCitationMarker(trimmed) || isStructuralLine(trimmed)) {
+        return line;
+      }
+
+      // Keep short helper text uncited unless it clearly looks like a factual statement.
+      if (trimmed.length < 40) {
+        return line;
+      }
+
+      let bestIndex = -1;
+      let bestScore = 0;
+      let runnerUpIndex = -1;
+      let runnerUpScore = 0;
+
+      citations.forEach((citation, index) => {
+        const sourceText = `${citation.document || ''} ${citation.page ?? ''} ${citation.excerpt || ''}`;
+        const score = scoreLineAgainstSource(trimmed, sourceText);
+        if (score > bestScore) {
+          runnerUpIndex = bestIndex;
+          runnerUpScore = bestScore;
+          bestIndex = index;
+          bestScore = score;
+        } else if (score > runnerUpScore) {
+          runnerUpIndex = index;
+          runnerUpScore = score;
+        }
+      });
+
+      if (bestIndex < 0 || bestScore < 0.12) {
+        return line;
+      }
+
+      const markerParts = [`[${bestIndex + 1}]`];
+      if (runnerUpIndex >= 0 && runnerUpIndex !== bestIndex && runnerUpScore >= 0.12 && (bestScore - runnerUpScore) <= 0.03) {
+        markerParts.push(`[${runnerUpIndex + 1}]`);
+      }
+
+      const markerText = markerParts.join(' ');
+      return /[.,;:!?]\s*$/.test(line)
+        ? line.replace(/([.,;:!?])\s*$/, ` ${markerText}$1`)
+        : `${line} ${markerText}`;
+    });
+
+    return annotated.join('\n');
   }
 
   /**

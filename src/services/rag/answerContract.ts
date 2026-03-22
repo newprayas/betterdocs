@@ -101,6 +101,26 @@ export function getAnswerContract(intent: QueryIntent): AnswerContract {
           { title: 'Follow-up and Monitoring', guidance: 'Include follow-up points from sources.' },
         ],
       };
+    case 'complications':
+      return {
+        intent,
+        label: 'Complications',
+        sections: [
+          { title: 'Complications', guidance: 'State the complications directly from sources.' },
+          { title: 'Common/Important Complications', guidance: 'List the most relevant complications first.' },
+          { title: 'Severe/Late Complications', guidance: 'Include serious or delayed complications if present.' },
+        ],
+      };
+    case 'prognosis':
+      return {
+        intent,
+        label: 'Prognosis',
+        sections: [
+          { title: 'Prognosis/Outcome', guidance: 'State the expected course or outcome from sources.' },
+          { title: 'Factors Affecting Outcome', guidance: 'List factors that worsen or improve outcome if available.' },
+          { title: 'Important Notes', guidance: 'Add source-backed caveats or follow-up points.' },
+        ],
+      };
     case 'clinical_features_history_exam':
       return {
         intent,
@@ -140,16 +160,30 @@ export function buildContractPromptInstructions(contract: AnswerContract): strin
     .join('\n');
 
   return `
-Required output contract (${contract.label}):
-- Use section headers and real markdown bullet points / numbered lists only.
-- Do NOT use horizontal separators like ---.
-- Do NOT skip numbering in ordered lists.
-- Do NOT leave empty section headers.
-- Do NOT use long plain paragraphs.
-- Never place multiple bullet items on the same line.
-- If content contains a main topic with details, put the main topic on one line and the details as indented bullets underneath it.
-- If you use bullet symbols like • in drafting, convert each one into its own markdown list item before finishing.
-- If a required section is missing from sources, include that section and write: "${DEFAULT_PLACEHOLDER}".
+Return STRICT MARKDOWN ONLY.
+Use this structure:
+## Section title
+- atomic factual claim
+### Subheading
+- atomic factual claim
+
+Rules:
+- Use ONLY the provided context.
+- Do NOT include markdown, code fences, or commentary.
+- Do NOT include citation markers or reference labels.
+- Use the contract section titles for the top-level sections.
+- Add subsections when the source naturally breaks into groups, categories, or subtypes.
+- Use the same page and adjacent pages (page N, N-1, N+1) as a continuity signal: if the topic is clearly continuing, keep those facts under the same heading or subsection.
+- If the source heading or section cue changes, start a new subsection instead of merging the ideas.
+- Prefer smaller, source-faithful subsections over one large mixed subsection.
+- Do not merge preoperative, intraoperative, postoperative, early, medium, and late content into one bucket unless the source explicitly groups them together.
+- Only output claims that are explicitly present in the retrieved text. Do not add interpretation, thresholds, or conclusions unless the exact wording or a near-verbatim line appears in the source.
+- If a claim is not explicitly supported by the retrieved text, omit it.
+- If a source sentence or paragraph contains multiple connected qualifiers, keep them together in one claim or subsection when they are all explicitly present.
+- Use plain bullet points for claims.
+- Keep subheadings short and specific.
+- If a required section is missing from sources, include the section and write "${DEFAULT_PLACEHOLDER}" under it.
+- Keep the section titles exactly as requested below.
 - Keep language simple and direct.
 
 Required sections:
@@ -338,7 +372,10 @@ function normalizeHeadings(text: string): string {
     }
 
     if (/^#{1,6}\s+/.test(trimmed)) {
-      return `## ${trimmed.replace(/^#{1,6}\s+/, '').trim()}`;
+      const headingMatch = trimmed.match(/^(#{1,6})\s+(.+)$/);
+      if (headingMatch) {
+        return `${headingMatch[1]} ${headingMatch[2].trim()}`;
+      }
     }
 
     if (
