@@ -2,7 +2,12 @@ import { groqService } from '@/services/groq/groqService';
 import { getIndexedDBServices } from '@/services/indexedDB';
 import { libraryService } from '@/services/libraryService';
 import { buildDeterministicDoseWithBrandsBody } from './deterministicDoseWithBrands';
-import { decorateIndicationLinks, shouldDecorateIndicationLinksForQuery } from './drugActionLinks';
+import {
+  buildDrugAudienceActionLink,
+  buildDrugAudienceLinkLabel,
+  decorateIndicationLinks,
+  shouldDecorateIndicationLinksForQuery,
+} from './drugActionLinks';
 import type {
   AskDrugIndicationsAndDoseStructured,
   DrugCatalog,
@@ -2099,8 +2104,20 @@ const buildDoseResponsePrelude = (
   lines.push(
     '',
     requestedDoseAudience === 'child'
-      ? '⚠️ Only **CHILD** dose given, search adult dose separately'
-      : '⚠️ Only **ADULT** dose given, search child dose separately',
+      ? (() => {
+          const adultHref = buildDrugAudienceActionLink(drugName, 'adult');
+          const adultToggle = adultHref
+            ? `([${buildDrugAudienceLinkLabel('adult')}](${adultHref}))`
+            : '(ADULT DOSE)';
+          return `⚠️ Only **CHILD** dose given, search adult dose separately ${adultToggle}`;
+        })()
+      : (() => {
+          const childHref = buildDrugAudienceActionLink(drugName, 'child');
+          const childToggle = childHref
+            ? `([${buildDrugAudienceLinkLabel('child')}](${childHref}))`
+            : '(CHILD DOSE)';
+          return `⚠️ Only **ADULT** dose given, search child dose separately ${childToggle}`;
+        })(),
   );
 
   const indications = prioritizeDoseSummaryIndications(
@@ -3989,7 +4006,11 @@ ${stringifyEntryForPrompt(promptContextForModel)}`;
       const finalResponse =
         intent.answerKind === 'dose_with_brands' &&
         shouldDecorateIndicationLinksForQuery(content)
-          ? decorateIndicationLinks(normalizedResponse, parsed.drug_name)
+          ? decorateIndicationLinks(
+              normalizedResponse,
+              parsed.drug_name,
+              requestedDoseAudience,
+            )
           : normalizedResponse;
 
       await this.saveAssistantMessage(sessionId, finalResponse);

@@ -24,7 +24,11 @@ const isIndicationsBoundary = (line: string): boolean => {
   );
 };
 
-const buildDrugIndicationActionHref = (drugName: string, indication: string): string | null => {
+const buildDrugIndicationActionHref = (
+  drugName: string,
+  indication: string,
+  audience?: 'adult' | 'child',
+): string | null => {
   const drug = compactField(drugName);
   const target = compactField(indication);
   if (!drug || !target) return null;
@@ -32,6 +36,24 @@ const buildDrugIndicationActionHref = (drugName: string, indication: string): st
   const params = new URLSearchParams({
     drug,
     indication: target,
+  });
+  if (audience) {
+    params.set('audience', audience);
+  }
+
+  return `${DRUG_ACTION_LINK_PROTOCOL}//${DRUG_ACTION_LINK_HOST}?${params.toString()}`;
+};
+
+const buildDrugAudienceActionHref = (
+  drugName: string,
+  audience: 'adult' | 'child',
+): string | null => {
+  const drug = compactField(drugName);
+  if (!drug) return null;
+
+  const params = new URLSearchParams({
+    drug,
+    audience,
   });
 
   return `${DRUG_ACTION_LINK_PROTOCOL}//${DRUG_ACTION_LINK_HOST}?${params.toString()}`;
@@ -54,16 +76,29 @@ export const shouldDecorateIndicationLinksForQuery = (query: string): boolean =>
   return DRUG_DOSE_STYLE_QUERY_PATTERN.test(compact);
 };
 
-export const buildDrugIndicationFollowUpQuery = (drugName: string, indication: string): string => {
+export const buildDrugIndicationFollowUpQuery = (
+  drugName: string,
+  indication: string,
+  audience?: 'adult' | 'child',
+): string => {
   const drug = compactField(drugName);
   const target = compactField(indication);
   if (!drug || !target) return compactField(drugName) || '';
-  return `dose of ${drug} for ${target}`;
+  return audience ? `dose of ${drug} for ${target} for ${audience}` : `dose of ${drug} for ${target}`;
+};
+
+export const buildDrugAudienceFollowUpQuery = (
+  drugName: string,
+  audience: 'adult' | 'child',
+): string => {
+  const drug = compactField(drugName);
+  if (!drug) return compactField(drugName) || '';
+  return `dose of ${drug} for ${audience}`;
 };
 
 export const parseDrugActionHref = (
   href: string,
-): { drugName: string; indication: string } | null => {
+): { drugName: string; indication?: string; audience?: 'adult' | 'child' } | null => {
   try {
     const normalized = href.trim();
     const legacyMatch = normalized.match(/^drug-action:(?:\/\/)?dose(?:\?(.*))?$/i);
@@ -75,17 +110,27 @@ export const parseDrugActionHref = (
 
       const drugName = compactField(url.searchParams.get('drug') || '');
       const indication = compactField(url.searchParams.get('indication') || '');
-      if (!drugName || !indication) return null;
+      const audience = compactField(url.searchParams.get('audience') || '') as 'adult' | 'child' | undefined;
+      if (!drugName || (!indication && !audience)) return null;
 
-      return { drugName, indication };
+      return {
+        drugName,
+        indication: indication || undefined,
+        audience,
+      };
     }
 
     const params = new URLSearchParams(legacyMatch[1] || '');
     const drugName = compactField(params.get('drug') || '');
     const indication = compactField(params.get('indication') || '');
-    if (!drugName || !indication) return null;
+    const audience = compactField(params.get('audience') || '') as 'adult' | 'child' | undefined;
+    if (!drugName || (!indication && !audience)) return null;
 
-    return { drugName, indication };
+    return {
+      drugName,
+      indication: indication || undefined,
+      audience,
+    };
   } catch {
     return null;
   }
@@ -96,21 +141,37 @@ export const isDrugActionHref = (href?: string | null): boolean => {
   return /^drug-action:(?:\/\/)?dose(?:\?|$)/i.test(href.trim());
 };
 
-const linkifyIndicationLine = (line: string, drugName: string): string => {
+const linkifyIndicationLine = (
+  line: string,
+  drugName: string,
+  audience?: 'adult' | 'child',
+): string => {
   const trimmed = line.trim();
   if (!trimmed) return line;
 
   const bulletMatch = trimmed.match(/^([-*•])\s+(.*)$/);
   const bullet = bulletMatch?.[1] || '';
   const content = bulletMatch?.[2] || trimmed;
-  const href = buildDrugIndicationActionHref(drugName, content);
+  const href = buildDrugIndicationActionHref(drugName, content, audience);
   if (!href) return line;
 
   const rebuilt = `[${escapeMarkdownLinkText(content)}](${href})`;
   return bullet ? `${bullet} ${rebuilt}` : rebuilt;
 };
 
-export const decorateIndicationLinks = (content: string, drugName: string): string => {
+export const buildDrugAudienceLinkLabel = (audience: 'adult' | 'child'): string =>
+  audience === 'child' ? 'CHILD DOSE' : 'ADULT DOSE';
+
+export const buildDrugAudienceActionLink = (
+  drugName: string,
+  audience: 'adult' | 'child',
+): string | null => buildDrugAudienceActionHref(drugName, audience);
+
+export const decorateIndicationLinks = (
+  content: string,
+  drugName: string,
+  audience?: 'adult' | 'child',
+): string => {
   const seedDrugName = compactField(drugName);
   if (!seedDrugName) return content;
 
@@ -133,7 +194,7 @@ export const decorateIndicationLinks = (content: string, drugName: string): stri
     }
 
     if (inIndicationsSection && line.trim()) {
-      const decoratedLine = linkifyIndicationLine(line, seedDrugName);
+      const decoratedLine = linkifyIndicationLine(line, seedDrugName, audience);
       if (decoratedLine !== line) {
         didDecorate = true;
         console.log('[DRUG ACTION LINKS][DECORATE]', {

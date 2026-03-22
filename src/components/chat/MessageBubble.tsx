@@ -8,6 +8,7 @@ import { CitationPanel } from "./CitationPanel";
 import { formatTime } from "../../utils/date";
 import clsx from "clsx";
 import {
+  buildDrugAudienceFollowUpQuery,
   buildDrugIndicationFollowUpQuery,
   isDrugActionHref,
   parseDrugActionHref,
@@ -141,7 +142,11 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
         return;
       }
 
-      const query = buildDrugIndicationFollowUpQuery(parsed.drugName, parsed.indication);
+      const query = buildDrugIndicationFollowUpQuery(
+        parsed.drugName,
+        parsed.indication || '',
+        parsed.audience,
+      );
       logDrugAction("click capture dispatch", {
         messageId: message.id,
         query,
@@ -245,11 +250,17 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
                     const isActionLink =
                       normalizedHref.startsWith("drug-action:") ||
                       isDrugActionHref(normalizedHref);
+                    const actionTarget = isActionLink
+                      ? parseDrugActionHref(normalizedHref)
+                      : null;
+                    const isAudienceToggleLink =
+                      Boolean(actionTarget?.audience) && !actionTarget?.indication;
 
                     logDrugAction("link render", {
                       messageId: message.id,
                       href: normalizedHref,
                       isActionLink,
+                      actionTarget,
                       hasHandler: Boolean(onDrugActionClick),
                     });
 
@@ -259,7 +270,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
                         onClick={(event) => {
                           event.preventDefault();
                           event.stopPropagation();
-                          const parsed = parseDrugActionHref(normalizedHref);
+                          const parsed = actionTarget;
                           logDrugAction("button click", {
                             messageId: message.id,
                             href: normalizedHref,
@@ -267,17 +278,33 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
                             parsed,
                           });
                           if (!parsed || !onDrugActionClick) return;
-                          const query = buildDrugIndicationFollowUpQuery(
-                            parsed.drugName,
-                            parsed.indication,
-                          );
+                          const query = parsed.audience
+                            ? parsed.indication
+                              ? buildDrugIndicationFollowUpQuery(
+                                  parsed.drugName,
+                                  parsed.indication,
+                                  parsed.audience,
+                                )
+                              : buildDrugAudienceFollowUpQuery(
+                                  parsed.drugName,
+                                  parsed.audience,
+                                )
+                            : buildDrugIndicationFollowUpQuery(
+                                parsed.drugName,
+                                parsed.indication || '',
+                              );
                           logDrugAction("button dispatch", {
                             messageId: message.id,
                             query,
                           });
                           onDrugActionClick(query);
                         }}
-                        className="text-left text-blue-500 hover:text-blue-600 underline underline-offset-4 decoration-1 decoration-blue-400/80 hover:decoration-blue-500/90"
+                        className={clsx(
+                          "text-left text-sky-400 hover:text-sky-300",
+                          isAudienceToggleLink
+                            ? "no-underline"
+                            : "underline underline-offset-4 decoration-1 decoration-sky-300/75 hover:decoration-sky-200/90",
+                        )}
                       >
                         {children}
                       </button>
@@ -286,7 +313,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
                         href={href}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-blue-500 hover:text-blue-600 underline underline-offset-4 decoration-1 decoration-blue-400/80 hover:decoration-blue-500/90"
+                        className="text-sky-400 hover:text-sky-300 underline underline-offset-4 decoration-1 decoration-sky-300/75 hover:decoration-sky-200/90"
                       >
                         {children}
                       </a>
