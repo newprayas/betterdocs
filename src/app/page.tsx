@@ -13,6 +13,7 @@ import { SimpleHeader } from '../components/layout';
 import { useRouter } from 'next/navigation';
 import type { Session } from '../types';
 import { useAuthGuard } from '@/hooks/useAuthGuard';
+import { getSessionRoute } from '@/utils/sessionRoute';
 
 export default function HomePage() {
   const router = useRouter();
@@ -66,7 +67,7 @@ export default function HomePage() {
 
   const handleSessionSelect = (session: Session) => {
     setCurrentSession(session);
-    router.push(`/session/${session.id}`);
+    router.push(getSessionRoute(session.id));
   };
 
   return (

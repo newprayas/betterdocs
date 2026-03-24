@@ -48,14 +48,41 @@ export default function SessionPage() {
   const params = useParams();
   const router = useRouter();
   const { isCheckingAuth, isAuthenticated } = useAuthGuard({ requireAuth: true });
-  const { handleRouteError, safeNavigate } = useRouteErrorHandler();
-  const sessionId = params.id as string;
+  const { handleRouteError } = useRouteErrorHandler();
+  const [hasInvalidSessionId, setHasInvalidSessionId] = useState(false);
+  const [querySessionId, setQuerySessionId] = useState("");
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const sid = new URLSearchParams(window.location.search).get("sid") || "";
+    setQuerySessionId(sid.trim());
+  }, []);
+
+  const sessionId = useMemo(() => {
+    if (querySessionId.length > 0) {
+      return querySessionId;
+    }
+
+    const rawId = params.id;
+    const routeId = Array.isArray(rawId) ? rawId[0] : rawId;
+    if (typeof routeId === "string" && routeId !== "index") {
+      return routeId;
+    }
+
+    if (typeof window !== "undefined") {
+      const pathMatch = window.location.pathname.match(/\/session\/([^/?#]+)/);
+      const pathId = pathMatch?.[1];
+      if (pathId && pathId !== "index") {
+        return decodeURIComponent(pathId);
+      }
+    }
+
+    return "";
+  }, [params.id, querySessionId]);
 
   // Validate session ID format
   useEffect(() => {
     if (!sessionId) {
-      handleRouteError(new Error("Session ID is missing"), "Session page load");
-      safeNavigate("/", "Invalid session ID");
       return;
     }
 
@@ -67,12 +94,13 @@ export default function SessionPage() {
         new Error(`Invalid session ID format: ${sessionId}`),
         "Session ID validation",
       );
-      safeNavigate("/", "Invalid session ID format");
+      setHasInvalidSessionId(true);
       return;
     }
 
+    setHasInvalidSessionId(false);
     // console.log('🔍 [SESSION_PAGE] Loading session with valid ID:', sessionId);
-  }, [sessionId, handleRouteError, safeNavigate]);
+  }, [sessionId, handleRouteError]);
 
   const {
     currentSession,
@@ -663,6 +691,23 @@ export default function SessionPage() {
 
   if (!isAuthenticated) {
     return null;
+  }
+
+  if (hasInvalidSessionId) {
+    return (
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+        <Header />
+        <div className="container mx-auto px-4 py-8">
+          <EmptyState
+            title="Session link is invalid"
+            description="Please open the conversation from the home screen."
+            action={
+              <Button onClick={() => router.push("/")}>Go Back Home</Button>
+            }
+          />
+        </div>
+      </div>
+    );
   }
 
   if (isInitialLoad && !currentSession) {

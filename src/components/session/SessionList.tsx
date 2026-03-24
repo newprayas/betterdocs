@@ -8,6 +8,7 @@ import { EmptyStates } from '../common/EmptyState';
 import { useSessionStore, useChatStore } from '../../store';
 import { useRouter } from 'next/navigation';
 import clsx from 'clsx';
+import { getSessionRoute } from '@/utils/sessionRoute';
 
 interface SessionListProps {
   variant?: 'grid' | 'list' | 'compact';
@@ -35,7 +36,7 @@ export const SessionList: React.FC<SessionListProps> = ({
       // Prefetch routes for instant navigation
       const topSessionIds = sessions.slice(0, 5).map(s => s.id);
       topSessionIds.forEach(id => {
-        router.prefetch(`/session/${id}`);
+        router.prefetch(getSessionRoute(id));
       });
     }
   }, [sessions, router]);
@@ -64,7 +65,7 @@ export const SessionList: React.FC<SessionListProps> = ({
     if (onSessionSelect) {
       onSessionSelect(session);
     } else {
-      router.push(`/session/${session.id}`);
+      router.push(getSessionRoute(session.id));
     }
   };
 
@@ -241,7 +242,7 @@ export const SessionListSidebar: React.FC<{
     if (onSessionSelect) {
       onSessionSelect(session);
     } else {
-      router.push(`/session/${session.id}`);
+      router.push(getSessionRoute(session.id));
     }
   };
 
