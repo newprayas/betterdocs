@@ -15,6 +15,12 @@ const nextConfig = {
   },
   // END NEW CODE
 
+  // Enable static export for Capacitor
+  output: process.env.CAPACITOR_BUILD === 'true' ? 'export' : undefined,
+  images: {
+    unoptimized: process.env.CAPACITOR_BUILD === 'true' ? true : undefined,
+  },
+
   webpack: (config, { dev, isServer }) => {
     // Enable WebAssembly support
     config.experiments = {
@@ -42,8 +48,11 @@ const nextConfig = {
 
     return config;
   },
-  // Headers for security
+  // Headers for security - disabled during static export
   async headers() {
+    if (process.env.CAPACITOR_BUILD === 'true') {
+      return [];
+    }
     return [
       {
         source: '/(.*)',

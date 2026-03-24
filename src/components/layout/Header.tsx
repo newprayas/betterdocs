@@ -207,19 +207,28 @@ export const SimpleHeader: React.FC = () => {
                   const { createClient } = await import(
                     "@/utils/supabase/client"
                   );
+                  const {
+                    useSettingsStore,
+                    useSessionStore,
+                    useDocumentStore,
+                  } = await import("@/store");
                   const supabase = createClient();
-                  const { error } = await supabase.auth.signOut();
+                  const { error } = await supabase.auth.signOut({
+                    scope: "local",
+                  });
 
                   if (error) {
                     console.error("Sign out error:", error);
                   }
 
-                  // Force redirect to login page after sign out
-                  window.location.href = "/login";
+                  useSettingsStore.getState().clearSettings();
+                  useSessionStore.getState().clearSessions();
+                  useDocumentStore.getState().clearDocuments();
+
+                  window.location.replace("/login");
                 } catch (error) {
                   console.error("Unexpected error during sign out:", error);
-                  // Still redirect to login even if there's an error
-                  window.location.href = "/login";
+                  window.location.replace("/login");
                 }
               }}
             >

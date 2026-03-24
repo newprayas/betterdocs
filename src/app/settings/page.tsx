@@ -2,15 +2,17 @@
 
 import React, { useState, useEffect } from 'react';
 
-export const dynamic = 'force-dynamic';
+
 import { useRouter } from 'next/navigation';
 import { useSettingsStore } from '../../store';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
 import { Header } from '../../components/layout/Header';
+import { useAuthGuard } from '@/hooks/useAuthGuard';
 
 export default function SettingsPage() {
   const router = useRouter();
+  const { isCheckingAuth, isAuthenticated } = useAuthGuard({ requireAuth: true });
   const { settings, updateSettings, loadSettings, isLoading, userId } = useSettingsStore();
 
   const [localRetrievalMode, setLocalRetrievalMode] = useState<'legacy_hybrid' | 'ann_rerank_v1'>('legacy_hybrid');
@@ -27,7 +29,7 @@ export default function SettingsPage() {
     }
   }, [settings?.retrievalMode]);
 
-  if (isLoading) {
+  if (isCheckingAuth || isLoading) {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col">
         <Header />
@@ -38,6 +40,10 @@ export default function SettingsPage() {
         </main>
       </div>
     );
+  }
+
+  if (!isAuthenticated) {
+    return null;
   }
 
   return (
