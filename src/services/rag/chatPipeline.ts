@@ -1963,7 +1963,7 @@ ${normalizedOriginal}
 
       // Build context from generation chunks only
       console.log('[CONTEXT BUILDING]', 'Constructing context from search results...');
-      const context = this.buildContext(generationChunks);
+      const context = this.buildContext(generationChunks, retrievalQuery);
       console.log('[CONTEXT CREATED]', `Context string length: ${context.length} characters`);
 
       const generationStartMs = Date.now();
@@ -2303,7 +2303,16 @@ ${normalizedOriginal}
       const citationBackfilledContent = !isNoEvidenceResponse
         ? this.backfillMissingInlineCitations(
             consistentCitationOutput.content,
-            consistentCitationOutput.citations
+            consistentCitationOutput.citations,
+            consistentCitationOutput.citations.map(c => {
+               // Find the original search result that corresponds to this citation
+               // Note: citation sourceIndex is 1-based, array is 0-based.
+               // We only use the generationChunks here as that's what was evaluated.
+               const originalIndex = c.sourceIndex ? c.sourceIndex - 1 : -1;
+               return originalIndex >= 0 && originalIndex < searchResults.length 
+                 ? searchResults[originalIndex].similarity 
+                 : 1; // default to 1 if unknown
+            })
           )
         : consistentCitationOutput.content;
       if (!isNoEvidenceResponse) {
@@ -2387,15 +2396,16 @@ Output format requirements:
 - If a claim is not explicitly supported by the retrieved text, omit it.
 - If a source sentence or paragraph contains multiple connected qualifiers, keep them together in one claim or subsection when they are all explicitly present.
 - Use plain bullet points for claims.
+- WRITE FULL, DESCRIPTIVE BULLETS. Never write single-word bullets like "Pain" or "Infection". Instead write "Pain occurs early in the disease process" or "Infection risk increases with immunosuppression." Single-word bullets are strictly forbidden.
 - Keep subheadings short and specific.
 - If a required section is missing from sources, include the section and write "Not found in provided sources." under it.
 
 Coverage requirements:
 - Do NOT summarize when the source contains detailed points.
 - Reorganize and present the provided information; do not compress it into a short summary.
+- YOU MUST DRAW CONTENT FROM ALL PROVIDED SOURCES if they contain relevant information. Do not ignore later sources just because the first few sources answer the question.
 - Include all relevant classifications, subtypes, criteria, and key notes that appear in the retrieved context.
 - Do not omit important source points for brevity.
-- If the question asks for "types", "classification", "features", "management", or "investigations", include the full set of relevant points from context.
 - Prefer completeness over brevity while staying strictly grounded to cited text.
 
 Medical shorthand:
@@ -2413,7 +2423,7 @@ Goal: accurate, full-detail, source-grounded answer; citations and references ar
    * Enhanced with clearer source labeling and content previews
    * IMPROVED: Better page number detection and clearer source identification
    */
-  private buildContext(searchResults: any[]): string {
+  private buildContext(searchResults: any[], retrievalQuery?: string): string {
     if (searchResults.length === 0) {
       return '';
     }
@@ -2461,8 +2471,8 @@ Goal: accurate, full-detail, source-grounded answer; citations and references ar
         }
       }
 
-      // Create content preview for better source identification
-      const contentPreview = this.createContentPreview(chunk.content);
+      // Create content preview centered around query terms if possible
+      const contentPreview = this.createContentPreview(chunk.content, retrievalQuery);
       const sectionCue = this.createSectionCue(chunk.content);
       const similarityScore = result.similarity ? ` (Similarity: ${(result.similarity * 100).toFixed(1)}%)` : '';
 
@@ -2497,9 +2507,11 @@ Goal: accurate, full-detail, source-grounded answer; citations and references ar
   }
 
   /**
-   * Create a brief content preview to help identify relevant sources
+   * Create a brief content preview to help identify relevant sources.
+   * If a query is provided, attempts to center the preview around keywords from the query
+   * so the reference panel shows the matched content, not just the top of a page.
    */
-  private createContentPreview(content: string, maxLength: number = 150): string {
+  private createContentPreview(content: string, query?: string, maxLength: number = 150): string {
     // Remove extra whitespace but preserve newlines for list formatting
     const cleanedContent = content.trim().replace(/[ \t]+/g, ' ');
 
@@ -2507,6 +2519,54 @@ Goal: accurate, full-detail, source-grounded answer; citations and references ar
       return cleanedContent;
     }
 
+    // If query is provided, try to find a good starting point based on keywords
+    if (query) {
+      // Extract main medical keywords (ignore stop words, keep words > 4 chars)
+      const stopWords = new Set(['what', 'where', 'when', 'how', 'why', 'is', 'are', 'the', 'causes', 'of', 'in', 'and', 'or', 'for']);
+      const keywords = query
+        .toLowerCase()
+        .replace(/[^a-z0-9\s]/g, '')
+        .split(/\s+/)
+        .filter(w => w.length > 4 && !stopWords.has(w));
+
+      if (keywords.length > 0) {
+        const lowerContent = cleanedContent.toLowerCase();
+        let bestMatchIndex = -1;
+
+        // Try to find the first occurrence of the most specific keyword
+        for (const keyword of keywords) {
+          const index = lowerContent.indexOf(keyword);
+          if (index !== -1) {
+            bestMatchIndex = index;
+            break;
+          }
+        }
+
+        if (bestMatchIndex > 0) {
+          // Found a keyword. Wind back to the start of the sentence, or max 40 chars.
+          let startIdx = bestMatchIndex;
+          let charsBacked = 0;
+          while (startIdx > 0 && charsBacked < 40) {
+            if (['.', '!', '?'].includes(cleanedContent[startIdx])) {
+              startIdx++; // Step just past the punctuation
+              break;
+            }
+            startIdx--;
+            charsBacked++;
+          }
+          
+          while(startIdx < cleanedContent.length && cleanedContent[startIdx] === ' ') startIdx++;
+
+          const prefix = startIdx > 0 ? '... ' : '';
+          const snippet = cleanedContent.substring(startIdx, startIdx + maxLength - prefix.length);
+          
+          const suffix = (startIdx + snippet.length) < cleanedContent.length ? '...' : '';
+          return `${prefix}${snippet}${suffix}`;
+        }
+      }
+    }
+
+    // Fallback: just take the top of the chunk
     // Try to end at a sentence boundary
     const truncated = cleanedContent.substring(0, maxLength);
     const lastSentenceEnd = Math.max(
@@ -2999,7 +3059,8 @@ Goal: accurate, full-detail, source-grounded answer; citations and references ar
    */
   private backfillMissingInlineCitations(
     content: string,
-    citations: Array<{ excerpt?: string; document?: string; page?: number }>
+    citations: Array<{ excerpt?: string; document?: string; page?: number }>,
+    retrievalSimilarities?: number[]  // parallel array: similarity[i] for citations[i]
   ): string {
     if (!content || !citations || citations.length === 0) {
       return content;
@@ -3044,6 +3105,15 @@ Goal: accurate, full-detail, source-grounded answer; citations and references ar
       return Math.min(1, intersection / Math.sqrt(wordsA.size * wordsB.size) + bonus);
     };
 
+    // Minimum content-overlap threshold to assign any citation.
+    // Raised from 0.12 → 0.15 to reduce low-confidence misattributions.
+    const MIN_OVERLAP = 0.15;
+    // Tiebreaker tolerance: if two chunks score within this band, defer to retrieval similarity.
+    const TIEBREAK_BAND = 0.05;
+    // Topic mismatch guard: chunks with low retrieval similarity need a higher content bar.
+    const LOW_SIMILARITY_THRESHOLD = 0.5;
+    const LOW_SIMILARITY_OVERLAP_FLOOR = 0.2;
+
     const lines = content.split('\n');
     const annotated = lines.map((line) => {
       const trimmed = line.trim();
@@ -3062,8 +3132,19 @@ Goal: accurate, full-detail, source-grounded answer; citations and references ar
       let runnerUpScore = 0;
 
       citations.forEach((citation, index) => {
+        const retrievalSim = retrievalSimilarities?.[index] ?? 1;
+
+        // Fix 3 — topic mismatch guard: if retrieval ranked this chunk low,
+        // require stronger content overlap before attributing to it.
+        const effectiveFloor = retrievalSim < LOW_SIMILARITY_THRESHOLD
+          ? LOW_SIMILARITY_OVERLAP_FLOOR
+          : MIN_OVERLAP;
+
         const sourceText = `${citation.document || ''} ${citation.page ?? ''} ${citation.excerpt || ''}`;
         const score = scoreLineAgainstSource(trimmed, sourceText);
+
+        if (score < effectiveFloor) return; // below floor — skip this chunk entirely
+
         if (score > bestScore) {
           runnerUpIndex = bestIndex;
           runnerUpScore = bestScore;
@@ -3075,16 +3156,48 @@ Goal: accurate, full-detail, source-grounded answer; citations and references ar
         }
       });
 
-      if (bestIndex < 0 || bestScore < 0.12) {
+      if (bestIndex < 0 || bestScore < MIN_OVERLAP) {
         return line;
       }
 
-      const markerParts = [`[${bestIndex + 1}]`];
-      if (runnerUpIndex >= 0 && runnerUpIndex !== bestIndex && runnerUpScore >= 0.12 && (bestScore - runnerUpScore) <= 0.03) {
-        markerParts.push(`[${runnerUpIndex + 1}]`);
+      // Fix 2 — similarity tiebreaker: when runner-up is within TIEBREAK_BAND,
+      // prefer whichever chunk has the higher retrieval similarity score.
+      let primaryIndex = bestIndex;
+      if (
+        runnerUpIndex >= 0 &&
+        runnerUpIndex !== bestIndex &&
+        runnerUpScore >= MIN_OVERLAP &&
+        (bestScore - runnerUpScore) <= TIEBREAK_BAND &&
+        retrievalSimilarities
+      ) {
+        const bestSim = retrievalSimilarities[bestIndex] ?? 0;
+        const runnerSim = retrievalSimilarities[runnerUpIndex] ?? 0;
+        if (runnerSim > bestSim) {
+          // Runner-up was deemed more relevant by retrieval — trust that signal.
+          primaryIndex = runnerUpIndex;
+          console.log(
+            '[BACKFILL TIEBREAKER]',
+            `Line overlap tie (${bestScore.toFixed(3)} vs ${runnerUpScore.toFixed(3)}): preferring chunk [${runnerUpIndex + 1}] (sim=${runnerSim.toFixed(3)}) over [${bestIndex + 1}] (sim=${bestSim.toFixed(3)})`
+          );
+        }
       }
 
-      const markerText = markerParts.join(' ');
+      const markerIndices = [primaryIndex + 1];
+      // Only include runner-up if it's NOT the one we deferred to via tiebreaker.
+      const secondaryIndex = primaryIndex === bestIndex ? runnerUpIndex : bestIndex;
+      if (
+        secondaryIndex >= 0 &&
+        secondaryIndex !== primaryIndex &&
+        runnerUpScore >= MIN_OVERLAP &&
+        (bestScore - runnerUpScore) <= TIEBREAK_BAND
+      ) {
+        markerIndices.push(secondaryIndex + 1);
+      }
+
+      // Deduplicate before formatting (e.g. handle [1][1] cases)
+      const uniqueMarkers = [...new Set(markerIndices)].sort((a: number, b: number) => a - b);
+      const markerText = uniqueMarkers.map((num) => `[${num}]`).join(' ');
+
       return /[.,;:!?]\s*$/.test(line)
         ? line.replace(/([.,;:!?])\s*$/, ` ${markerText}$1`)
         : `${line} ${markerText}`;

@@ -38,8 +38,8 @@ export function getAnswerContract(intent: QueryIntent): AnswerContract {
         intent,
         label: 'Definition',
         sections: [
-          { title: 'Definition', guidance: 'Give a direct definition first.' },
-          { title: 'Key Points', guidance: 'Add essential characteristics and context.' },
+          { title: 'Definition', guidance: 'Give a direct definition first. Do not include features or causes here.' },
+          { title: 'Key Points', guidance: 'Add essential characteristics and context. Do not include treatment or investigations.' },
         ],
       };
     case 'causes':
@@ -47,8 +47,8 @@ export function getAnswerContract(intent: QueryIntent): AnswerContract {
         intent,
         label: 'Causes',
         sections: [
-          { title: 'Primary Causes', guidance: 'List main causes clearly.' },
-          { title: 'Secondary Causes', guidance: 'List additional or less common causes.' },
+          { title: 'Primary Causes', guidance: 'List main, direct causes clearly. Do not list predisposing risk factors here.' },
+          { title: 'Secondary/Other Causes', guidance: 'List additional or less common causes. Keep distinct from primary causes.' },
         ],
       };
     case 'classification_types':
@@ -56,8 +56,8 @@ export function getAnswerContract(intent: QueryIntent): AnswerContract {
         intent,
         label: 'Classification',
         sections: [
-          { title: 'Classification', guidance: 'Provide complete classification/types from sources.' },
-          { title: 'Key Distinctions', guidance: 'State how groups differ where available.' },
+          { title: 'Classification', guidance: 'Provide complete classification/types from sources. Group logically.' },
+          { title: 'Key Distinctions', guidance: 'State how groups differ where available. Do not just restate the types.' },
         ],
       };
     case 'risk_factors':
@@ -65,8 +65,8 @@ export function getAnswerContract(intent: QueryIntent): AnswerContract {
         intent,
         label: 'Risk Factors',
         sections: [
-          { title: 'Major Risk Factors', guidance: 'List major factors first.' },
-          { title: 'Minor/Predisposing Factors', guidance: 'Include secondary or predisposing factors from context.' },
+          { title: 'Major Risk Factors', guidance: 'List major factors first. Only include factors that increase risk, not direct causes.' },
+          { title: 'Minor/Predisposing Factors', guidance: 'Include secondary or predisposing factors from context. Maintain distinction from major factors.' },
         ],
       };
     case 'difference_between':
@@ -74,8 +74,8 @@ export function getAnswerContract(intent: QueryIntent): AnswerContract {
         intent,
         label: 'Difference Between',
         sections: [
-          { title: 'Key Differences', guidance: 'Compare entities point-by-point.' },
-          { title: 'Practical Distinction', guidance: 'Include clinically useful distinction if available.' },
+          { title: 'Key Differences', guidance: 'Compare entities point-by-point. Focus strictly on contrasting features.' },
+          { title: 'Practical Distinction', guidance: 'Include clinically useful distinction if available. Do not repeat the key differences.' },
         ],
       };
     case 'investigations':
@@ -83,8 +83,8 @@ export function getAnswerContract(intent: QueryIntent): AnswerContract {
         intent,
         label: 'Investigations',
         sections: [
-          { title: 'Initial Investigations', guidance: 'List first-line tests.' },
-          { title: 'Confirmatory Investigations', guidance: 'List confirmatory or second-line tests.' },
+          { title: 'Initial Investigations', guidance: 'List first-line or bedside tests. Do not include definitive diagnostics here.' },
+          { title: 'Confirmatory Investigations', guidance: 'List definitive, confirmatory, or second-line imaging/tests. Keep strictly separate from initial tests.' },
         ],
       };
     case 'treatment_rx':
@@ -92,8 +92,8 @@ export function getAnswerContract(intent: QueryIntent): AnswerContract {
         intent,
         label: 'Treatment',
         sections: [
-          { title: 'Conservative/Medical Treatment', guidance: 'List non-procedural treatment options.' },
-          { title: 'Procedural/Surgical Treatment', guidance: 'List procedural interventions if present.' },
+          { title: 'Conservative/Medical Treatment', guidance: 'List non-procedural lifestyle and medical options. Do not include surgical steps.' },
+          { title: 'Procedural/Surgical Treatment', guidance: 'List procedural interventions if present. Keep separate from medical management.' },
         ],
       };
     case 'complications':
@@ -101,8 +101,8 @@ export function getAnswerContract(intent: QueryIntent): AnswerContract {
         intent,
         label: 'Complications',
         sections: [
-          { title: 'Disease Complications', guidance: 'List complications of the disease itself.' },
-          { title: 'Post-operative Complications', guidance: 'List early and late complications after treatment or surgery if present in sources.' },
+          { title: 'Disease Complications', guidance: 'List complications of the natural disease process itself. Use flat bullet points under this heading, do not use nested ### sub-headings.' },
+          { title: 'Post-operative Complications', guidance: 'List complications occurring only after treatment/surgery. Group as flat bullet points, do not use nested ### sub-headings.' },
         ],
       };
     case 'prognosis':
@@ -110,8 +110,8 @@ export function getAnswerContract(intent: QueryIntent): AnswerContract {
         intent,
         label: 'Prognosis',
         sections: [
-          { title: 'Prognosis/Outcome', guidance: 'State the expected course or outcome from sources.' },
-          { title: 'Factors Affecting Outcome', guidance: 'List factors that worsen or improve outcome if available.' },
+          { title: 'Prognosis/Outcome', guidance: 'State the expected course or overall outcome from sources. Do not list complications here.' },
+          { title: 'Factors Affecting Outcome', guidance: 'List specific factors that worsen or improve the outcome if available.' },
         ],
       };
     case 'clinical_features_history_exam':
@@ -119,8 +119,8 @@ export function getAnswerContract(intent: QueryIntent): AnswerContract {
         intent,
         label: 'Clinical Features',
         sections: [
-          { title: 'History Findings', guidance: 'Symptoms and history points only.' },
-          { title: 'Examination Findings', guidance: 'Exam signs only.' },
+          { title: 'History Findings', guidance: 'Symptoms and history points only. What the patient reports.' },
+          { title: 'Examination Findings', guidance: 'Exam signs only. What the clinician observes. Do not mix with history.' },
         ],
       };
     case 'how_to_procedure':
@@ -128,8 +128,8 @@ export function getAnswerContract(intent: QueryIntent): AnswerContract {
         intent,
         label: 'Procedure',
         sections: [
-          { title: 'Pre-Procedure Setup', guidance: 'Preparation, positioning, and setup steps.' },
-          { title: 'Step-by-Step Procedure', guidance: 'Use ordered steps with continuous numbering.' },
+          { title: 'Pre-Procedure Setup', guidance: 'Preparation, positioning, and setup steps. Do not include actual surgical steps.' },
+          { title: 'Step-by-Step Procedure', guidance: 'Use ordered steps with continuous numbering. Start from incision/entry.' },
         ],
       };
     default:
@@ -137,8 +137,8 @@ export function getAnswerContract(intent: QueryIntent): AnswerContract {
         intent: 'generic_fallback',
         label: 'Structured Answer',
         sections: [
-          { title: 'Direct Answer', guidance: 'Answer the question directly.' },
-          { title: 'Key Points', guidance: 'Provide source-backed key details.' },
+          { title: 'Direct Answer', guidance: 'Answer the question directly. Keep it focused and concise.' },
+          { title: 'Key Points', guidance: 'Provide source-backed key details. Do not repeat the direct answer.' },
         ],
       };
   }
