@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 
-export const dynamic = 'force-dynamic';
+
 import { useSessionStore, useDocumentStore, useChatStore } from '../store';
 import { SessionList } from '../components/session';
 import { Button } from '../components/ui';
@@ -12,9 +12,11 @@ import { LoadingScreen } from '../components/ui/LoadingScreen';
 import { SimpleHeader } from '../components/layout';
 import { useRouter } from 'next/navigation';
 import type { Session } from '../types';
+import { useAuthGuard } from '@/hooks/useAuthGuard';
 
 export default function HomePage() {
   const router = useRouter();
+  const { isCheckingAuth, isAuthenticated } = useAuthGuard({ requireAuth: true });
   const { sessions, loadSessions, createSession, isLoading: isSessionLoading, currentSessionId, setCurrentSession, userId } = useSessionStore();
   const { loadDocuments } = useDocumentStore();
   const { preloadMessages, isPreloading, preloadingProgress } = useChatStore();
@@ -49,7 +51,8 @@ export default function HomePage() {
     initApp();
   }, [loadSessions, preloadMessages, isMounted, userId, router]);
 
-  if (!isMounted) return null;
+  if (!isMounted || isCheckingAuth) return <LoadingScreen />;
+  if (!isAuthenticated) return null;
 
   const handleCreateSession = async (data: { name: string; description?: string; systemPrompt?: string }) => {
     try {

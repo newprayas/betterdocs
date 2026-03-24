@@ -9,6 +9,7 @@ import { userIdLogger } from '../utils/userIdDebugLogger';
 import { storageManager } from '../services/storage/storageManager';
 import { getIndexedDBServices } from '../services/indexedDB';
 import { SessionPreparationOverlay } from '../components/ui';
+import { Capacitor } from '@capacitor/core';
 
 const RESUME_STALE_HIDDEN_MS = 15000;
 const STALE_PIPELINE_AGE_MS = 90000;
@@ -45,6 +46,16 @@ export function AppInitializer() {
   useEffect(() => {
     setIsClient(true);
   }, []);
+
+  useEffect(() => {
+    if (!isClient) return;
+    if (!Capacitor.isNativePlatform()) return;
+    document.documentElement.classList.add('native-capacitor');
+
+    return () => {
+      document.documentElement.classList.remove('native-capacitor');
+    };
+  }, [isClient]);
   useEffect(() => {
     return () => {
       isMountedRef.current = false;
@@ -198,6 +209,7 @@ export function AppInitializer() {
         hydratingUserIdRef.current = null;
         startupCleanupUserRef.current = null;
         console.log('[APP INIT]', 'User data cleared');
+        redirectToLoginIfNeeded();
       }
     });
 
@@ -226,6 +238,12 @@ export function AppInitializer() {
       }
 
       userIdLogger.logAuthChange('AppInitializer', null, 'INITIAL_SESSION_CHECK (no session after retry)');
+      clearSettings();
+      clearSessions();
+      clearDocuments();
+      hydratedUserIdRef.current = null;
+      hydratingUserIdRef.current = null;
+      startupCleanupUserRef.current = null;
       redirectToLoginIfNeeded();
     };
 

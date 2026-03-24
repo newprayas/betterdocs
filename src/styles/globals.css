@@ -14,6 +14,10 @@
     font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
   }
 
+  html.native-capacitor body {
+    padding-top: max(env(safe-area-inset-top, 0px), 12px);
+  }
+
   * {
     @apply border-gray-200 dark:border-slate-800;
   }

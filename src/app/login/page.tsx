@@ -1,14 +1,80 @@
 'use client';
 
 import { createClient } from '@/utils/supabase/client';
-import { useState, useEffect, Suspense } from 'react';
+import { useState, useEffect, Suspense, useRef, useMemo } from 'react';
 import { useSearchParams } from 'next/navigation';
+import { useAuthGuard } from '@/hooks/useAuthGuard';
+import { Capacitor } from '@capacitor/core';
+import { Browser } from '@capacitor/browser';
+import { App as CapacitorApp } from '@capacitor/app';
 
 function LoginContent() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const processedOAuthCodeRef = useRef<string | null>(null);
   const searchParams = useSearchParams();
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
+  const { isCheckingAuth } = useAuthGuard({ requireAuth: false });
+
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) {
+      return;
+    }
+
+    const listenerPromise = CapacitorApp.addListener('appUrlOpen', async ({ url }) => {
+      if (!url) return;
+
+      let parsed: URL;
+      try {
+        parsed = new URL(url);
+      } catch {
+        return;
+      }
+
+      const code = parsed.searchParams.get('code');
+      if (!code) return;
+
+      await Browser.close().catch(() => {
+        // no-op: close can fail if browser is already closed.
+      });
+
+      window.location.replace(`/login?code=${encodeURIComponent(code)}`);
+    });
+
+    return () => {
+      listenerPromise.then((listener) => listener.remove());
+    };
+  }, []);
+
+  useEffect(() => {
+    const code = searchParams.get('code');
+    if (!code || processedOAuthCodeRef.current === code) {
+      return;
+    }
+
+    processedOAuthCodeRef.current = code;
+    setIsLoading(true);
+    setError(null);
+
+    const finishOAuthLogin = async () => {
+      const { error } = await supabase.auth.exchangeCodeForSession(code);
+
+      if (error) {
+        setError(error.message);
+        setIsLoading(false);
+        return;
+      }
+
+      const nativeNext = typeof window !== 'undefined' ? window.localStorage.getItem('post_login_next') : null;
+      if (nativeNext) {
+        window.localStorage.removeItem('post_login_next');
+      }
+      const next = nativeNext || searchParams.get('next') || searchParams.get('redirectedFrom') || '/';
+      window.location.replace(next);
+    };
+
+    finishOAuthLogin();
+  }, [searchParams, supabase]);
 
   useEffect(() => {
     // Handle error messages returned from Supabase redirects
@@ -25,12 +91,39 @@ function LoginContent() {
     try {
       // Get the URL to redirect to after login (if the user was kicked here by middleware)
       const next = searchParams.get('redirectedFrom') || '/';
-      
+      const isNative = Capacitor.isNativePlatform();
+
+      if (isNative) {
+        window.localStorage.setItem('post_login_next', next);
+
+        const { data, error } = await supabase.auth.signInWithOAuth({
+          provider: 'google',
+          options: {
+            redirectTo: 'com.meddy.app://login',
+            skipBrowserRedirect: true,
+            queryParams: {
+              access_type: 'offline',
+              prompt: 'consent',
+            },
+          },
+        });
+
+        if (error) throw error;
+        if (!data?.url) {
+          throw new Error('Failed to initialize Google login URL.');
+        }
+
+        await Browser.open({
+          url: data.url,
+        });
+        return;
+      }
+
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          // Redirect to our callback route, passing the 'next' destination
-          redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`,
+          // Web flow: return to /login and exchange the code in-app.
+          redirectTo: `${window.location.origin}/login?next=${encodeURIComponent(next)}`,
           queryParams: {
             access_type: 'offline',
             prompt: 'consent',
@@ -44,6 +137,10 @@ function LoginContent() {
       setIsLoading(false);
     }
   };
+
+  if (isCheckingAuth) {
+    return <LoginLoadingFallback />;
+  }
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-slate-950 px-6 py-12 lg:px-8">
