@@ -1120,6 +1120,16 @@ const buildDeterministicBrandPriceLine = (detail: ParsedBrandDetail): string => 
   return unit ? `Price: Tk ${price} / ${unit}` : `Price: Tk ${price}`;
 };
 
+const buildBrandSearchContextHeader = (promptContext: Record<string, unknown>): string => {
+  const genericName = compactField(String(promptContext.generic_name || ''));
+  const requestedBrandQuery = compactField(String(promptContext.requested_brand_query || ''));
+
+  if (!genericName || !requestedBrandQuery) return '';
+  if (normalizeDrugIdentity(requestedBrandQuery) === normalizeDrugIdentity(genericName)) return '';
+
+  return `${genericName.toUpperCase()} (${canonicalizeDrugQueryCase(requestedBrandQuery)})`;
+};
+
 const buildDeterministicBrandsBody = (
   promptContext: Record<string, unknown>,
 ): string => {
@@ -1199,10 +1209,15 @@ const buildDeterministicBrandsBody = (
     }
   }
 
-  return headingOrder
+  const body = headingOrder
     .map((heading) => [`✅ ${heading}`, ...(grouped.get(heading) || [])].join('\n\n'))
     .join('\n\n')
     .trim();
+
+  if (!body) return '';
+
+  const contextHeader = buildBrandSearchContextHeader(promptContext);
+  return contextHeader ? `${contextHeader}\n\n${body}` : body;
 };
 
 type DrugScheduleUnitMeta = {
@@ -2578,6 +2593,8 @@ Rules:
       /\b(brand|brands|brand\s+name(?:s)?|brands?\s+of|company|companies|price|prices|cost|costs|trade\s+name(?:s)?)\b/.test(
         normalized,
       );
+    const conciseWhatIsDrugQuery =
+      /^\s*what(?:'s| is)\s+([A-Za-z][A-Za-z0-9\s+'().\-]{0,80})\s*\??\s*$/i.test(content);
 
     if (doseRequested) {
       addField('indications');
@@ -2590,6 +2607,14 @@ Rules:
     }
 
     if (brandOnlyRequested) {
+      return {
+        requestedFields: [],
+        answerKind: 'brands',
+        needsBrands: true,
+      };
+    }
+
+    if (conciseWhatIsDrugQuery) {
       return {
         requestedFields: [],
         answerKind: 'brands',
@@ -3180,6 +3205,7 @@ Rules:
         generic_name: '',
         aliases: [],
         pages: [],
+        requested_brand_query: compactField(requestedBrandQuery) || undefined,
         filtered_proprietary_preparations: [],
         matched_entries: [],
       };
@@ -3190,6 +3216,7 @@ Rules:
         generic_name: cleanDrugDisplayName(primaryEntry.drug_name),
         aliases: uniqueStrings(primaryEntry.aliases),
         pages: primaryEntry.pages,
+        requested_brand_query: compactField(requestedBrandQuery) || undefined,
         filtered_proprietary_preparations: toPromptBrandContexts(filteredBrands),
       };
     }
@@ -3198,6 +3225,7 @@ Rules:
       generic_name: cleanDrugDisplayName(primaryEntry.drug_name),
       aliases: uniqueStrings(safeEntries.flatMap((entry) => entry.aliases)),
       pages: uniquePages(safeEntries),
+      requested_brand_query: compactField(requestedBrandQuery) || undefined,
       filtered_proprietary_preparations: toPromptBrandContexts(filteredBrands),
       matched_entry_count: safeEntries.length,
       matched_entries: safeEntries.map((entry, index) => ({
@@ -3810,7 +3838,7 @@ Rules:
         intent.answerKind === 'sectional'
           ? this.buildSectionPromptContexts(matchedEntries, intent)
           : intent.answerKind === 'brands'
-            ? this.buildBrandsPromptContexts(matchedEntries, parsed.drug_name)
+            ? this.buildBrandsPromptContexts(matchedEntries, requestedBrandQuery)
             : await this.buildDosePromptContexts(
                 matchedEntries,
                 requestedBrandQuery,
