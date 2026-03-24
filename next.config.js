@@ -20,6 +20,15 @@ const nextConfig = {
   images: {
     unoptimized: process.env.CAPACITOR_BUILD === 'true' ? true : undefined,
   },
+  env: process.env.CAPACITOR_BUILD === 'true'
+    ? {
+      NEXT_PUBLIC_VOYAGE_API_KEY: process.env.VOYAGE_API_KEY || '',
+      NEXT_PUBLIC_VOYAGE_EMBEDDING_MODEL:
+        process.env.VOYAGE_EMBEDDING_MODEL || 'voyage-4-large',
+      NEXT_PUBLIC_VOYAGE_EMBEDDING_DIMENSION:
+        process.env.VOYAGE_EMBEDDING_DIMENSION || '1024',
+    }
+    : {},
 
   webpack: (config, { dev, isServer }) => {
     // Enable WebAssembly support
