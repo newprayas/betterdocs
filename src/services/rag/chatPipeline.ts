@@ -1205,11 +1205,12 @@ export class ChatPipeline {
   }
 
   private logRetrievedChunkDetails(
-    searchResults: VectorSearchResult[],
+    retrievedChunks: VectorSearchResult[],
+    generationChunks: VectorSearchResult[],
     baseSearchResults: VectorSearchResult[]
   ): void {
-    if (searchResults.length === 0) {
-      console.log('[RETRIEVAL CHUNK DEBUG] No chunks were fed to the model.');
+    if (retrievedChunks.length === 0) {
+      console.log('[RETRIEVAL CHUNK DEBUG] No chunks were found.');
       return;
     }
 
@@ -1231,23 +1232,25 @@ export class ChatPipeline {
       basePagesByDocument.set(baseResult.document.id, current);
     }
 
-    const rankedResults = [...searchResults].sort((a, b) => b.similarity - a.similarity);
+    const rankedResults = [...retrievedChunks].sort((a, b) => b.similarity - a.similarity);
     const chunkNumberById = new Map<string, number>(
       rankedResults.map((result, index) => [result.chunk.id, index + 1])
     );
 
     console.log('\n=== RETRIEVAL CHUNK DEBUG START ===');
     console.log('[MODEL INPUT SUMMARY]', {
-      totalChunksFedToModel: searchResults.length,
+      totalChunksRetrieved: retrievedChunks.length,
+      totalChunksFedToModel: generationChunks.length, // Only the capped ones
       baseRetrievedChunks: baseSearchResults.length,
-      neighborChunksAdded: Math.max(0, searchResults.length - baseSearchResults.length),
-      sortedBySimilarityForDebugView: true
+      neighborChunksAdded: Math.max(0, retrievedChunks.length - baseSearchResults.length),
+      generationFloorApplied: retrievedChunks.length > generationChunks.length,
     });
 
     console.log('\n=== RETRIEVAL CHUNK CONTENT START ===');
     rankedResults.forEach((result, index) => {
       const rank = index + 1;
-      const modelInputOrder = searchResults.findIndex((item) => item.chunk.id === result.chunk.id) + 1;
+      const wasFedToModel = generationChunks.some(g => g.chunk.id === result.chunk.id);
+      const modelInputOrder = retrievedChunks.findIndex((item) => item.chunk.id === result.chunk.id) + 1;
       const debugInfo = this.classifyRetrievedChunkForDebug(
         result,
         baseChunkIds,
@@ -1265,9 +1268,9 @@ export class ChatPipeline {
       if (debugInfo.isNeighborChunk) {
         const neighborOffset = debugInfo.neighborRelation === 'above' ? '-1' : '+1';
         const neighborChunkLabel = neighborChunkNumber ? `Chunk ${neighborChunkNumber}` : 'Chunk ?';
-        console.log(`${neighborOffset} Neighbor chunk ${neighborChunkLabel} | Similarity score: ${result.similarity.toFixed(3)}`);
+        console.log(`${neighborOffset} Neighbor chunk ${neighborChunkLabel} | Similarity score: ${result.similarity.toFixed(3)} | Fed to generator: ${wasFedToModel ? 'YES' : 'NO'}`);
       } else {
-        console.log(`Chunk ${rank} | Similarity score: ${result.similarity.toFixed(3)}`);
+        console.log(`Chunk ${rank} | Similarity score: ${result.similarity.toFixed(3)} | Fed to generator: ${wasFedToModel ? 'YES' : 'NO'}`);
       }
       console.log(`Page: ${chunkPage ?? 'N/A'} | Document title: ${result.document.title}`);
       console.log('Content:');
@@ -1952,13 +1955,18 @@ ${normalizedOriginal}
       // Cap chunks fed to the LLM. Retrieval casts wide (up to 12) for quality,
       // but the generator only needs the top N by similarity — more context
       // linearly increases generation time without improving answer quality.
-      const GENERATION_CHUNK_CAP = 6;
+      // Dynamic capping: max 8 chunks, minimum similarity 0.60
+      const GENERATION_CHUNK_CAP = 8;
+      const MIN_SIMILARITY_FLOOR = 0.60;
+      
       const generationChunks = [...searchResults]
         .sort((a, b) => b.similarity - a.similarity)
+        .filter(chunk => chunk.similarity >= MIN_SIMILARITY_FLOOR)
         .slice(0, GENERATION_CHUNK_CAP);
+        
       console.log(
         '[GENERATION CHUNKS]',
-        `Using top ${generationChunks.length} of ${searchResults.length} retrieved chunks for generation`
+        `Using top ${generationChunks.length} of ${searchResults.length} retrieved chunks for generation (floor: ${MIN_SIMILARITY_FLOOR})`
       );
 
       // Build context from generation chunks only
@@ -1981,7 +1989,7 @@ ${normalizedOriginal}
       postprocessMs = generationMetrics?.postprocessMs ?? 0;
 
       // Log exact chunk content passed to the model at the end of the pipeline.
-      this.logRetrievedChunkDetails(searchResults, baseSearchResults);
+      this.logRetrievedChunkDetails(searchResults, generationChunks, baseSearchResults);
       console.log('[QUALITY METRICS]', {
         intent_detected: queryIntent,
         contract_pass_before_fix: generationMetrics?.contractPassBeforeFix ?? true,
