@@ -52,6 +52,58 @@ export class GeminiService {
 
   // ... (getSDKVersion, ensureInitialized kept same)
 
+  private shouldUseClientEmbeddingFallback(): boolean {
+    if (typeof window === 'undefined') return false;
+
+    const maybeCapacitor = (window as any).Capacitor;
+    const isNativePlatform =
+      typeof maybeCapacitor?.isNativePlatform === 'function'
+        ? maybeCapacitor.isNativePlatform()
+        : false;
+
+    // Capacitor WebView has no Next.js API routes.
+    return isNativePlatform;
+  }
+
+  private async embedTextViaVoyageDirect(text: string): Promise<Float32Array> {
+    const voyageApiKey = process.env.NEXT_PUBLIC_VOYAGE_API_KEY;
+    const voyageModel =
+      process.env.NEXT_PUBLIC_VOYAGE_EMBEDDING_MODEL || 'voyage-4-large';
+    const voyageDimension = Number(
+      process.env.NEXT_PUBLIC_VOYAGE_EMBEDDING_DIMENSION || '1024'
+    );
+
+    if (!voyageApiKey) {
+      throw new Error('Missing NEXT_PUBLIC_VOYAGE_API_KEY for client embedding fallback');
+    }
+
+    const response = await fetch('https://api.voyageai.com/v1/embeddings', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${voyageApiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        input: [text],
+        model: voyageModel,
+        output_dimension: voyageDimension,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Voyage direct embedding failed: ${response.status} ${errorText}`);
+    }
+
+    const data = await response.json();
+    const values = data?.data?.[0]?.embedding;
+    if (!Array.isArray(values) || values.length === 0) {
+      throw new Error('Voyage direct embedding returned invalid payload');
+    }
+
+    return new Float32Array(values);
+  }
+
   private ensureEmbeddingInitialized() {
     // Proxy is always "initialized"
     return;
@@ -60,24 +112,39 @@ export class GeminiService {
   // ... (generateResponse, generateStreamingResponse kept same)
 
   async embedText(text: string, retryCount: number = 0): Promise<Float32Array> {
-    try {
-      const response = await fetch('/api/embed', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text })
-      });
+    const preferDirect = this.shouldUseClientEmbeddingFallback();
+    let proxyError: unknown = null;
 
-      if (!response.ok) {
-        throw new Error(`Proxy error: ${response.status} ${response.statusText}`);
+    if (!preferDirect) {
+      try {
+        const response = await fetch('/api/embed', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text })
+        });
+
+        if (!response.ok) {
+          throw new Error(`Proxy error: ${response.status} ${response.statusText}`);
+        }
+
+        const data = await response.json();
+        if (data.error) throw new Error(data.error);
+
+        return new Float32Array(data.embedding);
+      } catch (error: any) {
+        proxyError = error;
+        console.warn('[GEMINI EMBEDDING]', 'Proxy embedding failed, trying direct fallback');
       }
+    }
 
-      const data = await response.json();
-      if (data.error) throw new Error(data.error);
-
-      return new Float32Array(data.embedding);
-    } catch (error: any) {
-      console.error('[GEMINI EMBEDDING ERROR]', 'Proxy Request Failed:', error);
-      throw new Error('Failed to embed text via proxy');
+    try {
+      return await this.embedTextViaVoyageDirect(text);
+    } catch (directError: any) {
+      console.error('[GEMINI EMBEDDING ERROR]', 'Direct fallback failed:', directError);
+      if (proxyError) {
+        console.error('[GEMINI EMBEDDING ERROR]', 'Original proxy error:', proxyError);
+      }
+      throw new Error('Failed to generate embedding');
     }
   }
 
