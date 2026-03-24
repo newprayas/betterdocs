@@ -40,7 +40,6 @@ export function getAnswerContract(intent: QueryIntent): AnswerContract {
         sections: [
           { title: 'Definition', guidance: 'Give a direct definition first.' },
           { title: 'Key Points', guidance: 'Add essential characteristics and context.' },
-          { title: 'Subtype Note', guidance: 'Mention relevant subtypes if present in sources.' },
         ],
       };
     case 'causes':
@@ -50,7 +49,6 @@ export function getAnswerContract(intent: QueryIntent): AnswerContract {
         sections: [
           { title: 'Primary Causes', guidance: 'List main causes clearly.' },
           { title: 'Secondary Causes', guidance: 'List additional or less common causes.' },
-          { title: 'Important Notes', guidance: 'Add source-backed caveats or context.' },
         ],
       };
     case 'classification_types':
@@ -68,8 +66,7 @@ export function getAnswerContract(intent: QueryIntent): AnswerContract {
         label: 'Risk Factors',
         sections: [
           { title: 'Major Risk Factors', guidance: 'List major factors first.' },
-          { title: 'Additional Risk Factors', guidance: 'Include secondary factors from context.' },
-          { title: 'Important Notes', guidance: 'Highlight source-backed cautions.' },
+          { title: 'Minor/Predisposing Factors', guidance: 'Include secondary or predisposing factors from context.' },
         ],
       };
     case 'difference_between':
@@ -87,8 +84,7 @@ export function getAnswerContract(intent: QueryIntent): AnswerContract {
         label: 'Investigations',
         sections: [
           { title: 'Initial Investigations', guidance: 'List first-line tests.' },
-          { title: 'Confirmatory Investigations', guidance: 'List confirmatory tests.' },
-          { title: 'Special/Advanced Investigations', guidance: 'List advanced options when present.' },
+          { title: 'Confirmatory Investigations', guidance: 'List confirmatory or second-line tests.' },
         ],
       };
     case 'treatment_rx':
@@ -98,7 +94,6 @@ export function getAnswerContract(intent: QueryIntent): AnswerContract {
         sections: [
           { title: 'Conservative/Medical Treatment', guidance: 'List non-procedural treatment options.' },
           { title: 'Procedural/Surgical Treatment', guidance: 'List procedural interventions if present.' },
-          { title: 'Follow-up and Monitoring', guidance: 'Include follow-up points from sources.' },
         ],
       };
     case 'complications':
@@ -106,9 +101,8 @@ export function getAnswerContract(intent: QueryIntent): AnswerContract {
         intent,
         label: 'Complications',
         sections: [
-          { title: 'Complications', guidance: 'State the complications directly from sources.' },
-          { title: 'Common/Important Complications', guidance: 'List the most relevant complications first.' },
-          { title: 'Severe/Late Complications', guidance: 'Include serious or delayed complications if present.' },
+          { title: 'Disease Complications', guidance: 'List complications of the disease itself.' },
+          { title: 'Post-operative Complications', guidance: 'List early and late complications after treatment or surgery if present in sources.' },
         ],
       };
     case 'prognosis':
@@ -118,7 +112,6 @@ export function getAnswerContract(intent: QueryIntent): AnswerContract {
         sections: [
           { title: 'Prognosis/Outcome', guidance: 'State the expected course or outcome from sources.' },
           { title: 'Factors Affecting Outcome', guidance: 'List factors that worsen or improve outcome if available.' },
-          { title: 'Important Notes', guidance: 'Add source-backed caveats or follow-up points.' },
         ],
       };
     case 'clinical_features_history_exam':
@@ -137,8 +130,6 @@ export function getAnswerContract(intent: QueryIntent): AnswerContract {
         sections: [
           { title: 'Pre-Procedure Setup', guidance: 'Preparation, positioning, and setup steps.' },
           { title: 'Step-by-Step Procedure', guidance: 'Use ordered steps with continuous numbering.' },
-          { title: 'Safety Checks', guidance: 'Critical safety checks and decision points.' },
-          { title: 'Bailout/Alternatives', guidance: 'Safer alternatives when standard path is not possible.' },
         ],
       };
     default:
@@ -148,7 +139,6 @@ export function getAnswerContract(intent: QueryIntent): AnswerContract {
         sections: [
           { title: 'Direct Answer', guidance: 'Answer the question directly.' },
           { title: 'Key Points', guidance: 'Provide source-backed key details.' },
-          { title: 'Source Gaps', guidance: 'Explicitly mention what is not available in sources.' },
         ],
       };
   }
@@ -374,7 +364,9 @@ function normalizeHeadings(text: string): string {
     if (/^#{1,6}\s+/.test(trimmed)) {
       const headingMatch = trimmed.match(/^(#{1,6})\s+(.+)$/);
       if (headingMatch) {
-        return `${headingMatch[1]} ${headingMatch[2].trim()}`;
+        // Strip trailing colon so getMissingSections can match reliably.
+        const headingText = headingMatch[2].trim().replace(/:$/, '');
+        return `${headingMatch[1]} ${headingText}`;
       }
     }
 
@@ -469,9 +461,9 @@ function getMissingSections(text: string, contract: AnswerContract): string[] {
   const missing: string[] = [];
   for (const section of contract.sections) {
     const escaped = escapeRegex(section.title);
-    const headingPattern = new RegExp(`^#{1,6}\\s*${escaped}\\s*$`, 'im');
+    const headingPattern = new RegExp(`^#{1,6}\\s*${escaped}\\s*:?\\s*$`, 'im');
     const boldPattern = new RegExp(`^\\*\\*\\s*${escaped}\\s*\\*\\*:?\\s*$`, 'im');
-    const plainPattern = new RegExp(`^${escaped}:\\s*$`, 'im');
+    const plainPattern = new RegExp(`^${escaped}:?\\s*$`, 'im');
     if (!headingPattern.test(text) && !boldPattern.test(text) && !plainPattern.test(text)) {
       missing.push(section.title);
     }

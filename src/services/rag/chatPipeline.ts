@@ -467,8 +467,10 @@ export class ChatPipeline {
       const relatedDocuments = documentNames.join(', ');
       console.log('[CONTEXT DOCUMENTS]', relatedDocuments);
 
-      // Create the enhanced query with context
-      const enhancedQuery = `${content} [Context - ${sessionName} and related to ${relatedDocuments}]`;
+      // Create the enhanced query with context — use document names only.
+      // Session name is intentionally excluded: a session named "drugs" would
+      // contaminate the embedding for unrelated queries like "sepsis management".
+      const enhancedQuery = `${content} [Context - related to ${relatedDocuments}]`;
 
       console.log('[ENHANCED QUERY]', enhancedQuery);
       console.log('=== QUERY ENHANCEMENT PROCESS END ===\n');
@@ -1947,21 +1949,29 @@ ${normalizedOriginal}
         onStreamEvent({ type: 'status', message: 'Answer Generation' });
       }
 
-      // Build context from search results
-      console.log('[CONTEXT BUILDING]', 'Constructing context from search results...');
-      const context = this.buildContext(searchResults);
-      console.log('[CONTEXT CREATED]', `Context string length: ${context.length} characters`);
+      // Cap chunks fed to the LLM. Retrieval casts wide (up to 12) for quality,
+      // but the generator only needs the top N by similarity — more context
+      // linearly increases generation time without improving answer quality.
+      const GENERATION_CHUNK_CAP = 6;
+      const generationChunks = [...searchResults]
+        .sort((a, b) => b.similarity - a.similarity)
+        .slice(0, GENERATION_CHUNK_CAP);
+      console.log(
+        '[GENERATION CHUNKS]',
+        `Using top ${generationChunks.length} of ${searchResults.length} retrieved chunks for generation`
+      );
 
-      // ... The rest of the function (Context Building, LLM Generation) remains the same ...
-      // IMPORTANT: The final LLM call (generateSimplifiedContextualResponse)
-      // should use the standalone query for better context understanding
+      // Build context from generation chunks only
+      console.log('[CONTEXT BUILDING]', 'Constructing context from search results...');
+      const context = this.buildContext(generationChunks);
+      console.log('[CONTEXT CREATED]', `Context string length: ${context.length} characters`);
 
       const generationStartMs = Date.now();
       const generationMetrics = await this.generateSimplifiedContextualResponse(
         sessionId,
-        standaloneQuery, // Use the rewritten query instead of original content
+        standaloneQuery,
         context,
-        searchResults,
+        generationChunks,  // capped — not the full 12
         answerContract,
         contractInstruction,
         queryIntent,
