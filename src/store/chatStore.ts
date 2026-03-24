@@ -18,8 +18,11 @@ const PIPELINE_TIMEOUT_MS = 90000;
 const DRUG_MODE_DIRECT_ROUTE_PATTERN =
   /\b(dose|doses|dosage|dosing|schedule|regimen|how much|how many|brand|brands|brand name|brand names|trade name|trade names|company|companies|price|prices|cost|costs)\b/i;
 
+const DRUG_MODE_WHAT_IS_ROUTE_PATTERN =
+  /^\s*what(?:'s| is)\s+([A-Za-z][A-Za-z0-9\s+'().\-]{0,80})\s*\??\s*$/i;
+
 const shouldUseDirectDrugModePath = (content: string): boolean =>
-  DRUG_MODE_DIRECT_ROUTE_PATTERN.test(content);
+  DRUG_MODE_DIRECT_ROUTE_PATTERN.test(content) || DRUG_MODE_WHAT_IS_ROUTE_PATTERN.test(content);
 
 const DRUG_FOLLOW_UP_INTENT_PATTERNS: Array<{ pattern: RegExp; normalizedIntent: string }> = [
   { pattern: /\b(indications?|uses?)\b/i, normalizedIntent: 'indications' },
