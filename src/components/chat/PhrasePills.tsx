@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState } from "react";
+import React, { useRef } from "react";
 import clsx from "clsx";
 
 // Default phrases for the pills
@@ -98,24 +98,6 @@ export const PhrasePills: React.FC<PhrasePillsProps> = ({
   ariaLabel = "Quick phrase suggestions",
 }) => {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const [canScrollLeft, setCanScrollLeft] = useState(false);
-  const [canScrollRight, setCanScrollRight] = useState(true);
-
-  // Check scroll position to update scroll buttons
-  const checkScrollPosition = () => {
-    const container = scrollContainerRef.current;
-    if (container) {
-      setCanScrollLeft(container.scrollLeft > 0);
-      setCanScrollRight(
-        container.scrollLeft < container.scrollWidth - container.clientWidth,
-      );
-    }
-  };
-
-  // Handle scroll events
-  const handleScroll = () => {
-    checkScrollPosition();
-  };
 
   // Scroll functions for desktop navigation
   const scrollLeft = () => {
@@ -157,80 +139,15 @@ export const PhrasePills: React.FC<PhrasePillsProps> = ({
     }
   };
 
-  // Initialize scroll position check
-  useEffect(() => {
-    checkScrollPosition();
-
-    // Add resize listener
-    const handleResize = () => {
-      checkScrollPosition();
-    };
-
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
-  }, [phrases]);
-
   return (
     <div
       className={clsx("relative w-full", className)}
       role="region"
       aria-label={ariaLabel}
     >
-      {/* Desktop scroll buttons */}
-      <div className="hidden sm:flex absolute left-0 top-0 bottom-0 z-10 items-center pointer-events-none">
-        {canScrollLeft && (
-          <button
-            type="button"
-            onClick={scrollLeft}
-            aria-label="Scroll left"
-            className="pointer-events-auto bg-gray-800/80 text-white rounded-full p-1.5 border border-gray-600 hover:bg-gray-700 transition-all duration-200 ml-2"
-          >
-            <svg
-              className="w-4 h-4"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M15 19l-7-7 7-7"
-              />
-            </svg>
-          </button>
-        )}
-      </div>
-
-      <div className="hidden sm:flex absolute right-0 top-0 bottom-0 z-10 items-center pointer-events-none">
-        {canScrollRight && (
-          <button
-            type="button"
-            onClick={scrollRight}
-            aria-label="Scroll right"
-            className="pointer-events-auto bg-gray-800/80 text-white rounded-full p-1.5 border border-gray-600 hover:bg-gray-700 transition-all duration-200 mr-2"
-          >
-            <svg
-              className="w-4 h-4"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M9 5l7 7-7 7"
-              />
-            </svg>
-          </button>
-        )}
-      </div>
-
       {/* Scrollable container */}
       <div
         ref={scrollContainerRef}
-        onScroll={handleScroll}
         onKeyDown={handleKeyDown}
         tabIndex={0}
         role="list"
