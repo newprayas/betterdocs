@@ -344,6 +344,20 @@ const canonicalizeTitleCase = (value: string): string =>
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
     .join(' ');
 
+const normalizeIntentLeadTypos = (value: string): string =>
+  value
+    .trim()
+    .replace(/^\s*w+h+a+t+\b/i, 'what')
+    .replace(/^\s*whats\b/i, "what's");
+
+const extractWhatIsQueryTarget = (value: string): string => {
+  const normalized = normalizeIntentLeadTypos(value);
+  const match = normalized.match(
+    /^\s*(?:what|wat|wht)(?:'s|\s+is)?\s+([A-Za-z][A-Za-z0-9\s+'().\-]{1,80})\s*\??\s*$/i,
+  )?.[1];
+  return sanitizeParsedDrugName(match || '');
+};
+
 const ASK_DRUG_NAME_PREFIX_PATTERNS = [
   /^(?:what(?:'s| is)?\s+)?(?:the\s+)?(?:details|detail|full details|full detail|full information|complete details|everything)\s+(?:of|about)\s+/i,
   /^(?:what(?:'s| is)?\s+)?(?:the\s+)?(?:indications?|side[\s-]?effects?|contra[\s-]?indications?|renal(?:\s+dose|\s+impairment)?|hepatic(?:\s+dose|\s+impairment)?|pregnancy|breast[\s-]?feeding|safety(?:\s+information)?)\s+(?:of|for)\s+/i,
@@ -364,7 +378,7 @@ const sanitizeParsedDrugName = (value: string): string => {
 };
 
 const inferDrugNameFromRawQuery = (content: string): string => {
-  const compact = compactField(content) || '';
+  const compact = compactField(normalizeIntentLeadTypos(content)) || '';
   if (!compact) return '';
 
   const patterns = [
@@ -378,6 +392,11 @@ const inferDrugNameFromRawQuery = (content: string): string => {
     if (match) {
       return sanitizeParsedDrugName(match);
     }
+  }
+
+  const whatIsTarget = extractWhatIsQueryTarget(compact);
+  if (whatIsTarget) {
+    return whatIsTarget;
   }
 
   return '';
@@ -2524,6 +2543,16 @@ ${JSON.stringify(promptContext, null, 2)}`;
       }
 
       if (parsed.indication_terms.length === 0) {
+        const whatIsTarget = extractWhatIsQueryTarget(content);
+        if (!parsed.drug_name.trim() && whatIsTarget) {
+          console.log('[ASK DRUG FALLBACK]', 'Redirecting unparsed what-is style query to drug mode', {
+            originalQuery: content,
+            extractedTarget: whatIsTarget,
+          });
+          await drugModeService.sendMessage(sessionId, content, onStreamEvent);
+          return;
+        }
+
         const noIntentMessage =
           'Please mention what you want to know, for example indications, side-effects, renal dose, pregnancy advice, or a condition such as pain or cough.';
         await this.saveAssistantMessage(sessionId, noIntentMessage);
