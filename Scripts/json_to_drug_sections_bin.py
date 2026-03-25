@@ -36,7 +36,7 @@ def format_bytes(num_bytes: int) -> str:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Convert drug_sections.json into drug_sections.bin and file_mapping.json."
+        description="Convert drug_sections.json into shard_4x8.bin and file_mapping.json."
     )
     parser.add_argument(
         "json_path",
@@ -46,8 +46,8 @@ def main() -> None:
     )
     parser.add_argument(
         "--bin-output",
-        default="drug_sections.bin",
-        help="Output BIN filename (default: drug_sections.bin).",
+        default="shard_4x8.bin",
+        help="Output BIN filename (default: shard_4x8.bin).",
     )
     parser.add_argument(
         "--mapping-file",

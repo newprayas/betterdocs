@@ -430,7 +430,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--bin-output",
-        default="drug_sections.bin",
+        default="shard_4x8.bin",
         help="Output BIN filename written to the current working directory.",
     )
     parser.add_argument(
