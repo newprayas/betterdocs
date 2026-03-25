@@ -20,6 +20,8 @@ const DRUG_MODE_DIRECT_ROUTE_PATTERN =
 
 const DRUG_MODE_WHAT_IS_ROUTE_PATTERN =
   /^\s*(?:what|wat|wht)(?:'s|\s+is)?\s+([A-Za-z][A-Za-z0-9\s+'().\-]{0,80})\s*\??\s*$/i;
+const DRUG_MODE_REVERSED_WHAT_IS_ROUTE_PATTERN =
+  /^\s*([A-Za-z][A-Za-z0-9\s+'().\-]{0,80})\s+(?:what|wat|wht)(?:'s|\s+is)?\s*\??\s*$/i;
 
 const normalizeIntentLeadTypos = (value: string): string => {
   const compact = value.trim();
@@ -36,7 +38,8 @@ const normalizeIntentLeadTypos = (value: string): string => {
 const shouldUseDirectDrugModePath = (content: string): boolean =>
   DRUG_MODE_DIRECT_ROUTE_PATTERN.test(content) ||
   DRUG_MODE_DIRECT_ROUTE_PATTERN.test(normalizeIntentLeadTypos(content)) ||
-  DRUG_MODE_WHAT_IS_ROUTE_PATTERN.test(normalizeIntentLeadTypos(content));
+  DRUG_MODE_WHAT_IS_ROUTE_PATTERN.test(normalizeIntentLeadTypos(content)) ||
+  DRUG_MODE_REVERSED_WHAT_IS_ROUTE_PATTERN.test(normalizeIntentLeadTypos(content));
 
 const DRUG_FOLLOW_UP_INTENT_PATTERNS: Array<{ pattern: RegExp; normalizedIntent: string }> = [
   { pattern: /\b(indications?|uses?)\b/i, normalizedIntent: 'indications' },
@@ -69,6 +72,7 @@ const DRUG_CONTEXT_EXPLICIT_PATTERNS = [
   /^(?:what(?:'s| is)?\s+)?(?:the\s+)?(?:dose|dosage|dosing|schedule|regimen|brands?|brand names?|trade names?|companies|prices?|costs?|indications?|uses?|side[\s-]?effects?|contra[\s-]?indications?|pregnancy|breast[\s-]?feeding|renal(?:\s+dose|\s+impairment)?|hepatic(?:\s+dose|\s+impairment)?|safety(?:\s+information)?|details?|full details?|all about|everything)\s+(?:of|for|about)\s+(.+)$/i,
   /^(?:tell\s+me\s+about)\s+(.+)$/i,
   /^(?:what(?:'s| is))\s+(.+)$/i,
+  /^(.+)\s+what(?:'s| is)$/i,
 ];
 
 const AMBIGUOUS_DRUG_FOLLOW_UP_MODEL = 'llama-3.3-70b-versatile';
