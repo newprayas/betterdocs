@@ -94,7 +94,7 @@ const ASK_DRUG_BROAD_TERM_EXPANSIONS: Record<string, string[]> = {
 export const ASK_DRUG_DATASET_CONFIG: DrugDatasetConfig = {
   id: 'drug_sections_bnf',
   name: 'BNF drug sections',
-  filename: 'drug_sections.bin',
+  filename: 'shard_4x8.bin',
   size: 'Unknown',
 };
 
