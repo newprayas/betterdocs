@@ -59,6 +59,7 @@ const canonicalizeDrugQueryCase = (value: string): string =>
     .split(/\s+/)
     .filter(Boolean)
     .map((part) => {
+      if (/^[A-Za-z]{1,3}$/.test(part)) return part.toUpperCase();
       if (part.toUpperCase() === part) return part;
       return part.charAt(0).toUpperCase() + part.slice(1).toLowerCase();
     })
@@ -202,6 +203,7 @@ const hasExactPhraseMatch = (text: string, query: string): boolean => {
 
   const pattern = new RegExp(
     `(^|[^A-Za-z0-9])${escapeRegExp(trimmedQuery)}(?=\\s*\\(|[^A-Za-z0-9]|$)`,
+    'i',
   );
   return pattern.test(text);
 };
@@ -221,6 +223,42 @@ const extractJsonObject = <T>(raw: string): T => {
     }
     throw new Error('Groq parser did not return valid JSON');
   }
+};
+
+const extractDrugParserFieldsFromRaw = (
+  raw: string,
+): Partial<DrugQueryParseResult> => {
+  const pickFirst = (patterns: RegExp[]): string => {
+    for (const pattern of patterns) {
+      const match = raw.match(pattern)?.[1];
+      if (typeof match === 'string') return match;
+    }
+    return '';
+  };
+
+  const drugName = pickFirst([
+    /"(?:drug_name|drugname|drg_name|drureq_name|drug_namee)"\s*:\s*"([^"]*)"/i,
+    /(?:drug_name|drugname|drg_name|drureq_name|drug_namee)\s*:\s*"([^"]*)"/i,
+  ]);
+
+  const requestedIndication = pickFirst([
+    /"(?:requested_indication|request_indication|indication_query)"\s*:\s*"([^"]*)"/i,
+    /"(?:requested_indication|request_indication|indication_query)[^"]*:\s*"([^"]*)"/i,
+    /(?:requested_indication|request_indication|indication_query)\s*:\s*"([^"]*)"/i,
+  ]);
+
+  const confidenceText = pickFirst([
+    /"confidence"\s*:\s*([0-9]*\.?[0-9]+)/i,
+    /confidence\s*:\s*([0-9]*\.?[0-9]+)/i,
+  ]);
+  const parsedConfidence = Number.parseFloat(confidenceText);
+  const confidence = Number.isFinite(parsedConfidence) ? parsedConfidence : undefined;
+
+  return {
+    drug_name: drugName,
+    requested_indication: requestedIndication,
+    confidence,
+  };
 };
 
 const compactField = (value?: string): string | undefined => {
@@ -302,6 +340,7 @@ const QUERY_DRUG_NAME_PREFIX_PATTERNS = [
   /^(?:what(?:'s| is)?\s+)?(?:the\s+)?(?:dose|doses|dosage|dosing|regimen|schedule)\s+of\s+/i,
   /^(?:what(?:'s| is)?\s+)?(?:the\s+)?(?:price|prices|cost|costs)\s+of\s+/i,
   /^(?:what(?:'s| is)?\s+)?(?:the\s+)?(?:indications?|side[\s-]?effects?|contra[\s-]?indications?|cautions?)\s+of\s+/i,
+  /^(?:what(?:'s| is))\s+/i,
 ];
 
 const QUERY_DRUG_NAME_SUFFIX_PATTERNS = [
@@ -333,12 +372,27 @@ const inferDrugNameFromRawQuery = (content: string): string => {
   const trailingOfPattern =
     /(?:^|\b)(?:brands?|brand\s*names?|trade\s*names?|dose|doses|dosage|dosing|regimen|schedule|price|prices|cost|costs|indications?|side[\s-]?effects?|contra[\s-]?indications?|cautions?)\s+of\s+([A-Za-z][A-Za-z0-9\s+'().\-]{1,80})$/i;
   const trailingBrandPattern = /([A-Za-z][A-Za-z0-9\s+'().\-]{1,80})\s+(?:brands?|brand\s*names?)$/i;
+  const plainWhatIsPattern =
+    /^(?:what(?:'s| is))\s+(?:the\s+)?([A-Za-z][A-Za-z0-9\s+'().\-]{1,80})\s*$/i;
+  const trailingIntentPattern =
+    /([A-Za-z][A-Za-z0-9\s+'().\-]{1,80})\s+(?:dose|doses|dosage|dosing|regimen|schedule|indications?|uses?|side[\s-]?effects?|contra[\s-]?indications?|cautions?|details?|full details?|all about|everything)\s*(?:of)?$/i;
+  const reversedWhatIsPattern =
+    /([A-Za-z][A-Za-z0-9\s+'().\-]{1,80})\s+what(?:'s| is)\s*$/i;
 
   const fromOf = compact.match(trailingOfPattern)?.[1];
   if (fromOf) return sanitizeParsedDrugName(fromOf);
 
   const fromBrand = compact.match(trailingBrandPattern)?.[1];
   if (fromBrand) return sanitizeParsedDrugName(fromBrand);
+
+  const fromWhatIs = compact.match(plainWhatIsPattern)?.[1];
+  if (fromWhatIs) return sanitizeParsedDrugName(fromWhatIs);
+
+  const fromTrailingIntent = compact.match(trailingIntentPattern)?.[1];
+  if (fromTrailingIntent) return sanitizeParsedDrugName(fromTrailingIntent);
+
+  const fromReversedWhatIs = compact.match(reversedWhatIsPattern)?.[1];
+  if (fromReversedWhatIs) return sanitizeParsedDrugName(fromReversedWhatIs);
 
   return '';
 };
@@ -2524,12 +2578,25 @@ Rules:
 
     console.log('[DRUG PARSER]', 'Raw parser output', raw);
 
-    const parsed = extractJsonObject<DrugQueryParseResult>(raw);
-    const parserDrugName = sanitizeParsedDrugName(String(parsed.drug_name || ''));
+    let parsed: Partial<DrugQueryParseResult> = {};
+    try {
+      parsed = extractJsonObject<DrugQueryParseResult>(raw);
+    } catch (error) {
+      console.warn('[DRUG PARSER]', 'Malformed parser JSON, attempting raw-field recovery', {
+        error,
+      });
+    }
+    const recovered = extractDrugParserFieldsFromRaw(raw);
+
+    const parserDrugName = sanitizeParsedDrugName(
+      String(parsed.drug_name || recovered.drug_name || ''),
+    );
     const inferredDrugName = inferDrugNameFromRawQuery(content);
     const resolvedDrugName = parserDrugName || inferredDrugName;
     const parserRequestedIndication = stripTrailingRequestedDoseAudience(
-      compactField(String(parsed.requested_indication || '')) || '',
+      compactField(
+        String(parsed.requested_indication || recovered.requested_indication || ''),
+      ) || '',
     );
     const inferredRequestedIndication = stripTrailingRequestedDoseAudience(
       inferRequestedIndicationFromQuery(content) || '',
@@ -2547,6 +2614,8 @@ Rules:
       confidence:
         typeof parsed.confidence === 'number'
           ? Math.max(0, Math.min(1, parsed.confidence))
+          : typeof recovered.confidence === 'number'
+            ? Math.max(0, Math.min(1, recovered.confidence))
           : 0,
     };
 
@@ -3327,7 +3396,7 @@ Rules:
 
   private entryHasProprietaryNormalizedMatch(entry: DrugEntry, query: string): boolean {
     const normalizedQuery = normalizeDrugLookupText(query);
-    if (!normalizedQuery) return false;
+    if (!normalizedQuery || normalizedQuery.length <= 2) return false;
     return normalizeDrugLookupText(entry.proprietary_preparations || '').includes(normalizedQuery);
   }
 
@@ -3692,7 +3761,7 @@ Rules:
     parsed: DrugQueryParseResult,
     suggestions: string[],
   ): string {
-    const unmatched = parsed.drug_name.trim() || content;
+    const unmatched = parsed.drug_name.trim() || inferDrugNameFromRawQuery(content) || content;
     if (suggestions.length === 0) {
       return `I could not find a matching drug entry for: ${unmatched}. Please check the spelling or ask with the exact generic or brand name.`;
     }
@@ -3791,9 +3860,13 @@ Rules:
         type: 'status',
         message: 'Drug Search',
       });
+      const exactBrandMatches =
+        intent.answerKind === 'brands' ? this.collectTopExactMatches(catalog, parsed) : [];
       const matchedEntries =
         intent.answerKind === 'brands'
-          ? this.collectTopExactMatches(catalog, parsed)
+          ? exactBrandMatches.length > 0
+            ? exactBrandMatches
+            : this.collectTopResolvedMatches(catalog, parsed)
           : this.collectTopResolvedMatches(catalog, parsed);
       const match = matchedEntries[0] ?? null;
 
@@ -3806,7 +3879,8 @@ Rules:
       });
 
       if (!match) {
-        const suggestions = await this.buildFallbackSuggestions(parsed.drug_name);
+        const suggestionSeed = parsed.drug_name.trim() || inferDrugNameFromRawQuery(content) || content;
+        const suggestions = await this.buildFallbackSuggestions(suggestionSeed);
         const noMatchMessage = this.buildNoMatchMessage(content, parsed, suggestions);
         console.warn('[DRUG SEARCH]', 'No matching drug entries found', {
           query: content,
