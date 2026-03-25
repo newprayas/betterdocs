@@ -373,6 +373,7 @@ const sanitizeParsedDrugName = (value: string): string => {
     cleaned = cleaned.replace(pattern, '');
   }
 
+  cleaned = cleaned.replace(/\s+(?:for|in|about)\s+.+$/i, '').trim();
   cleaned = cleaned.replace(/[?!.,;:]+$/g, '').trim();
 
   return cleaned;
