@@ -19,10 +19,24 @@ const DRUG_MODE_DIRECT_ROUTE_PATTERN =
   /\b(dose|doses|dosage|dosing|schedule|regimen|how much|how many|brand|brands|brand name|brand names|trade name|trade names|company|companies|price|prices|cost|costs)\b/i;
 
 const DRUG_MODE_WHAT_IS_ROUTE_PATTERN =
-  /^\s*what(?:'s| is)\s+([A-Za-z][A-Za-z0-9\s+'().\-]{0,80})\s*\??\s*$/i;
+  /^\s*(?:what|wat|wht)(?:'s|\s+is)?\s+([A-Za-z][A-Za-z0-9\s+'().\-]{0,80})\s*\??\s*$/i;
+
+const normalizeIntentLeadTypos = (value: string): string => {
+  const compact = value.trim();
+  if (!compact) return compact;
+
+  // Normalize common intent typos only at query start so we do not alter drug names.
+  return compact
+    .replace(/^\s*w+h+a+t+\b/i, 'what')
+    .replace(/^\s*whats\b/i, "what's")
+    .replace(/^\s*brads?\b/i, 'brands')
+    .replace(/^\s*brandz\b/i, 'brands');
+};
 
 const shouldUseDirectDrugModePath = (content: string): boolean =>
-  DRUG_MODE_DIRECT_ROUTE_PATTERN.test(content) || DRUG_MODE_WHAT_IS_ROUTE_PATTERN.test(content);
+  DRUG_MODE_DIRECT_ROUTE_PATTERN.test(content) ||
+  DRUG_MODE_DIRECT_ROUTE_PATTERN.test(normalizeIntentLeadTypos(content)) ||
+  DRUG_MODE_WHAT_IS_ROUTE_PATTERN.test(normalizeIntentLeadTypos(content));
 
 const DRUG_FOLLOW_UP_INTENT_PATTERNS: Array<{ pattern: RegExp; normalizedIntent: string }> = [
   { pattern: /\b(indications?|uses?)\b/i, normalizedIntent: 'indications' },
@@ -54,6 +68,7 @@ const DRUG_CONTEXT_EXPLICIT_PATTERNS = [
   /^([A-Za-z][A-Za-z0-9\s+'().\-]{0,80}?)\s+(?:brands?|brand names?|trade names?|dose|doses|dosage|dosing|schedule|regimen|indications?|uses?|side[\s-]?effects?|contra[\s-]?indications?|pregnancy|breast[\s-]?feeding|renal(?:\s+dose|\s+impairment)?|hepatic(?:\s+dose|\s+impairment)?|safety(?:\s+information)?|details?|full details?|all about|everything)\b/i,
   /^(?:what(?:'s| is)?\s+)?(?:the\s+)?(?:dose|dosage|dosing|schedule|regimen|brands?|brand names?|trade names?|companies|prices?|costs?|indications?|uses?|side[\s-]?effects?|contra[\s-]?indications?|pregnancy|breast[\s-]?feeding|renal(?:\s+dose|\s+impairment)?|hepatic(?:\s+dose|\s+impairment)?|safety(?:\s+information)?|details?|full details?|all about|everything)\s+(?:of|for|about)\s+(.+)$/i,
   /^(?:tell\s+me\s+about)\s+(.+)$/i,
+  /^(?:what(?:'s| is))\s+(.+)$/i,
 ];
 
 const AMBIGUOUS_DRUG_FOLLOW_UP_MODEL = 'llama-3.3-70b-versatile';
@@ -66,7 +81,7 @@ const sanitizeDrugContextName = (value: string): string =>
     .trim();
 
 const extractExplicitDrugNameFromQuery = (content: string): string | null => {
-  const compact = content.trim();
+  const compact = normalizeIntentLeadTypos(content);
   if (!compact || DRUG_BROAD_QUERY_PATTERN.test(compact)) return null;
 
   for (const pattern of DRUG_CONTEXT_EXPLICIT_PATTERNS) {
