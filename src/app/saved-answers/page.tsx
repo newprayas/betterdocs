@@ -41,19 +41,17 @@ const SavedAnswerCard: React.FC<{
   return (
     <Card padding="none" shadow="sm" hover className="overflow-hidden">
       <div className="border-b border-gray-200 dark:border-gray-700 bg-gradient-to-r from-gray-50 to-white dark:from-gray-900 dark:to-gray-800 px-4 sm:px-5 py-3">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700 dark:border-blue-500/40 dark:bg-blue-500/10 dark:text-blue-300">
-                {answer.sessionName}
-              </span>
-              <span className="text-xs text-gray-500 dark:text-gray-400">
-                {formatSavedAnswerDate(answer.savedAt)}
-              </span>
-            </div>
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700 dark:border-blue-500/40 dark:bg-blue-500/10 dark:text-blue-300">
+              {answer.sessionName}
+            </span>
+            <span className="text-xs text-gray-500 dark:text-gray-400">
+              {formatSavedAnswerDate(answer.savedAt)}
+            </span>
           </div>
 
-          <div className="flex items-center justify-end gap-2 sm:shrink-0">
+          <div className="flex items-center gap-2">
             <Button
               variant="danger"
               size="sm"
