@@ -7,6 +7,7 @@ export * from './settings';
 export * from './preprocessed';
 export * from './citation';
 export * from './library';
+export * from './savedAnswer';
 export * from './ann';
 export * from './route';
 export * from './drug';

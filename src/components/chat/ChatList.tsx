@@ -3,7 +3,7 @@ import dynamic from 'next/dynamic';
 import { Loading } from '../ui/Loading';
 import { ResponseProgressBar } from '../ui/ResponseProgressBar';
 import { EmptyStates } from '../common/EmptyState';
-import { useChatStore } from '../../store';
+import { useChatStore, useSavedAnswersStore, useSessionStore } from '../../store';
 import { Message, MessageSender } from '../../types';
 import { isToday, isYesterday, ensureDate } from '../../utils/date';
 
@@ -27,9 +27,15 @@ export const ChatList: React.FC<ChatListProps> = ({
   onDrugActionClick,
 }) => {
   const { messages, isStreaming, streamingContent, streamingCitations, isReadingSources, progressPercentage, currentProgressStep } = useChatStore();
+  const userId = useSessionStore((state) => state.userId);
+  const loadSavedAnswers = useSavedAnswersStore((state) => state.loadSavedAnswers);
   const isLoading = false; // Loading is now handled at the parent level
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    void loadSavedAnswers(userId);
+  }, [loadSavedAnswers, userId]);
 
   // Auto-scroll to bottom when new messages arrive or streaming updates
   useEffect(() => {

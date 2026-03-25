@@ -2,6 +2,7 @@ import type { Session, SessionCreate, SessionUpdate, SessionChatMode } from '@/t
 import type { Message, ChatStreamEvent } from '@/types';
 import type { Document, DocumentUpdate, DocumentProgress } from '@/types';
 import type { AppSettings, SettingsUpdate } from '@/types';
+import type { SavedAnswer } from '@/types';
 
 export interface SessionStore {
   // State
@@ -119,4 +120,20 @@ export interface SettingsStore {
   clearSettings: () => void;
 }
 
-export interface AppStore extends SessionStore, ChatStore, DocumentStore, SettingsStore { }
+export interface SavedAnswersStore {
+  savedAnswers: SavedAnswer[];
+  isLoading: boolean;
+  error: string | null;
+  isLoaded: boolean;
+
+  loadSavedAnswers: (userId?: string | null) => Promise<void>;
+  toggleSavedAnswerForMessage: (
+    message: Message,
+    processedContent: string,
+    sessionName?: string,
+  ) => Promise<boolean>;
+  removeSavedAnswer: (messageId: string) => Promise<void>;
+  isSaved: (messageId: string) => boolean;
+}
+
+export interface AppStore extends SessionStore, ChatStore, DocumentStore, SettingsStore, SavedAnswersStore { }

@@ -11,6 +11,7 @@ import type {
   AnnIndexRecord,
   RouteIndexRecord,
   DrugDatasetRecord,
+  SavedAnswer,
 } from '@/types';
 
 export class RAGDatabase extends Dexie {
@@ -23,6 +24,7 @@ export class RAGDatabase extends Dexie {
   annIndexes!: EntityTable<AnnIndexRecord>;
   routeIndexes!: EntityTable<RouteIndexRecord>;
   drugDatasets!: EntityTable<DrugDatasetRecord>;
+  savedAnswers!: EntityTable<SavedAnswer>;
 
   constructor() {
     super('RAGDatabase');
@@ -139,6 +141,19 @@ export class RAGDatabase extends Dexie {
       annIndexes: '&id, documentId, algorithm, embeddingDimensions, state, updatedAt, [documentId+algorithm]',
       routeIndexes: '&id, documentId, updatedAt',
       drugDatasets: '&id, filename, downloadedAt'
+    });
+
+    // Version 84: Add saved answers library
+    this.version(84).stores({
+      sessions: '&id, userId, name, description, systemPrompt, createdAt, updatedAt, documentCount',
+      messages: '&id, sessionId, role, content, timestamp, citationsJson, [sessionId+timestamp]',
+      documents: '&id, userId, sessionId, filename, fileSize, status, pageCount, processedAt, createdAt, enabled, originalPath, storedPath, mimeType, checksum, title, author, language, ingestError',
+      embeddings: '&id, documentId, sessionId, chunkIndex, content, source, page, embedding, tokenCount, embeddingNorm, createdAt',
+      settings: '&id, userId, geminiApiKey, model, temperature, maxTokens, similarityThreshold, chunkSize, chunkOverlap, theme, fontSize, showSources, autoSave, dataRetention, enableAnalytics, crashReporting, debugMode, logLevel',
+      annIndexes: '&id, documentId, algorithm, embeddingDimensions, state, updatedAt, [documentId+algorithm]',
+      routeIndexes: '&id, documentId, updatedAt',
+      drugDatasets: '&id, filename, downloadedAt',
+      savedAnswers: '&id, sourceMessageId, userId, sessionId, savedAt, [userId+savedAt]'
     });
   }
 }
