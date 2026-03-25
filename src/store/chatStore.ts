@@ -95,6 +95,7 @@ const sanitizeDrugContextName = (value: string): string =>
   value
     .trim()
     .replace(/^['"`]+|['"`]+$/g, '')
+    .replace(/\s+(?:for|in|about)\s+.+$/i, '')
     .replace(/[?!.,;:]+$/g, '')
     .trim();
 
