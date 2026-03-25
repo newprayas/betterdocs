@@ -988,6 +988,9 @@ const renderGroupedBlocks = (blocks: DeterministicBrandBlock[]): string => {
     .trim();
 };
 
+const NO_DOSING_INFO_BLOCK_PATTERN = /No dosing information was present in dose and indications/i;
+const NO_ADULT_DOSING_PAEDIATRIC_BLOCK_PATTERN = /No adult dosing\s*[—-]\s*paediatric formulation/i;
+
 export const buildDeterministicDoseWithBrandsBody = (
   promptContext: Record<string, unknown>,
   requestedIndicationQuery?: string | null,
@@ -1095,9 +1098,27 @@ export const buildDeterministicDoseWithBrandsBody = (
     requestedDoseAudience,
     compactField(requestedIndicationQuery || undefined),
   );
-  const rendered = renderGroupedBlocks(groupedBlocks);
+  const shouldHideNoDoseBlocksForSpecificIndication = Boolean(
+    compactField(requestedIndicationQuery || undefined),
+  );
+  const renderableBlocks = shouldHideNoDoseBlocksForSpecificIndication
+    ? groupedBlocks.filter(
+        (block) =>
+          !NO_DOSING_INFO_BLOCK_PATTERN.test(block.content) &&
+          !NO_ADULT_DOSING_PAEDIATRIC_BLOCK_PATTERN.test(block.content),
+      )
+    : groupedBlocks;
+  const rendered = renderGroupedBlocks(renderableBlocks);
 
   if (!rendered) {
+    if (shouldHideNoDoseBlocksForSpecificIndication) {
+      console.log('[DRUG DETERMINISTIC]', 'No dosing blocks left after specific-indication filtering', {
+        requestedIndicationQuery: compactField(requestedIndicationQuery || undefined),
+        selectedIndication: selected.indication.indication,
+      });
+      return '🔴 No matching brand formulation had dosing information for this requested indication.';
+    }
+
     console.log('[DRUG DETERMINISTIC]', 'Ineligible deterministic dose formatting', {
       reason: 'no_renderable_blocks',
       selectedIndication: selected.indication.indication,
