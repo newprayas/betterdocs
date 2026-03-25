@@ -19,6 +19,7 @@ import type {
   DrugQueryParseResult,
   MessageCreate,
   ParsedProprietaryPreparation,
+  AskDrugSectionKey,
 } from '@/types';
 import { MessageSender } from '@/types/message';
 import type { ChatStreamEvent } from '@/services/rag';
@@ -336,16 +337,28 @@ const logDrugAskContextDebugRawText = (
 };
 
 const QUERY_DRUG_NAME_PREFIX_PATTERNS = [
-  /^(?:what(?:'s| is)?\s+)?(?:the\s+)?(?:brands?|brand\s*names?|trade\s*names?)\s+of\s+/i,
-  /^(?:what(?:'s| is)?\s+)?(?:the\s+)?(?:dose|doses|dosage|dosing|regimen|schedule)\s+of\s+/i,
-  /^(?:what(?:'s| is)?\s+)?(?:the\s+)?(?:price|prices|cost|costs)\s+of\s+/i,
-  /^(?:what(?:'s| is)?\s+)?(?:the\s+)?(?:indications?|side[\s-]?effects?|contra[\s-]?indications?|cautions?)\s+of\s+/i,
-  /^(?:what(?:'s| is))\s+/i,
+  /^(?:what(?:'s|s|\s+is)?\s+)?(?:the\s+)?(?:brands?|brand\s*names?|trade\s*names?)\s+of\s+/i,
+  /^(?:what(?:'s|s|\s+is)?\s+)?(?:the\s+)?(?:dose|doses|dosage|dosing|regimen|schedule)\s+of\s+/i,
+  /^(?:what(?:'s|s|\s+is)?\s+)?(?:the\s+)?(?:price|prices|cost|costs)\s+of\s+/i,
+  /^(?:what(?:'s|s|\s+is)?\s+)?(?:the\s+)?(?:indications?|side[\s-]?effects?|contra[\s-]?indications?|cautions?)\s+of\s+/i,
+  /^(?:what(?:'s|s|\s+is))\s+/i,
 ];
 
 const QUERY_DRUG_NAME_SUFFIX_PATTERNS = [
   /\s+(?:dose|doses|dosage|dosing|regimen|schedule|brands?|brand\s*names?|trade\s*names?|price|prices|cost|costs|indications?|uses?|side[\s-]?effects?|contra[\s-]?indications?|cautions?|pregnancy|breast[\s-]?feeding|renal(?:\s+dose|\s+impairment)?|hepatic(?:\s+dose|\s+impairment)?|safety(?:\s+information)?|details?|full details?|all about|everything)\s*$/i,
 ];
+
+const normalizeDrugIntentTypos = (value: string): string =>
+  value
+    .replace(/\bindciations?\b/gi, 'indications')
+    .replace(/\bindciaitons?\b/gi, 'indications')
+    .replace(/\bindicationz\b/gi, 'indications')
+    .replace(/\bside[\s-]?efffects?\b/gi, 'side effects')
+    .replace(/\bside[\s-]?effcts?\b/gi, 'side effects')
+    .replace(/\bcontra[\s-]?indciations?\b/gi, 'contraindications')
+    .replace(/\bbreas?tfeed(?:ing)?\b/gi, 'breast feeding');
+
+const normalizeDrugQueryText = (value: string): string => normalizeDrugIntentTypos(value);
 
 const sanitizeParsedDrugName = (value: string): string => {
   let cleaned = compactField(value) || '';
@@ -366,21 +379,26 @@ const sanitizeParsedDrugName = (value: string): string => {
 };
 
 const inferDrugNameFromRawQuery = (content: string): string => {
-  const compact = compactField(content) || '';
+  const compact = compactField(normalizeDrugQueryText(content)) || '';
   if (!compact) return '';
 
   const trailingOfPattern =
     /(?:^|\b)(?:brands?|brand\s*names?|trade\s*names?|dose|doses|dosage|dosing|regimen|schedule|price|prices|cost|costs|indications?|side[\s-]?effects?|contra[\s-]?indications?|cautions?)\s+of\s+([A-Za-z][A-Za-z0-9\s+'().\-]{1,80})$/i;
+  const leadingIntentPattern =
+    /(?:^|\b)(?:indications?|uses?|side[\s-]?effects?|adverse effects?|contra[\s-]?indications?|pregnancy|breast[\s-]?feeding|renal(?:\s+dose|\s+impairment)?|hepatic(?:\s+dose|\s+impairment)?|safety(?:\s+information)?|details?|full details?|all about|everything|dose|doses|dosage|dosing|schedule|regimen|brands?|brand\s+names?|trade\s+names?|price|prices|cost|costs)\s+(?:of|for|about)?\s+([A-Za-z][A-Za-z0-9\s+'().\-]{1,80})$/i;
   const trailingBrandPattern = /([A-Za-z][A-Za-z0-9\s+'().\-]{1,80})\s+(?:brands?|brand\s*names?)$/i;
   const plainWhatIsPattern =
-    /^(?:what(?:'s| is))\s+(?:the\s+)?([A-Za-z][A-Za-z0-9\s+'().\-]{1,80})\s*$/i;
+    /^(?:what(?:'s|s|\s+is))\s+(?:the\s+)?([A-Za-z][A-Za-z0-9\s+'().\-]{1,80})\s*$/i;
   const trailingIntentPattern =
     /([A-Za-z][A-Za-z0-9\s+'().\-]{1,80})\s+(?:dose|doses|dosage|dosing|regimen|schedule|indications?|uses?|side[\s-]?effects?|contra[\s-]?indications?|cautions?|details?|full details?|all about|everything)\s*(?:of)?$/i;
   const reversedWhatIsPattern =
-    /([A-Za-z][A-Za-z0-9\s+'().\-]{1,80})\s+what(?:'s| is)\s*$/i;
+    /([A-Za-z][A-Za-z0-9\s+'().\-]{1,80})\s+what(?:'s|s|\s+is)\s*$/i;
 
   const fromOf = compact.match(trailingOfPattern)?.[1];
   if (fromOf) return sanitizeParsedDrugName(fromOf);
+
+  const fromLeadingIntent = compact.match(leadingIntentPattern)?.[1];
+  if (fromLeadingIntent) return sanitizeParsedDrugName(fromLeadingIntent);
 
   const fromBrand = compact.match(trailingBrandPattern)?.[1];
   if (fromBrand) return sanitizeParsedDrugName(fromBrand);
@@ -2388,6 +2406,9 @@ Rules:
 - If multiple matched entries are provided for the same drug, use all of them and combine them carefully.
 - If matched entries disagree or cover different use-cases, keep that distinction clear in the answer.
 - Keep the answer clean and direct.
+- If the context includes "indications_and_dose_structured" and the requested section is Indications, prefer the structured indication labels and preserve their full wording.
+- For Indications, do not compress the labels into a one-word summary; keep the full clinical phrasing and parenthetical detail when present.
+- If the context includes "indications_and_dose_structured", use it to rebuild the Indications section as a fuller answer instead of the short "indications" summary.
 
 Formatting:
 - Use the matched generic drug name as the main heading.
@@ -2556,6 +2577,7 @@ Rules:
 - Return only one drug or brand name.
 - Remove all unrelated words from drug_name (for example, return "Napa" from "brands of napa").
 - Do not correct, normalize, or change the spelling of the drug or brand name.
+- Accept keyword-first and reversed phrasing such as "side effects napa", "breastfeeding napa", "napa side effects", "what's napa", and "napa what".
 - Auto-capitalize the final drug_name in standard title case only.
 - If the query contains a specific indication target (for example "for migraine", "for cough", "in postoperative pain"), set requested_indication to that clinical target phrase only.
 - If no specific indication target is present, return requested_indication as an empty string.
@@ -2638,7 +2660,7 @@ Rules:
   }
 
   private analyzeDrugQueryIntent(content: string): DrugModeIntent {
-    const normalized = content.toLowerCase();
+    const normalized = normalizeDrugQueryText(content).toLowerCase();
     const requestedFields: DrugModeRequestedField[] = [];
 
     const addField = (field: DrugModeRequestedField): void => {
@@ -2663,7 +2685,9 @@ Rules:
         normalized,
       );
     const conciseWhatIsDrugQuery =
-      /^\s*what(?:'s| is)\s+([A-Za-z][A-Za-z0-9\s+'().\-]{0,80})\s*\??\s*$/i.test(content);
+      /^\s*what(?:'s|s|\s+is)\s+([A-Za-z][A-Za-z0-9\s+'().\-]{0,80})\s*\??\s*$/i.test(normalized);
+    const reversedWhatIsDrugQuery =
+      /^\s*([A-Za-z][A-Za-z0-9\s+'().\-]{0,80})\s+what(?:'s|s|\s+is)\s*\??\s*$/i.test(normalized);
 
     if (doseRequested) {
       addField('indications');
@@ -2683,7 +2707,7 @@ Rules:
       };
     }
 
-    if (conciseWhatIsDrugQuery) {
+    if (conciseWhatIsDrugQuery || reversedWhatIsDrugQuery) {
       return {
         requestedFields: [],
         answerKind: 'brands',
@@ -3018,10 +3042,24 @@ Rules:
     });
   }
 
-  private buildSectionPromptContexts(entries: DrugEntry[], intent: DrugModeIntent): Record<string, unknown> {
+  private async buildSectionPromptContexts(entries: DrugEntry[], intent: DrugModeIntent): Promise<Record<string, unknown>> {
     const safeEntries = dedupeDrugEntries(entries);
     const primaryEntry = safeEntries[0];
     const requestedSections = intent.requestedFields.map((field) => this.getFieldLabel(field));
+    const requestedAskDrugSections = intent.requestedFields.flatMap((field): AskDrugSectionKey[] => {
+      switch (field) {
+        case 'indications':
+          return ['indications_and_dose'];
+        case 'cautions':
+          return ['cautions'];
+        case 'contraindications':
+          return ['contra_indications'];
+        case 'side_effects':
+          return ['side_effects'];
+        default:
+          return [];
+      }
+    });
 
     if (!primaryEntry) {
       return {
@@ -3033,11 +3071,66 @@ Rules:
       };
     }
 
+    let richSectionContext:
+      | {
+          title: string;
+          pages: number[];
+          sections: Partial<Record<AskDrugSectionKey, string>>;
+          indications_and_dose?: string;
+          indications_and_dose_structured?: AskDrugIndicationsAndDoseStructured;
+        }
+      | null = null;
+
+    if (requestedAskDrugSections.length > 0) {
+      try {
+        const { askDrugModeService } = await import('./askDrugModeService');
+        richSectionContext = await askDrugModeService.lookupSectionsByDrugName(
+          this.getResolvedGenericName(primaryEntry),
+          requestedAskDrugSections,
+          {
+            brandPreparations: this.getFilteredBrandEntries(primaryEntry, 12),
+          },
+        );
+      } catch (error) {
+        console.warn('[DRUG SECTION CONTEXT]', 'Rich section lookup failed', {
+          drug_name: primaryEntry.drug_name,
+          error,
+        });
+      }
+    }
+
+    const sectionValue = (field: DrugModeRequestedField): string => {
+      if (field === 'indications' && richSectionContext?.indications_and_dose_structured) {
+        return richSectionContext.indications_and_dose_structured.indications
+          .map((item) => item.indication)
+          .join(' | ');
+      }
+
+      if (field === 'indications' && richSectionContext?.indications_and_dose) {
+        return richSectionContext.indications_and_dose;
+      }
+
+      if (richSectionContext?.sections) {
+        switch (field) {
+          case 'cautions':
+            return richSectionContext.sections.cautions || 'Not found in provided drug dataset.';
+          case 'contraindications':
+            return richSectionContext.sections.contra_indications || 'Not found in provided drug dataset.';
+          case 'side_effects':
+            return richSectionContext.sections.side_effects || 'Not found in provided drug dataset.';
+          default:
+            break;
+        }
+      }
+
+      return this.getFieldValue(primaryEntry, field) ?? 'Not found in provided drug dataset.';
+    };
+
     if (safeEntries.length === 1) {
       const sections = Object.fromEntries(
         intent.requestedFields.map((field) => [
           field,
-          this.getFieldValue(primaryEntry, field) ?? 'Not found in provided drug dataset.',
+          sectionValue(field),
         ]),
       );
 
@@ -3047,6 +3140,18 @@ Rules:
         pages: primaryEntry.pages,
         requested_sections: requestedSections,
         sections,
+        ...(richSectionContext?.indications_and_dose_structured
+          ? {
+              indications_and_dose: richSectionContext.indications_and_dose,
+              indications_and_dose_structured: sanitizeStructuredIndicationsAndDoseForPrompt(
+                richSectionContext.indications_and_dose_structured,
+              ),
+            }
+          : richSectionContext?.indications_and_dose
+            ? {
+                indications_and_dose: richSectionContext.indications_and_dose,
+              }
+            : {}),
       };
     }
 
@@ -3063,14 +3168,32 @@ Rules:
         sections: Object.fromEntries(
           intent.requestedFields.map((field) => [
             field,
-            this.getFieldValue(entry, field) ?? 'Not found in provided drug dataset.',
+            field === 'indications' && richSectionContext?.indications_and_dose_structured
+              ? richSectionContext.indications_and_dose_structured.indications
+                  .map((item) => item.indication)
+                  .join(' | ')
+              : field === 'indications' && richSectionContext?.indications_and_dose
+                ? richSectionContext.indications_and_dose
+                : this.getFieldValue(entry, field) ?? 'Not found in provided drug dataset.',
           ]),
         ),
       })),
+      ...(richSectionContext?.indications_and_dose_structured
+        ? {
+            indications_and_dose: richSectionContext.indications_and_dose,
+            indications_and_dose_structured: sanitizeStructuredIndicationsAndDoseForPrompt(
+              richSectionContext.indications_and_dose_structured,
+            ),
+          }
+        : richSectionContext?.indications_and_dose
+          ? {
+              indications_and_dose: richSectionContext.indications_and_dose,
+            }
+          : {}),
     };
   }
 
-  private buildSectionPromptContext(entry: DrugEntry, intent: DrugModeIntent): Record<string, unknown> {
+  private async buildSectionPromptContext(entry: DrugEntry, intent: DrugModeIntent): Promise<Record<string, unknown>> {
     return this.buildSectionPromptContexts([entry], intent);
   }
 
@@ -3910,7 +4033,7 @@ Rules:
           : '';
       const promptContext =
         intent.answerKind === 'sectional'
-          ? this.buildSectionPromptContexts(matchedEntries, intent)
+          ? await this.buildSectionPromptContexts(matchedEntries, intent)
           : intent.answerKind === 'brands'
             ? this.buildBrandsPromptContexts(matchedEntries, requestedBrandQuery)
             : await this.buildDosePromptContexts(

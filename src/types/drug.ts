@@ -84,6 +84,10 @@ export type DrugModeRequestedField =
   | 'cautions'
   | 'contraindications'
   | 'side_effects'
+  | 'pregnancy'
+  | 'breast_feeding'
+  | 'hepatic_impairment'
+  | 'renal_impairment'
   | 'dose';
 
 export type AskDrugSectionKey =

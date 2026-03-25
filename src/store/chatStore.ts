@@ -19,9 +19,9 @@ const DRUG_MODE_DIRECT_ROUTE_PATTERN =
   /\b(dose|doses|dosage|dosing|schedule|regimen|how much|how many|brand|brands|brand name|brand names|trade name|trade names|company|companies|price|prices|cost|costs)\b/i;
 
 const DRUG_MODE_WHAT_IS_ROUTE_PATTERN =
-  /^\s*(?:what|wat|wht)(?:'s|\s+is)?\s+([A-Za-z][A-Za-z0-9\s+'().\-]{0,80})\s*\??\s*$/i;
+  /^\s*(?:what|wat|wht)(?:'s|s|\s+is)?\s+([A-Za-z][A-Za-z0-9\s+'().\-]{0,80})\s*\??\s*$/i;
 const DRUG_MODE_REVERSED_WHAT_IS_ROUTE_PATTERN =
-  /^\s*([A-Za-z][A-Za-z0-9\s+'().\-]{0,80})\s+(?:what|wat|wht)(?:'s|\s+is)?\s*\??\s*$/i;
+  /^\s*([A-Za-z][A-Za-z0-9\s+'().\-]{0,80})\s+(?:what|wat|wht)(?:'s|s|\s+is)?\s*\??\s*$/i;
 
 const normalizeIntentLeadTypos = (value: string): string => {
   const compact = value.trim();
@@ -35,11 +35,24 @@ const normalizeIntentLeadTypos = (value: string): string => {
     .replace(/^\s*brandz\b/i, 'brands');
 };
 
+const normalizeDrugIntentTypos = (value: string): string =>
+  value
+    .replace(/\bindciations?\b/gi, 'indications')
+    .replace(/\bindciaitons?\b/gi, 'indications')
+    .replace(/\bindicationz\b/gi, 'indications')
+    .replace(/\bside[\s-]?efffects?\b/gi, 'side effects')
+    .replace(/\bside[\s-]?effcts?\b/gi, 'side effects')
+    .replace(/\bcontra[\s-]?indciations?\b/gi, 'contraindications')
+    .replace(/\bbreas?tfeed(?:ing)?\b/gi, 'breast feeding');
+
+const normalizeDrugQueryText = (value: string): string =>
+  normalizeDrugIntentTypos(normalizeIntentLeadTypos(value));
+
 const shouldUseDirectDrugModePath = (content: string): boolean =>
   DRUG_MODE_DIRECT_ROUTE_PATTERN.test(content) ||
-  DRUG_MODE_DIRECT_ROUTE_PATTERN.test(normalizeIntentLeadTypos(content)) ||
-  DRUG_MODE_WHAT_IS_ROUTE_PATTERN.test(normalizeIntentLeadTypos(content)) ||
-  DRUG_MODE_REVERSED_WHAT_IS_ROUTE_PATTERN.test(normalizeIntentLeadTypos(content));
+  DRUG_MODE_DIRECT_ROUTE_PATTERN.test(normalizeDrugQueryText(content)) ||
+  DRUG_MODE_WHAT_IS_ROUTE_PATTERN.test(normalizeDrugQueryText(content)) ||
+  DRUG_MODE_REVERSED_WHAT_IS_ROUTE_PATTERN.test(normalizeDrugQueryText(content));
 
 const DRUG_FOLLOW_UP_INTENT_PATTERNS: Array<{ pattern: RegExp; normalizedIntent: string }> = [
   { pattern: /\b(indications?|uses?)\b/i, normalizedIntent: 'indications' },
@@ -68,6 +81,7 @@ const DRUG_CONDITION_TARGET_SUFFIX_PATTERN =
   /\b[a-z][a-z-]*(?:itis|osis|opathy|emia|uria|algia|rrhea|rrhoea|iasis)\b/i;
 
 const DRUG_CONTEXT_EXPLICIT_PATTERNS = [
+  /^(?:what(?:'s|s|\s+is)?\s+)?(?:the\s+)?(?:indications?|uses?|side[\s-]?effects?|adverse effects?|contra[\s-]?indications?|pregnancy|breast[\s-]?feeding|renal(?:\s+dose|\s+impairment)?|hepatic(?:\s+dose|\s+impairment)?|safety(?:\s+information)?|details?|full details?|all about|everything|dose|doses|dosage|dosing|schedule|regimen|brands?|brand names?|trade names?|company|companies|price|prices|cost|costs)\s+(?:of|for|about)?\s+([A-Za-z][A-Za-z0-9\s+'().\-]{0,80})$/i,
   /^([A-Za-z][A-Za-z0-9\s+'().\-]{0,80}?)\s+(?:brands?|brand names?|trade names?|dose|doses|dosage|dosing|schedule|regimen|indications?|uses?|side[\s-]?effects?|contra[\s-]?indications?|pregnancy|breast[\s-]?feeding|renal(?:\s+dose|\s+impairment)?|hepatic(?:\s+dose|\s+impairment)?|safety(?:\s+information)?|details?|full details?|all about|everything)\b/i,
   /^(?:what(?:'s| is)?\s+)?(?:the\s+)?(?:dose|dosage|dosing|schedule|regimen|brands?|brand names?|trade names?|companies|prices?|costs?|indications?|uses?|side[\s-]?effects?|contra[\s-]?indications?|pregnancy|breast[\s-]?feeding|renal(?:\s+dose|\s+impairment)?|hepatic(?:\s+dose|\s+impairment)?|safety(?:\s+information)?|details?|full details?|all about|everything)\s+(?:of|for|about)\s+(.+)$/i,
   /^(?:tell\s+me\s+about)\s+(.+)$/i,
@@ -85,7 +99,7 @@ const sanitizeDrugContextName = (value: string): string =>
     .trim();
 
 const extractExplicitDrugNameFromQuery = (content: string): string | null => {
-  const compact = normalizeIntentLeadTypos(content);
+  const compact = normalizeDrugQueryText(content);
   if (!compact || DRUG_BROAD_QUERY_PATTERN.test(compact)) return null;
 
   for (const pattern of DRUG_CONTEXT_EXPLICIT_PATTERNS) {

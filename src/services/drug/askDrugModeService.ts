@@ -350,17 +350,30 @@ const normalizeIntentLeadTypos = (value: string): string =>
     .replace(/^\s*w+h+a+t+\b/i, 'what')
     .replace(/^\s*whats\b/i, "what's");
 
+const normalizeDrugIntentTypos = (value: string): string =>
+  value
+    .replace(/\bindciations?\b/gi, 'indications')
+    .replace(/\bindciaitons?\b/gi, 'indications')
+    .replace(/\bindicationz\b/gi, 'indications')
+    .replace(/\bside[\s-]?efffects?\b/gi, 'side effects')
+    .replace(/\bside[\s-]?effcts?\b/gi, 'side effects')
+    .replace(/\bcontra[\s-]?indciations?\b/gi, 'contraindications')
+    .replace(/\bbreas?tfeed(?:ing)?\b/gi, 'breast feeding');
+
+const normalizeDrugQueryText = (value: string): string =>
+  normalizeDrugIntentTypos(normalizeIntentLeadTypos(value));
+
 const extractWhatIsQueryTarget = (value: string): string => {
-  const normalized = normalizeIntentLeadTypos(value);
+  const normalized = normalizeDrugQueryText(value);
   const match = normalized.match(
-    /^\s*(?:what|wat|wht)(?:'s|\s+is)?\s+([A-Za-z][A-Za-z0-9\s+'().\-]{1,80})\s*\??\s*$/i,
+    /^\s*(?:what|wat|wht)(?:'s|s|\s+is)?\s+([A-Za-z][A-Za-z0-9\s+'().\-]{1,80})\s*\??\s*$/i,
   )?.[1];
   return sanitizeParsedDrugName(match || '');
 };
 
 const ASK_DRUG_NAME_PREFIX_PATTERNS = [
-  /^(?:what(?:'s| is)?\s+)?(?:the\s+)?(?:details|detail|full details|full detail|full information|complete details|everything)\s+(?:of|about)\s+/i,
-  /^(?:what(?:'s| is)?\s+)?(?:the\s+)?(?:indications?|side[\s-]?effects?|contra[\s-]?indications?|renal(?:\s+dose|\s+impairment)?|hepatic(?:\s+dose|\s+impairment)?|pregnancy|breast[\s-]?feeding|safety(?:\s+information)?)\s+(?:of|for)\s+/i,
+  /^(?:what(?:'s|s|\s+is)?\s+)?(?:the\s+)?(?:details|detail|full details|full detail|full information|complete details|everything)\s+(?:of|about)\s+/i,
+  /^(?:what(?:'s|s|\s+is)?\s+)?(?:the\s+)?(?:indications?|side[\s-]?effects?|contra[\s-]?indications?|renal(?:\s+dose|\s+impairment)?|hepatic(?:\s+dose|\s+impairment)?|pregnancy|breast[\s-]?feeding|safety(?:\s+information)?)\s+(?:of|for)\s+/i,
   /^(?:tell\s+me\s+about)\s+/i,
 ];
 
@@ -378,10 +391,11 @@ const sanitizeParsedDrugName = (value: string): string => {
 };
 
 const inferDrugNameFromRawQuery = (content: string): string => {
-  const compact = compactField(normalizeIntentLeadTypos(content)) || '';
+  const compact = compactField(normalizeDrugQueryText(content)) || '';
   if (!compact) return '';
 
   const patterns = [
+    /(?:^|\b)(?:indications?|uses?|side[\s-]?effects?|adverse effects?|contra[\s-]?indications?|pregnancy|breast[\s-]?feeding|renal(?:\s+dose|\s+impairment)?|hepatic(?:\s+dose|\s+impairment)?|safety(?:\s+information)?|details?|full details?|all about|everything|dose|doses|dosage|dosing|schedule|regimen|brands?|brand\s+names?|trade\s+names?|companies|prices?|costs?)\s+(?:of|for|about)?\s+([A-Za-z][A-Za-z0-9\s+'().\-]{1,80})$/i,
     /(?:^|\b)(?:details|detail|full details|full detail|full information|complete details|everything)\s+(?:of|about)\s+([A-Za-z][A-Za-z0-9\s+'().\-]{1,80})$/i,
     /(?:^|\b)tell\s+me\s+about\s+([A-Za-z][A-Za-z0-9\s+'().\-]{1,80})$/i,
     /(?:^|\b)(?:indications?|side[\s-]?effects?|contra[\s-]?indications?|renal(?:\s+dose|\s+impairment)?|hepatic(?:\s+dose|\s+impairment)?|pregnancy|breast[\s-]?feeding|safety(?:\s+information)?)\s+(?:of|for)\s+([A-Za-z][A-Za-z0-9\s+'().\-]{1,80})$/i,
@@ -1341,6 +1355,7 @@ Rules:
 - Do not remove words such as "sodium", "hydrochloride", "tartrate", "phosphate", or similar qualifiers when they are part of the user’s drug name.
 - Extract the drug name; do not normalize it to a broader parent name.
 - If there is no drug name, return an empty string.
+- Accept keyword-first and reversed phrasing such as "indications napa", "side effects napa", "napa side effects", "what's napa", and "napa what".
 - Allowed section values are only:
   "all_details",
   "indications_and_dose",
@@ -2059,6 +2074,89 @@ ${JSON.stringify(promptContext, null, 2)}`;
       indications_and_dose: indicationsAndDose,
       indications_and_dose_structured: match.indications_and_dose_structured || undefined,
       contra_indications: contraIndications || undefined,
+    };
+  }
+
+  async lookupSectionsByDrugName(
+    drugName: string,
+    requestedSections: AskDrugSectionKey[],
+    options?: {
+      catalog?: AskDrugCatalog;
+      brandPreparations?: ParsedProprietaryPreparation[];
+    },
+  ): Promise<{
+    title: string;
+    pages: number[];
+    sections: Partial<Record<AskDrugSectionKey, string>>;
+    indications_and_dose?: string;
+    indications_and_dose_structured?: AskDrugIndicationsAndDoseStructured;
+  } | null> {
+    const query = canonicalizeTitleCase(drugName.trim());
+    if (!query || requestedSections.length === 0) return null;
+
+    const activeCatalog = options?.catalog ?? (await this.ensureDatasetReady());
+    const candidateQueries = buildAskDrugNameCandidates(query);
+
+    let bestMatch: AskDrugEntry | null = null;
+    let bestScore = Number.NEGATIVE_INFINITY;
+
+    for (const candidateQuery of candidateQueries) {
+      const exactMatch = this.findExactNamedDrug(activeCatalog, candidateQuery);
+      if (exactMatch) {
+        const exactScore = this.scoreNamedDrugCandidate(
+          candidateQuery,
+          exactMatch,
+          options?.brandPreparations,
+        );
+        if (exactScore > bestScore) {
+          bestMatch = exactMatch;
+          bestScore = exactScore;
+        }
+      }
+
+      const conservativeMatch = this.resolveNamedDrugConservatively(activeCatalog, candidateQuery, {
+        brandPreparations: options?.brandPreparations,
+      });
+      if (conservativeMatch) {
+        const conservativeScore = this.scoreNamedDrugCandidate(
+          candidateQuery,
+          conservativeMatch,
+          options?.brandPreparations,
+        );
+        if (conservativeScore > bestScore) {
+          bestMatch = conservativeMatch;
+          bestScore = conservativeScore;
+        }
+      }
+    }
+
+    const match = bestMatch;
+    if (!match) return null;
+
+    const sections = Object.fromEntries(
+      requestedSections
+        .filter((section) => section !== 'indications_and_dose')
+        .map((section) => [section, this.getSectionText(match, section) || 'Not found in provided drug dataset.']),
+    ) as Partial<Record<AskDrugSectionKey, string>>;
+
+    const indicationsAndDose = requestedSections.includes('indications_and_dose')
+      ? this.getSectionText(match, 'indications_and_dose')
+      : null;
+    const structuredIndicationsAndDose = requestedSections.includes('indications_and_dose') &&
+      hasStructuredIndicationsAndDose(match.indications_and_dose_structured)
+      ? match.indications_and_dose_structured
+      : undefined;
+
+    if (requestedSections.includes('indications_and_dose') && !indicationsAndDose) {
+      return null;
+    }
+
+    return {
+      title: match.title,
+      pages: match.pages,
+      sections,
+      indications_and_dose: indicationsAndDose || undefined,
+      indications_and_dose_structured: structuredIndicationsAndDose || undefined,
     };
   }
 
