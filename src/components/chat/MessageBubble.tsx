@@ -7,6 +7,7 @@ import { MessageSender } from "../../types/message";
 import { CitationPanel } from "./CitationPanel";
 import { formatTime } from "../../utils/date";
 import clsx from "clsx";
+import { useChatStore } from "../../store";
 import {
   buildDrugAudienceFollowUpQuery,
   buildDrugIndicationFollowUpQuery,
@@ -26,6 +27,13 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
   ({ message, isStreaming = false, className, onDrugActionClick }) => {
     const isUser = message.role === "user";
     const [isCopied, setIsCopied] = useState(false);
+    const citations = message.citations || [];
+    const sessionMode = useChatStore(
+      (state) => state.sessionModeBySession[message.sessionId] || "chat",
+    );
+    const isDrugMode = sessionMode === "drug" || sessionMode === "ask-drug";
+    const hasCitations = citations.length > 0;
+    const shouldShowCopyResponse = !isUser && !isStreaming && (isDrugMode || hasCitations);
     const logDrugAction = (...args: unknown[]) => {
       console.log("[DRUG ACTION][MESSAGE BUBBLE]", ...args);
     };
@@ -490,8 +498,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
               )}
             </div>
 
-            {/* Citations */}
-            {message.citations && message.citations.length > 0 && !isUser && (
+            {shouldShowCopyResponse && (
               <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700">
                 <div className="mb-2">
                   <button
@@ -514,7 +521,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
                     <span>{isCopied ? "Copied" : "Copy response"}</span>
                   </button>
                 </div>
-                <CitationPanel citations={message.citations} />
+                {hasCitations && <CitationPanel citations={citations} />}
               </div>
             )}
           </div>
