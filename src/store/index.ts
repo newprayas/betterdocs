@@ -3,6 +3,7 @@ export { useSessionStore } from './sessionStore';
 export { useChatStore } from './chatStore';
 export { useDocumentStore } from './documentStore';
 export { useSettingsStore } from './settingsStore';
+export { useSavedAnswersStore } from './savedAnswersStore';
 
 // Type exports
 export type {
@@ -10,6 +11,7 @@ export type {
   ChatStore,
   DocumentStore,
   SettingsStore,
+  SavedAnswersStore,
   AppStore
 } from './types';
 
@@ -18,6 +20,7 @@ import { useSessionStore } from './sessionStore';
 import { useChatStore } from './chatStore';
 import { useDocumentStore } from './documentStore';
 import { useSettingsStore } from './settingsStore';
+import { useSavedAnswersStore } from './savedAnswersStore';
 
 // For now, just export individual stores
 // We can create a combined store later if needed for complex cross-store operations

@@ -7,7 +7,7 @@ import { MessageSender } from "../../types/message";
 import { CitationPanel } from "./CitationPanel";
 import { formatTime } from "../../utils/date";
 import clsx from "clsx";
-import { useChatStore } from "../../store";
+import { useSavedAnswersStore } from "../../store";
 import {
   buildDrugAudienceFollowUpQuery,
   buildDrugIndicationFollowUpQuery,
@@ -28,12 +28,12 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
     const isUser = message.role === "user";
     const [isCopied, setIsCopied] = useState(false);
     const citations = message.citations || [];
-    const sessionMode = useChatStore(
-      (state) => state.sessionModeBySession[message.sessionId] || "chat",
-    );
-    const isDrugMode = sessionMode === "drug" || sessionMode === "ask-drug";
     const hasCitations = citations.length > 0;
-    const shouldShowCopyResponse = !isUser && !isStreaming && (isDrugMode || hasCitations);
+    const isSaved = useSavedAnswersStore((state) => state.isSaved(message.id));
+    const toggleSavedAnswerForMessage = useSavedAnswersStore(
+      (state) => state.toggleSavedAnswerForMessage,
+    );
+    const shouldShowCopyResponse = !isUser && !isStreaming;
     const logDrugAction = (...args: unknown[]) => {
       console.log("[DRUG ACTION][MESSAGE BUBBLE]", ...args);
     };
@@ -103,6 +103,18 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
         window.setTimeout(() => setIsCopied(false), 1800);
       } catch (error) {
         console.error("Failed to copy response:", error);
+      }
+    };
+
+    const handleSaveResponse = async () => {
+      if (isUser || !processedContent || isStreaming) {
+        return;
+      }
+
+      try {
+        await toggleSavedAnswerForMessage(message, processedContent);
+      } catch (error) {
+        console.error("Failed to save response:", error);
       }
     };
 
@@ -500,7 +512,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
 
             {shouldShowCopyResponse && (
               <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700">
-                <div className="mb-2">
+                <div className="mb-2 flex flex-wrap gap-2">
                   <button
                     type="button"
                     onClick={handleCopyResponse}
@@ -519,6 +531,34 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
                       <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
                     </svg>
                     <span>{isCopied ? "Copied" : "Copy response"}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSaveResponse}
+                    disabled={isStreaming}
+                    className={clsx(
+                      "inline-flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors disabled:opacity-60 disabled:cursor-not-allowed",
+                      isSaved
+                        ? "border-emerald-500 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-500/60 dark:bg-emerald-500/10 dark:text-emerald-300 dark:hover:bg-emerald-500/20"
+                        : "border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700",
+                    )}
+                    aria-label={isSaved ? "Unsave response" : "Save response"}
+                    aria-pressed={isSaved}
+                  >
+                    <svg
+                      className="w-3.5 h-3.5"
+                      viewBox="0 0 24 24"
+                      fill={isSaved ? "currentColor" : "none"}
+                      stroke="currentColor"
+                      strokeWidth="2"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-4-7 4V5z"
+                      />
+                    </svg>
+                    <span>{isSaved ? "Saved" : "Save"}</span>
                   </button>
                 </div>
                 {hasCitations && <CitationPanel citations={citations} />}
