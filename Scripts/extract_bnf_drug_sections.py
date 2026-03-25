@@ -48,6 +48,7 @@ SECTION_KEYS = list(dict.fromkeys(SECTION_MAP.values()))
 DATE_SUFFIX_RE = re.compile(r"\s+\d{2}-[A-Za-z]{3}-\d{4}$")
 STOP_SECTION = "__stop__"
 OUTPUT_FORMAT_VERSION = "drug-sections-catalog-1.0"
+ENTRY_START_LOOKAHEAD_LINES = 20
 
 SECTION_PATTERNS = [
     ("indications_and_dose", re.compile(r"(?<!\w)(?:[lI|]\s+)?INDICATIONS\s+AND\s+DOSE\b")),
@@ -218,6 +219,10 @@ def looks_like_non_clinical_line(text: str) -> bool:
     return False
 
 
+def is_drug_action_line(text: str) -> bool:
+    return bool(re.match(r"^(?:[lI|]\s+)?DRUG\s+ACTION\b", normalize_space(text), re.IGNORECASE))
+
+
 def is_title_candidate(text: str) -> bool:
     line = normalize_space(text)
     if len(line) < 4 or len(line) > 120:
@@ -257,8 +262,10 @@ def is_entry_start(rows: list[dict[str, Any]], index: int) -> bool:
     if not is_title_candidate(line):
         return False
 
-    for next_row in rows[index + 1 : index + 7]:
+    for next_row in rows[index + 1 : index + 1 + ENTRY_START_LOOKAHEAD_LINES]:
         next_line = next_row["text"]
+        if is_drug_action_line(next_line):
+            continue
         section_key = leading_section_key(next_line) or detect_section_header(next_line)
         if section_key:
             return section_key == "indications_and_dose"

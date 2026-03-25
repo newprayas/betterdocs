@@ -124,7 +124,7 @@ const isPlausibleDrugName = (value: string): boolean => {
 };
 
 const DRUG_REQUESTED_INDICATION_HINT_PATTERN =
-  /\b(encephalopathy|disease|syndrome|infection|disorder|pain|fever|diabetes|hypertension|asthma|migraine|anemia|anaemia|jaundice|hepatitis|cirrhosis|impairment|failure|obstruction|allergy|allergic|renal|hepatic|cardiac|pulmonary|neuropathy|stroke|seizure|epilepsy|colitis|gastritis|ulcer|pregnancy|lactation|breast[\s-]?feeding)\b/i;
+  /\b(encephalopathy|disease|syndrome|infection|disorder|pain|fever|pyrexia|diabetes|hypertension|asthma|migraine|anemia|anaemia|jaundice|hepatitis|cirrhosis|impairment|failure|obstruction|allergy|allergic|renal|hepatic|hepatotoxicity|toxicity|cardiac|pulmonary|neuropathy|stroke|seizure|epilepsy|colitis|gastritis|ulcer|pregnancy|lactation|breast[\s-]?feeding)\b/i;
 
 const DRUG_REQUESTED_INDICATION_SUFFIX_PATTERN =
   /\b[a-z][a-z-]*(?:itis|osis|opathy|emia|uria|algia|rrhea|rrhoea|iasis)\b/i;
