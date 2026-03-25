@@ -399,6 +399,7 @@ const inferDrugNameFromRawQuery = (content: string): string => {
     /(?:^|\b)(?:details|detail|full details|full detail|full information|complete details|everything)\s+(?:of|about)\s+([A-Za-z][A-Za-z0-9\s+'().\-]{1,80})$/i,
     /(?:^|\b)tell\s+me\s+about\s+([A-Za-z][A-Za-z0-9\s+'().\-]{1,80})$/i,
     /(?:^|\b)(?:indications?|side[\s-]?effects?|contra[\s-]?indications?|renal(?:\s+dose|\s+impairment)?|hepatic(?:\s+dose|\s+impairment)?|pregnancy|breast[\s-]?feeding|safety(?:\s+information)?)\s+(?:of|for)\s+([A-Za-z][A-Za-z0-9\s+'().\-]{1,80})$/i,
+    /(?:^|\b)([A-Za-z][A-Za-z0-9\s+'().\-]{1,80})\s+what(?:'s|s|\s+is|)\s*$/i,
   ];
 
   for (const pattern of patterns) {

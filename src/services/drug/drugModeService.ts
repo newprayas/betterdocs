@@ -2687,7 +2687,7 @@ Rules:
     const conciseWhatIsDrugQuery =
       /^\s*what(?:'s|s|\s+is)\s+([A-Za-z][A-Za-z0-9\s+'().\-]{0,80})\s*\??\s*$/i.test(normalized);
     const reversedWhatIsDrugQuery =
-      /^\s*([A-Za-z][A-Za-z0-9\s+'().\-]{0,80})\s+what(?:'s|s|\s+is)\s*\??\s*$/i.test(normalized);
+      /^\s*([A-Za-z][A-Za-z0-9\s+'().\-]{0,80})\s+what(?:'s|s|\s+is|)\s*\??\s*$/i.test(normalized);
 
     if (doseRequested) {
       addField('indications');

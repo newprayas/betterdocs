@@ -86,7 +86,7 @@ const DRUG_CONTEXT_EXPLICIT_PATTERNS = [
   /^(?:what(?:'s| is)?\s+)?(?:the\s+)?(?:dose|dosage|dosing|schedule|regimen|brands?|brand names?|trade names?|companies|prices?|costs?|indications?|uses?|side[\s-]?effects?|contra[\s-]?indications?|pregnancy|breast[\s-]?feeding|renal(?:\s+dose|\s+impairment)?|hepatic(?:\s+dose|\s+impairment)?|safety(?:\s+information)?|details?|full details?|all about|everything)\s+(?:of|for|about)\s+(.+)$/i,
   /^(?:tell\s+me\s+about)\s+(.+)$/i,
   /^(?:what(?:'s| is))\s+(.+)$/i,
-  /^(.+)\s+what(?:'s| is)$/i,
+  /^(.+)\s+what(?:'s| is|)$/i,
 ];
 
 const AMBIGUOUS_DRUG_FOLLOW_UP_MODEL = 'llama-3.3-70b-versatile';
