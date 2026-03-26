@@ -42,21 +42,20 @@ const SavedAnswerCard: React.FC<{
     <Card padding="none" shadow="sm" hover className="overflow-hidden">
       <div className="border-b border-gray-200 dark:border-gray-700 bg-gradient-to-r from-gray-50 to-white dark:from-gray-900 dark:to-gray-800 px-4 sm:px-5 py-3">
         <div className="flex flex-col gap-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700 dark:border-blue-500/40 dark:bg-blue-500/10 dark:text-blue-300">
-              {answer.sessionName}
-            </span>
-            <span className="text-xs text-gray-500 dark:text-gray-400">
-              {formatSavedAnswerDate(answer.savedAt)}
-            </span>
-          </div>
+          <div className="flex items-start justify-between gap-2">
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <span className="inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700 dark:border-blue-500/40 dark:bg-blue-500/10 dark:text-blue-300">
+                {answer.sessionName}
+              </span>
+              <span className="text-xs text-gray-500 dark:text-gray-400">
+                {formatSavedAnswerDate(answer.savedAt)}
+              </span>
+            </div>
 
-          <div className="flex items-center gap-2">
-            <Button
-              variant="danger"
-              size="sm"
+            <button
+              type="button"
               onClick={() => onRemove(answer)}
-              className="px-3"
+              className="shrink-0 rounded p-0.5 text-rose-500 transition-colors hover:text-rose-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-500/40 dark:text-rose-400 dark:hover:text-rose-300"
               aria-label="Delete saved answer"
               title="Delete saved answer"
             >
@@ -67,22 +66,20 @@ const SavedAnswerCard: React.FC<{
                 stroke="currentColor"
                 strokeWidth="2"
               >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M3 6h18M8 6V4h8v2m-1 0v14a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2V6h8Z"
-                />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 6l12 12M18 6L6 18" />
               </svg>
-            </Button>
+            </button>
+          </div>
 
+          <div className="flex items-center">
             <Button
               variant="outline"
               size="sm"
               onClick={handleCopy}
-              className="min-w-[104px]"
+              className="min-w-0 !px-2 !py-1 !text-xs"
             >
               <svg
-                className="w-4 h-4 mr-2"
+                className="w-3.5 h-3.5 mr-1.5"
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
@@ -98,7 +95,7 @@ const SavedAnswerCard: React.FC<{
       </div>
 
       <div className="px-4 sm:px-5 py-4">
-        <div className="saved-answer-markdown prose prose-sm max-w-none break-words text-gray-900 dark:text-gray-100 prose-p:text-gray-800 dark:prose-p:text-gray-200 prose-strong:text-gray-900 dark:prose-strong:text-white prose-headings:text-gray-900 dark:prose-headings:text-white prose-a:text-sky-600 dark:prose-a:text-sky-400">
+        <div className="saved-answer-markdown prose prose-sm max-w-none break-words text-gray-900 dark:text-gray-100 prose-p:text-gray-800 dark:prose-p:text-gray-200 prose-li:text-gray-800 dark:prose-li:text-gray-200 prose-strong:text-gray-900 dark:prose-strong:text-white prose-headings:text-gray-900 dark:prose-headings:text-white prose-a:text-sky-700 dark:prose-a:text-sky-400">
           <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
             {answer.content}
           </ReactMarkdown>
@@ -276,7 +273,7 @@ export default function SavedAnswersPage() {
                     >
                       <span className="flex w-full items-center justify-between gap-3">
                         <span className="truncate">{session.sessionName}</span>
-                        <span className="text-xs text-slate-400">{session.count}</span>
+                        <span className="text-xs text-slate-500 dark:text-slate-400">{session.count}</span>
                       </span>
                     </DropdownMenuItem>
                   ))}
@@ -300,7 +297,7 @@ export default function SavedAnswersPage() {
 
         <div className="mt-6">
           {isLoading && !hasSavedAnswers ? (
-            <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
+            <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
               Loading saved answers...
             </div>
           ) : filteredAnswers.length === 0 ? (

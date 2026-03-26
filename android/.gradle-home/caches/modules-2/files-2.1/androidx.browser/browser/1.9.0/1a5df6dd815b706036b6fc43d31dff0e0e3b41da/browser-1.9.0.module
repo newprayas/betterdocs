@@ -1,0 +1,200 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "group": "androidx.browser",
+    "module": "browser",
+    "version": "1.9.0",
+    "attributes": {
+      "org.gradle.status": "release"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "8.14",
+      "buildId:": "13796208"
+    }
+  },
+  "variants": [
+    {
+      "name": "sourcesElements",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.usage": "java-runtime"
+      },
+      "files": [
+        {
+          "name": "browser-1.9.0-sources.jar",
+          "url": "browser-1.9.0-sources.jar",
+          "size": 145899,
+          "sha512": "798a1be5e67ac6191bdf362b0b6d82af338f216a52e8c5222d469f93547e03e95e77441c5076121f04bf28727638d31709c2ad204201460a862b3b04c3288471",
+          "sha256": "e95fe3dfd81f2474e2c68a42d140918592271a736b7b8dc26616f72da8cc9163",
+          "sha1": "22c978826067f8df323e89de9d7ec8d4382ddde6",
+          "md5": "f25f22d2196eb475e7c8f1666d5bc449"
+        }
+      ]
+    },
+    {
+      "name": "releaseVariantReleaseApiPublication",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.libraryelements": "aar",
+        "org.gradle.usage": "java-api"
+      },
+      "dependencies": [
+        {
+          "group": "androidx.annotation",
+          "module": "annotation",
+          "version": {
+            "requires": "1.8.1"
+          }
+        },
+        {
+          "group": "androidx.annotation",
+          "module": "annotation-experimental",
+          "version": {
+            "requires": "1.4.1"
+          }
+        },
+        {
+          "group": "androidx.core",
+          "module": "core",
+          "version": {
+            "requires": "1.10.0"
+          }
+        },
+        {
+          "group": "com.google.guava",
+          "module": "listenablefuture",
+          "version": {
+            "requires": "1.0"
+          }
+        },
+        {
+          "group": "org.jspecify",
+          "module": "jspecify",
+          "version": {
+            "requires": "1.0.0"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "browser-1.9.0.aar",
+          "url": "browser-1.9.0.aar",
+          "size": 288013,
+          "sha512": "88d64d85e35681bbf651b3aff746b8e162ad752eaf6373ecf66ca7f50fbfd78a6a548188bf4fc56bea03fce1261924b664081782d77dfb69adb33bcc927bb620",
+          "sha256": "b6aa2d575d27252233aee98fd93575e8327715f2ebd1dc14ad7ea4a7d2ec4592",
+          "sha1": "b77d79550d151cc7b58b07856c88ea62dd9d52ca",
+          "md5": "383d855fa1fe88778353fa9427d315d3"
+        }
+      ]
+    },
+    {
+      "name": "releaseVariantReleaseRuntimePublication",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.libraryelements": "aar",
+        "org.gradle.usage": "java-runtime"
+      },
+      "dependencies": [
+        {
+          "group": "androidx.activity",
+          "module": "activity",
+          "version": {
+            "requires": "1.9.0"
+          }
+        },
+        {
+          "group": "androidx.annotation",
+          "module": "annotation",
+          "version": {
+            "requires": "1.8.1"
+          }
+        },
+        {
+          "group": "androidx.annotation",
+          "module": "annotation-experimental",
+          "version": {
+            "requires": "1.4.1"
+          }
+        },
+        {
+          "group": "androidx.collection",
+          "module": "collection",
+          "version": {
+            "requires": "1.4.2"
+          }
+        },
+        {
+          "group": "androidx.concurrent",
+          "module": "concurrent-futures",
+          "version": {
+            "requires": "1.0.0"
+          }
+        },
+        {
+          "group": "androidx.core",
+          "module": "core",
+          "version": {
+            "requires": "1.10.0"
+          }
+        },
+        {
+          "group": "androidx.interpolator",
+          "module": "interpolator",
+          "version": {
+            "requires": "1.0.0"
+          }
+        },
+        {
+          "group": "com.google.guava",
+          "module": "listenablefuture",
+          "version": {
+            "requires": "1.0"
+          }
+        },
+        {
+          "group": "org.jspecify",
+          "module": "jspecify",
+          "version": {
+            "requires": "1.0.0"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "browser-1.9.0.aar",
+          "url": "browser-1.9.0.aar",
+          "size": 288013,
+          "sha512": "88d64d85e35681bbf651b3aff746b8e162ad752eaf6373ecf66ca7f50fbfd78a6a548188bf4fc56bea03fce1261924b664081782d77dfb69adb33bcc927bb620",
+          "sha256": "b6aa2d575d27252233aee98fd93575e8327715f2ebd1dc14ad7ea4a7d2ec4592",
+          "sha1": "b77d79550d151cc7b58b07856c88ea62dd9d52ca",
+          "md5": "383d855fa1fe88778353fa9427d315d3"
+        }
+      ]
+    },
+    {
+      "name": "libraryVersionMetadata",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.usage": "library-version-metadata"
+      },
+      "files": [
+        {
+          "name": "browser-1.9.0-versionMetadata.json",
+          "url": "browser-1.9.0-versionMetadata.json",
+          "size": 44630,
+          "sha512": "0633f18a5fd910faf82f0c1479a671141252c15ad24a21e781590fb1b5d7512310cd85eddfd108d4f002d4e2c91ce33e4ff33b6cc63ce387ca0ad553e7c1870b",
+          "sha256": "8052e05d9feec7985b0d5dda27cef5e4ffa1bff521b08606ffca8279641c62db",
+          "sha1": "fdc5710d3ebe7b6dc2f2136fe0da493eeb50e728",
+          "md5": "047a481eca2f1f2d0de34fd4f4116a23"
+        }
+      ]
+    }
+  ]
+}

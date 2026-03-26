@@ -483,3 +483,40 @@
   max-width: 100%;
   overflow-x: auto;
 }
+
+/* Light-mode readability fixes for saved answers markdown */
+.light .saved-answer-markdown {
+  color: rgb(17 24 39);
+}
+
+.light .saved-answer-markdown p,
+.light .saved-answer-markdown li,
+.light .saved-answer-markdown td,
+.light .saved-answer-markdown th {
+  color: rgb(31 41 55);
+}
+
+.light .saved-answer-markdown a {
+  color: rgb(3 105 161);
+}
+
+.light .saved-answer-markdown blockquote {
+  color: rgb(55 65 81);
+  border-left-color: rgb(56 189 248);
+  background-color: rgb(248 250 252);
+}
+
+.light .saved-answer-markdown code {
+  color: rgb(31 41 55);
+  background-color: rgb(241 245 249);
+}
+
+.light .saved-answer-markdown pre {
+  color: rgb(248 250 252);
+  background-color: rgb(15 23 42);
+}
+
+.light .saved-answer-markdown pre code {
+  color: inherit;
+  background-color: transparent;
+}
