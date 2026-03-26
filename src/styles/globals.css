@@ -14,7 +14,7 @@
     font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
   }
 
-  html.native-capacitor body {
+  html.native-capacitor #root {
     padding-top: max(env(safe-area-inset-top, 0px), 12px);
   }
 
