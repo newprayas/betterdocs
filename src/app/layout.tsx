@@ -1,5 +1,4 @@
 import type { Metadata, Viewport } from "next";
-import { Inter } from "next/font/google";
 import Script from "next/script";
 import "../styles/globals.css";
 import "../styles/mobile-touch.css";
@@ -8,8 +7,6 @@ import SubscriptionModal from "@/components/SubscriptionModal";
 import { RouteErrorBoundary } from "@/components/common/RouteErrorBoundary";
 import { InstallPrompt } from "@/components/common/InstallPrompt";
 import { ThemeProvider } from "@/components/common/ThemeProvider";
-
-const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
   title: "Meddy - Chat with your books!",
@@ -54,7 +51,7 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark" suppressHydrationWarning>
       <body
-        className={`${inter.className} bg-gray-50 text-gray-900 dark:bg-slate-950 dark:text-slate-200 antialiased`}
+        className="bg-gray-50 text-gray-900 dark:bg-slate-950 dark:text-slate-200 antialiased"
       >
         <Script
           id="theme-init"

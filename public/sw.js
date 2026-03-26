@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'v3';
+const CACHE_VERSION = 'v4';
 const STATIC_CACHE = `meddy-static-${CACHE_VERSION}`;
 const RUNTIME_CACHE = `meddy-runtime-${CACHE_VERSION}`;
 const NAVIGATION_FETCH_TIMEOUT_MS = 8000;
