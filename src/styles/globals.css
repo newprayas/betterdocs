@@ -496,6 +496,12 @@
   color: rgb(31 41 55);
 }
 
+.light .saved-answer-markdown strong,
+.light .saved-answer-markdown b {
+  color: rgb(17 24 39) !important;
+  font-weight: 700;
+}
+
 .light .saved-answer-markdown a {
   color: rgb(3 105 161);
 }
