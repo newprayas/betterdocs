@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { createServerClient, type CookieOptions } from '@supabase/ssr';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,6 +22,29 @@ type ProxyRequest = {
 
 let groqRotationIndex = 0;
 
+function getSupabaseClient(request: NextRequest) {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    return null;
+  }
+
+  return createServerClient(supabaseUrl, supabaseAnonKey, {
+    cookies: {
+      get(name: string) {
+        return request.cookies.get(name)?.value;
+      },
+      set(_name: string, _value: string, _options: CookieOptions) {
+        // Read-only auth check for this route.
+      },
+      remove(_name: string, _options: CookieOptions) {
+        // Read-only auth check for this route.
+      },
+    },
+  });
+}
+
 function loadGroqApiKeys(): string[] {
   const explicitKeys = [
     process.env.GROQ_API_1,
@@ -29,12 +53,6 @@ function loadGroqApiKeys(): string[] {
     process.env.GROQ_API_4,
     process.env.GROQ_API_5,
     process.env.GROQ_API_6,
-    process.env.NEXT_PUBLIC_GROQ_API_1,
-    process.env.NEXT_PUBLIC_GROQ_API_2,
-    process.env.NEXT_PUBLIC_GROQ_API_3,
-    process.env.NEXT_PUBLIC_GROQ_API_4,
-    process.env.NEXT_PUBLIC_GROQ_API_5,
-    process.env.NEXT_PUBLIC_GROQ_API_6,
   ];
 
   return explicitKeys
@@ -83,6 +101,25 @@ async function parseGroqError(response: Response): Promise<string> {
 
 export async function POST(req: NextRequest) {
   try {
+    const supabase = getSupabaseClient(req);
+    if (!supabase) {
+      return NextResponse.json(
+        { error: 'Missing Supabase configuration' },
+        { status: 500 }
+      );
+    }
+
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
+    }
+
     const body = (await req.json()) as ProxyRequest;
     const prompt = String(body.prompt || '').trim();
     const stream = Boolean(body.stream);
