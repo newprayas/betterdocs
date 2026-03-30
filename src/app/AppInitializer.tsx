@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { geminiService } from '../services/gemini';
-import { groqService } from '../services/groq/groqService';
 import { useSettingsStore, useSessionStore, useDocumentStore, useChatStore } from '../store';
 import { createClient } from '../utils/supabase/client';
 import { userIdLogger } from '../utils/userIdDebugLogger';
@@ -352,22 +351,18 @@ export function AppInitializer() {
     initializeEmbeddings();
   }, [isClient]);
 
-  // Initialize inference service from env keys (and optional legacy saved key) plus storage manager
+  // Initialize storage manager on the client.
   useEffect(() => {
     if (!isClient) return;
 
-    const initializeGroqAndStorage = async () => {
-      console.log('[APP INIT]', 'Initializing inference service...');
-      await groqService.initialize(settings?.groqApiKey || '');
-      console.log('[APP INIT]', 'Inference service initialized:', groqService.isInitialized() ? 'ready' : 'missing keys');
-
+    const initializeStorage = async () => {
       // Initialize Storage Manager (Request Persistence)
       await storageManager.init();
       console.log('[APP INIT] Storage Manager initialized');
     };
 
-    initializeGroqAndStorage();
-  }, [isClient, settings?.groqApiKey]);
+    initializeStorage();
+  }, [isClient]);
 
   // Hybrid stale-guard: keep fast resume, but reset only stale in-progress chat state.
   useEffect(() => {

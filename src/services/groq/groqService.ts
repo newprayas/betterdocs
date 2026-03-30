@@ -1,15 +1,15 @@
-const GROQ_BASE_URL = 'https://api.groq.com/openai/v1';
 const DEFAULT_MODEL = 'groq/compound';
 const REQUEST_TIMEOUT_MS = 30000;
 const STREAM_CONNECT_TIMEOUT_MS = 30000;
 const STREAM_CHUNK_TIMEOUT_MS = 45000;
+const GROQ_PROXY_URL = '/api/groq';
 
 type ChatMessage = {
   role: 'system' | 'user' | 'assistant';
   content: string;
 };
 
-type CerebrasChatResponse = {
+type GroqChatResponse = {
   choices?: Array<{
     message?: {
       content?: string;
@@ -25,61 +25,26 @@ type CerebrasChatResponse = {
   };
 };
 
+type GroqProxyRequest = {
+  prompt: string;
+  systemPrompt?: string;
+  model?: string;
+  temperature?: number;
+  maxTokens?: number;
+  stream?: boolean;
+};
+
 export class GroqService {
-  private apiKey: string = '';
-  private groqEnvApiKeys: string[] = [];
-  private groqKeyRotationIndex: number = 0;
-
-  constructor() {
-    this.groqEnvApiKeys = this.loadGroqEnvApiKeys();
-    console.log('[GROQ SERVICE]', `Loaded ${this.groqEnvApiKeys.length} env API key(s)`);
-  }
-
-  private loadGroqEnvApiKeys(): string[] {
-    // Important: in Next.js client bundles, dynamic process.env[key] access can fail in production.
-    // Use explicit env references so values are statically inlined at build time.
-    const explicitKeys = [
-      process.env.NEXT_PUBLIC_GROQ_API_1,
-      process.env.NEXT_PUBLIC_GROQ_API_2,
-      process.env.NEXT_PUBLIC_GROQ_API_3,
-      process.env.NEXT_PUBLIC_GROQ_API_4,
-      process.env.NEXT_PUBLIC_GROQ_API_5,
-      process.env.NEXT_PUBLIC_GROQ_API_6,
-    ];
-
-    return explicitKeys
-      .map((k) => String(k || '').trim())
-      .filter((k) => k.length > 0);
-  }
-
-  private getAllAvailableInferenceKeys(): string[] {
-    if (this.groqEnvApiKeys.length > 0) {
-      return this.groqEnvApiKeys.filter((k, idx, arr) => arr.indexOf(k) === idx);
-    }
-
-    const manual = this.apiKey.trim();
-    return manual ? [manual] : [];
-  }
-
-  private getNextInferenceApiKey(): string {
-    const keys = this.getAllAvailableInferenceKeys();
-    if (keys.length === 0) {
-      throw new Error('Groq service not initialized and no API keys are configured');
-    }
-    const key = keys[this.groqKeyRotationIndex % keys.length];
-    this.groqKeyRotationIndex = (this.groqKeyRotationIndex + 1) % Math.max(keys.length, 1);
-    return key;
-  }
-
   initialize(apiKey: string) {
-    // Optional manual key. Env keys remain primary and are rotated when present.
-    if (!apiKey || apiKey === this.apiKey) return;
-    this.apiKey = apiKey;
-    console.log('[GROQ SERVICE]', 'Initialized with manual key:', apiKey.substring(0, 7) + '...');
+    // Kept for backward compatibility. The app now proxies Groq through the server
+    // so secrets never reach the browser bundle.
+    if (apiKey) {
+      console.warn('[GROQ SERVICE] initialize() is deprecated; Groq keys are now loaded server-side.');
+    }
   }
 
   isInitialized(): boolean {
-    return this.getAllAvailableInferenceKeys().length > 0;
+    return true;
   }
 
   private getModel(model?: string): string {
@@ -102,10 +67,9 @@ export class GroqService {
     return 10;
   }
 
-  private buildHeaders(apiKey: string): HeadersInit {
+  private buildHeaders(): HeadersInit {
     return {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
     };
   }
 
@@ -141,10 +105,6 @@ export class GroqService {
     return messages;
   }
 
-  private isAbortError(error: unknown): boolean {
-    return error instanceof DOMException && error.name === 'AbortError';
-  }
-
   private async fetchWithTimeout(
     url: string,
     init: RequestInit,
@@ -158,7 +118,7 @@ export class GroqService {
     try {
       return await fetch(url, { ...init, signal: controller.signal });
     } catch (error) {
-      if (this.isAbortError(error)) {
+      if (error instanceof DOMException && error.name === 'AbortError') {
         throw new Error(`Request timeout after ${timeoutMs}ms`);
       }
       throw error;
@@ -186,32 +146,52 @@ export class GroqService {
     }
   }
 
-  async validateApiKey(apiKey: string): Promise<boolean> {
-    try {
-      const response = await this.fetchWithTimeout(`${GROQ_BASE_URL}/chat/completions`, {
+  private async postToGroqProxy(
+    body: GroqProxyRequest,
+    timeoutMs: number
+  ): Promise<Response> {
+    return await this.fetchWithTimeout(
+      GROQ_PROXY_URL,
+      {
         method: 'POST',
-        headers: this.buildHeaders(apiKey),
-        body: JSON.stringify({
-          model: DEFAULT_MODEL,
-          stream: false,
-          messages: [{ role: 'user', content: 'Ping' }],
-          temperature: 0,
-          max_tokens: 1,
-          top_p: 1,
-        }),
-      }, REQUEST_TIMEOUT_MS);
+        headers: this.buildHeaders(),
+        body: JSON.stringify(body),
+      },
+      timeoutMs
+    );
+  }
 
-      if (!response.ok) {
-        const msg = await this.parseErrorBody(response);
-        console.error('[GROQ SERVICE] API validation failed:', msg);
-        return false;
+  private async requestCompletion(
+    prompt: string,
+    systemPrompt?: string,
+    model?: string,
+    options?: { temperature?: number; maxTokens?: number; timeoutMs?: number }
+  ): Promise<GroqChatResponse> {
+    const response = await this.postToGroqProxy(
+      {
+        prompt,
+        systemPrompt,
+        model: this.getModel(model),
+        temperature: options?.temperature ?? 0.7,
+        maxTokens: options?.maxTokens ?? 4096,
+        stream: false,
+      },
+      options?.timeoutMs ?? REQUEST_TIMEOUT_MS
+    );
+
+    if (!response.ok) {
+      const errMessage = await this.parseErrorBody(response);
+      console.error('[GROQ SERVICE ERROR]', errMessage);
+
+      if (this.isRateLimitStatus(response.status)) {
+        const waitTime = this.extractWaitTime(errMessage);
+        throw new Error(`⚠️ You are asking too many questions too fast. Please wait for ${waitTime} seconds before asking again.`);
       }
 
-      return true;
-    } catch (error) {
-      console.error('[GROQ SERVICE] API validation failed:', error);
-      return false;
+      throw new Error(errMessage);
     }
+
+    return (await response.json()) as GroqChatResponse;
   }
 
   async generateResponse(
@@ -220,47 +200,8 @@ export class GroqService {
     model?: string,
     options?: { temperature?: number; maxTokens?: number; timeoutMs?: number }
   ): Promise<string> {
-    if (!this.isInitialized()) {
-      throw new Error('Groq service not initialized');
-    }
-
-    const modelToUse = this.getModel(model);
-    console.log('[GROQ SERVICE]', 'Generating response with model:', modelToUse);
-
-    try {
-      const response = await this.fetchWithTimeout(`${GROQ_BASE_URL}/chat/completions`, {
-        method: 'POST',
-        headers: this.buildHeaders(this.getNextInferenceApiKey()),
-        body: JSON.stringify({
-          model: modelToUse,
-          stream: false,
-          messages: this.buildMessages(prompt, systemPrompt),
-          temperature: options?.temperature ?? 0.7,
-          max_tokens: options?.maxTokens ?? 4096,
-          top_p: 1,
-        }),
-      }, options?.timeoutMs ?? REQUEST_TIMEOUT_MS);
-
-      if (!response.ok) {
-        const errMessage = await this.parseErrorBody(response);
-        console.error('[GROQ SERVICE ERROR]', errMessage);
-
-        if (this.isRateLimitStatus(response.status)) {
-          const waitTime = this.extractWaitTime(errMessage);
-          return `⚠️ You are asking too many questions too fast. Please wait for ${waitTime} seconds before asking again.`;
-        }
-        throw new Error(errMessage);
-      }
-
-      const completion = (await response.json()) as CerebrasChatResponse;
-      return completion.choices?.[0]?.message?.content || '';
-    } catch (error) {
-      if (error instanceof Error && /429|rate limit/i.test(error.message)) {
-        const waitTime = this.extractWaitTime(error.message);
-        return `⚠️ You are asking too many questions too fast. Please wait for ${waitTime} seconds before asking again.`;
-      }
-      throw error;
-    }
+    const completion = await this.requestCompletion(prompt, systemPrompt, model, options);
+    return completion.choices?.[0]?.message?.content || '';
   }
 
   async generateResponseWithGroq(
@@ -269,48 +210,8 @@ export class GroqService {
     model?: string,
     options?: { temperature?: number; maxTokens?: number; timeoutMs?: number }
   ): Promise<string> {
-    const keys = this.getAllAvailableInferenceKeys();
-    if (keys.length === 0) {
-      throw new Error('Groq service not initialized and no API keys are configured');
-    }
-
-    const modelToUse = this.getModel(model);
-    console.log('[GROQ SERVICE]', 'Generating response with model:', modelToUse);
-
-    try {
-      const response = await this.fetchWithTimeout(`${GROQ_BASE_URL}/chat/completions`, {
-        method: 'POST',
-        headers: this.buildHeaders(this.getNextInferenceApiKey()),
-        body: JSON.stringify({
-          model: modelToUse,
-          stream: false,
-          messages: this.buildMessages(prompt, systemPrompt),
-          temperature: options?.temperature ?? 0.7,
-          max_tokens: options?.maxTokens ?? 4096,
-          top_p: 1,
-        }),
-      }, options?.timeoutMs ?? REQUEST_TIMEOUT_MS);
-
-      if (!response.ok) {
-        const errMessage = await this.parseErrorBody(response);
-        console.error('[GROQ SERVICE ERROR]', errMessage);
-
-        if (this.isRateLimitStatus(response.status)) {
-          const waitTime = this.extractWaitTime(errMessage);
-          return `⚠️ You are asking too many questions too fast. Please wait for ${waitTime} seconds before asking again.`;
-        }
-        throw new Error(errMessage);
-      }
-
-      const completion = (await response.json()) as CerebrasChatResponse;
-      return completion.choices?.[0]?.message?.content || '';
-    } catch (error) {
-      if (error instanceof Error && /429|rate limit/i.test(error.message)) {
-        const waitTime = this.extractWaitTime(error.message);
-        return `⚠️ You are asking too many questions too fast. Please wait for ${waitTime} seconds before asking again.`;
-      }
-      throw error;
-    }
+    const completion = await this.requestCompletion(prompt, systemPrompt, model, options);
+    return completion.choices?.[0]?.message?.content || '';
   }
 
   async generateStreamingResponse(
@@ -325,10 +226,6 @@ export class GroqService {
       retryBackoffMs?: number;
     }
   ): Promise<void> {
-    if (!this.isInitialized()) {
-      throw new Error('Groq service not initialized');
-    }
-
     const modelToUse = this.getModel(model);
     console.log('[GROQ SERVICE]', 'Generating streaming response with model:', modelToUse);
     const maxFailoverRetries = Math.max(0, options?.maxFailoverRetries ?? 0);
@@ -340,18 +237,22 @@ export class GroqService {
       let streamStarted = false;
 
       try {
-        const response = await this.fetchWithTimeout(`${GROQ_BASE_URL}/chat/completions`, {
-          method: 'POST',
-          headers: this.buildHeaders(this.getNextInferenceApiKey()),
-          body: JSON.stringify({
-            model: modelToUse,
-            stream: true,
-            messages: this.buildMessages(prompt, systemPrompt),
-            temperature: options?.temperature ?? 0.7,
-            max_tokens: options?.maxTokens ?? 4096,
-            top_p: 1,
-          }),
-        }, STREAM_CONNECT_TIMEOUT_MS);
+        const response = await this.fetchWithTimeout(
+          GROQ_PROXY_URL,
+          {
+            method: 'POST',
+            headers: this.buildHeaders(),
+            body: JSON.stringify({
+              prompt,
+              systemPrompt,
+              model: modelToUse,
+              temperature: options?.temperature ?? 0.7,
+              maxTokens: options?.maxTokens ?? 4096,
+              stream: true,
+            }),
+          },
+          STREAM_CONNECT_TIMEOUT_MS
+        );
 
         if (!response.ok) {
           const errMessage = await this.parseErrorBody(response);
@@ -360,7 +261,7 @@ export class GroqService {
 
           if (shouldRetry) {
             const delayMs = retryBackoffMs * attemptNumber;
-            console.warn('[GROQ SERVICE STREAM RETRY]', `Retrying with next key in ${delayMs}ms`);
+            console.warn('[GROQ SERVICE STREAM RETRY]', `Retrying with next attempt in ${delayMs}ms`);
             await new Promise((resolve) => setTimeout(resolve, delayMs));
             attempt += 1;
             continue;
@@ -371,6 +272,7 @@ export class GroqService {
             options.onChunk(`⚠️ You are asking too many questions too fast. Please wait for ${waitTime} seconds before asking again.`);
             return;
           }
+
           throw new Error(errMessage);
         }
 
@@ -408,7 +310,7 @@ export class GroqService {
             }
 
             try {
-              const parsed = JSON.parse(data) as CerebrasChatResponse;
+              const parsed = JSON.parse(data) as GroqChatResponse;
               const content = parsed.choices?.[0]?.delta?.content || parsed.choices?.[0]?.message?.content || '';
               if (content && options?.onChunk) {
                 options.onChunk(content);
