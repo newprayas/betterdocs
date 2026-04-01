@@ -16,7 +16,7 @@ import { postProcessRetrievalResults } from './retrievalPostprocess';
 import { MessageSender, type MessageCreate, type Message } from '@/types';
 import type { Document, RouteIndexRecord } from '@/types';
 import type { ChatStreamEvent } from '../gemini/chatService';
-import type { SimplifiedCitationGroup, StructuredAnswerResponse } from '@/types/citation';
+import type { SimplifiedCitation, SimplifiedCitationGroup, StructuredAnswerResponse } from '@/types/citation';
 import type { EmbeddingChunk, VectorSearchResult } from '@/types/embedding';
 import { cosineSimilarity, calculateVectorNorm } from '@/utils/vectorUtils';
 
@@ -69,6 +69,25 @@ interface StructuredSourceGroup {
   page?: number;
   heading: string | null;
   content: string;
+}
+
+interface DirectCitationPageGroup {
+  key: string;
+  documentId: string;
+  documentTitle: string;
+  page: number;
+  chunks: Array<{
+    id: string;
+    content: string;
+    similarity: number;
+  }>;
+  combinedContent: string;
+  maxSimilarity: number;
+}
+
+interface RenderedStructuredAnswerWithCitations {
+  content: string;
+  citations: SimplifiedCitation[];
 }
 
 interface SessionWarmCacheEntry {
@@ -2474,8 +2493,11 @@ ${normalizedOriginal}
       }
 
       const structuredResponse = this.parseStructuredAnswerResponse(fullResponse);
-      const responseBody = structuredResponse
-        ? this.renderStructuredAnswerMarkdown(structuredResponse, answerContract, searchResults)
+      const directStructuredResult = structuredResponse
+        ? this.renderStructuredAnswerMarkdownWithCitations(structuredResponse, answerContract, searchResults)
+        : null;
+      const responseBody = directStructuredResult
+        ? directStructuredResult.content
         : fullResponse.trim();
       const firstContractStartMs = Date.now();
       const firstContractPass = applyAnswerContract(responseBody, answerContract);
@@ -2520,45 +2542,53 @@ ${normalizedOriginal}
         };
       }
 
-      const citationResult = citationService.processSimplifiedCitations(responseForCitation, searchResults);
-      let citationMetadata = citationResult.citations.length > 0
-        ? citationService.convertSimplifiedToMessageCitations(citationResult.citations)
-        : this.buildFallbackCitationsFromSearchResults(searchResults, Math.min(6, searchResults.length));
-      let responseForCitationConsistency = citationResult.renumberedResponse || responseForCitation;
-      const isNoEvidenceResponse = this.isInsufficientEvidenceResponse(responseForCitationConsistency);
+      let citationMetadata: Array<{ document: string; page?: number; excerpt?: string }> = [];
+      let responseForCitationConsistency = responseForCitation;
 
-      // Final hard guard: ensure text citation markers and reference panel are always in sync.
-      const consistentCitationOutput = this.enforceCitationConsistency(
-        responseForCitationConsistency,
-        citationMetadata
-      );
-      const citationBackfilledContent = !isNoEvidenceResponse
-        ? this.backfillMissingInlineCitations(
-            consistentCitationOutput.content,
-            consistentCitationOutput.citations,
-            consistentCitationOutput.citations.map(c => {
-               // Find the original search result that corresponds to this citation
-               // Note: citation sourceIndex is 1-based, array is 0-based.
-               // We only use the generationChunks here as that's what was evaluated.
-               const originalIndex = c.sourceIndex ? c.sourceIndex - 1 : -1;
-               return originalIndex >= 0 && originalIndex < searchResults.length 
-                 ? searchResults[originalIndex].similarity 
-                 : 1; // default to 1 if unknown
-            })
-          )
-        : consistentCitationOutput.content;
-      if (!isNoEvidenceResponse) {
-        const groundingPass = this.removeUncitedSubstantiveLines(citationBackfilledContent);
-        responseForCitationConsistency = groundingPass.content;
-        if (groundingPass.dropped > 0) {
-          console.warn(
-            '[GROUNDING FILTER]',
-            `Removed ${groundingPass.dropped} uncited substantive line(s).`
-          );
-        }
+      if (directStructuredResult && directStructuredResult.citations.length > 0) {
+        const directCitationMetadata = citationService.convertSimplifiedToMessageCitations(directStructuredResult.citations);
+        const consistentCitationOutput = this.enforceCitationConsistency(
+          responseForCitationConsistency,
+          directCitationMetadata
+        );
+        citationMetadata = consistentCitationOutput.citations;
+        responseForCitationConsistency = consistentCitationOutput.content;
       } else {
-        citationMetadata = [];
-        responseForCitationConsistency = citationBackfilledContent;
+        const citationResult = citationService.processSimplifiedCitations(responseForCitation, searchResults);
+        citationMetadata = citationResult.citations.length > 0
+          ? citationService.convertSimplifiedToMessageCitations(citationResult.citations)
+          : this.buildFallbackCitationsFromSearchResults(searchResults, Math.min(6, searchResults.length));
+        const consistentCitationOutput = this.enforceCitationConsistency(
+          citationResult.renumberedResponse || responseForCitation,
+          citationMetadata
+        );
+        const citationBackfilledContent = this.backfillMissingInlineCitations(
+          consistentCitationOutput.content,
+          consistentCitationOutput.citations,
+          consistentCitationOutput.citations.map(c => {
+            // Find the original search result that corresponds to this citation
+            // Note: citation sourceIndex is 1-based, array is 0-based.
+            // We only use the generationChunks here as that's what was evaluated.
+            const originalIndex = c.sourceIndex ? c.sourceIndex - 1 : -1;
+            return originalIndex >= 0 && originalIndex < searchResults.length 
+              ? searchResults[originalIndex].similarity 
+              : 1; // default to 1 if unknown
+          })
+        );
+        const isNoEvidenceResponse = this.isInsufficientEvidenceResponse(citationBackfilledContent);
+        if (!isNoEvidenceResponse) {
+          const groundingPass = this.removeUncitedSubstantiveLines(citationBackfilledContent);
+          responseForCitationConsistency = groundingPass.content;
+          if (groundingPass.dropped > 0) {
+            console.warn(
+              '[GROUNDING FILTER]',
+              `Removed ${groundingPass.dropped} uncited substantive line(s).`
+            );
+          }
+        } else {
+          citationMetadata = [];
+          responseForCitationConsistency = citationBackfilledContent;
+        }
       }
       const responseWithQueryHeader = this.prependAnsweredQueryHeader(
         responseForCitationConsistency,
@@ -2570,7 +2600,7 @@ ${normalizedOriginal}
         sessionId,
         content: responseWithQueryHeader,
         role: MessageSender.ASSISTANT,
-        citations: consistentCitationOutput.citations,
+        citations: citationMetadata,
       };
 
       await this.indexedDBServices.messageService.createMessage(assistantMessage);
@@ -2579,7 +2609,7 @@ ${normalizedOriginal}
         onStreamEvent({
           type: 'done',
           content: responseWithQueryHeader,
-          citations: consistentCitationOutput.citations
+          citations: citationMetadata
         });
       }
 
@@ -2976,11 +3006,133 @@ Goal: accurate, full-detail, source-grounded answer; citations and references ar
     return normalized;
   }
 
-  private renderStructuredAnswerMarkdown(
+  private buildDirectCitationPageGroups(searchResults: VectorSearchResult[]): DirectCitationPageGroup[] {
+    const pageMap = new Map<string, DirectCitationPageGroup>();
+
+    for (const result of searchResults) {
+      const page = this.getChunkPageNumber(result.chunk);
+      if (page === null) continue;
+
+      const key = `${result.document.id}_${page}`;
+      const existing = pageMap.get(key);
+      if (!existing) {
+        pageMap.set(key, {
+          key,
+          documentId: result.document.id,
+          documentTitle: result.document.title || result.document.fileName || 'Unknown Document',
+          page,
+          chunks: [],
+          combinedContent: '',
+          maxSimilarity: result.similarity,
+        });
+      }
+
+      pageMap.get(key)!.chunks.push({
+        id: result.chunk.id,
+        content: result.chunk.content,
+        similarity: result.similarity,
+      });
+      pageMap.get(key)!.maxSimilarity = Math.max(pageMap.get(key)!.maxSimilarity, result.similarity);
+    }
+
+    return Array.from(pageMap.values())
+      .map((group) => ({
+        ...group,
+        chunks: [...group.chunks].sort((a, b) => b.similarity - a.similarity || a.id.localeCompare(b.id)),
+        combinedContent: [...group.chunks]
+          .sort((a, b) => b.similarity - a.similarity || a.id.localeCompare(b.id))
+          .map((chunk) => chunk.content)
+          .join('\n---\n'),
+      }))
+      .sort((a, b) => {
+        if (b.maxSimilarity !== a.maxSimilarity) return b.maxSimilarity - a.maxSimilarity;
+        if (a.documentTitle !== b.documentTitle) return a.documentTitle.localeCompare(b.documentTitle);
+        return a.page - b.page;
+      });
+  }
+
+  private scoreClaimAgainstSourceContent(claim: string, sourceText: string): number {
+    const normalizedClaim = this.normalizeExplicitComparisonText(claim);
+    if (!normalizedClaim) return 0;
+
+    if (normalizedClaim.length < 3) return 0;
+
+    const normalizedSource = this.normalizeExplicitComparisonText(sourceText);
+    if (!normalizedSource) return 0;
+
+    if (normalizedSource.includes(normalizedClaim)) {
+      return 1;
+    }
+
+    const sentenceScore = this.scoreClaimAgainstSourceSentences(normalizedClaim, sourceText);
+    const paragraphScore = this.scoreClaimAgainstSourceParagraph(normalizedClaim, sourceText);
+    const claimWords = new Set(
+      normalizedClaim
+        .split(' ')
+        .filter((word) => word.length > 2 && !this.isStructuredStopWord(word))
+    );
+    const overlapScore = this.scoreTokenOverlap(claimWords, normalizedSource);
+
+    return Math.max(sentenceScore, paragraphScore, overlapScore);
+  }
+
+  private selectBestCitationTargetForClaim(
+    claim: string,
+    pageGroups: DirectCitationPageGroup[]
+  ): DirectCitationPageGroup | null {
+    const normalizedClaim = this.normalizeExplicitComparisonText(claim);
+    if (!normalizedClaim || normalizedClaim.length < 3) return null;
+
+    const claimWords = new Set(
+      normalizedClaim
+        .split(' ')
+        .filter((word) => word.length > 2 && !this.isStructuredStopWord(word))
+    );
+    if (claimWords.size === 0) return null;
+
+    let bestGroup: DirectCitationPageGroup | null = null;
+    let bestScore = 0;
+    let runnerUpGroup: DirectCitationPageGroup | null = null;
+    let runnerUpScore = 0;
+
+    for (const group of pageGroups) {
+      const score = this.scoreClaimAgainstSourceContent(
+        normalizedClaim,
+        `${group.documentTitle}\n${group.combinedContent}`
+      );
+
+      if (score > bestScore) {
+        runnerUpGroup = bestGroup;
+        runnerUpScore = bestScore;
+        bestGroup = group;
+        bestScore = score;
+      } else if (score > runnerUpScore) {
+        runnerUpGroup = group;
+        runnerUpScore = score;
+      }
+    }
+
+    if (!bestGroup || bestScore < 0.45) {
+      return null;
+    }
+
+    if (
+      runnerUpGroup &&
+      runnerUpGroup !== bestGroup &&
+      (bestScore - runnerUpScore) <= 0.03 &&
+      runnerUpGroup.maxSimilarity > bestGroup.maxSimilarity
+    ) {
+      return runnerUpGroup;
+    }
+
+    return bestGroup;
+  }
+
+  private renderStructuredAnswerMarkdownWithCitations(
     structured: StructuredAnswerResponse,
     contract: AnswerContract,
     searchResults: VectorSearchResult[]
-  ): string {
+  ): RenderedStructuredAnswerWithCitations {
     const structuredSections = new Map<string, string[]>();
     const structuredSubsections = new Map<string, Array<{ title: string; claims: string[] }>>();
     for (const section of structured.sections) {
@@ -2997,40 +3149,86 @@ Goal: accurate, full-detail, source-grounded answer; citations and references ar
       }
     }
 
+    const pageGroups = this.buildDirectCitationPageGroups(searchResults);
+    const citationIndexByKey = new Map<string, number>();
+    const citations: SimplifiedCitation[] = [];
     const lines: string[] = [];
+
+    const ensureCitationIndex = (group: DirectCitationPageGroup): number => {
+      const existing = citationIndexByKey.get(group.key);
+      if (existing) return existing;
+
+      const sourceIndex = citations.length + 1;
+      citationIndexByKey.set(group.key, sourceIndex);
+      citations.push({
+        document: group.documentTitle,
+        page: group.page,
+        combinedContent: group.combinedContent,
+        sourceIndex,
+        chunkIds: group.chunks.map((chunk) => chunk.id),
+        similarity: group.maxSimilarity,
+      });
+      return sourceIndex;
+    };
+
+    const renderClaimWithCitation = (claim: string): string | null => {
+      const target = this.selectBestCitationTargetForClaim(claim, pageGroups);
+      if (!target) return null;
+
+      const citationIndex = ensureCitationIndex(target);
+      return `${claim} [${citationIndex}]`;
+    };
 
     for (const requiredSection of contract.sections) {
       const key = this.normalizeStructuredSectionTitle(requiredSection.title).toLowerCase();
-      const claims = structuredSections.get(key) || [];
-      const subsections = structuredSubsections.get(key) || [];
-
-      lines.push(`## ${requiredSection.title}`);
-      const supportedClaims = claims.filter((claim) => this.isExplicitlySupportedClaim(claim, searchResults));
-      const supportedSubsections = subsections
+      const claims = (structuredSections.get(key) || []).filter((claim) => this.isExplicitlySupportedClaim(claim, searchResults));
+      const subsections = (structuredSubsections.get(key) || [])
         .map((subsection) => ({
           title: subsection.title,
           claims: subsection.claims.filter((claim) => this.isExplicitlySupportedClaim(claim, searchResults)),
         }))
         .filter((subsection) => subsection.claims.length > 0);
 
-      if (supportedClaims.length === 0 && supportedSubsections.length === 0) {
+      lines.push(`## ${requiredSection.title}`);
+      if (claims.length === 0 && subsections.length === 0) {
         lines.push('- Not found in provided sources.');
-      } else if (supportedSubsections.length === 0) {
-        for (const claim of supportedClaims) {
-          lines.push(`- ${claim}`);
+      } else if (subsections.length === 0) {
+        let emittedClaim = false;
+        for (const claim of claims) {
+          const renderedClaim = renderClaimWithCitation(claim);
+          if (!renderedClaim) continue;
+          lines.push(`- ${renderedClaim}`);
+          emittedClaim = true;
+        }
+        if (!emittedClaim) {
+          lines.push('- Not found in provided sources.');
         }
       } else {
-        if (supportedClaims.length > 0) {
-          for (const claim of supportedClaims) {
-            lines.push(`- ${claim}`);
+        if (claims.length > 0) {
+          let emittedClaim = false;
+          for (const claim of claims) {
+            const renderedClaim = renderClaimWithCitation(claim);
+            if (!renderedClaim) continue;
+            lines.push(`- ${renderedClaim}`);
+            emittedClaim = true;
+          }
+          if (!emittedClaim) {
+            lines.push('- Not found in provided sources.');
           }
           lines.push('');
         }
 
-        for (const subsection of supportedSubsections) {
+        for (const subsection of subsections) {
           lines.push(`### ${subsection.title}`);
+          let emittedSubsectionClaim = false;
           for (const claim of subsection.claims) {
-            lines.push(`- ${claim}`);
+            const renderedClaim = renderClaimWithCitation(claim);
+            if (!renderedClaim) continue;
+            lines.push(`- ${renderedClaim}`);
+            emittedSubsectionClaim = true;
+          }
+          if (!emittedSubsectionClaim) {
+            lines.push('- Not found in provided sources.');
           }
           lines.push('');
         }
@@ -3038,7 +3236,10 @@ Goal: accurate, full-detail, source-grounded answer; citations and references ar
       lines.push('');
     }
 
-    return lines.join('\n').trim();
+    return {
+      content: lines.join('\n').trim(),
+      citations,
+    };
   }
 
   private isExplicitlySupportedClaim(claim: string, searchResults: VectorSearchResult[]): boolean {
