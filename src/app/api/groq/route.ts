@@ -53,6 +53,7 @@ function loadGroqApiKeys(): string[] {
     process.env.GROQ_API_4,
     process.env.GROQ_API_5,
     process.env.GROQ_API_6,
+    process.env.GROQ_API_7,
   ];
 
   return explicitKeys
@@ -132,7 +133,7 @@ export async function POST(req: NextRequest) {
     const groqKeys = loadGroqApiKeys();
     if (groqKeys.length === 0) {
       return NextResponse.json(
-        { error: 'Missing Groq API key. Set GROQ_API_1 through GROQ_API_6 in server environment variables.' },
+        { error: 'Missing Groq API key. Set GROQ_API_1 through GROQ_API_7 in server environment variables.' },
         { status: 500 }
       );
     }
