@@ -20,7 +20,7 @@ import type { SimplifiedCitationGroup, StructuredAnswerResponse } from '@/types/
 import type { EmbeddingChunk, VectorSearchResult } from '@/types/embedding';
 import { cosineSimilarity, calculateVectorNorm } from '@/utils/vectorUtils';
 
-const ANSWER_GENERATION_MODEL = 'openai/gpt-oss-20b';
+const ANSWER_GENERATION_MODEL = 'openai/gpt-oss-120b';
 
 interface RouteSectionCandidate {
   score: number;
@@ -53,6 +53,13 @@ interface SimplifiedGenerationMetrics {
   contractPassAfterFix: boolean;
   hadNumberingFix: boolean;
   hadMissingSectionFill: boolean;
+}
+
+interface ChunkQualityAssessment {
+  score: number;
+  reasons: string[];
+  shouldExclude: boolean;
+  exclusionType: 'bibliography' | 'index' | 'caption-only' | 'mixed' | 'other';
 }
 
 interface StructuredSourceGroup {
@@ -1146,6 +1153,176 @@ export class ChatPipeline {
     return null;
   }
 
+  private assessChunkQuality(chunk: EmbeddingChunk): ChunkQualityAssessment {
+    const content = (chunk.content || '').replace(/\r\n/g, '\n').trim();
+    if (!content) {
+      return {
+        score: 0,
+        reasons: ['empty_content'],
+        shouldExclude: true,
+        exclusionType: 'other',
+      };
+    }
+
+    const lines = content
+      .split('\n')
+      .map((line) => line.replace(/\s+/g, ' ').trim())
+      .filter(Boolean);
+    const words = content.split(/\s+/).filter(Boolean);
+    const sentences = content
+      .split(/(?<=[.!?])\s+|\n+/)
+      .map((sentence) => sentence.replace(/\s+/g, ' ').trim())
+      .filter((sentence) => sentence.length >= 20);
+
+    const reasons: string[] = [];
+    let penalty = 0;
+
+    const hasReferenceHeading = /\b(references?|bibliography|selected bibliography|further reading|reading list|reference list)\b/i.test(content);
+    if (hasReferenceHeading) {
+      penalty += 0.45;
+      reasons.push('reference_heading');
+    }
+
+    const hasReferenceStyleMarkers =
+      /\bet al\.\b/i.test(content) ||
+      /\bdoi:/i.test(content) ||
+      /\bpmid:\b/i.test(content) ||
+      /\b(18|19|20)\d{2};\s*\d+:\s*\d+(?:[-–]\d+)?\b/.test(content);
+    if (hasReferenceStyleMarkers) {
+      penalty += 0.3;
+      reasons.push('reference_style_markers');
+    }
+
+    const authorYearMatches = content.match(/(?:^|\n)\s*[A-Z][A-Za-z'’.-]+,\s*[A-Z][A-Za-z'’.-]+.*\b(18|19|20)\d{2}\b/g) || [];
+    if (authorYearMatches.length >= 2) {
+      penalty += 0.35;
+      reasons.push('author_year_list');
+    }
+
+    const indexEntryMatches = content.match(/(?:^|[\n ])(?:[A-Z][A-Za-z0-9'’.-]+(?:,\s*[A-Za-z0-9'’.-]+)*\s+\d{1,4}(?:,\s*\d{1,4})*)/g) || [];
+    const commaPageHits = (content.match(/,\s*\d{1,4}(?:\b|,)/g) || []).length;
+    const pageLikeNumberHits = (content.match(/\b\d{3,4}\b/g) || []).length;
+    const shortLineCount = lines.filter((line) => line.split(/\s+/).filter(Boolean).length <= 8).length;
+
+    if (indexEntryMatches.length >= 5 || commaPageHits >= 8) {
+      penalty += 0.4;
+      reasons.push('index_entry_density');
+    }
+
+    if (pageLikeNumberHits >= 20 && words.length >= 40) {
+      penalty += 0.2;
+      reasons.push('high_page_number_density');
+    }
+
+    if (lines.length >= 4 && shortLineCount / lines.length >= 0.7 && words.length >= 30) {
+      penalty += 0.2;
+      reasons.push('many_short_lines');
+    }
+
+    if (sentences.length <= 2 && words.length >= 45) {
+      penalty += 0.15;
+      reasons.push('too_few_sentences');
+    }
+
+    const figureOnlyPattern = /\b(?:figure|fig\.|table|plate|diagram)\b/i;
+    const captionOnlyPattern = /\bsee (?:p\.|page)\b/i;
+    if (
+      figureOnlyPattern.test(content) &&
+      (captionOnlyPattern.test(content) || words.length <= 50 || sentences.length <= 1)
+    ) {
+      penalty += 0.35;
+      reasons.push('figure_or_table_caption_only');
+    }
+
+    const tocLikePattern = /(?:\.{3,}\s*\d{1,4}|\b(?:contents|index)\b)/i;
+    if (tocLikePattern.test(content) && pageLikeNumberHits >= 8) {
+      penalty += 0.25;
+      reasons.push('toc_or_index_like');
+    }
+
+    const score = Math.max(0, 1 - penalty);
+    const shouldExclude = score < 0.45 && reasons.length > 0;
+    const exclusionType = this.getChunkExclusionType(reasons);
+
+    return {
+      score,
+      reasons,
+      shouldExclude,
+      exclusionType,
+    };
+  }
+
+  private getChunkExclusionType(reasons: string[]): ChunkQualityAssessment['exclusionType'] {
+    const reasonSet = new Set(reasons);
+    const bibliographySignals = [
+      'reference_heading',
+      'reference_style_markers',
+      'author_year_list',
+    ];
+    const indexSignals = [
+      'index_entry_density',
+      'high_page_number_density',
+      'many_short_lines',
+      'toc_or_index_like',
+    ];
+    const captionSignals = [
+      'figure_or_table_caption_only',
+    ];
+
+    const hasAny = (signals: string[]) => signals.some((signal) => reasonSet.has(signal));
+    const signalCount = [bibliographySignals, indexSignals, captionSignals].filter(hasAny).length;
+
+    if (hasAny(bibliographySignals) && signalCount === 1) return 'bibliography';
+    if (hasAny(indexSignals) && signalCount === 1) return 'index';
+    if (hasAny(captionSignals) && signalCount === 1) return 'caption-only';
+    if (signalCount > 1) return 'mixed';
+    return 'other';
+  }
+
+  private filterQualityChunks(
+    chunks: VectorSearchResult[]
+  ): {
+    evaluated: Array<VectorSearchResult & { quality: ChunkQualityAssessment }>;
+    kept: Array<VectorSearchResult & { quality: ChunkQualityAssessment }>;
+    removed: Array<VectorSearchResult & { quality: ChunkQualityAssessment }>;
+  } {
+    const evaluated = chunks.map((chunk) => ({
+      ...chunk,
+      quality: this.assessChunkQuality(chunk.chunk),
+    }));
+
+    const removed = evaluated.filter((chunk) => chunk.quality.shouldExclude);
+    const kept = evaluated.filter((chunk) => !chunk.quality.shouldExclude);
+
+    if (removed.length > 0) {
+      console.log(
+        '[CHUNK QUALITY FILTER]',
+        `Removed ${removed.length} chunk(s) before generation.`
+      );
+      console.log(
+        '[CHUNK QUALITY FILTER DETAIL]',
+        removed.map((chunk) => ({
+          chunkId: chunk.chunk.id,
+          page: this.getChunkPageNumber(chunk.chunk),
+          documentTitle: chunk.document.title,
+          exclusionType: chunk.quality.exclusionType,
+          similarity: Number(chunk.similarity.toFixed(3)),
+          score: Number(chunk.quality.score.toFixed(3)),
+          reasons: chunk.quality.reasons,
+          content: chunk.chunk.content,
+        }))
+      );
+    } else {
+      console.log('[CHUNK QUALITY FILTER]', 'No chunks were excluded before generation.');
+    }
+
+    return {
+      evaluated,
+      kept,
+      removed,
+    };
+  }
+
   private classifyRetrievedChunkForDebug(
     result: VectorSearchResult,
     baseChunkIds: Set<string>,
@@ -1955,23 +2132,84 @@ ${normalizedOriginal}
       // Cap chunks fed to the LLM. Retrieval casts wide (up to 12) for quality,
       // but the generator only needs the top N by similarity — more context
       // linearly increases generation time without improving answer quality.
-      // Dynamic capping: max 8 chunks, minimum similarity 0.60
-      const GENERATION_CHUNK_CAP = 8;
+      // Dynamic capping: max 6 chunks, minimum similarity 0.60
+      const GENERATION_CHUNK_CAP = 6;
       const MIN_SIMILARITY_FLOOR = 0.60;
-      
-      const generationChunks = [...searchResults]
+
+      const sortedGenerationCandidates = [...searchResults]
         .sort((a, b) => b.similarity - a.similarity)
-        .filter(chunk => chunk.similarity >= MIN_SIMILARITY_FLOOR)
-        .slice(0, GENERATION_CHUNK_CAP);
-        
+        .filter((chunk) => chunk.similarity >= MIN_SIMILARITY_FLOOR);
+
       console.log(
         '[GENERATION CHUNKS]',
-        `Using top ${generationChunks.length} of ${searchResults.length} retrieved chunks for generation (floor: ${MIN_SIMILARITY_FLOOR})`
+        `Using top ${Math.min(sortedGenerationCandidates.length, GENERATION_CHUNK_CAP)} of ${searchResults.length} retrieved chunks for generation (floor: ${MIN_SIMILARITY_FLOOR})`
       );
+
+      const qualityFilteredChunks = this.filterQualityChunks(sortedGenerationCandidates);
+      let generationChunksForModel = qualityFilteredChunks.kept.map((chunk) => ({
+        ...chunk,
+      }))
+        .slice(0, GENERATION_CHUNK_CAP);
+      const evaluatedChunkById = new Map(
+        qualityFilteredChunks.evaluated.map((chunk) => [chunk.chunk.id, chunk] as const)
+      );
+
+      const removedChunkIds = new Set(
+        qualityFilteredChunks.removed.map((chunk) => chunk.chunk.id)
+      );
+
+      if (generationChunksForModel.length < GENERATION_CHUNK_CAP) {
+        const backfillCandidates = sortedGenerationCandidates.filter(
+          (chunk) =>
+            !removedChunkIds.has(chunk.chunk.id) &&
+            !generationChunksForModel.some((keptChunk) => keptChunk.chunk.id === chunk.chunk.id)
+        );
+
+        for (const candidate of backfillCandidates) {
+          const evaluatedCandidate = evaluatedChunkById.get(candidate.chunk.id);
+          if (!evaluatedCandidate) continue;
+          generationChunksForModel.push(evaluatedCandidate);
+          if (generationChunksForModel.length >= GENERATION_CHUNK_CAP) {
+            break;
+          }
+        }
+      }
+
+      if (generationChunksForModel.length === 0 && qualityFilteredChunks.evaluated.length > 0) {
+        const fallbackChunk = [...qualityFilteredChunks.evaluated].sort((a, b) => {
+          if (b.quality.score !== a.quality.score) {
+            return b.quality.score - a.quality.score;
+          }
+          return b.similarity - a.similarity;
+        })[0];
+
+        generationChunksForModel = [fallbackChunk];
+        console.warn(
+          '[CHUNK QUALITY FILTER]',
+          'All candidate chunks were flagged. Keeping the best remaining chunk as a fallback to avoid an empty prompt.',
+          {
+            chunkId: fallbackChunk.chunk.id,
+            page: this.getChunkPageNumber(fallbackChunk.chunk),
+            documentTitle: fallbackChunk.document.title,
+            exclusionType: fallbackChunk.quality.exclusionType,
+            similarity: Number(fallbackChunk.similarity.toFixed(3)),
+            score: Number(fallbackChunk.quality.score.toFixed(3)),
+            reasons: fallbackChunk.quality.reasons,
+            content: fallbackChunk.chunk.content,
+          }
+        );
+      }
+
+      if (qualityFilteredChunks.removed.length > 0) {
+        console.log(
+          '[CHUNK QUALITY FILTER SUMMARY]',
+          `Kept ${generationChunksForModel.length} chunk(s) after filtering ${qualityFilteredChunks.removed.length} junk chunk(s).`
+        );
+      }
 
       // Build context from generation chunks only
       console.log('[CONTEXT BUILDING]', 'Constructing context from search results...');
-      const context = this.buildContext(generationChunks, retrievalQuery);
+      const context = this.buildContext(generationChunksForModel, retrievalQuery);
       console.log('[CONTEXT CREATED]', `Context string length: ${context.length} characters`);
 
       const generationStartMs = Date.now();
@@ -1979,7 +2217,7 @@ ${normalizedOriginal}
         sessionId,
         standaloneQuery,
         context,
-        generationChunks,  // capped — not the full 12
+        generationChunksForModel,  // capped + quality-filtered
         answerContract,
         contractInstruction,
         queryIntent,
@@ -1989,7 +2227,7 @@ ${normalizedOriginal}
       postprocessMs = generationMetrics?.postprocessMs ?? 0;
 
       // Log exact chunk content passed to the model at the end of the pipeline.
-      this.logRetrievedChunkDetails(searchResults, generationChunks, baseSearchResults);
+      this.logRetrievedChunkDetails(searchResults, generationChunksForModel, baseSearchResults);
       console.log('[QUALITY METRICS]', {
         intent_detected: queryIntent,
         contract_pass_before_fix: generationMetrics?.contractPassBeforeFix ?? true,
@@ -2138,9 +2376,6 @@ ${normalizedOriginal}
     console.log('[RAG SETTINGS]', `Temperature: ${settings?.temperature}`);
     console.log('[RAG SETTINGS]', `Max tokens: ${settings?.maxTokens}`);
 
-    const messages = await this.indexedDBServices.messageService.getMessagesBySession(sessionId, session.userId);
-    console.log('[CHAT HISTORY]', `Found ${messages.length} previous messages`);
-
     let fullResponse = '';
 
     const groqModel = ANSWER_GENERATION_MODEL;
@@ -2192,18 +2427,10 @@ ${normalizedOriginal}
     const settings = await this.indexedDBServices.settingsService.getSettings(session.userId);
     console.log('[SIMPLIFIED RAG SETTINGS]', 'Settings loaded for simplified contextual response');
 
-    const messages = await this.indexedDBServices.messageService.getMessagesBySession(sessionId, session.userId);
-    console.log('[SIMPLIFIED CHAT HISTORY]', `Found ${messages.length} previous messages`);
-
     let fullResponse = '';
 
     // Build context-aware prompt for inference service
     const groqModel = ANSWER_GENERATION_MODEL;
-
-    // Construct simplified history and context
-    const recentMessages = messages.slice(-5).map(m =>
-      `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`
-    ).join('\n');
 
     const groqPrompt = `
       <CONTEXT_SOURCES>
@@ -2211,9 +2438,6 @@ ${normalizedOriginal}
       </CONTEXT_SOURCES>
 
       Answer Intent: ${queryIntent}
-
-      Conversation History:
-      ${recentMessages}
 
       New Question: ${content}
     `;
