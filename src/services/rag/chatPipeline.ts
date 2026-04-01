@@ -20,7 +20,7 @@ import type { SimplifiedCitation, SimplifiedCitationGroup, StructuredAnswerRespo
 import type { EmbeddingChunk, VectorSearchResult } from '@/types/embedding';
 import { cosineSimilarity, calculateVectorNorm } from '@/utils/vectorUtils';
 
-const ANSWER_GENERATION_MODEL = 'openai/gpt-oss-120b';
+const ANSWER_GENERATION_MODEL = 'moonshotai/kimi-k2-instruct-0905';
 
 interface RouteSectionCandidate {
   score: number;
