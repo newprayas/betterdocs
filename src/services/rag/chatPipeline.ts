@@ -942,6 +942,14 @@ export class ChatPipeline {
   private isInsufficientEvidenceResponse(text: string): boolean {
     const normalized = text.toLowerCase().replace(/\s+/g, ' ').trim();
     if (!normalized) return false;
+
+    // If the response already contains inline citations, we treat it as a mixed
+    // answer rather than a pure refusal. This prevents section-level
+    // "Not found in provided sources" fallbacks from wiping out valid refs.
+    if (this.hasInlineCitations(normalized)) {
+      return false;
+    }
+
     return (
       normalized.includes('i cannot answer this question based on the provided documents') ||
       normalized.includes('cannot answer this question based on the provided documents') ||
@@ -2586,7 +2594,6 @@ ${normalizedOriginal}
             );
           }
         } else {
-          citationMetadata = [];
           responseForCitationConsistency = citationBackfilledContent;
         }
       }
