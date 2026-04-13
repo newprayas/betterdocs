@@ -19,7 +19,6 @@ import type { ChatStreamEvent } from '../gemini/chatService';
 import type { SimplifiedCitation, SimplifiedCitationGroup, StructuredAnswerResponse } from '@/types/citation';
 import type { EmbeddingChunk, VectorSearchResult } from '@/types/embedding';
 import { cosineSimilarity, calculateVectorNorm } from '@/utils/vectorUtils';
-import { removePlaceholderOnlySections } from '@/utils/markdownSections';
 
 const ANSWER_GENERATION_MODEL = 'openai/gpt-oss-120b';
 
@@ -2203,29 +2202,52 @@ ${normalizedOriginal}
         }
       }
 
-      if (generationChunksForModel.length === 0 && qualityFilteredChunks.evaluated.length > 0) {
-        const fallbackChunk = [...qualityFilteredChunks.evaluated].sort((a, b) => {
-          if (b.quality.score !== a.quality.score) {
-            return b.quality.score - a.quality.score;
-          }
-          return b.similarity - a.similarity;
-        })[0];
+      if (generationChunksForModel.length === 0) {
+        const fallbackFromQuality = qualityFilteredChunks.evaluated.length > 0
+          ? [...qualityFilteredChunks.evaluated].sort((a, b) => {
+              if (b.quality.score !== a.quality.score) {
+                return b.quality.score - a.quality.score;
+              }
+              return b.similarity - a.similarity;
+            })[0]
+          : null;
+        const bestRetrievedChunk = [...searchResults].sort((a, b) => b.similarity - a.similarity)[0] || null;
+        const fallbackChunk = fallbackFromQuality
+          || (bestRetrievedChunk
+            ? ({
+                ...bestRetrievedChunk,
+                quality: {
+                  score: 0,
+                  reasons: ['below_similarity_floor'],
+                  shouldExclude: false,
+                  exclusionType: 'other',
+                } as ChunkQualityAssessment,
+              } as typeof generationChunksForModel[number])
+            : null);
 
-        generationChunksForModel = [fallbackChunk];
-        console.warn(
-          '[CHUNK QUALITY FILTER]',
-          'All candidate chunks were flagged. Keeping the best remaining chunk as a fallback to avoid an empty prompt.',
-          {
-            chunkId: fallbackChunk.chunk.id,
-            page: this.getChunkPageNumber(fallbackChunk.chunk),
-            documentTitle: fallbackChunk.document.title,
-            exclusionType: fallbackChunk.quality.exclusionType,
-            similarity: Number(fallbackChunk.similarity.toFixed(3)),
-            score: Number(fallbackChunk.quality.score.toFixed(3)),
-            reasons: fallbackChunk.quality.reasons,
-            content: fallbackChunk.chunk.content,
-          }
-        );
+        if (fallbackChunk) {
+          generationChunksForModel = [fallbackChunk];
+          console.warn(
+            '[GENERATION FALLBACK]',
+            fallbackFromQuality
+              ? 'All candidate chunks were flagged. Keeping the best remaining chunk to avoid an empty prompt.'
+              : 'No chunk met the similarity floor. Keeping the best retrieved chunk to avoid an empty prompt.',
+            {
+              chunkId: fallbackChunk.chunk.id,
+              page: this.getChunkPageNumber(fallbackChunk.chunk),
+              documentTitle: fallbackChunk.document.title,
+              similarity: Number(fallbackChunk.similarity.toFixed(3)),
+              ...(fallbackFromQuality
+                ? {
+                    exclusionType: fallbackChunk.quality.exclusionType,
+                    score: Number(fallbackChunk.quality.score.toFixed(3)),
+                    reasons: fallbackChunk.quality.reasons,
+                    content: fallbackChunk.chunk.content,
+                  }
+                : {}),
+            }
+          );
+        }
       }
 
       if (qualityFilteredChunks.removed.length > 0) {
@@ -2598,7 +2620,6 @@ ${normalizedOriginal}
           responseForCitationConsistency = citationBackfilledContent;
         }
       }
-      responseForCitationConsistency = removePlaceholderOnlySections(responseForCitationConsistency);
       const responseWithQueryHeader = this.prependAnsweredQueryHeader(
         responseForCitationConsistency,
         content
