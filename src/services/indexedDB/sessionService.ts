@@ -180,6 +180,7 @@ export class SessionService {
       userId,
       name: data.name,
       description: data.description,
+      isDrugSession: data.isDrugSession,
       createdAt: new Date(),
       updatedAt: new Date(),
       documentCount: 0,

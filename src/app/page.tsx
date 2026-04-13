@@ -14,14 +14,16 @@ import { useRouter } from 'next/navigation';
 import type { Session } from '../types';
 import { useAuthGuard } from '@/hooks/useAuthGuard';
 import { getSessionRoute } from '@/utils/sessionRoute';
+import { DRUG_CHAT_SESSION_DESCRIPTION, DRUG_CHAT_SESSION_NAME, isDrugOnlySession } from '@/utils/sessionType';
 
 export default function HomePage() {
   const router = useRouter();
   const { isCheckingAuth, isAuthenticated } = useAuthGuard({ requireAuth: true });
   const { sessions, loadSessions, createSession, isLoading: isSessionLoading, currentSessionId, setCurrentSession, userId } = useSessionStore();
   const { loadDocuments } = useDocumentStore();
-  const { preloadMessages, isPreloading, preloadingProgress } = useChatStore();
+  const { preloadMessages, isPreloading, preloadingProgress, setSessionModeForSession } = useChatStore();
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+  const [isOpeningDrugChat, setIsOpeningDrugChat] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
   const [isAppReady, setIsAppReady] = useState(false);
 
@@ -68,6 +70,27 @@ export default function HomePage() {
   const handleSessionSelect = (session: Session) => {
     setCurrentSession(session);
     router.push(getSessionRoute(session.id));
+  };
+
+  const handleOpenDrugChat = async () => {
+    if (!userId || isOpeningDrugChat) return;
+
+    setIsOpeningDrugChat(true);
+    try {
+      const existingDrugSession = sessions.find((session) => isDrugOnlySession(session));
+      const drugSession = existingDrugSession || await createSession({
+        name: DRUG_CHAT_SESSION_NAME,
+        description: DRUG_CHAT_SESSION_DESCRIPTION,
+        isDrugSession: true,
+      });
+
+      setSessionModeForSession(drugSession.id, 'drug');
+      router.push(getSessionRoute(drugSession.id));
+    } catch (error) {
+      console.error('Failed to open drug chat:', error);
+    } finally {
+      setIsOpeningDrugChat(false);
+    }
   };
 
   return (
@@ -131,7 +154,7 @@ export default function HomePage() {
         )}
 
         {/* Sessions List */}
-        {isMounted && sessions.length === 0 && !isSessionLoading ? (
+        {isMounted && sessions.filter((session) => !isDrugOnlySession(session)).length === 0 && !isSessionLoading ? (
           <EmptyState
             title="No conversations yet"
             description="Start your first conversation to begin chatting with your documents"
@@ -173,6 +196,17 @@ export default function HomePage() {
         isOpen={isCreateDialogOpen}
         onClose={() => setIsCreateDialogOpen(false)}
       />
+
+      <div className="fixed bottom-4 right-4 z-40">
+        <Button
+          onClick={() => void handleOpenDrugChat()}
+          disabled={!isAppReady || isSessionLoading || isOpeningDrugChat}
+          className="!rounded-full shadow-xl px-5 py-3 !bg-emerald-800 hover:!bg-emerald-900 !text-white border border-emerald-950/20"
+        >
+          <span className="mr-2 text-base leading-none" aria-hidden="true">💊</span>
+          Drug Mode
+        </Button>
+      </div>
     </div>
   );
 }

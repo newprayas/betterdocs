@@ -4,6 +4,7 @@ import { useRouter } from 'next/router';
 import { Button } from '../ui/Button';
 import { useSessions } from '../../store';
 import { getRelativeTime } from '../../utils/date';
+import { isDrugOnlySession } from '@/utils/sessionType';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -18,6 +19,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 }) => {
   const router = useRouter();
   const { sessions, loadSessions, createSession, deleteSession, userId } = useSessions();
+  const visibleSessions = sessions.filter((session) => !isDrugOnlySession(session));
 
   React.useEffect(() => {
     if (isOpen && userId) {
@@ -26,7 +28,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   }, [isOpen, loadSessions, userId]);
 
   const handleCreateSession = async () => {
-    const sessionName = `Chat ${sessions.length + 1}`;
+    const sessionName = `Chat ${visibleSessions.length + 1}`;
     await createSession({
       name: sessionName,
       description: 'New chat session',
@@ -118,7 +120,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
           {/* Sessions List */}
           <div className="flex-1 overflow-y-auto">
-            {sessions.length === 0 ? (
+            {visibleSessions.length === 0 ? (
               <div className="p-3 sm:p-4 text-center text-gray-500 dark:text-gray-400">
                 <svg
                   className="h-10 w-10 sm:h-12 sm:w-12 mx-auto mb-2 text-gray-300 dark:text-gray-600"
@@ -138,7 +140,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               </div>
             ) : (
               <nav className="space-y-1 p-2">
-                {sessions.map((session) => (
+                {visibleSessions.map((session) => (
                   <Link
                     key={session.id}
                     href={`/session/${session.id}`}

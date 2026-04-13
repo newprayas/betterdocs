@@ -26,6 +26,7 @@ import { getLibraryBookNameById } from "../../../services/libraryService";
 import { askDrugModeService, drugModeService } from "../../../services/drug";
 import type { Document, SessionChatMode } from "../../../types";
 import { useAuthGuard } from "@/hooks/useAuthGuard";
+import { isDrugOnlySession } from "@/utils/sessionType";
 
 const getDocumentDisplayName = (document: Document): string => {
   if (document.originalPath?.startsWith("library:")) {
@@ -134,6 +135,7 @@ export default function SessionPage() {
     () => documents.filter((document) => document.sessionId === sessionId),
     [documents, sessionId],
   );
+  const isDrugOnlySessionMode = isDrugOnlySession(currentSession);
   const hasDocumentDataForSession =
     loadedSessionId === sessionId && !isLoadingDocuments;
   const documentsLoading = isLoadingDocuments || loadedSessionId !== sessionId;
@@ -163,17 +165,19 @@ export default function SessionPage() {
     ? drugSuggestionPhrases
     : undefined;
   const modeLabel =
-    sessionMode === "drug" ? "Drugs" : "Chat Mode";
+    isDrugOnlySessionMode ? "Drug mode only" : sessionMode === "drug" ? "Drugs" : "Chat Mode";
   const readyTitle =
-    sessionMode === "drug" ? "Drugs mode is ready" : "Start a conversation";
+    isDrugOnlySessionMode ? "Drug mode is ready" : sessionMode === "drug" ? "Drugs mode is ready" : "Start a conversation";
   const readyDescription =
-    sessionMode === "drug"
+    isDrugOnlySessionMode
+      ? "Ask about doses, brands, indications, side-effects, cautions, pregnancy, renal dose, and more."
+      : sessionMode === "drug"
       ? "Ask about doses, brands, indications, side-effects, cautions, pregnancy, renal dose, and more."
       : "Ask a question about your documents to get started";
   const messagePlaceholder =
     isPreparingDrugDataset
       ? "Preparing drug dataset..."
-      : isDrugModeEnabled
+      : isDrugOnlySessionMode || isDrugModeEnabled
         ? "Ask about drugs, doses, brands, indications, side effects..."
         : documentsLoading
             ? "Loading books..."
@@ -395,6 +399,18 @@ export default function SessionPage() {
   }, [activeTab, isSourcesPanelOpen]);
 
   useEffect(() => {
+    if (!sessionId || !isDrugOnlySessionMode) return;
+
+    if (sessionMode !== "drug") {
+      setSessionModeForSession(sessionId, "drug");
+    }
+
+    if (activeTab !== "chat") {
+      setActiveTab("chat");
+    }
+  }, [activeTab, isDrugOnlySessionMode, sessionId, sessionMode, setSessionModeForSession]);
+
+  useEffect(() => {
     if (!isSourcesPanelOpen) return;
 
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -452,6 +468,10 @@ export default function SessionPage() {
   };
 
   const handleSessionModeChange = async (mode: SessionChatMode) => {
+    if (isDrugOnlySessionMode && mode !== "drug") {
+      return;
+    }
+
     console.log("[SESSION MODE]", "Mode changed from session page", {
       sessionId,
       mode,
@@ -682,6 +702,7 @@ export default function SessionPage() {
   };
 
   const handleDrugModeToggle = async () => {
+    if (isDrugOnlySessionMode) return;
     await handleSessionModeChange(sessionMode === "drug" ? "chat" : "drug");
   };
 
@@ -752,7 +773,7 @@ export default function SessionPage() {
       <div className="sticky top-14 sm:top-16 z-30 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 py-3">
         <div className="container mx-auto px-4 sm:px-6 max-w-4xl flex justify-center">
           <TabBar
-            tabs={ChatTabs.ChatDocuments}
+            tabs={isDrugOnlySessionMode ? ChatTabs.DrugOnly : ChatTabs.ChatDocuments}
             activeTab={activeTab}
             onTabChange={setActiveTab}
             variant="pills"
@@ -874,19 +895,25 @@ export default function SessionPage() {
                 <div className="relative flex-shrink-0 mt-4 max-w-4xl mx-auto w-full">
                   {!isReadingSources && (
                     <div className="absolute bottom-full right-2 mb-2 z-20 flex items-center gap-2">
-                      <div className="inline-flex items-center gap-2 rounded-full border border-gray-300 bg-white px-3 py-2 text-xs font-medium text-gray-700 shadow-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 sm:text-sm">
-                        <span>{isPreparingDrugDataset ? "Preparing..." : "Drugs"}</span>
-                        <Switch
-                          checked={isDrugModeEnabled}
-                          onCheckedChange={() => {
-                            void handleDrugModeToggle();
-                          }}
-                          disabled={isPreparingDrugDataset}
-                          size="sm"
-                          aria-label="Toggle drugs mode"
-                        />
-                      </div>
-                      {!isDatasetModeEnabled && (
+                      {isDrugOnlySessionMode ? (
+                        <div className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-700 shadow-sm dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300 sm:text-sm">
+                          <span>Drug mode only</span>
+                        </div>
+                      ) : (
+                        <div className="inline-flex items-center gap-2 rounded-full border border-gray-300 bg-white px-3 py-2 text-xs font-medium text-gray-700 shadow-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 sm:text-sm">
+                          <span>{isPreparingDrugDataset ? "Preparing..." : "Drugs"}</span>
+                          <Switch
+                            checked={isDrugModeEnabled}
+                            onCheckedChange={() => {
+                              void handleDrugModeToggle();
+                            }}
+                            disabled={isPreparingDrugDataset}
+                            size="sm"
+                            aria-label="Toggle drugs mode"
+                          />
+                        </div>
+                      )}
+                      {!isDatasetModeEnabled && !isDrugOnlySessionMode && (
                         <button
                           type="button"
                           onClick={handleSourcesPanelOpen}
@@ -959,19 +986,25 @@ export default function SessionPage() {
                 <div className="relative flex-shrink-0 mt-4 max-w-4xl mx-auto w-full">
                   {!isReadingSources && (
                     <div className="absolute bottom-full right-2 mb-2 z-20 flex items-center gap-2">
-                      <div className="inline-flex items-center gap-2 rounded-full border border-gray-300 bg-white px-3 py-2 text-xs font-medium text-gray-700 shadow-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 sm:text-sm">
-                        <span>{isPreparingDrugDataset ? "Preparing..." : "Drugs"}</span>
-                        <Switch
-                          checked={isDrugModeEnabled}
-                          onCheckedChange={() => {
-                            void handleDrugModeToggle();
-                          }}
-                          disabled={isPreparingDrugDataset}
-                          size="sm"
-                          aria-label="Toggle drugs mode"
-                        />
-                      </div>
-                      {!isDatasetModeEnabled && (
+                      {isDrugOnlySessionMode ? (
+                        <div className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-700 shadow-sm dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300 sm:text-sm">
+                          <span>Drug mode only</span>
+                        </div>
+                      ) : (
+                        <div className="inline-flex items-center gap-2 rounded-full border border-gray-300 bg-white px-3 py-2 text-xs font-medium text-gray-700 shadow-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 sm:text-sm">
+                          <span>{isPreparingDrugDataset ? "Preparing..." : "Drugs"}</span>
+                          <Switch
+                            checked={isDrugModeEnabled}
+                            onCheckedChange={() => {
+                              void handleDrugModeToggle();
+                            }}
+                            disabled={isPreparingDrugDataset}
+                            size="sm"
+                            aria-label="Toggle drugs mode"
+                          />
+                        </div>
+                      )}
+                      {!isDatasetModeEnabled && !isDrugOnlySessionMode && (
                         <button
                           type="button"
                           onClick={handleSourcesPanelOpen}
@@ -1084,7 +1117,7 @@ export default function SessionPage() {
           </div>
         )}
 
-        {activeTab === "documents" && (
+        {!isDrugOnlySessionMode && activeTab === "documents" && (
           <div className="max-w-6xl mx-auto flex-1 overflow-y-auto">
             <div className="space-y-6 pb-6">
               <div className="sticky top-0 bg-gray-50 dark:bg-gray-900 py-6 z-10">
@@ -1171,7 +1204,7 @@ export default function SessionPage() {
         )}
       </div>
 
-      {isSourcesPanelOpen && activeTab === "chat" && (
+      {!isDrugOnlySessionMode && isSourcesPanelOpen && activeTab === "chat" && (
         <div className="fixed inset-0 z-50">
           <button
             type="button"

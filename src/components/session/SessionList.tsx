@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Session } from '../../types';
 import { SessionCard, SessionCardCompact } from './SessionCard';
 import { Button } from '../ui/Button';
@@ -9,6 +9,7 @@ import { useSessionStore, useChatStore } from '../../store';
 import { useRouter } from 'next/navigation';
 import clsx from 'clsx';
 import { getSessionRoute } from '@/utils/sessionRoute';
+import { isDrugOnlySession } from '@/utils/sessionType';
 
 interface SessionListProps {
   variant?: 'grid' | 'list' | 'compact';
@@ -29,20 +30,24 @@ export const SessionList: React.FC<SessionListProps> = ({
   const { sessions, isLoading, createSession } = useSessionStore();
   const { preloadMessages } = useChatStore();
   const router = useRouter();
+  const visibleSessions = useMemo(
+    () => sessions.filter((session) => !isDrugOnlySession(session)),
+    [sessions],
+  );
 
   // Preload messages logic moved to HomePage for initial app loading screen
   useEffect(() => {
-    if (sessions.length > 0) {
+    if (visibleSessions.length > 0) {
       // Prefetch routes for instant navigation
-      const topSessionIds = sessions.slice(0, 5).map(s => s.id);
+      const topSessionIds = visibleSessions.slice(0, 5).map(s => s.id);
       topSessionIds.forEach(id => {
         router.prefetch(getSessionRoute(id));
       });
     }
-  }, [sessions, router]);
+  }, [visibleSessions, router]);
 
   // Filter sessions based on search query
-  const filteredSessions = sessions.filter(session =>
+  const filteredSessions = visibleSessions.filter((session) =>
     session.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     (session.description && session.description.toLowerCase().includes(searchQuery.toLowerCase()))
   );
@@ -92,7 +97,7 @@ export const SessionList: React.FC<SessionListProps> = ({
     );
   }
 
-  if (sessions.length === 0) {
+  if (visibleSessions.length === 0) {
     return (
       <div className={clsx('text-center py-12', className)}>
         <EmptyStates.NoSessions />
@@ -123,7 +128,7 @@ export const SessionList: React.FC<SessionListProps> = ({
   return (
     <div className={className}>
       {/* Search Bar */}
-      {sessions.length > 5 && (
+      {visibleSessions.length > 5 && (
         <div className="mb-6">
           <Input
             type="search"
@@ -222,7 +227,7 @@ export const SessionList: React.FC<SessionListProps> = ({
         {/* Session Count */}
         {searchQuery && (
           <div className="mt-4 text-sm text-gray-500 dark:text-gray-400 text-center">
-            Showing {filteredSessions.length} of {sessions.length} sessions
+            Showing {filteredSessions.length} of {visibleSessions.length} sessions
           </div>
         )}
       </div>
@@ -237,6 +242,7 @@ export const SessionListSidebar: React.FC<{
 }> = ({ onSessionSelect, className }) => {
   const { sessions, isLoading, createSession } = useSessionStore();
   const router = useRouter();
+  const visibleSessions = sessions.filter((session) => !isDrugOnlySession(session));
 
   const handleSessionClick = (session: Session) => {
     if (onSessionSelect) {
@@ -297,13 +303,13 @@ export const SessionListSidebar: React.FC<{
 
       {/* Sessions */}
       <div className="max-h-96 overflow-y-auto">
-        {sessions.length === 0 ? (
+        {visibleSessions.length === 0 ? (
           <div className="p-4 text-center">
             <EmptyStates.NoSessions />
           </div>
         ) : (
           <div className="p-2">
-            {sessions.map((session) => (
+            {visibleSessions.map((session) => (
               <SessionCardCompact
                 key={session.id}
                 session={session}
