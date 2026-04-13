@@ -6,18 +6,17 @@ import { useSettingsStore, useSessionStore, useDocumentStore, useChatStore } fro
 import { createClient } from '../utils/supabase/client';
 import { userIdLogger } from '../utils/userIdDebugLogger';
 import { storageManager } from '../services/storage/storageManager';
-import { getIndexedDBServices } from '../services/indexedDB';
 import { SessionPreparationOverlay } from '../components/ui';
 import { Capacitor } from '@capacitor/core';
-
 const RESUME_STALE_HIDDEN_MS = 15000;
 const STALE_PIPELINE_AGE_MS = 90000;
 const AUTH_RECOVERY_RETRIES = 3;
 const AUTH_RECOVERY_BASE_DELAY_MS = 400;
-const ORPHAN_CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const CLEANUP_FAKE_DURATION_MS = 10000;
 const CLEANUP_FAKE_CAP = 92;
 const CLEANUP_CREEP_CAP = 97;
+const CLEANUP_START_EVENT = 'rag:orphan-cleanup-start';
+const CLEANUP_END_EVENT = 'rag:orphan-cleanup-end';
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -38,7 +37,6 @@ export function AppInitializer() {
   const supabaseRef = useRef(createClient());
   const hydratedUserIdRef = useRef<string | null>(null);
   const hydratingUserIdRef = useRef<string | null>(null);
-  const startupCleanupUserRef = useRef<string | null>(null);
   const isMountedRef = useRef(true);
 
   // Ensure we only run client-side code on the client
@@ -53,6 +51,31 @@ export function AppInitializer() {
 
     return () => {
       document.documentElement.classList.remove('native-capacitor');
+    };
+  }, [isClient]);
+
+  useEffect(() => {
+    if (!isClient) return;
+
+    const handleCleanupStart = () => {
+      if (!isMountedRef.current) return;
+      setShowCleanupOverlay(true);
+      setCleanupProgress(0);
+      setIsCleanupReady(false);
+      console.log('[APP INIT] Cleanup overlay shown');
+    };
+
+    const handleCleanupEnd = () => {
+      if (!isMountedRef.current) return;
+      setIsCleanupReady(true);
+    };
+
+    window.addEventListener(CLEANUP_START_EVENT, handleCleanupStart);
+    window.addEventListener(CLEANUP_END_EVENT, handleCleanupEnd);
+
+    return () => {
+      window.removeEventListener(CLEANUP_START_EVENT, handleCleanupStart);
+      window.removeEventListener(CLEANUP_END_EVENT, handleCleanupEnd);
     };
   }, [isClient]);
   useEffect(() => {
@@ -78,46 +101,6 @@ export function AppInitializer() {
 
       userIdLogger.logStoreUpdate('DocumentStore', userId, `setUserId (${reason})`);
       setDocumentUserId(userId);
-    };
-
-    const maybeRunStartupCleanup = async (userId: string): Promise<void> => {
-      const cleanupKey = `orphan_cleanup_last_run_v1:${userId}`;
-      const now = Date.now();
-
-      const lastRunRaw = window.localStorage.getItem(cleanupKey);
-      const lastRun = lastRunRaw ? Number(lastRunRaw) : 0;
-      const dailyDue = !Number.isFinite(lastRun) || now - lastRun >= ORPHAN_CLEANUP_INTERVAL_MS;
-
-      if (!dailyDue) {
-        console.log('[APP INIT] Startup orphan cleanup skipped (not due)', {
-          lastRun,
-          hoursSinceLastRun: lastRun > 0 ? ((now - lastRun) / 3600000).toFixed(2) : 'n/a'
-        });
-        return;
-      }
-
-      if (isMountedRef.current) {
-        setShowCleanupOverlay(true);
-        setCleanupProgress(0);
-        setIsCleanupReady(false);
-        console.log('[APP INIT] Cleanup overlay shown');
-      }
-
-      try {
-        const { sessionService } = getIndexedDBServices();
-        const cleanupSummary = await sessionService.cleanupOrphanedData();
-        window.localStorage.setItem(cleanupKey, String(now));
-        console.log('[APP INIT] Startup orphan cleanup complete:', {
-          reason: 'daily',
-          ...cleanupSummary
-        });
-      } catch (cleanupError) {
-        console.warn('[APP INIT] Startup orphan cleanup failed:', cleanupError);
-      } finally {
-        if (isMountedRef.current) {
-          setIsCleanupReady(true);
-        }
-      }
     };
 
     const hydrateUserData = async (userId: string, reason: string) => {
@@ -147,13 +130,6 @@ export function AppInitializer() {
             }
           })
         ]);
-
-        if (startupCleanupUserRef.current !== userId) {
-          startupCleanupUserRef.current = userId;
-          setTimeout(async () => {
-            await maybeRunStartupCleanup(userId);
-          }, 1500);
-        }
 
         hydratedUserIdRef.current = userId;
       } finally {
@@ -206,7 +182,6 @@ export function AppInitializer() {
 
         hydratedUserIdRef.current = null;
         hydratingUserIdRef.current = null;
-        startupCleanupUserRef.current = null;
         console.log('[APP INIT]', 'User data cleared');
         redirectToLoginIfNeeded();
       }
@@ -242,7 +217,6 @@ export function AppInitializer() {
       clearDocuments();
       hydratedUserIdRef.current = null;
       hydratingUserIdRef.current = null;
-      startupCleanupUserRef.current = null;
       redirectToLoginIfNeeded();
     };
 

@@ -10,6 +10,7 @@ import { brandExtractionService } from '../services/drug';
 import { groqService } from '../services/groq/groqService';
 import { useSessionStore } from './sessionStore';
 import { userIdLogger } from '../utils/userIdDebugLogger';
+import { runOrphanCleanupIfDue } from '../services/orphanCleanupService';
 import type { SessionChatMode } from '@/types';
 
 const PRELOAD_SESSION_TIMEOUT_MS = 4000;
@@ -415,6 +416,11 @@ export const useChatStore = create<ChatStore>()(
           const rawSessionMode = get().sessionModeBySession[sessionId] || 'chat';
           const sessionMode: SessionChatMode =
             rawSessionMode === 'ask-drug' ? 'drug' : rawSessionMode;
+
+          if (currentUserId && sessionMode === 'chat') {
+            await runOrphanCleanupIfDue(currentUserId);
+          }
+
           const priorDrugContext = get().drugContextBySession[sessionId] || null;
           const skipNextDrugFollowUpRewrite =
             get().skipNextDrugFollowUpRewriteBySession[sessionId] || false;
