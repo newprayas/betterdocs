@@ -14,6 +14,7 @@ import {
   isDrugActionHref,
   parseDrugActionHref,
 } from "../../services/drug/drugActionLinks";
+import { removePlaceholderOnlySections } from "../../utils/markdownSections";
 
 interface MessageBubbleProps {
   message: Message;
@@ -67,9 +68,10 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
         // Normalize non-breaking characters that can cause overflow in narrow message bubbles.
         .replace(/[\u00A0\u2007\u202F]/g, " ")
         .replace(/\u2011/g, "-");
+      const filteredContent = removePlaceholderOnlySections(normalizedContent);
 
       if (!citations || citations.length === 0 || isUser) {
-        return normalizedContent;
+        return filteredContent;
       }
 
       const citationMap = new Map<number, Citation>();
@@ -77,7 +79,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
         citationMap.set(index + 1, citation);
       });
 
-      let processed = normalizedContent;
+      let processed = filteredContent;
 
       processed = processed.replace(/\[citation:(\d+)\]/g, (match, num) => {
         const citationNum = parseInt(num);

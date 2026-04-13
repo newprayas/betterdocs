@@ -19,6 +19,7 @@ import type { ChatStreamEvent } from '../gemini/chatService';
 import type { SimplifiedCitation, SimplifiedCitationGroup, StructuredAnswerResponse } from '@/types/citation';
 import type { EmbeddingChunk, VectorSearchResult } from '@/types/embedding';
 import { cosineSimilarity, calculateVectorNorm } from '@/utils/vectorUtils';
+import { removePlaceholderOnlySections } from '@/utils/markdownSections';
 
 const ANSWER_GENERATION_MODEL = 'openai/gpt-oss-120b';
 
@@ -2597,6 +2598,7 @@ ${normalizedOriginal}
           responseForCitationConsistency = citationBackfilledContent;
         }
       }
+      responseForCitationConsistency = removePlaceholderOnlySections(responseForCitationConsistency);
       const responseWithQueryHeader = this.prependAnsweredQueryHeader(
         responseForCitationConsistency,
         content

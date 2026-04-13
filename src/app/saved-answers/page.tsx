@@ -13,6 +13,7 @@ import { useConfirmDialog } from '@/components/common/ConfirmDialog';
 import { useSavedAnswersStore, useSessionStore } from '@/store';
 import { ensureDate } from '@/utils/date';
 import { fuzzyFilter } from '@/utils/fuzzySearch';
+import { removePlaceholderOnlySections } from '@/utils/markdownSections';
 import type { SavedAnswer } from '@/types';
 
 const formatSavedAnswerDate = (date: Date | string): string =>
@@ -27,10 +28,11 @@ const SavedAnswerCard: React.FC<{
   onRemove: (answer: SavedAnswer) => void;
 }> = ({ answer, onRemove }) => {
   const [isCopied, setIsCopied] = useState(false);
+  const displayContent = removePlaceholderOnlySections(answer.content);
 
   const handleCopy = async () => {
     try {
-      await navigator.clipboard.writeText(answer.content);
+      await navigator.clipboard.writeText(displayContent);
       setIsCopied(true);
       window.setTimeout(() => setIsCopied(false), 1600);
     } catch (error) {
@@ -97,7 +99,7 @@ const SavedAnswerCard: React.FC<{
       <div className="px-4 sm:px-5 py-4">
         <div className="saved-answer-markdown prose prose-sm max-w-none break-words text-gray-900 dark:text-gray-100 prose-p:text-gray-800 dark:prose-p:text-gray-200 prose-li:text-gray-800 dark:prose-li:text-gray-200 prose-strong:text-gray-900 dark:prose-strong:text-white prose-headings:text-gray-900 dark:prose-headings:text-white prose-a:text-sky-700 dark:prose-a:text-sky-400">
           <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
-            {answer.content}
+            {displayContent}
           </ReactMarkdown>
         </div>
       </div>
@@ -168,7 +170,7 @@ export default function SavedAnswersPage() {
     return fuzzyFilter(
       scopedAnswers,
       searchQuery,
-      (answer) => `${answer.sessionName} ${answer.content}`,
+      (answer) => `${answer.sessionName} ${removePlaceholderOnlySections(answer.content)}`,
     );
   }, [savedAnswers, searchQuery, selectedSessionId]);
 
