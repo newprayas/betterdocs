@@ -7,6 +7,7 @@ const isPlaceholderLine = (line: string): boolean => {
     .trim()
     .replace(/^[-*•]\s*/, '')
     .replace(/^>\s*/, '')
+    .replace(/\s*\[\d+(?:,\s*\d+)*\]\s*$/g, '')
     .replace(/\s+/g, ' ')
     .toLowerCase();
 
