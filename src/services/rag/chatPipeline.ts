@@ -2705,6 +2705,9 @@ Output format requirements:
 - If a source sentence or paragraph contains multiple connected qualifiers, keep them together in one claim or subsection when they are all explicitly present.
 - Use plain bullet points for claims.
 - WRITE FULL, DESCRIPTIVE BULLETS. Never write single-word bullets like "Pain" or "Infection". Instead write "Pain occurs early in the disease process" or "Infection risk increases with immunosuppression." Single-word bullets are strictly forbidden.
+- Use subheadings when the retrieved chunks contain multiple related groups of facts.
+- Prefer grouping bullets from the same page or same source cluster under one short subheading.
+- Do not flatten everything into one long bullet list if the answer naturally has sections.
 - Keep subheadings short and specific.
 - If a required section is missing from sources, include the section and write "Not found in provided sources." under it.
 - Be thorough and complete. Do not stop after the first few points if the source has more detail.

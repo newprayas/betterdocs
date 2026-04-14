@@ -138,7 +138,7 @@ export function getAnswerContract(intent: QueryIntent): AnswerContract {
         intent: 'generic_fallback',
         label: 'Structured Answer',
         sections: [
-          { title: 'Key Points', guidance: 'Answer the question directly and include the source-backed details in the same section. Do not repeat the same facts in a separate direct-answer block.' },
+          { title: 'Key Points', guidance: 'Answer the question directly and include the source-backed details in the same section. Break the answer into short subheadings when the retrieved chunks form different related groups. Do not repeat the same facts in a separate direct-answer block.' },
         ],
       };
   }
@@ -165,6 +165,9 @@ ${HIGH_SENSITIVITY_INSTRUCTION}
 - Do NOT include citation markers or reference labels.
 - Use the contract section titles for the top-level sections.
 - Add subsections when the source naturally breaks into groups, categories, or subtypes.
+- Use subheadings aggressively when the answer has multiple related clusters of facts.
+- Prefer grouping bullet points from the same page or same source cluster under one short subheading.
+- Do not flatten multiple source clusters into one long bullet list.
 - Use the same page and adjacent pages (page N, N-1, N+1) as a continuity signal: if the topic is clearly continuing, keep those facts under the same heading or subsection.
 - If the source heading or section cue changes, start a new subsection instead of merging the ideas.
 - Prefer smaller, source-faithful subsections over one large mixed subsection.
