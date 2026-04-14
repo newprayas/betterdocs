@@ -2,6 +2,7 @@ export type QueryIntent =
   | 'definition'
   | 'causes'
   | 'classification_types'
+  | 'position_location'
   | 'risk_factors'
   | 'difference_between'
   | 'investigations'
@@ -95,6 +96,22 @@ const INTENT_RULES: IntentRule[] = [
       /\btypes?\s+of\b/i,
       /\btypes?\b/i,
       /\bsubtypes?\b/i,
+    ],
+  },
+  {
+    intent: 'position_location',
+    patterns: [
+      /\bpositions?\s+of\b/i,
+      /\blocations?\s+of\b/i,
+      /\banatomical\s+positions?\b/i,
+      /\bwhere\s+(?:is|are)\b/i,
+      /\bwhere\s+does\b/i,
+      /\blocated\b/i,
+      /\bsituated\b/i,
+      /\bsite\s+of\b/i,
+      /\bsites\s+of\b/i,
+      /\banatomical\s+location\b/i,
+      /\banatomical\s+locations\b/i,
     ],
   },
   {

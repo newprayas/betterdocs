@@ -32,6 +32,8 @@ interface ContractCheck {
 const DEFAULT_PLACEHOLDER = '- Not found in provided sources.';
 const THOROUGHNESS_INSTRUCTION = '- Be thorough and complete. If the source contains multiple relevant points, include all of them rather than stopping early.';
 const HIGH_SENSITIVITY_INSTRUCTION = '- Read each chunk carefully and include all relevant information from every chunk that supports the answer. Be sensitive to small but important details.';
+const RELATED_DETAIL_INSTRUCTION = '- If a retrieved chunk contains extra relevant detail beyond the exact question, include that detail too under a suitable heading or subheading, as long as it is explicitly present in the source.';
+const STRUCTURED_EXTRACTION_INSTRUCTION = '- If a chunk contains a table, figure, summary box, scoring system, list, or criteria set, unpack all relevant rows, items, components, and thresholds from it instead of only naming the heading or headline.';
 
 export function getAnswerContract(intent: QueryIntent): AnswerContract {
   switch (intent) {
@@ -160,6 +162,8 @@ Use this structure:
 Rules:
 ${THOROUGHNESS_INSTRUCTION}
 ${HIGH_SENSITIVITY_INSTRUCTION}
+${RELATED_DETAIL_INSTRUCTION}
+${STRUCTURED_EXTRACTION_INSTRUCTION}
 - Use ONLY the provided context.
 - Do NOT include markdown, code fences, or commentary.
 - Do NOT include citation markers or reference labels.

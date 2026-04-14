@@ -579,7 +579,7 @@ export class VectorSearchService {
         .sort((a, b) => b.similarity - a.similarity)
         .slice(0, maxResults);
 
-      const pageFirstResults = this.prioritizePageClusters(rankedResults, maxResults, 3);
+      const pageFirstResults = this.prioritizePageClusters(rankedResults, maxResults, 3, queryText);
       const postProcessed = postProcessRetrievalResults(pageFirstResults, { maxResults, maxPerPageCluster: 3 });
       console.log('[RETRIEVAL POSTPROCESS][HYBRID]', postProcessed.telemetry);
       return postProcessed.results;
@@ -750,6 +750,7 @@ export class VectorSearchService {
 
     const wantsStructuredContent =
       /\b(table|figure|fig\.|summary box|box|caption|criteria list|criteria|threshold|trigger|indication|indications|level|levels)\b/.test(queryLower) ||
+      /\b(position|positions|location|locations|anatomical|anatomy|where\s+(?:is|are)|site\s+of|sites\s+of|located|situated)\b/.test(queryLower) ||
       /\b(when|what|how|which|where|why)\b/.test(queryLower);
 
     if (!wantsStructuredContent) {
@@ -759,7 +760,10 @@ export class VectorSearchService {
     const hasStructuredChunk =
       /\b(table|figure|fig\.|summary box|box|caption|criteria list|criteria)\b/.test(contentLower);
 
-    if (!hasStructuredChunk) {
+    const hasPositionalChunk =
+      /\b(figure|fig\.|summary box|box|caption|overview|intro(?:duction)?|anatomy|anatomical|position|positions|location|locations)\b/.test(contentLower);
+
+    if (!hasStructuredChunk && !(/\b(position|positions|location|locations|anatomical|anatomy|where\s+(?:is|are)|site\s+of|sites\s+of|located|situated)\b/.test(queryLower) && hasPositionalChunk)) {
       return 0;
     }
 
@@ -772,6 +776,12 @@ export class VectorSearchService {
 
     if (hasExactThresholdSignals) {
       bonus += 0.12;
+    }
+
+    const wantsPositionalStructure =
+      /\b(position|positions|location|locations|anatomical|anatomy|where\s+(?:is|are)|site\s+of|sites\s+of|located|situated)\b/.test(queryLower);
+    if (wantsPositionalStructure && hasPositionalChunk) {
+      bonus += 0.1;
     }
 
     const hasDenseNumericSignals = (contentLower.match(/\b\d+(?:\.\d+)?\b/g) || []).length >= 3;
@@ -868,7 +878,7 @@ export class VectorSearchService {
         finalVectorWeight,
         finalTextWeight
       );
-      const pageFirstResults = this.prioritizePageClusters(combinedResults, maxResults, 3);
+      const pageFirstResults = this.prioritizePageClusters(combinedResults, maxResults, 3, queryText);
       const postProcessed = postProcessRetrievalResults(pageFirstResults, { maxResults, maxPerPageCluster: 3 });
       console.log('[RETRIEVAL POSTPROCESS][HYBRID_ENHANCED]', postProcessed.telemetry);
       return postProcessed.results;
@@ -976,7 +986,8 @@ export class VectorSearchService {
   private prioritizePageClusters(
     results: VectorSearchResult[],
     maxResults: number,
-    maxPerPageCluster: number = 3
+    maxPerPageCluster: number = 3,
+    queryText: string = ''
   ): VectorSearchResult[] {
     if (results.length === 0) {
       return [];
@@ -1020,7 +1031,13 @@ export class VectorSearchService {
         ? 0.14
         : 0;
       const pageContinuationBonus = sortedChunks.length > 1 ? 0.04 : 0;
-      cluster.score = Math.min(1, bestSimilarity + chunkCountBonus + structuralBonus + pageContinuationBonus);
+      const positionalBonus = this.queryWantsPositionalStructure(queryText) && sortedChunks.some((chunk) => this.hasPositionalSignals(chunk))
+        ? 0.12
+        : 0;
+      cluster.score = Math.min(
+        1,
+        bestSimilarity + chunkCountBonus + structuralBonus + pageContinuationBonus + positionalBonus
+      );
     }
 
     const rankedClusters = Array.from(pageMap.values())
@@ -1055,6 +1072,41 @@ export class VectorSearchService {
       /\bcaption\b/.test(combined) ||
       /\bcriteria list\b/.test(combined) ||
       /\bcriteria\b/.test(combined)
+    );
+  }
+
+  private hasPositionalSignals(result: VectorSearchResult): boolean {
+    const combined = `${result.document.title || ''}\n${result.chunk.source || ''}\n${result.chunk.content || ''}`.toLowerCase();
+    return (
+      /\bfigure\b/.test(combined) ||
+      /\bfig\b/.test(combined) ||
+      /\bcaption\b/.test(combined) ||
+      /\banatomy\b/.test(combined) ||
+      /\banatomical\b/.test(combined) ||
+      /\bposition\b/.test(combined) ||
+      /\bpositions\b/.test(combined) ||
+      /\blocation\b/.test(combined) ||
+      /\blocations\b/.test(combined) ||
+      /\boverview\b/.test(combined) ||
+      /\bintroduction\b/.test(combined) ||
+      /\bintro\b/.test(combined)
+    );
+  }
+
+  private queryWantsPositionalStructure(queryText: string): boolean {
+    const combined = (queryText || '').toLowerCase();
+    return (
+      /\bposition\b/.test(combined) ||
+      /\bpositions\b/.test(combined) ||
+      /\blocation\b/.test(combined) ||
+      /\blocations\b/.test(combined) ||
+      /\banatomical\b/.test(combined) ||
+      /\banatomy\b/.test(combined) ||
+      /\bwhere\s+(?:is|are)\b/.test(combined) ||
+      /\bsite\s+of\b/.test(combined) ||
+      /\bsites\s+of\b/.test(combined) ||
+      /\blocated\b/.test(combined) ||
+      /\bsituated\b/.test(combined)
     );
   }
 

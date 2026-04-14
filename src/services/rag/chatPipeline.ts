@@ -515,7 +515,7 @@ export class ChatPipeline {
     const normalized = (query || '').toLowerCase();
     const wordCount = normalized.split(/\s+/).filter(Boolean).length;
 
-    if (queryIntent !== 'generic_fallback') {
+    if (queryIntent !== 'generic_fallback' && queryIntent !== 'position_location') {
       return false;
     }
 
@@ -536,6 +536,10 @@ export class ChatPipeline {
 
     if (/\b(blood|transfus|haemoglobin|hemoglobin|hb|anaemi|anemi)\b/.test(normalized)) {
       hints.push('Hb threshold', 'transfusion criteria', 'g/dL');
+    }
+
+    if (queryIntent === 'position_location' || /\b(position|positions|location|locations|anatomical|where)\b/.test(normalized)) {
+      hints.push('anatomy', 'anatomical position', 'location', 'figure', 'figure caption', 'overview');
     }
 
     hints.push('table', 'summary box', 'figure caption', 'criteria list');
@@ -1301,6 +1305,25 @@ export class ChatPipeline {
       reasons.push('toc_or_index_like');
     }
 
+    if (indexEntryMatches.length >= 3 && pageLikeNumberHits >= 6) {
+      penalty += 0.35;
+      reasons.push('index_style_entry_density');
+    }
+
+    if (pageLikeNumberHits >= 12 && words.length >= 35) {
+      penalty += 0.25;
+      reasons.push('index_like_page_density');
+    }
+
+    const isClearlyIndexLike =
+      indexEntryMatches.length >= 6 ||
+      (commaPageHits >= 4 && pageLikeNumberHits >= 8) ||
+      (pageLikeNumberHits >= 10 && sentences.length <= 1 && words.length >= 35);
+    if (isClearlyIndexLike) {
+      penalty += 0.6;
+      reasons.push('clearly_index_like');
+    }
+
     const score = Math.max(0, 1 - penalty);
     const shouldExclude = score < 0.45 && reasons.length > 0;
     const exclusionType = this.getChunkExclusionType(reasons);
@@ -1325,6 +1348,9 @@ export class ChatPipeline {
       'high_page_number_density',
       'many_short_lines',
       'toc_or_index_like',
+      'index_style_entry_density',
+      'index_like_page_density',
+      'clearly_index_like',
     ];
     const captionSignals = [
       'figure_or_table_caption_only',
@@ -1352,8 +1378,32 @@ export class ChatPipeline {
       quality: this.assessChunkQuality(chunk.chunk),
     }));
 
-    const removed = evaluated.filter((chunk) => chunk.quality.shouldExclude);
-    const kept = evaluated.filter((chunk) => !chunk.quality.shouldExclude);
+    const kept: Array<VectorSearchResult & { quality: ChunkQualityAssessment }> = [];
+    const removed: Array<VectorSearchResult & { quality: ChunkQualityAssessment }> = [];
+
+    for (const chunk of evaluated) {
+      const shouldKeepStructured = this.shouldRescueStructuredChunk(chunk);
+      const shouldAlwaysDrop = this.shouldAlwaysDropAsJunk(chunk);
+
+      if ((chunk.quality.shouldExclude && !shouldKeepStructured) || shouldAlwaysDrop) {
+        removed.push(chunk);
+        continue;
+      }
+
+      if (chunk.quality.shouldExclude && shouldKeepStructured) {
+        console.log('[CHUNK QUALITY FILTER]', 'Keeping structured chunk despite low quality score.', {
+          chunkId: chunk.chunk.id,
+          page: this.getChunkPageNumber(chunk.chunk),
+          documentTitle: chunk.document.title,
+          exclusionType: chunk.quality.exclusionType,
+          similarity: Number(chunk.similarity.toFixed(3)),
+          score: Number(chunk.quality.score.toFixed(3)),
+          reasons: chunk.quality.reasons,
+        });
+      }
+
+      kept.push(chunk);
+    }
 
     if (removed.length > 0) {
       console.log(
@@ -1382,6 +1432,209 @@ export class ChatPipeline {
       kept,
       removed,
     };
+  }
+
+  private shouldAlwaysDropAsJunk(
+    chunk: VectorSearchResult & { quality: ChunkQualityAssessment }
+  ): boolean {
+    if (chunk.quality.exclusionType === 'bibliography') {
+      return true;
+    }
+
+    const content = `${chunk.document.title || ''}\n${chunk.chunk.source || ''}\n${chunk.chunk.content || ''}`.toLowerCase();
+    const numericHits = (content.match(/\b\d{3,4}\b/g) || []).length;
+    const commaPageHits = (content.match(/,\s*\d{1,4}(?:\b|,)/g) || []).length;
+    const sentenceBreaks = (content.match(/[.!?]/g) || []).length;
+    const hasStrongStructuredRows = this.hasRichStructuredRows(content);
+
+    const clearlyIndexLike =
+      chunk.quality.exclusionType === 'index' ||
+      chunk.quality.reasons.includes('clearly_index_like') ||
+      (numericHits >= 8 && commaPageHits >= 3 && sentenceBreaks <= 1);
+
+    return clearlyIndexLike && !hasStrongStructuredRows;
+  }
+
+  private hasRichStructuredRows(content: string): boolean {
+    const rowLikeMatches =
+      content.match(/\b[a-z][a-z\s()/-]{2,40}\s+\d+(?:\.\d+)?\b/g) || [];
+    const numericHits = (content.match(/\b\d+(?:\.\d+)?\b/g) || []).length;
+    return (
+      rowLikeMatches.length >= 4 ||
+      (
+        numericHits >= 4 &&
+        /\b(symptoms?|signs?|laboratory|laboratories|total|score|scores|criteria|thresholds?)\b/.test(content)
+      )
+    );
+  }
+
+  private shouldRescueStructuredChunk(
+    chunk: VectorSearchResult & { quality: ChunkQualityAssessment }
+  ): boolean {
+    const content = `${chunk.document.title || ''}\n${chunk.chunk.source || ''}\n${chunk.chunk.content || ''}`.toLowerCase();
+    const hasTableLikeStructure =
+      /\b(table|figure|fig\.|summary box|box|caption|criteria list|criteria)\b/.test(content);
+    const hasScoringStructure =
+      /\b(score|scores|scoring system|scoring systems|alvarado|mantrels)\b/.test(content) &&
+      /\b\d+\b/.test(content);
+    const hasThresholdStructure =
+      /\b(threshold|indication|indications|level|levels)\b/.test(content) &&
+      /\b\d+\b/.test(content);
+    const hasHighValueStructure = hasTableLikeStructure || hasScoringStructure || hasThresholdStructure;
+
+    if (!hasHighValueStructure) {
+      return false;
+    }
+
+    const hasRichStructuredRows = this.hasRichStructuredRows(content);
+
+    if (chunk.quality.exclusionType === 'bibliography') {
+      return false;
+    }
+
+    if (chunk.quality.exclusionType === 'index') {
+      return hasRichStructuredRows && hasScoringStructure;
+    }
+
+    if (chunk.quality.exclusionType === 'caption-only') {
+      return hasScoringStructure || hasThresholdStructure || hasRichStructuredRows;
+    }
+
+    return true;
+  }
+
+  private rankGenerationCandidate(
+    chunk: VectorSearchResult & { quality?: ChunkQualityAssessment }
+  ): number {
+    const content = `${chunk.document.title || ''}\n${chunk.chunk.source || ''}\n${chunk.chunk.content || ''}`.toLowerCase();
+    const baseSimilarity = chunk.similarity || 0;
+
+    const hasTableLikeStructure =
+      /\b(table|figure|fig\.|summary box|box|caption|criteria list|criteria)\b/.test(content);
+    const hasScoringStructure =
+      /\b(score|scores|scoring system|scoring systems|alvarado|mantrels)\b/.test(content) &&
+      /\b\d+\b/.test(content);
+    const hasThresholdStructure =
+      /\b(threshold|indication|indications|level|levels)\b/.test(content) &&
+      /\b\d+\b/.test(content);
+
+    let bonus = 0;
+    if (hasTableLikeStructure) bonus += 0.18;
+    if (hasScoringStructure) bonus += 0.16;
+    if (hasThresholdStructure) bonus += 0.08;
+    if (this.shouldRescueStructuredChunk({
+      ...chunk,
+      quality: chunk.quality || {
+        score: 1,
+        reasons: [],
+        shouldExclude: false,
+        exclusionType: 'other',
+      }
+    })) {
+      bonus += 0.1;
+    }
+
+    const qualityScore = chunk.quality?.score ?? 1;
+    return baseSimilarity + bonus + (qualityScore * 0.02);
+  }
+
+  private isHighValueStructuredGenerationChunk(
+    chunk: VectorSearchResult & { quality?: ChunkQualityAssessment }
+  ): boolean {
+    const content = `${chunk.document.title || ''}\n${chunk.chunk.source || ''}\n${chunk.chunk.content || ''}`.toLowerCase();
+    return (
+      /\b(table|figure|fig\.|summary box|box|caption|criteria list|criteria)\b/.test(content) ||
+      /\b(score|scores|scoring system|scoring systems|alvarado|mantrels)\b/.test(content) ||
+      /\b(threshold|indication|indications|level|levels)\b/.test(content)
+    );
+  }
+
+  private selectGenerationChunksByPageCluster(
+    chunks: Array<VectorSearchResult & { quality: ChunkQualityAssessment }>,
+    maxResults: number
+  ): Array<VectorSearchResult & { quality: ChunkQualityAssessment }> {
+    if (chunks.length === 0 || maxResults <= 0) {
+      return [];
+    }
+
+    type Cluster = {
+      key: string;
+      documentId: string;
+      page: number | null;
+      chunks: Array<VectorSearchResult & { quality: ChunkQualityAssessment }>;
+      score: number;
+      hasStructuredChunk: boolean;
+    };
+
+    const clusters = new Map<string, Cluster>();
+    for (const chunk of chunks) {
+      const page = this.getChunkPageNumber(chunk.chunk);
+      const key = `${chunk.document.id}:${page ?? 'unknown'}`;
+      const existing = clusters.get(key);
+      if (existing) {
+        existing.chunks.push(chunk);
+        existing.hasStructuredChunk = existing.hasStructuredChunk || this.isHighValueStructuredGenerationChunk(chunk);
+        continue;
+      }
+
+      clusters.set(key, {
+        key,
+        documentId: chunk.document.id,
+        page,
+        chunks: [chunk],
+        score: 0,
+        hasStructuredChunk: this.isHighValueStructuredGenerationChunk(chunk),
+      });
+    }
+
+    for (const cluster of clusters.values()) {
+      const sortedChunks = [...cluster.chunks].sort(
+        (a, b) => this.rankGenerationCandidate(b) - this.rankGenerationCandidate(a)
+      );
+      const bestScore = this.rankGenerationCandidate(sortedChunks[0]);
+      const companionBonus = Math.min(sortedChunks.length - 1, 2) * 0.08;
+      const structuredBonus = cluster.hasStructuredChunk ? 0.12 : 0;
+      cluster.score = bestScore + companionBonus + structuredBonus;
+      cluster.chunks = sortedChunks;
+    }
+
+    const rankedClusters = Array.from(clusters.values())
+      .sort((a, b) => {
+        if (b.score !== a.score) return b.score - a.score;
+        if (a.documentId !== b.documentId) return a.documentId.localeCompare(b.documentId);
+        return (a.page ?? 0) - (b.page ?? 0);
+      });
+
+    const selected: Array<VectorSearchResult & { quality: ChunkQualityAssessment }> = [];
+    const usedChunkIds = new Set<string>();
+
+    for (const cluster of rankedClusters) {
+      if (selected.length >= maxResults) {
+        break;
+      }
+
+      const remainingSlots = maxResults - selected.length;
+      const takeCount = cluster.hasStructuredChunk
+        ? Math.min(2, remainingSlots, cluster.chunks.length)
+        : Math.min(1, remainingSlots, cluster.chunks.length);
+
+      for (const chunk of cluster.chunks.slice(0, takeCount)) {
+        if (usedChunkIds.has(chunk.chunk.id)) continue;
+        selected.push(chunk);
+        usedChunkIds.add(chunk.chunk.id);
+      }
+    }
+
+    if (selected.length < maxResults) {
+      for (const chunk of chunks) {
+        if (selected.length >= maxResults) break;
+        if (usedChunkIds.has(chunk.chunk.id)) continue;
+        selected.push(chunk);
+        usedChunkIds.add(chunk.chunk.id);
+      }
+    }
+
+    return selected.sort((a, b) => this.rankGenerationCandidate(b) - this.rankGenerationCandidate(a));
   }
 
   private classifyRetrievedChunkForDebug(
@@ -1668,6 +1921,7 @@ export class ChatPipeline {
     baseResults: VectorSearchResult[],
     sessionEmbeddings: EmbeddingChunk[],
     queryEmbedding: Float32Array,
+    queryText: string = '',
     minSimilarity: number = 0.12,
     maxTotal: number = 16,
     topResultsToExpand: number = 3,
@@ -1732,6 +1986,8 @@ export class ChatPipeline {
       chunkSpan
     );
 
+    const wantsPositionalStructure = /\b(position|positions|location|locations|anatomical|anatomy|where)\b/i.test(queryText);
+
     const structuredSignals = (text: string): boolean => {
       const normalized = (text || '').toLowerCase();
       return (
@@ -1742,7 +1998,19 @@ export class ChatPipeline {
         /\bbox\b/.test(normalized) ||
         /\bcaption\b/.test(normalized) ||
         /\bcriteria list\b/.test(normalized) ||
-        /\bcriteria\b/.test(normalized)
+        /\bcriteria\b/.test(normalized) ||
+        (wantsPositionalStructure &&
+          (
+            /\banatomy\b/.test(normalized) ||
+            /\banatomical\b/.test(normalized) ||
+            /\boverview\b/.test(normalized) ||
+            /\bintroduction\b/.test(normalized) ||
+            /\bintro\b/.test(normalized) ||
+            /\bposition\b/.test(normalized) ||
+            /\bpositions\b/.test(normalized) ||
+            /\blocation\b/.test(normalized) ||
+            /\blocations\b/.test(normalized)
+          ))
       );
     };
 
@@ -2199,7 +2467,7 @@ ${normalizedOriginal}
       const embeddings = await this.getEmbeddingsForRetrievedDocs(sessionId, baseSearchResults);
 
       // Same-page neighborhood expansion: keep nearby chunks from the strongest pages.
-      searchResults = this.includeTopChunkAdjacentChunks(searchResults, embeddings, queryEmbedding, 0.12, 16, 3, 2);
+      searchResults = this.includeTopChunkAdjacentChunks(searchResults, embeddings, queryEmbedding, retrievalQuery, 0.12, 16, 3, 2);
       const retrievalPostprocess = postProcessRetrievalResults(searchResults, { maxResults: retrievalChunkCap, maxPerPageCluster: 3 });
       searchResults = retrievalPostprocess.results;
       retrievalMs = Date.now() - retrievalStartMs;
@@ -2224,7 +2492,7 @@ ${normalizedOriginal}
       const MIN_SIMILARITY_FLOOR = 0.55;
 
       const sortedGenerationCandidates = [...searchResults]
-        .sort((a, b) => b.similarity - a.similarity)
+        .sort((a, b) => this.rankGenerationCandidate(b) - this.rankGenerationCandidate(a))
         .filter((chunk) => chunk.similarity >= MIN_SIMILARITY_FLOOR);
 
       console.log(
@@ -2233,10 +2501,10 @@ ${normalizedOriginal}
       );
 
       const qualityFilteredChunks = this.filterQualityChunks(sortedGenerationCandidates);
-      let generationChunksForModel = qualityFilteredChunks.kept.map((chunk) => ({
-        ...chunk,
-      }))
-        .slice(0, GENERATION_CHUNK_CAP);
+      let generationChunksForModel = this.selectGenerationChunksByPageCluster(
+        qualityFilteredChunks.kept,
+        GENERATION_CHUNK_CAP
+      );
       const evaluatedChunkById = new Map(
         qualityFilteredChunks.evaluated.map((chunk) => [chunk.chunk.id, chunk] as const)
       );
@@ -2256,6 +2524,7 @@ ${normalizedOriginal}
           const evaluatedCandidate = evaluatedChunkById.get(candidate.chunk.id);
           if (!evaluatedCandidate) continue;
           generationChunksForModel.push(evaluatedCandidate);
+          generationChunksForModel.sort((a, b) => this.rankGenerationCandidate(b) - this.rankGenerationCandidate(a));
           if (generationChunksForModel.length >= GENERATION_CHUNK_CAP) {
             break;
           }
@@ -2737,6 +3006,8 @@ You MUST follow these rules:
 4) Do not include citation markers, bracket numbers, code fences, or commentary.
 5) Conversation continuity rule: if the new question is a short follow-up that is clearly related to the previous user question, continue with the same medical topic/condition unless the user explicitly changes topic.
 6) Read each chunk carefully and include all relevant information from every chunk that supports the answer. Do not stop after the first matching chunk.
+7) If a retrieved chunk contains extra relevant detail beyond the exact question, include that detail too under a suitable heading or subheading, as long as it is explicitly present in the source.
+8) If a chunk contains a table, figure, summary box, scoring system, list, or criteria set, unpack all relevant rows, items, components, and thresholds from it instead of only naming the headline.
 
 Output format requirements:
 - Use only the section titles from the contract below.
