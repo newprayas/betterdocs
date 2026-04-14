@@ -1000,6 +1000,7 @@ export class VectorSearchService {
       page: number | undefined;
       chunks: VectorSearchResult[];
       score: number;
+      richness: number;
     };
 
     const pageMap = new Map<string, PageCluster>();
@@ -1020,6 +1021,7 @@ export class VectorSearchService {
         page,
         chunks: [result],
         score: 0,
+        richness: 0,
       });
     }
 
@@ -1031,12 +1033,14 @@ export class VectorSearchService {
         ? 0.14
         : 0;
       const pageContinuationBonus = sortedChunks.length > 1 ? 0.04 : 0;
+      const multiSupportBonus = this.calculatePageSupportBonus(sortedChunks);
       const positionalBonus = this.queryWantsPositionalStructure(queryText) && sortedChunks.some((chunk) => this.hasPositionalSignals(chunk))
         ? 0.12
         : 0;
+      cluster.richness = multiSupportBonus + pageContinuationBonus + structuralBonus;
       cluster.score = Math.min(
         1,
-        bestSimilarity + chunkCountBonus + structuralBonus + pageContinuationBonus + positionalBonus
+        bestSimilarity + chunkCountBonus + structuralBonus + pageContinuationBonus + positionalBonus + multiSupportBonus
       );
     }
 
@@ -1073,6 +1077,38 @@ export class VectorSearchService {
       /\bcriteria list\b/.test(combined) ||
       /\bcriteria\b/.test(combined)
     );
+  }
+
+  private calculatePageSupportBonus(results: VectorSearchResult[]): number {
+    const types = new Set<string>();
+
+    for (const result of results) {
+      const combined = `${result.document.title || ''}\n${result.chunk.source || ''}\n${result.chunk.content || ''}`.toLowerCase();
+      if (/\btable\b/.test(combined) || /\bcriteria list\b/.test(combined) || /\bcriteria\b/.test(combined)) {
+        types.add('table');
+      }
+      if (/\bfigure\b/.test(combined) || /\bfig\b/.test(combined) || /\bcaption\b/.test(combined)) {
+        types.add('figure');
+      }
+      if (
+        /\b(score|scores|scoring system|scoring systems|threshold|indication|indications|level|levels)\b/.test(combined) &&
+        /\b\d+\b/.test(combined)
+      ) {
+        types.add('score');
+      }
+      const sentenceCount = (combined.match(/[.!?]/g) || []).length;
+      if (sentenceCount >= 2 || /\b(history|clinical|diagnosis|investigation|treatment|management|features|complications|anatomy)\b/.test(combined)) {
+        types.add('paragraph');
+      }
+    }
+
+    let bonus = 0;
+    if (types.has('paragraph') && types.has('table')) bonus += 0.08;
+    if (types.has('paragraph') && types.has('figure')) bonus += 0.06;
+    if (types.has('table') && types.has('figure')) bonus += 0.05;
+    if (types.has('paragraph') && types.has('table') && types.has('figure')) bonus += 0.07;
+    if (types.has('score') && (types.has('paragraph') || types.has('table'))) bonus += 0.05;
+    return Math.min(0.2, bonus);
   }
 
   private hasPositionalSignals(result: VectorSearchResult): boolean {

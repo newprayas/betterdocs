@@ -1549,6 +1549,54 @@ export class ChatPipeline {
     );
   }
 
+  private calculatePageRichness(
+    chunks: Array<VectorSearchResult | (VectorSearchResult & { quality?: ChunkQualityAssessment })>
+  ): number {
+    const kinds = new Set<string>();
+
+    for (const chunk of chunks) {
+      const content = `${chunk.document.title || ''}\n${chunk.chunk.source || ''}\n${chunk.chunk.content || ''}`.toLowerCase();
+      const sentenceCount = (content.match(/[.!?]/g) || []).length;
+
+      if (/\btable\b/.test(content) || /\bcriteria list\b/.test(content) || /\bcriteria\b/.test(content)) kinds.add('table');
+      if (/\bfigure\b/.test(content) || /\bfig\b/.test(content) || /\bcaption\b/.test(content)) kinds.add('figure');
+      if (/\b(score|scores|scoring system|scoring systems|threshold|indication|indications|level|levels)\b/.test(content) && /\b\d+\b/.test(content)) kinds.add('score');
+      if (sentenceCount >= 2 || /\b(history|clinical|diagnosis|investigation|treatment|management|features|complications|anatomy|introduction|overview)\b/.test(content)) kinds.add('paragraph');
+    }
+
+    let bonus = 0;
+    if (kinds.has('paragraph') && kinds.has('table')) bonus += 0.08;
+    if (kinds.has('paragraph') && kinds.has('figure')) bonus += 0.06;
+    if (kinds.has('table') && kinds.has('figure')) bonus += 0.05;
+    if (kinds.has('paragraph') && kinds.has('table') && kinds.has('figure')) bonus += 0.07;
+    if (kinds.has('score') && (kinds.has('paragraph') || kinds.has('table'))) bonus += 0.05;
+    return Math.min(0.2, bonus);
+  }
+
+  private isPageCoverageStrong(
+    chunks: Array<VectorSearchResult | (VectorSearchResult & { quality?: ChunkQualityAssessment })>
+  ): boolean {
+    if (chunks.length >= 3) return true;
+    const bestSimilarity = chunks.reduce((best, chunk) => Math.max(best, chunk.similarity || 0), 0);
+    return bestSimilarity >= 0.92 && chunks.length >= 2 && this.calculatePageRichness(chunks) >= 0.08;
+  }
+
+  private isPageThin(
+    existingChunks: VectorSearchResult[],
+    samePageCandidateCount: number
+  ): boolean {
+    const totalCoverage = existingChunks.length + samePageCandidateCount;
+    if (totalCoverage >= 3) return false;
+    return this.calculatePageRichness(existingChunks) < 0.08;
+  }
+
+  private extractChapterCueFromText(text: string): string | null {
+    const normalized = (text || '').replace(/\s+/g, ' ').trim();
+    if (!normalized) return null;
+    const chapterMatch = normalized.match(/\bchapter\s+(\d+)\b/i);
+    return chapterMatch?.[1] ? `chapter:${chapterMatch[1]}` : null;
+  }
+
   private selectGenerationChunksByPageCluster(
     chunks: Array<VectorSearchResult & { quality: ChunkQualityAssessment }>,
     maxResults: number
@@ -1564,6 +1612,7 @@ export class ChatPipeline {
       chunks: Array<VectorSearchResult & { quality: ChunkQualityAssessment }>;
       score: number;
       hasStructuredChunk: boolean;
+      richness: number;
     };
 
     const clusters = new Map<string, Cluster>();
@@ -1584,6 +1633,7 @@ export class ChatPipeline {
         chunks: [chunk],
         score: 0,
         hasStructuredChunk: this.isHighValueStructuredGenerationChunk(chunk),
+        richness: 0,
       });
     }
 
@@ -1594,7 +1644,8 @@ export class ChatPipeline {
       const bestScore = this.rankGenerationCandidate(sortedChunks[0]);
       const companionBonus = Math.min(sortedChunks.length - 1, 2) * 0.08;
       const structuredBonus = cluster.hasStructuredChunk ? 0.12 : 0;
-      cluster.score = bestScore + companionBonus + structuredBonus;
+      cluster.richness = this.calculatePageRichness(sortedChunks);
+      cluster.score = bestScore + companionBonus + structuredBonus + cluster.richness;
       cluster.chunks = sortedChunks;
     }
 
@@ -1607,6 +1658,8 @@ export class ChatPipeline {
 
     const selected: Array<VectorSearchResult & { quality: ChunkQualityAssessment }> = [];
     const usedChunkIds = new Set<string>();
+    const strongestCluster = rankedClusters[0] || null;
+    const stopDrift = strongestCluster ? this.isPageCoverageStrong(strongestCluster.chunks) : false;
 
     for (const cluster of rankedClusters) {
       if (selected.length >= maxResults) {
@@ -1614,9 +1667,11 @@ export class ChatPipeline {
       }
 
       const remainingSlots = maxResults - selected.length;
-      const takeCount = cluster.hasStructuredChunk
-        ? Math.min(2, remainingSlots, cluster.chunks.length)
-        : Math.min(1, remainingSlots, cluster.chunks.length);
+      const takeCount = stopDrift && strongestCluster && cluster.key === strongestCluster.key
+        ? Math.min(3, remainingSlots, cluster.chunks.length)
+        : cluster.hasStructuredChunk
+          ? Math.min(2, remainingSlots, cluster.chunks.length)
+          : Math.min(1, remainingSlots, cluster.chunks.length);
 
       for (const chunk of cluster.chunks.slice(0, takeCount)) {
         if (usedChunkIds.has(chunk.chunk.id)) continue;
@@ -1948,7 +2003,7 @@ export class ChatPipeline {
 
     const existingChunkIds = new Set(baseResults.map((r) => r.chunk.id));
     const docInfoById = new Map(baseResults.map((r) => [r.document.id, r.document] as const));
-    const pageGroups = new Map<string, { docId: string; page: number; chunks: VectorSearchResult[]; score: number }>();
+    const pageGroups = new Map<string, { docId: string; page: number; chunks: VectorSearchResult[]; score: number; richness: number; chapterCue: string | null }>();
 
     for (const result of baseResults) {
       const page = this.getChunkPageNumber(result.chunk);
@@ -1964,7 +2019,19 @@ export class ChatPipeline {
           page,
           chunks: [result],
           score: result.similarity,
+          richness: 0,
+          chapterCue: this.extractChapterCueFromText(result.chunk.content || ''),
         });
+      }
+    }
+
+    for (const group of pageGroups.values()) {
+      group.richness = this.calculatePageRichness(group.chunks);
+      group.score = Math.min(1, group.score + group.richness);
+      if (!group.chapterCue) {
+        group.chapterCue = group.chunks
+          .map((chunk) => this.extractChapterCueFromText(chunk.chunk.content || ''))
+          .find((cue) => Boolean(cue)) || null;
       }
     }
 
@@ -2016,6 +2083,9 @@ export class ChatPipeline {
 
     const candidatesByChunkId = new Map<string, { chunk: EmbeddingChunk; similarity: number; document: { id: string; title: string; fileName: string } }>();
 
+    const strongestGroup = rankedPageGroups[0]?.[1] || null;
+    const stopDrift = strongestGroup ? this.isPageCoverageStrong(strongestGroup.chunks) : false;
+
     for (const [, group] of rankedPageGroups) {
       const samePageCandidates = sessionEmbeddings
         .filter((chunk) => chunk.documentId === group.docId && this.getChunkPageNumber(chunk) === group.page)
@@ -2038,14 +2108,19 @@ export class ChatPipeline {
         }
       }
 
-      if (samePageCandidates.length >= 2) {
+      if (stopDrift || !this.isPageThin(group.chunks, samePageCandidates.length)) {
         continue;
       }
 
-      const fallbackPages = [group.page - 1, group.page + 1].filter((page) => page > 0);
+      const fallbackPages = [group.page - 1, group.page + 1, group.page - 2, group.page + 2].filter((page) => page > 0);
       for (const page of fallbackPages) {
         const fallbackCandidates = sessionEmbeddings
-          .filter((chunk) => chunk.documentId === group.docId && this.getChunkPageNumber(chunk) === page)
+          .filter((chunk) => {
+            if (chunk.documentId !== group.docId || this.getChunkPageNumber(chunk) !== page) return false;
+            if (!group.chapterCue) return true;
+            const candidateCue = this.extractChapterCueFromText(chunk.content || '');
+            return !candidateCue || candidateCue === group.chapterCue || Math.abs(page - group.page) === 1;
+          })
           .filter((chunk) => !existingChunkIds.has(chunk.id) && !candidatesByChunkId.has(chunk.id))
           .map((chunk) => ({
             chunk,
