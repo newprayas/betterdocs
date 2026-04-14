@@ -5,6 +5,7 @@ export type SourceTrustClass = 'textbook' | 'notes' | 'unknown';
 export interface TrustScoreBreakdown {
   baseSimilarity: number;
   trustBoost: number;
+  structureBoost: number;
   adjustedScore: number;
   sourceTrustClass: SourceTrustClass;
 }
@@ -15,6 +16,7 @@ export interface RetrievalPostProcessConfig {
   maxPerDocument: number;
   nearDuplicateThreshold: number;
   textbookBoost: number;
+  structureBoost: number;
 }
 
 export interface RetrievalPostProcessTelemetry {
@@ -32,10 +34,11 @@ export interface RetrievalPostProcessResult {
 
 const DEFAULT_CONFIG: RetrievalPostProcessConfig = {
   maxResults: 12,
-  maxPerPageCluster: 1,
+  maxPerPageCluster: 3,
   maxPerDocument: 7,
   nearDuplicateThreshold: 0.88,
   textbookBoost: 0.02,
+  structureBoost: 0.14,
 };
 
 const TEXTBOOK_PATTERNS = [
@@ -65,6 +68,7 @@ interface RankedResult {
   result: VectorSearchResult;
   adjustedScore: number;
   sourceTrustClass: SourceTrustClass;
+  structureBoost: number;
   normalizedContent: string;
   tokens: Set<string>;
   pageClusterKey: string;
@@ -98,7 +102,8 @@ export function postProcessRetrievalResults(
   const scored = dedupedByExactContent.map((result) => {
     const sourceTrustClass = classifySourceTrust(result);
     const trustBoost = sourceTrustClass === 'textbook' ? config.textbookBoost : 0;
-    const adjustedScore = Math.min(1, result.similarity + trustBoost);
+    const structureBoost = scoreStructuredChunkBoost(result, config.structureBoost);
+    const adjustedScore = Math.min(1, result.similarity + trustBoost + structureBoost);
     const normalizedContent = normalizeContent(result.chunk.content || '');
     const tokens = tokenizeForOverlap(normalizedContent);
     const pageClusterKey = buildPageClusterKey(result);
@@ -110,6 +115,7 @@ export function postProcessRetrievalResults(
       },
       adjustedScore,
       sourceTrustClass,
+      structureBoost,
       normalizedContent,
       tokens,
       pageClusterKey,
@@ -166,8 +172,9 @@ export function postProcessRetrievalResults(
   for (const item of finalRanked) {
     sourceMixDistribution[item.sourceTrustClass] += 1;
     trustScoreBreakdown[item.result.chunk.id] = {
-      baseSimilarity: Math.max(0, item.adjustedScore - (item.sourceTrustClass === 'textbook' ? config.textbookBoost : 0)),
+      baseSimilarity: Math.max(0, item.adjustedScore - (item.sourceTrustClass === 'textbook' ? config.textbookBoost : 0) - item.structureBoost),
       trustBoost: item.sourceTrustClass === 'textbook' ? config.textbookBoost : 0,
+      structureBoost: item.structureBoost,
       adjustedScore: item.adjustedScore,
       sourceTrustClass: item.sourceTrustClass,
     };
@@ -207,6 +214,55 @@ function classifySourceTrust(result: VectorSearchResult): SourceTrustClass {
     return 'notes';
   }
   return 'unknown';
+}
+
+function scoreStructuredChunkBoost(result: VectorSearchResult, maxBoost: number): number {
+  const combined = normalizeContent(
+    `${result.document.title || ''}\n${result.chunk.source || ''}\n${result.chunk.content || ''}`
+  );
+
+  if (!combined) return 0;
+
+  const hasTableLikeStructure =
+    /\btable\b/.test(combined) ||
+    /\bfigure\b/.test(combined) ||
+    /\bfig\b/.test(combined) ||
+    /\bsummary box\b/.test(combined) ||
+    /\bbox\b/.test(combined) ||
+    /\bcaption\b/.test(combined) ||
+    /\bcriteria list\b/.test(combined) ||
+    /\bcriteria\b/.test(combined);
+
+  if (!hasTableLikeStructure) return 0;
+
+  let boost = maxBoost * 0.75;
+
+  const hasThresholdSignals =
+    /\bthreshold\b/.test(combined) ||
+    /\bindications?\b/.test(combined) ||
+    /\blevels?\b/.test(combined) ||
+    /\bhb\b/.test(combined) ||
+    /\bhaemoglobin\b/.test(combined) ||
+    /\bhemoglobin\b/.test(combined) ||
+    /\bg dl\b/.test(combined) ||
+    /\bg l\b/.test(combined) ||
+    /\b\d+\s*(?:to|-|–)\s*\d+\b/.test(combined) ||
+    /\b[<>]=?\s*\d+\b/.test(combined);
+
+  if (hasThresholdSignals) {
+    boost += maxBoost * 0.5;
+  }
+
+  const hasDenseNumericContent =
+    (combined.match(/\b\d+(?:\.\d+)?\b/g) || []).length >= 3 ||
+    /\bpercent\b/.test(combined) ||
+    /\bmg\b/.test(combined);
+
+  if (hasDenseNumericContent) {
+    boost += maxBoost * 0.2;
+  }
+
+  return Math.min(maxBoost, boost);
 }
 
 function normalizeContent(content: string): string {

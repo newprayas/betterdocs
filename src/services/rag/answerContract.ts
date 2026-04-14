@@ -31,6 +31,7 @@ interface ContractCheck {
 
 const DEFAULT_PLACEHOLDER = '- Not found in provided sources.';
 const THOROUGHNESS_INSTRUCTION = '- Be thorough and complete. If the source contains multiple relevant points, include all of them rather than stopping early.';
+const HIGH_SENSITIVITY_INSTRUCTION = '- Read each chunk carefully and include all relevant information from every chunk that supports the answer. Be sensitive to small but important details.';
 
 export function getAnswerContract(intent: QueryIntent): AnswerContract {
   switch (intent) {
@@ -57,8 +58,7 @@ export function getAnswerContract(intent: QueryIntent): AnswerContract {
         intent,
         label: 'Classification',
         sections: [
-          { title: 'Classification', guidance: 'Provide every distinct classification system, type, subtype, and grading rule found in the source. Keep each system separate and do not skip later items.' },
-          { title: 'Key Distinctions', guidance: 'State how groups differ where available. Include the criteria, edge patterns, duration, behavior, cause, or grading basis if the source gives them.' },
+          { title: 'Classification', guidance: 'Provide every distinct classification system, type, subtype, grading rule, and distinguishing detail found in the source. Keep each system separate and do not skip later items.' },
         ],
       };
     case 'risk_factors':
@@ -159,6 +159,7 @@ Use this structure:
 
 Rules:
 ${THOROUGHNESS_INSTRUCTION}
+${HIGH_SENSITIVITY_INSTRUCTION}
 - Use ONLY the provided context.
 - Do NOT include markdown, code fences, or commentary.
 - Do NOT include citation markers or reference labels.

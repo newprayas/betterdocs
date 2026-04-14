@@ -460,7 +460,7 @@ export class ChatPipeline {
   /**
    * Enhance user query with context information
    */
-  private async enhanceQueryWithContext(sessionId: string, content: string): Promise<string> {
+  private async enhanceQueryWithContext(sessionId: string, content: string, queryIntent?: QueryIntent): Promise<string> {
     try {
       console.log('\n=== QUERY ENHANCEMENT PROCESS START ===');
       console.log('[ORIGINAL QUERY]', content);
@@ -496,7 +496,8 @@ export class ChatPipeline {
       // Create the enhanced query with context — use document names only.
       // Session name is intentionally excluded: a session named "drugs" would
       // contaminate the embedding for unrelated queries like "sepsis management".
-      const enhancedQuery = `${content} [Context - related to ${relatedDocuments}]`;
+      const retrievalHints = this.buildRetrievalHints(content, queryIntent);
+      const enhancedQuery = `${content} [Context - related to ${relatedDocuments}]${retrievalHints}`;
 
       console.log('[ENHANCED QUERY]', enhancedQuery);
       console.log('=== QUERY ENHANCEMENT PROCESS END ===\n');
@@ -508,6 +509,39 @@ export class ChatPipeline {
       // If there's an error, return the original query
       return content;
     }
+  }
+
+  private shouldUseExpandedRetrieval(query: string, queryIntent?: QueryIntent): boolean {
+    const normalized = (query || '').toLowerCase();
+    const wordCount = normalized.split(/\s+/).filter(Boolean).length;
+
+    if (queryIntent !== 'generic_fallback') {
+      return false;
+    }
+
+    return (
+      wordCount <= 8 ||
+      /\b(when|what|how|which|where|why)\b/.test(normalized) ||
+      /\b(trigger|threshold|criteria|indication|indications|levels?|table|figure|summary box|box)\b/.test(normalized)
+    );
+  }
+
+  private buildRetrievalHints(query: string, queryIntent?: QueryIntent): string {
+    if (!this.shouldUseExpandedRetrieval(query, queryIntent)) {
+      return '';
+    }
+
+    const normalized = (query || '').toLowerCase();
+    const hints: string[] = [];
+
+    if (/\b(blood|transfus|haemoglobin|hemoglobin|hb|anaemi|anemi)\b/.test(normalized)) {
+      hints.push('Hb threshold', 'transfusion criteria', 'g/dL');
+    }
+
+    hints.push('table', 'summary box', 'figure caption', 'criteria list');
+
+    const dedupedHints = Array.from(new Set(hints));
+    return ` [Retrieval hints: ${dedupedHints.join(', ')}]`;
   }
 
   private normalizeCommonMedicalTypos(text: string): string {
@@ -1634,8 +1668,10 @@ export class ChatPipeline {
     baseResults: VectorSearchResult[],
     sessionEmbeddings: EmbeddingChunk[],
     queryEmbedding: Float32Array,
-    minSimilarity: number = 0.4,
-    maxTotal: number = 12
+    minSimilarity: number = 0.12,
+    maxTotal: number = 16,
+    topResultsToExpand: number = 3,
+    chunkSpan: number = 2
   ): VectorSearchResult[] {
     if (baseResults.length === 0 || sessionEmbeddings.length === 0) {
       console.log(
@@ -1657,104 +1693,86 @@ export class ChatPipeline {
     }
 
     const existingChunkIds = new Set(baseResults.map((r) => r.chunk.id));
-    const topResult = baseResults.reduce((best, current) =>
-      current.similarity > best.similarity ? current : best
-    );
-    const topChunkIndex = this.getEffectiveChunkIndex(topResult.chunk);
+    const docInfoById = new Map(baseResults.map((r) => [r.document.id, r.document] as const));
+    const focusResults = [...baseResults]
+      .sort((a, b) => b.similarity - a.similarity)
+      .slice(0, Math.min(topResultsToExpand, baseResults.length));
 
-    if (topChunkIndex === null) {
-      console.log(
-        '[TOP CHUNK CONTEXT] Skipped (top chunk index unavailable): chunkId=%s',
-        topResult.chunk.id
-      );
-      return baseResults;
-    }
-
-    const targetIndices = [topChunkIndex - 1, topChunkIndex + 1].filter((idx) => idx >= 0);
-    const docId = topResult.document.id;
-    const docInfo = topResult.document;
+    const focusSummaries = focusResults.map((result) => ({
+      chunkId: result.chunk.id,
+      docId: result.document.id,
+      page: this.getChunkPageNumber(result.chunk),
+      chunkIndex: this.getEffectiveChunkIndex(result.chunk),
+      similarity: Number(result.similarity.toFixed(3))
+    }));
 
     console.log(
-      '[TOP CHUNK CONTEXT] Top chunk=%s doc=%s idx=%d sim=%.3f slots=%d threshold=%.2f targetNeighborIdx=%o',
-      topResult.chunk.id,
-      docId,
-      topChunkIndex,
-      topResult.similarity,
+      '[TOP CHUNK CONTEXT] Focused on top pages=%o slots=%d threshold=%.2f span=%d',
+      focusSummaries,
       availableSlots,
       minSimilarity,
-      targetIndices
+      chunkSpan
     );
 
-    const candidates: Array<{ chunk: EmbeddingChunk; similarity: number; relation: 'above' | 'below' }> = [];
-    const missedTargets: number[] = [];
+    const candidatesByChunkId = new Map<string, { chunk: EmbeddingChunk; similarity: number; document: { id: string; title: string; fileName: string } }>();
 
-    for (const idx of targetIndices) {
-      const neighborChunk = sessionEmbeddings.find((chunk) => {
-        if (chunk.documentId !== docId) return false;
-        const chunkIdx = this.getEffectiveChunkIndex(chunk);
-        return chunkIdx === idx;
-      });
+    for (const focus of focusResults) {
+      const focusDocId = focus.document.id;
+      const focusPage = this.getChunkPageNumber(focus.chunk);
+      const focusChunkIndex = this.getEffectiveChunkIndex(focus.chunk);
 
-      if (!neighborChunk) {
-        missedTargets.push(idx);
-        continue;
+      for (const chunk of sessionEmbeddings) {
+        if (chunk.documentId !== focusDocId) continue;
+        if (existingChunkIds.has(chunk.id) || candidatesByChunkId.has(chunk.id)) continue;
+
+        const chunkPage = this.getChunkPageNumber(chunk);
+        const chunkIndex = this.getEffectiveChunkIndex(chunk);
+
+        const samePage = focusPage !== null && chunkPage !== null && chunkPage === focusPage;
+        const nearbyIndex =
+          focusChunkIndex !== null &&
+          chunkIndex !== null &&
+          Math.abs(chunkIndex - focusChunkIndex) <= chunkSpan;
+
+        if (!samePage && !nearbyIndex) continue;
+
+        const sim = cosineSimilarity(queryEmbedding, chunk.embedding);
+        if (sim < minSimilarity) continue;
+
+        const document = docInfoById.get(chunk.documentId) || {
+          id: chunk.documentId,
+          title: chunk.metadata?.documentTitle || chunk.source || 'Document',
+          fileName: chunk.source || chunk.metadata?.documentTitle || 'Document',
+        };
+
+        candidatesByChunkId.set(chunk.id, {
+          chunk,
+          similarity: sim,
+          document,
+        });
       }
-
-      if (existingChunkIds.has(neighborChunk.id)) {
-        continue;
-      }
-
-      const sim = cosineSimilarity(queryEmbedding, neighborChunk.embedding);
-      if (sim < minSimilarity) {
-        console.log(
-          '[TOP CHUNK CONTEXT] Candidate rejected (below threshold): chunkId=%s idx=%d sim=%.3f threshold=%.2f',
-          neighborChunk.id,
-          idx,
-          sim,
-          minSimilarity
-        );
-        continue;
-      }
-
-      candidates.push({
-        chunk: neighborChunk,
-        similarity: sim,
-        relation: idx < topChunkIndex ? 'above' : 'below'
-      });
     }
 
-    if (missedTargets.length > 0) {
-      console.log('[TOP CHUNK CONTEXT] Missing neighbor chunk(s) for target idx=%o', missedTargets);
-    }
-
-    if (candidates.length === 0) {
+    if (candidatesByChunkId.size === 0) {
       console.log('[TOP CHUNK CONTEXT] Attempted but added 0 chunk(s).');
       return baseResults;
     }
 
-    const additions = candidates
+    const additions = Array.from(candidatesByChunkId.values())
       .sort((a, b) => b.similarity - a.similarity)
-      .slice(0, availableSlots)
-      .map(({ chunk, similarity, relation }) => ({
-        chunk,
-        similarity,
-        document: docInfo,
-        relation
-      }));
+      .slice(0, availableSlots);
 
     console.log(
-      '[TOP CHUNK CONTEXT] Added %d adjacent chunk(s): %o',
+      '[TOP CHUNK CONTEXT] Added %d nearby chunk(s): %o',
       additions.length,
       additions.map((a) => ({
         chunkId: a.chunk.id,
-        relation: a.relation,
-        chunkIndex: this.getEffectiveChunkIndex(a.chunk),
         page: this.getChunkPageNumber(a.chunk),
-        similarity: a.similarity
+        chunkIndex: this.getEffectiveChunkIndex(a.chunk),
+        similarity: Number(a.similarity.toFixed(3))
       }))
     );
 
-    // Keep original ranked retrieval order, append adjacency context at the end.
     return [...baseResults, ...additions.map(({ chunk, similarity, document }) => ({
       chunk,
       similarity,
@@ -2025,7 +2043,7 @@ ${normalizedOriginal}
 
       // 3. ENHANCE THE REWRITTEN QUERY, NOT THE ORIGINAL
       // Modify this line to pass 'standaloneQuery' instead of 'content'
-      const enhancedQuery = await this.enhanceQueryWithContext(sessionId, standaloneQuery);
+      const enhancedQuery = await this.enhanceQueryWithContext(sessionId, standaloneQuery, queryIntent);
       const retrievalQuery = enhancedQuery;
       console.log('[FINAL SEARCH QUERY]', enhancedQuery);
 
@@ -2076,12 +2094,14 @@ ${normalizedOriginal}
 
       // 5. PERFORM SEARCH USING THE REWRITTEN QUERY
       console.log('[VECTOR SEARCH]', 'Performing hybrid search...');
+      const retrievalChunkCap = 12;
+
       let searchResults = await vectorSearchService.searchHybridEnhanced(
         queryEmbedding,
         sessionId,
         retrievalQuery, // Use retrieval-expanded query for better recall
         {
-          maxResults: 12,
+          maxResults: retrievalChunkCap,
           useDynamicWeighting: true,
           textWeight: 0.3,
           vectorWeight: 0.7,
@@ -2098,7 +2118,7 @@ ${normalizedOriginal}
         this.rewriteTelemetry.searchFallbackAttempts += 1;
         this.logRewriteTelemetrySummary();
         console.warn('[SEARCH FALLBACK]', 'No results for rewritten query. Retrying with original query.');
-        const fallbackEnhancedQuery = await this.enhanceQueryWithContext(sessionId, content);
+        const fallbackEnhancedQuery = await this.enhanceQueryWithContext(sessionId, content, queryIntent);
         const fallbackRetrievalQuery = fallbackEnhancedQuery;
         const fallbackEmbedding = await embeddingService.generateEmbedding(fallbackRetrievalQuery);
         const fallbackRoutePrefilter = await this.buildRoutePrefilterPlan(retrievalDocuments, fallbackEmbedding);
@@ -2113,7 +2133,7 @@ ${normalizedOriginal}
           sessionId,
           fallbackRetrievalQuery,
           {
-            maxResults: 12,
+            maxResults: retrievalChunkCap,
             useDynamicWeighting: true,
             textWeight: 0.3,
             vectorWeight: 0.7,
@@ -2133,11 +2153,9 @@ ${normalizedOriginal}
       const baseSearchResults = [...searchResults];
       const embeddings = await this.getEmbeddingsForRetrievedDocs(sessionId, baseSearchResults);
 
-      // Neighbor-page inclusion: include page N-1 / N+1 chunks to preserve section continuity.
-      searchResults = this.includeNeighborPageChunks(searchResults, embeddings, queryEmbedding, 0.6);
-      // Top-chunk continuity: include above/below chunks for the highest-similarity hit when slots remain.
-      searchResults = this.includeTopChunkAdjacentChunks(searchResults, embeddings, queryEmbedding, 0.4, 12);
-      const retrievalPostprocess = postProcessRetrievalResults(searchResults, { maxResults: 12 });
+      // Same-page neighborhood expansion: keep nearby chunks from the strongest pages.
+      searchResults = this.includeTopChunkAdjacentChunks(searchResults, embeddings, queryEmbedding, 0.12, 16, 3, 2);
+      const retrievalPostprocess = postProcessRetrievalResults(searchResults, { maxResults: retrievalChunkCap, maxPerPageCluster: 3 });
       searchResults = retrievalPostprocess.results;
       retrievalMs = Date.now() - retrievalStartMs;
 
@@ -2156,10 +2174,8 @@ ${normalizedOriginal}
         onStreamEvent({ type: 'status', message: 'Answer Generation' });
       }
 
-      // Cap chunks fed to the LLM. Retrieval still casts wide, but we keep
-      // a slightly larger generation window so multi-part answers stay complete.
-      // Dynamic capping: max 8 chunks, minimum similarity 0.55
-      const GENERATION_CHUNK_CAP = 8;
+      // Cap chunks fed to the LLM to stay within TPM limits.
+      const GENERATION_CHUNK_CAP = 6;
       const MIN_SIMILARITY_FLOOR = 0.55;
 
       const sortedGenerationCandidates = [...searchResults]
@@ -2675,6 +2691,7 @@ You MUST follow these rules:
 3) Return STRICT MARKDOWN ONLY.
 4) Do not include citation markers, bracket numbers, code fences, or commentary.
 5) Conversation continuity rule: if the new question is a short follow-up that is clearly related to the previous user question, continue with the same medical topic/condition unless the user explicitly changes topic.
+6) Read each chunk carefully and include all relevant information from every chunk that supports the answer. Do not stop after the first matching chunk.
 
 Output format requirements:
 - Use only the section titles from the contract below.

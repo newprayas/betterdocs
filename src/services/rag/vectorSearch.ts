@@ -579,7 +579,7 @@ export class VectorSearchService {
         .sort((a, b) => b.similarity - a.similarity)
         .slice(0, maxResults);
 
-      const postProcessed = postProcessRetrievalResults(rankedResults, { maxResults });
+      const postProcessed = postProcessRetrievalResults(rankedResults, { maxResults, maxPerPageCluster: 3 });
       console.log('[RETRIEVAL POSTPROCESS][HYBRID]', postProcessed.telemetry);
       return postProcessed.results;
     } catch (error) {
@@ -663,7 +663,10 @@ export class VectorSearchService {
         const textScore = this.calculateTextScore(queryLower, contentLower);
         return {
           ...candidate,
-          similarity: Math.min(1, candidate.similarity + (textScore * 0.3))
+          similarity: Math.min(
+            1,
+            candidate.similarity + (textScore * 0.3) + this.calculateStructuralBonus(queryLower, contentLower)
+          )
         };
       })
       .sort((a, b) => b.similarity - a.similarity)
@@ -734,7 +737,48 @@ export class VectorSearchService {
     const normalizedScore = Math.min(1.0, score / queryWords.length);
 
     // Combine different scoring factors
-    return Math.min(1.0, normalizedScore * 0.6 + wordProximityScore * 0.3 + wordMatchRatio * 0.1);
+    return Math.min(1.0, normalizedScore * 0.6 + wordProximityScore * 0.3 + wordMatchRatio * 0.1 + this.calculateStructuralBonus(query, content) * 0.5);
+  }
+
+  /**
+   * Prefer structural chunks such as tables, figures, captions, and criteria lists.
+   */
+  private calculateStructuralBonus(query: string, content: string): number {
+    const queryLower = query.toLowerCase();
+    const contentLower = content.toLowerCase();
+
+    const wantsStructuredContent =
+      /\b(table|figure|fig\.|summary box|box|caption|criteria list|criteria|threshold|trigger|indication|indications|level|levels)\b/.test(queryLower) ||
+      /\b(when|what|how|which|where|why)\b/.test(queryLower);
+
+    if (!wantsStructuredContent) {
+      return 0;
+    }
+
+    const hasStructuredChunk =
+      /\b(table|figure|fig\.|summary box|box|caption|criteria list|criteria)\b/.test(contentLower);
+
+    if (!hasStructuredChunk) {
+      return 0;
+    }
+
+    let bonus = 0.18;
+
+    const hasExactThresholdSignals =
+      /\b(criteria|threshold|indication|indications|level|levels|hb|haemoglobin|hemoglobin|g dl|g l)\b/.test(contentLower) ||
+      /\b\d+\s*(?:-|–|to)\s*\d+\b/.test(contentLower) ||
+      /\b[<>]=?\s*\d+\b/.test(contentLower);
+
+    if (hasExactThresholdSignals) {
+      bonus += 0.12;
+    }
+
+    const hasDenseNumericSignals = (contentLower.match(/\b\d+(?:\.\d+)?\b/g) || []).length >= 3;
+    if (hasDenseNumericSignals) {
+      bonus += 0.05;
+    }
+
+    return Math.min(0.35, bonus);
   }
 
   /**
@@ -823,7 +867,7 @@ export class VectorSearchService {
         finalVectorWeight,
         finalTextWeight
       );
-      const postProcessed = postProcessRetrievalResults(combinedResults, { maxResults });
+      const postProcessed = postProcessRetrievalResults(combinedResults, { maxResults, maxPerPageCluster: 3 });
       console.log('[RETRIEVAL POSTPROCESS][HYBRID_ENHANCED]', postProcessed.telemetry);
       return postProcessed.results;
     } catch (error) {
