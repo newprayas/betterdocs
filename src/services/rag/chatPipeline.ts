@@ -1694,62 +1694,108 @@ export class ChatPipeline {
 
     const existingChunkIds = new Set(baseResults.map((r) => r.chunk.id));
     const docInfoById = new Map(baseResults.map((r) => [r.document.id, r.document] as const));
-    const focusResults = [...baseResults]
-      .sort((a, b) => b.similarity - a.similarity)
-      .slice(0, Math.min(topResultsToExpand, baseResults.length));
+    const pageGroups = new Map<string, { docId: string; page: number; chunks: VectorSearchResult[]; score: number }>();
 
-    const focusSummaries = focusResults.map((result) => ({
-      chunkId: result.chunk.id,
-      docId: result.document.id,
-      page: this.getChunkPageNumber(result.chunk),
-      chunkIndex: this.getEffectiveChunkIndex(result.chunk),
-      similarity: Number(result.similarity.toFixed(3))
-    }));
+    for (const result of baseResults) {
+      const page = this.getChunkPageNumber(result.chunk);
+      if (page === null) continue;
+      const key = `${result.document.id}:${page}`;
+      const existing = pageGroups.get(key);
+      if (existing) {
+        existing.chunks.push(result);
+        existing.score = Math.max(existing.score, result.similarity);
+      } else {
+        pageGroups.set(key, {
+          docId: result.document.id,
+          page,
+          chunks: [result],
+          score: result.similarity,
+        });
+      }
+    }
+
+    const rankedPageGroups = Array.from(pageGroups.entries())
+      .sort((a, b) => b[1].score - a[1].score)
+      .slice(0, Math.min(topResultsToExpand, pageGroups.size));
 
     console.log(
-      '[TOP CHUNK CONTEXT] Focused on top pages=%o slots=%d threshold=%.2f span=%d',
-      focusSummaries,
+      '[TOP CHUNK CONTEXT] Focused on top page clusters=%o slots=%d threshold=%.2f span=%d',
+      rankedPageGroups.map(([key, group]) => ({
+        key,
+        docId: group.docId,
+        page: group.page,
+        chunkCount: group.chunks.length,
+        score: Number(group.score.toFixed(3))
+      })),
       availableSlots,
       minSimilarity,
       chunkSpan
     );
 
+    const structuredSignals = (text: string): boolean => {
+      const normalized = (text || '').toLowerCase();
+      return (
+        /\btable\b/.test(normalized) ||
+        /\bfigure\b/.test(normalized) ||
+        /\bfig\b/.test(normalized) ||
+        /\bsummary box\b/.test(normalized) ||
+        /\bbox\b/.test(normalized) ||
+        /\bcaption\b/.test(normalized) ||
+        /\bcriteria list\b/.test(normalized) ||
+        /\bcriteria\b/.test(normalized)
+      );
+    };
+
     const candidatesByChunkId = new Map<string, { chunk: EmbeddingChunk; similarity: number; document: { id: string; title: string; fileName: string } }>();
 
-    for (const focus of focusResults) {
-      const focusDocId = focus.document.id;
-      const focusPage = this.getChunkPageNumber(focus.chunk);
-      const focusChunkIndex = this.getEffectiveChunkIndex(focus.chunk);
-
-      for (const chunk of sessionEmbeddings) {
-        if (chunk.documentId !== focusDocId) continue;
-        if (existingChunkIds.has(chunk.id) || candidatesByChunkId.has(chunk.id)) continue;
-
-        const chunkPage = this.getChunkPageNumber(chunk);
-        const chunkIndex = this.getEffectiveChunkIndex(chunk);
-
-        const samePage = focusPage !== null && chunkPage !== null && chunkPage === focusPage;
-        const nearbyIndex =
-          focusChunkIndex !== null &&
-          chunkIndex !== null &&
-          Math.abs(chunkIndex - focusChunkIndex) <= chunkSpan;
-
-        if (!samePage && !nearbyIndex) continue;
-
-        const sim = cosineSimilarity(queryEmbedding, chunk.embedding);
-        if (sim < minSimilarity) continue;
-
-        const document = docInfoById.get(chunk.documentId) || {
-          id: chunk.documentId,
-          title: chunk.metadata?.documentTitle || chunk.source || 'Document',
-          fileName: chunk.source || chunk.metadata?.documentTitle || 'Document',
-        };
-
-        candidatesByChunkId.set(chunk.id, {
+    for (const [, group] of rankedPageGroups) {
+      const samePageCandidates = sessionEmbeddings
+        .filter((chunk) => chunk.documentId === group.docId && this.getChunkPageNumber(chunk) === group.page)
+        .filter((chunk) => !existingChunkIds.has(chunk.id))
+        .map((chunk) => ({
           chunk,
-          similarity: sim,
-          document,
-        });
+          similarity: cosineSimilarity(queryEmbedding, chunk.embedding),
+          document: docInfoById.get(chunk.documentId) || {
+            id: chunk.documentId,
+            title: chunk.metadata?.documentTitle || chunk.source || 'Document',
+            fileName: chunk.source || chunk.metadata?.documentTitle || 'Document',
+          },
+        }))
+        .filter((candidate) => candidate.similarity >= minSimilarity || structuredSignals(candidate.chunk.content))
+        .sort((a, b) => b.similarity - a.similarity);
+
+      for (const candidate of samePageCandidates) {
+        if (!candidatesByChunkId.has(candidate.chunk.id)) {
+          candidatesByChunkId.set(candidate.chunk.id, candidate);
+        }
+      }
+
+      if (samePageCandidates.length >= 2) {
+        continue;
+      }
+
+      const fallbackPages = [group.page - 1, group.page + 1].filter((page) => page > 0);
+      for (const page of fallbackPages) {
+        const fallbackCandidates = sessionEmbeddings
+          .filter((chunk) => chunk.documentId === group.docId && this.getChunkPageNumber(chunk) === page)
+          .filter((chunk) => !existingChunkIds.has(chunk.id) && !candidatesByChunkId.has(chunk.id))
+          .map((chunk) => ({
+            chunk,
+            similarity: cosineSimilarity(queryEmbedding, chunk.embedding),
+            document: docInfoById.get(chunk.documentId) || {
+              id: chunk.documentId,
+              title: chunk.metadata?.documentTitle || chunk.source || 'Document',
+              fileName: chunk.source || chunk.metadata?.documentTitle || 'Document',
+            },
+          }))
+          .filter((candidate) => candidate.similarity >= Math.max(0.08, minSimilarity * 0.85))
+          .sort((a, b) => b.similarity - a.similarity);
+
+        for (const candidate of fallbackCandidates) {
+          if (!candidatesByChunkId.has(candidate.chunk.id)) {
+            candidatesByChunkId.set(candidate.chunk.id, candidate);
+          }
+        }
       }
     }
 
@@ -1768,7 +1814,6 @@ export class ChatPipeline {
       additions.map((a) => ({
         chunkId: a.chunk.id,
         page: this.getChunkPageNumber(a.chunk),
-        chunkIndex: this.getEffectiveChunkIndex(a.chunk),
         similarity: Number(a.similarity.toFixed(3))
       }))
     );

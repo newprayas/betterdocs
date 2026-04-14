@@ -579,7 +579,8 @@ export class VectorSearchService {
         .sort((a, b) => b.similarity - a.similarity)
         .slice(0, maxResults);
 
-      const postProcessed = postProcessRetrievalResults(rankedResults, { maxResults, maxPerPageCluster: 3 });
+      const pageFirstResults = this.prioritizePageClusters(rankedResults, maxResults, 3);
+      const postProcessed = postProcessRetrievalResults(pageFirstResults, { maxResults, maxPerPageCluster: 3 });
       console.log('[RETRIEVAL POSTPROCESS][HYBRID]', postProcessed.telemetry);
       return postProcessed.results;
     } catch (error) {
@@ -867,7 +868,8 @@ export class VectorSearchService {
         finalVectorWeight,
         finalTextWeight
       );
-      const postProcessed = postProcessRetrievalResults(combinedResults, { maxResults, maxPerPageCluster: 3 });
+      const pageFirstResults = this.prioritizePageClusters(combinedResults, maxResults, 3);
+      const postProcessed = postProcessRetrievalResults(pageFirstResults, { maxResults, maxPerPageCluster: 3 });
       console.log('[RETRIEVAL POSTPROCESS][HYBRID_ENHANCED]', postProcessed.telemetry);
       return postProcessed.results;
     } catch (error) {
@@ -965,6 +967,95 @@ export class VectorSearchService {
     return Array.from(resultScores.values())
       .sort((a, b) => b.score - a.score)
       .map(item => item.result);
+  }
+
+  /**
+   * Prefer whole page clusters over isolated chunks so the retriever keeps
+   * the full answer context when it lives on one strong page.
+   */
+  private prioritizePageClusters(
+    results: VectorSearchResult[],
+    maxResults: number,
+    maxPerPageCluster: number = 3
+  ): VectorSearchResult[] {
+    if (results.length === 0) {
+      return [];
+    }
+
+    type PageCluster = {
+      key: string;
+      documentId: string;
+      documentTitle: string;
+      page: number | undefined;
+      chunks: VectorSearchResult[];
+      score: number;
+    };
+
+    const pageMap = new Map<string, PageCluster>();
+
+    for (const result of results) {
+      const page = this.getEffectivePageNumber(result);
+      const key = `${result.document.id}:${page ?? 'unknown'}`;
+      const existing = pageMap.get(key);
+      if (existing) {
+        existing.chunks.push(result);
+        continue;
+      }
+
+      pageMap.set(key, {
+        key,
+        documentId: result.document.id,
+        documentTitle: result.document.title || result.document.fileName,
+        page,
+        chunks: [result],
+        score: 0,
+      });
+    }
+
+    for (const cluster of pageMap.values()) {
+      const sortedChunks = [...cluster.chunks].sort((a, b) => b.similarity - a.similarity);
+      const bestSimilarity = sortedChunks[0]?.similarity || 0;
+      const chunkCountBonus = Math.min(sortedChunks.length - 1, 3) * 0.05;
+      const structuralBonus = sortedChunks.some((chunk) => this.hasStructuredSignals(chunk))
+        ? 0.14
+        : 0;
+      const pageContinuationBonus = sortedChunks.length > 1 ? 0.04 : 0;
+      cluster.score = Math.min(1, bestSimilarity + chunkCountBonus + structuralBonus + pageContinuationBonus);
+    }
+
+    const rankedClusters = Array.from(pageMap.values())
+      .sort((a, b) => {
+        if (b.score !== a.score) return b.score - a.score;
+        if (a.documentTitle !== b.documentTitle) return a.documentTitle.localeCompare(b.documentTitle);
+        return (a.page ?? 0) - (b.page ?? 0);
+      });
+
+    const selected: VectorSearchResult[] = [];
+    for (const cluster of rankedClusters) {
+      const pageChunks = [...cluster.chunks].sort((a, b) => b.similarity - a.similarity);
+      for (const chunk of pageChunks.slice(0, maxPerPageCluster)) {
+        selected.push(chunk);
+        if (selected.length >= maxResults) {
+          return selected;
+        }
+      }
+    }
+
+    return selected;
+  }
+
+  private hasStructuredSignals(result: VectorSearchResult): boolean {
+    const combined = `${result.document.title || ''}\n${result.chunk.source || ''}\n${result.chunk.content || ''}`.toLowerCase();
+    return (
+      /\btable\b/.test(combined) ||
+      /\bfigure\b/.test(combined) ||
+      /\bfig\b/.test(combined) ||
+      /\bsummary box\b/.test(combined) ||
+      /\bbox\b/.test(combined) ||
+      /\bcaption\b/.test(combined) ||
+      /\bcriteria list\b/.test(combined) ||
+      /\bcriteria\b/.test(combined)
+    );
   }
 
   async findSimilarChunks(
