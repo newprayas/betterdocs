@@ -138,8 +138,7 @@ export function getAnswerContract(intent: QueryIntent): AnswerContract {
         intent: 'generic_fallback',
         label: 'Structured Answer',
         sections: [
-          { title: 'Direct Answer', guidance: 'Answer the question directly. Keep it focused and concise.' },
-          { title: 'Key Points', guidance: 'Provide source-backed key details. Do not repeat the direct answer.' },
+          { title: 'Key Points', guidance: 'Answer the question directly and include the source-backed details in the same section. Do not repeat the same facts in a separate direct-answer block.' },
         ],
       };
   }
