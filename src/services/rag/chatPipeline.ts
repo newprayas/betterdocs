@@ -2156,12 +2156,11 @@ ${normalizedOriginal}
         onStreamEvent({ type: 'status', message: 'Answer Generation' });
       }
 
-      // Cap chunks fed to the LLM. Retrieval casts wide (up to 12) for quality,
-      // but the generator only needs the top N by similarity — more context
-      // linearly increases generation time without improving answer quality.
-      // Dynamic capping: max 6 chunks, minimum similarity 0.60
-      const GENERATION_CHUNK_CAP = 6;
-      const MIN_SIMILARITY_FLOOR = 0.60;
+      // Cap chunks fed to the LLM. Retrieval still casts wide, but we keep
+      // a slightly larger generation window so multi-part answers stay complete.
+      // Dynamic capping: max 8 chunks, minimum similarity 0.55
+      const GENERATION_CHUNK_CAP = 8;
+      const MIN_SIMILARITY_FLOOR = 0.55;
 
       const sortedGenerationCandidates = [...searchResults]
         .sort((a, b) => b.similarity - a.similarity)
@@ -2351,7 +2350,7 @@ ${normalizedOriginal}
     let citations: any[] = [];
     const groqModel = ANSWER_GENERATION_MODEL;
     const temperature = settings?.temperature || 0.7;
-    const maxTokens = settings?.maxTokens || 2048;
+    const maxTokens = Math.max(settings?.maxTokens || 2048, 3072);
 
     // Build conversation history for inference service
     const groqPrompt = messages.map(msg =>
@@ -2360,7 +2359,7 @@ ${normalizedOriginal}
 
     await groqService.generateStreamingResponse(
       groqPrompt,
-      "You are a helpful medical AI assistant.",
+      "You are a helpful medical AI assistant. Be thorough, structured, and complete. Include all relevant points from the conversation, not just the first few.",
       groqModel,
       {
         temperature,
@@ -2436,7 +2435,7 @@ ${normalizedOriginal}
       groqModel,
       {
         temperature: settings?.temperature || 0.7,
-        maxTokens: settings?.maxTokens || 2048,
+        maxTokens: Math.max(settings?.maxTokens || 2048, 3072),
         maxFailoverRetries: 2,
         retryBackoffMs: 300,
         onChunk: (chunk: string) => {
@@ -2500,7 +2499,7 @@ ${normalizedOriginal}
       let hadMissingSectionFill = false;
 
       const cappedTemperature = Math.min(settings?.temperature ?? 0.7, 0.2);
-      const maxTokens = settings?.maxTokens || 2048;
+      const maxTokens = Math.max(settings?.maxTokens || 2048, 3072);
 
       await groqService.generateStreamingResponse(
         groqPrompt,
@@ -2588,7 +2587,7 @@ ${normalizedOriginal}
         const citationResult = citationService.processSimplifiedCitations(responseForCitation, searchResults);
         citationMetadata = citationResult.citations.length > 0
           ? citationService.convertSimplifiedToMessageCitations(citationResult.citations)
-          : this.buildFallbackCitationsFromSearchResults(searchResults, Math.min(6, searchResults.length));
+          : this.buildFallbackCitationsFromSearchResults(searchResults, Math.min(8, searchResults.length));
         const consistentCitationOutput = this.enforceCitationConsistency(
           citationResult.renumberedResponse || responseForCitation,
           citationMetadata
@@ -2691,6 +2690,9 @@ Output format requirements:
 - WRITE FULL, DESCRIPTIVE BULLETS. Never write single-word bullets like "Pain" or "Infection". Instead write "Pain occurs early in the disease process" or "Infection risk increases with immunosuppression." Single-word bullets are strictly forbidden.
 - Keep subheadings short and specific.
 - If a required section is missing from sources, include the section and write "Not found in provided sources." under it.
+- Be thorough and complete. Do not stop after the first few points if the source has more detail.
+- If the source contains several related items, keep listing them in a clear structure instead of compressing them into a short summary.
+- For classification-style questions, include every distinct system, subtype, and criterion found in the retrieved text.
 
 Coverage requirements:
 - Do NOT summarize when the source contains detailed points.
@@ -3745,12 +3747,15 @@ VANCOUVER CITATION REQUIREMENTS:
 
 RESPONSE GUIDELINES:
 - Be accurate and helpful
-- Provide comprehensive but concise answers
+- Provide comprehensive answers first, then keep them readable and organized
+- Do not cut off a list early if the source still has more items
 - Handle unit conversions for medical/technical data (e.g., temperatures, weights)
 - Maintain a professional but conversational tone
 - If multiple documents provide conflicting information, acknowledge the discrepancy
 - Do NOT use markdown tables unless the user explicitly asks for a table
 - Prefer headings, short paragraphs, and bullet lists for better mobile readability
+- Be thorough and complete. If the source contains several relevant points, list them all in a clear structure instead of compressing them into a short summary.
+- For classification-style questions, include every distinct system, subtype, and criterion found in the retrieved text.
 
 CITATION VERIFICATION PROCESS:
 1. Make a factual claim
