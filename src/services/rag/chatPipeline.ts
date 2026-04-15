@@ -2328,6 +2328,118 @@ export class ChatPipeline {
     return Math.min(0.24, bonus);
   }
 
+  private getCurrentLocalGenerationFocus(): {
+    documentId: string;
+    page: number | null;
+  } | null {
+    const anchor = this.lastRetrievalAnchorWindowDebug?.anchor;
+    if (anchor) {
+      return {
+        documentId: anchor.documentId,
+        page: anchor.page,
+      };
+    }
+
+    const strongestCluster = this.lastGenerationPageSelectionDebug?.strongestCluster;
+    if (strongestCluster) {
+      return {
+        documentId: strongestCluster.documentId,
+        page: strongestCluster.page,
+      };
+    }
+
+    return null;
+  }
+
+  private isPreferredLocalGenerationChunk(
+    chunk: VectorSearchResult
+  ): boolean {
+    const localFocus = this.getCurrentLocalGenerationFocus();
+    if (!localFocus || localFocus.page === null) {
+      return false;
+    }
+
+    const page = this.getChunkPageNumber(chunk.chunk);
+    if (page === null) {
+      return false;
+    }
+
+    return (
+      chunk.document.id === localFocus.documentId &&
+      Math.abs(page - localFocus.page) <= 1
+    );
+  }
+
+  private looksLikeContinuationFragment(content: string): boolean {
+    const normalized = (content || '').trim();
+    if (!normalized) return false;
+
+    return (
+      /^[a-z]/.test(normalized) ||
+      /^(?:\)|\]|,|;|:|\.|and\b|or\b|with\b|of\b)/i.test(normalized) ||
+      /\bcontinues?\b/i.test(normalized)
+    );
+  }
+
+  private qualifiesForRelaxedGenerationFloor(
+    chunk: VectorSearchResult,
+    queryIntent?: QueryIntent
+  ): boolean {
+    if (!this.isPreferredLocalGenerationChunk(chunk)) {
+      return false;
+    }
+
+    const content = chunk.chunk.content || '';
+    return (
+      this.hasLocalContinuationSignals(content, queryIntent) ||
+      this.looksLikeContinuationFragment(content)
+    );
+  }
+
+  private getGenerationSimilarityFloor(
+    chunk: VectorSearchResult,
+    queryIntent?: QueryIntent,
+    defaultFloor: number = 0.55
+  ): number {
+    if (this.qualifiesForRelaxedGenerationFloor(chunk, queryIntent)) {
+      return 0.5;
+    }
+
+    return defaultFloor;
+  }
+
+  private orderGenerationChunksForContext(
+    chunks: Array<VectorSearchResult & { quality?: ChunkQualityAssessment }>
+  ): Array<VectorSearchResult & { quality?: ChunkQualityAssessment }> {
+    const localFocus = this.getCurrentLocalGenerationFocus();
+
+    return [...chunks].sort((a, b) => {
+      const aPreferred = this.isPreferredLocalGenerationChunk(a);
+      const bPreferred = this.isPreferredLocalGenerationChunk(b);
+      if (aPreferred !== bPreferred) return aPreferred ? -1 : 1;
+
+      if (localFocus) {
+        const aSameDoc = a.document.id === localFocus.documentId;
+        const bSameDoc = b.document.id === localFocus.documentId;
+        if (aSameDoc !== bSameDoc) return aSameDoc ? -1 : 1;
+      }
+
+      if (a.document.id !== b.document.id) {
+        return a.document.id.localeCompare(b.document.id);
+      }
+
+      const aPage = this.getChunkPageNumber(a.chunk) ?? Number.MAX_SAFE_INTEGER;
+      const bPage = this.getChunkPageNumber(b.chunk) ?? Number.MAX_SAFE_INTEGER;
+      if (aPage !== bPage) return aPage - bPage;
+
+      const aIndex = this.getEffectiveChunkIndex(a.chunk) ?? Number.MAX_SAFE_INTEGER;
+      const bIndex = this.getEffectiveChunkIndex(b.chunk) ?? Number.MAX_SAFE_INTEGER;
+      if (aIndex !== bIndex) return aIndex - bIndex;
+
+      return b.similarity - a.similarity;
+    });
+  }
+
   private classifyRetrievedChunkForDebug(
     result: VectorSearchResult,
     baseChunkIds: Set<string>,
@@ -3637,11 +3749,14 @@ ${normalizedOriginal}
 
       const sortedGenerationCandidates = [...searchResults]
         .sort((a, b) => this.rankGenerationCandidate(b, queryIntent) - this.rankGenerationCandidate(a, queryIntent))
-        .filter((chunk) => chunk.similarity >= MIN_SIMILARITY_FLOOR);
+        .filter((chunk) => chunk.similarity >= this.getGenerationSimilarityFloor(chunk, queryIntent, MIN_SIMILARITY_FLOOR));
+      const relaxedFloorCount = sortedGenerationCandidates.filter(
+        (chunk) => this.getGenerationSimilarityFloor(chunk, queryIntent, MIN_SIMILARITY_FLOOR) < MIN_SIMILARITY_FLOOR
+      ).length;
 
       console.log(
         '[GENERATION CHUNKS]',
-        `Using top ${Math.min(sortedGenerationCandidates.length, GENERATION_CHUNK_CAP)} of ${searchResults.length} retrieved chunks for generation (floor: ${MIN_SIMILARITY_FLOOR})`
+        `Using top ${Math.min(sortedGenerationCandidates.length, GENERATION_CHUNK_CAP)} of ${searchResults.length} retrieved chunks for generation (base floor: ${MIN_SIMILARITY_FLOOR}; relaxed local-continuation chunks: ${relaxedFloorCount})`
       );
 
       const qualityFilteredChunks = this.filterQualityChunks(sortedGenerationCandidates);
@@ -3759,9 +3874,10 @@ ${normalizedOriginal}
         }
 
         if (!generationCandidateIds.has(chunkId)) {
+          const appliedFloor = this.getGenerationSimilarityFloor(chunk, queryIntent, MIN_SIMILARITY_FLOOR);
           generationDecisionsByChunkId.set(chunkId, {
             fedToGenerator: false,
-            reason: `below similarity floor (${MIN_SIMILARITY_FLOOR.toFixed(2)})`,
+            reason: `below similarity floor (${appliedFloor.toFixed(2)})`,
           });
           continue;
         }
@@ -3774,7 +3890,8 @@ ${normalizedOriginal}
 
       // Build context from generation chunks only
       console.log('[CONTEXT BUILDING]', 'Constructing context from search results...');
-      const context = this.buildContext(generationChunksForModel, retrievalQuery);
+      const orderedGenerationChunksForContext = this.orderGenerationChunksForContext(generationChunksForModel);
+      const context = this.buildContext(orderedGenerationChunksForContext, retrievalQuery);
       console.log('[CONTEXT CREATED]', `Context string length: ${context.length} characters`);
 
       const generationStartMs = Date.now();
@@ -3782,7 +3899,7 @@ ${normalizedOriginal}
         sessionId,
         standaloneQuery,
         context,
-        generationChunksForModel,  // capped + quality-filtered
+        orderedGenerationChunksForContext,  // capped + quality-filtered
         answerContract,
         contractInstruction,
         queryIntent,
@@ -4257,12 +4374,14 @@ Goal: accurate, full-detail, source-grounded answer; citations and references ar
     contextParts.push('Retrieved Context Sources:\n');
     contextParts.push('Grouping hint: content from the same page and adjacent pages (page N, N-1, N+1) often belongs to the same heading or subsection when the topic continues.');
     contextParts.push('Grouping rule: if the source heading or section cue changes, start a new subsection instead of merging the ideas.');
+    contextParts.push('Continuation rule: if a source on the next page clearly continues the same list, same examples, or same subsection, treat it as a direct continuation instead of a new unrelated block.');
     contextParts.push('');
 
     for (let i = 0; i < searchResults.length; i++) {
       const result = searchResults[i];
       const chunk = result.chunk;
       const document = result.document;
+      const previousResult = i > 0 ? searchResults[i - 1] : null;
 
       // Enhanced page number detection - same logic as citation service
       let pageInfo = '';
@@ -4297,6 +4416,7 @@ Goal: accurate, full-detail, source-grounded answer; citations and references ar
       const contentPreview = this.createContentPreview(chunk.content, retrievalQuery);
       const sectionCue = this.createSectionCue(chunk.content);
       const similarityScore = result.similarity ? ` (Similarity: ${(result.similarity * 100).toFixed(1)}%)` : '';
+      const continuationCue = this.describeContextContinuation(previousResult, result);
 
       console.log(`[CONTEXT SOURCE ${i + 1}]`, {
         documentTitle: document.title,
@@ -4304,6 +4424,7 @@ Goal: accurate, full-detail, source-grounded answer; citations and references ar
         similarity: result.similarity,
         chunkId: chunk.id,
         contentPreview: contentPreview,
+        continuationCue,
         isCombined: chunk.metadata?.isCombined,
         originalChunkCount: chunk.metadata?.originalChunkCount
       });
@@ -4312,6 +4433,7 @@ Goal: accurate, full-detail, source-grounded answer; citations and references ar
       contextParts.push(`Source ID: [${i + 1}]`);
       contextParts.push(`Document: ${document.title}${pageInfo}${similarityScore}`);
       contextParts.push(`Section cue: ${sectionCue || 'No explicit heading detected'}`);
+      contextParts.push(`Continuation cue: ${continuationCue}`);
       contextParts.push(`Preview: ${contentPreview}`);
       contextParts.push('');
       contextParts.push('Full Content:');
@@ -4326,6 +4448,57 @@ Goal: accurate, full-detail, source-grounded answer; citations and references ar
     console.log('=== CONTEXT BUILDING DEBUG END ===\n');
 
     return finalContext;
+  }
+
+  private describeContextContinuation(
+    previousResult: VectorSearchResult | null,
+    currentResult: VectorSearchResult
+  ): string {
+    if (!previousResult) {
+      return 'Start of a new local source flow.';
+    }
+
+    if (previousResult.document.id !== currentResult.document.id) {
+      return 'New document/source flow.';
+    }
+
+    const previousPage = this.getChunkPageNumber(previousResult.chunk);
+    const currentPage = this.getChunkPageNumber(currentResult.chunk);
+    const previousCue = this.createSectionCue(previousResult.chunk.content || '');
+    const currentCue = this.createSectionCue(currentResult.chunk.content || '');
+    const previousIndex = this.getEffectiveChunkIndex(previousResult.chunk);
+    const currentIndex = this.getEffectiveChunkIndex(currentResult.chunk);
+
+    const adjacentPage =
+      previousPage !== null &&
+      currentPage !== null &&
+      Math.abs(currentPage - previousPage) === 1;
+    const samePage =
+      previousPage !== null &&
+      currentPage !== null &&
+      previousPage === currentPage;
+    const adjacentIndex =
+      previousIndex !== null &&
+      currentIndex !== null &&
+      Math.abs(currentIndex - previousIndex) <= 2;
+    const continuationFragment = this.looksLikeContinuationFragment(currentResult.chunk.content || '');
+    const sharedCue =
+      previousCue &&
+      currentCue &&
+      previousCue.toLowerCase() === currentCue.toLowerCase();
+
+    if ((samePage || adjacentPage) && (adjacentIndex || continuationFragment || sharedCue)) {
+      if (adjacentPage) {
+        return `Direct continuation of the previous source across adjacent pages (${previousPage} -> ${currentPage}).`;
+      }
+      return `Direct continuation of the previous source on the same page (${currentPage}).`;
+    }
+
+    if (samePage || adjacentPage) {
+      return `Related local source from the same page window (${previousPage ?? '?'} -> ${currentPage ?? '?'}).`;
+    }
+
+    return 'New subsection/source flow.';
   }
 
   /**
