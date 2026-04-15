@@ -795,6 +795,59 @@ export class ChatPipeline {
     return normalized.charAt(0).toUpperCase() + normalized.slice(1);
   }
 
+  private hasExplicitNonClinicalFeatureFacet(query: string): boolean {
+    const normalized = (query || '').toLowerCase().replace(/\s+/g, ' ').trim();
+    if (!normalized) return false;
+
+    return /\b(investigations?|investigation|imaging|image|radiolog(?:y|ical)?|ct|mri|x-?ray|ultra(?:sound|sonography)|scan|diagnos(?:is|tic)?|management|treatment|therapy|surg(?:ery|ical)?|classification|types?|causes?|etiolog(?:y|ical)?|complications?|pathophysiolog(?:y|ical)?|prognos(?:is|tic)?)\b/.test(normalized);
+  }
+
+  private shouldExpandToClinicalHistoryAndExam(query: string): boolean {
+    const normalized = (query || '').toLowerCase().replace(/\s+/g, ' ').trim();
+    if (!normalized) return false;
+    if (!/\b(clinical features?|features?)\b/.test(normalized)) return false;
+    return !this.hasExplicitNonClinicalFeatureFacet(normalized);
+  }
+
+  private buildClinicalFeaturesHistoryExamRewrite(topic: string): string {
+    return `What are the clinical features, including patient history and physical examination findings, of ${topic}?`;
+  }
+
+  private enforceRewriteScope(
+    originalQuery: string,
+    rewrittenQuery: string,
+    immediateRewriteQuery: string | null
+  ): string {
+    if (!this.shouldExpandToClinicalHistoryAndExam(originalQuery)) {
+      return rewrittenQuery;
+    }
+
+    const topic =
+      this.extractTopicFromClarifiedQuery(rewrittenQuery) ||
+      this.extractTopicFromQuery(rewrittenQuery) ||
+      this.extractTopicFromClarifiedQuery(originalQuery) ||
+      this.extractTopicFromQuery(originalQuery) ||
+      (immediateRewriteQuery
+        ? (this.extractTopicFromClarifiedQuery(immediateRewriteQuery) || this.extractTopicFromQuery(immediateRewriteQuery))
+        : null);
+
+    if (!topic) {
+      return rewrittenQuery;
+    }
+
+    const enforced = this.buildClinicalFeaturesHistoryExamRewrite(topic);
+    if (enforced.toLowerCase() !== rewrittenQuery.toLowerCase()) {
+      console.log('[QUERY REWRITER SCOPE GUARD]', {
+        reason: 'clinical_features_to_history_and_exam_only',
+        originalQuery,
+        rewrittenQuery,
+        enforcedQuery: enforced,
+      });
+    }
+
+    return enforced;
+  }
+
   private extractMostRecentClarifiedQuery(history: any[]): string | null {
     const assistantMessages = (history || [])
       .filter((msg) => msg?.role === 'assistant' && typeof msg?.content === 'string')
@@ -2908,9 +2961,9 @@ export class ChatPipeline {
     const immediateRewriteQuery = this.parseStructuredRewriteOutput(normalizedLatestRewriteQueryResponse);
     const hasImmediateContext = Boolean(immediateRewriteQuery);
     const rewriterSystemPrompt =
-      'You rewrite medical user input into one high-quality standalone retrieval query. Return strict JSON only.';
+      'You rewrite medical user input into one high-quality standalone retrieval query. Preserve the user scope exactly. If the user asks for clinical features or features, expand only to patient history and physical examination findings; do not add investigations, imaging, diagnosis, treatment, management, classification, causes, or complications unless the user explicitly asked. Return strict JSON only.';
     const rewriterSystemPromptStrict =
-      'Return STRICT JSON ONLY in this exact schema: {"query":"<standalone medical retrieval query>"}. No markdown, no extra keys, no commentary.';
+      'Return STRICT JSON ONLY in this exact schema: {"query":"<standalone medical retrieval query>"}. Preserve scope exactly. For clinical features/features queries, expand only to history and physical examination findings unless the user explicitly asked for other facets. No markdown, no extra keys, no commentary.';
 
     const prompt = `
 Rewrite the latest user query into one standalone retrieval query.
@@ -2925,6 +2978,8 @@ Goals:
 5) If context is unrelated/absent, rewrite current query standalone without context.
 6) Keep meaning faithful to user intent; do not invent a new topic.
 7) If user asks for Rx or treatment in query, include BOTH medical and surgical treatment wording.
+8) If user asks for clinical features or features, expand ONLY to patient history and physical examination findings.
+9) Do NOT add investigations, imaging, diagnosis, treatment, management, classification, causes, complications, or any other extra facet unless the user explicitly asked for it.
 
 Immediate Previous Rewrite Response (JSON):
 ${normalizedLatestRewriteQueryResponse || 'None'}
@@ -2938,6 +2993,9 @@ Return STRICT JSON ONLY:
 {"query":"<standalone medical retrieval query>"}
 Do not add markdown, code fences, labels, or extra keys.
 Use ONLY immediate context below when needed.
+Preserve user scope exactly.
+If user asks for clinical features or features, expand only to patient history and physical examination findings.
+Do not add investigations, imaging, diagnosis, treatment, management, classification, causes, or complications unless explicitly requested.
 
 Immediate Previous Rewrite Response (JSON):
 ${normalizedLatestRewriteQueryResponse || 'None'}
@@ -3043,7 +3101,12 @@ ${normalizedOriginal}
         };
       }
 
-      const finalRewritten = this.normalizeStandaloneQueryShape(cleanedQuery);
+      const scopeAlignedQuery = this.enforceRewriteScope(
+        normalizedOriginal,
+        cleanedQuery,
+        immediateRewriteQuery
+      );
+      const finalRewritten = this.normalizeStandaloneQueryShape(scopeAlignedQuery);
       const wasRewritten = finalRewritten.toLowerCase() !== normalizedOriginal.toLowerCase();
       if (wasRewritten) {
         this.rewriteTelemetry.rewritten += 1;
