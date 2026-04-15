@@ -1646,7 +1646,9 @@ export class ChatPipeline {
   }
 
   private rankGenerationCandidate(
-    chunk: VectorSearchResult & { quality?: ChunkQualityAssessment }
+    chunk: VectorSearchResult & { quality?: ChunkQualityAssessment },
+    queryIntent?: QueryIntent,
+    selected: Array<VectorSearchResult & { quality?: ChunkQualityAssessment }> = []
   ): number {
     const content = `${chunk.document.title || ''}\n${chunk.chunk.source || ''}\n${chunk.chunk.content || ''}`.toLowerCase();
     const baseSimilarity = chunk.similarity || 0;
@@ -1661,9 +1663,9 @@ export class ChatPipeline {
       /\b\d+\b/.test(content);
 
     let bonus = 0;
-    if (hasTableLikeStructure) bonus += 0.18;
-    if (hasScoringStructure) bonus += 0.16;
-    if (hasThresholdStructure) bonus += 0.08;
+    if (hasTableLikeStructure) bonus += 0.12;
+    if (hasScoringStructure) bonus += 0.12;
+    if (hasThresholdStructure) bonus += 0.06;
     if (this.shouldRescueStructuredChunk({
       ...chunk,
       quality: chunk.quality || {
@@ -1673,11 +1675,16 @@ export class ChatPipeline {
         exclusionType: 'other',
       }
     })) {
-      bonus += 0.1;
+      bonus += 0.06;
     }
 
     const qualityScore = chunk.quality?.score ?? 1;
-    return baseSimilarity + bonus + (qualityScore * 0.02);
+    const intentBonus = this.scoreGenerationIntentAlignment(content, queryIntent);
+    const detailBonus = this.scoreGenerationDetailBonus(content, queryIntent);
+    const coverageBonus = this.scoreGenerationCoverageBonus(chunk, selected, queryIntent);
+    const redundancyPenalty = this.scoreGenerationRedundancyPenalty(chunk, selected);
+    const sideTopicPenalty = this.scoreGenerationSideTopicPenalty(content, queryIntent);
+    return baseSimilarity + bonus + intentBonus + detailBonus + coverageBonus + redundancyPenalty + sideTopicPenalty + (qualityScore * 0.02);
   }
 
   private isHighValueStructuredGenerationChunk(
@@ -1786,9 +1793,226 @@ export class ChatPipeline {
     return /\b(clinical|history|examination|management|investigation|classification|pain|radiation|symptoms?)\b/.test(normalized);
   }
 
+  private getGenerationFacetLabels(content: string, queryIntent?: QueryIntent): string[] {
+    const normalized = (content || '').toLowerCase();
+    if (!normalized) return [];
+
+    const facets = new Set<string>();
+
+    switch (queryIntent) {
+      case 'clinical_features_history_exam':
+        if (/\b(history|symptoms?|presenting complaints?|pain|anorexia|nausea|vomiting|fever|pyrexia|discomfort)\b/.test(normalized)) facets.add('history');
+        if (/\b(signs?|examination|inspection|palpation|tenderness|guarding|rebound|mcburney|rovsing|psoas|obturator|hyperaesthesia)\b/.test(normalized)) facets.add('examination');
+        if (/\b(retrocaecal|pelvic|atypical|special features?|position of the appendix|tenesmus|suprapubic)\b/.test(normalized)) facets.add('special_features');
+        break;
+      case 'investigations':
+        if (/\b(ct|mri|x-?ray|ultra(?:sound|sonography)|scan|urogram|cystoscopy|laboratory|blood test|imaging)\b/.test(normalized)) facets.add('modality');
+        if (/\b(show|detect|finding|findings|radiopaque|radiolucent|obstruction|filling defects?)\b/.test(normalized)) facets.add('findings');
+        if (/\b(creatinine|before|after|follow-?up|supplementary|gold standard|indication)\b/.test(normalized)) facets.add('usage_notes');
+        break;
+      case 'classification_types':
+        if (/\b(types?|classification|subtypes?)\b/.test(normalized)) facets.add('types');
+        if (/\b(primary|secondary|acute|chronic|specific|non-?specific)\b/.test(normalized)) facets.add('subgroups');
+        if (/\b(criteria|grading|grade|feature|difference|compared|versus)\b/.test(normalized)) facets.add('criteria');
+        break;
+      case 'treatment_rx':
+        if (/\b(conservative|medical|drug|antibiotic|analgesia|fluids?)\b/.test(normalized)) facets.add('medical');
+        if (/\b(surgery|surgical|operation|appendicectomy|appendectomy|procedure|laparoscopy|laparotomy)\b/.test(normalized)) facets.add('surgical');
+        if (/\b(indication|indications|timing|complication|follow-?up|postoperative|aftercare)\b/.test(normalized)) facets.add('management_notes');
+        break;
+      case 'causes':
+      case 'risk_factors':
+        if (/\b(causes?|etiology|aetiology|pathogenesis|mechanism)\b/.test(normalized)) facets.add('cause_core');
+        if (/\b(risk|predisposing|associated|linked|family history|age|sex|occupation|geography|climate)\b/.test(normalized)) facets.add('risk_factors');
+        if (/\b(protective|aggravating|trigger|precipitating)\b/.test(normalized)) facets.add('modifiers');
+        break;
+      case 'complications':
+        if (/\b(complications?|perforation|bleeding|sepsis|obstruction|rupture|abscess)\b/.test(normalized)) facets.add('complications');
+        if (/\b(early|late|local|systemic)\b/.test(normalized)) facets.add('categories');
+        break;
+      case 'prognosis':
+        if (/\b(prognosis|outcome|survival|mortality|recovery|recurrence|course)\b/.test(normalized)) facets.add('outcomes');
+        if (/\b(factors?|predictors?|worse|better|depends on)\b/.test(normalized)) facets.add('predictors');
+        break;
+      case 'position_location':
+        if (/\b(position|location|lies|situated|surface marking|anatomical)\b/.test(normalized)) facets.add('location');
+        if (/\b(relationship|relation|adjacent|anterior|posterior|medial|lateral|superior|inferior)\b/.test(normalized)) facets.add('relations');
+        break;
+      case 'difference_between':
+        if (/\b(difference|differentiate|distinguish|whereas|unlike|compared|versus|vs)\b/.test(normalized)) facets.add('contrast');
+        if (/\b(feature|features|clinical|investigation|treatment|cause)\b/.test(normalized)) facets.add('comparison_points');
+        break;
+      case 'how_to_procedure':
+        if (/\b(step|steps|procedure|technique|incision|dissection|ligation|closure|perform)\b/.test(normalized)) facets.add('steps');
+        if (/\b(indication|position|instrument|preparation|complication|postoperative)\b/.test(normalized)) facets.add('procedure_context');
+        break;
+      case 'definition':
+        if (/\b(definition|defined as|refers to|means|is a|is an)\b/.test(normalized)) facets.add('definition');
+        if (/\b(types?|classification|causes?|features?|complications?|treatment)\b/.test(normalized)) facets.add('extra_context');
+        break;
+      default:
+        if (/\b(summary|overview|introduction|clinical|history|signs?|symptoms?|management|investigation|classification|causes?)\b/.test(normalized)) facets.add('general');
+        break;
+    }
+
+    return Array.from(facets);
+  }
+
+  private scoreGenerationIntentAlignment(content: string, queryIntent?: QueryIntent): number {
+    let score = this.scoreRetrievalIntentAlignment(content, queryIntent);
+    const normalized = (content || '').toLowerCase();
+    if (!normalized || !queryIntent) return score;
+
+    if (queryIntent === 'definition') {
+      if (/\b(definition|defined as|refers to|means|is a|is an)\b/.test(normalized)) score += 0.18;
+      if (/\b(management|treatment|investigation|complication)\b/.test(normalized)) score -= 0.08;
+    } else if (queryIntent === 'difference_between') {
+      if (/\b(difference|differentiate|distinguish|whereas|unlike|compared|versus|vs)\b/.test(normalized)) score += 0.18;
+    } else if (queryIntent === 'position_location') {
+      if (/\b(position|location|lies|situated|surface marking|anatomical|relation)\b/.test(normalized)) score += 0.18;
+      if (/\b(management|treatment)\b/.test(normalized)) score -= 0.08;
+    } else if (queryIntent === 'complications') {
+      if (/\b(complications?|perforation|sepsis|bleeding|abscess|rupture|obstruction)\b/.test(normalized)) score += 0.18;
+      if (/\b(definition|management)\b/.test(normalized)) score -= 0.08;
+    } else if (queryIntent === 'prognosis') {
+      if (/\b(prognosis|outcome|survival|mortality|recovery|recurrence|course)\b/.test(normalized)) score += 0.18;
+    } else if (queryIntent === 'how_to_procedure') {
+      if (/\b(step|steps|procedure|technique|perform|incision|dissection|ligation|closure)\b/.test(normalized)) score += 0.18;
+    }
+
+    return Math.max(-0.24, Math.min(0.4, score));
+  }
+
+  private scoreGenerationDetailBonus(content: string, queryIntent?: QueryIntent): number {
+    const normalized = (content || '').toLowerCase();
+    if (!normalized) return 0;
+
+    const sentenceCount = (normalized.match(/[.!?]/g) || []).length;
+    let bonus = 0;
+
+    if (sentenceCount >= 3) bonus += 0.04;
+    if (sentenceCount >= 5) bonus += 0.03;
+
+    if (queryIntent === 'clinical_features_history_exam') {
+      if (/\b(history|similar discomfort|family history|menstrual|pregnancy|vaginal discharge|childbearing age|follow the onset|episodes? of vomiting)\b/.test(normalized)) bonus += 0.1;
+      if (/\b(examination|inspection|palpation|cough|percussion|pointing sign|rovsing|psoas|obturator)\b/.test(normalized)) bonus += 0.06;
+    } else if (queryIntent === 'investigations') {
+      if (/\b(show|shows|detect|determine|indicate|gold standard|follow-?up|before|after)\b/.test(normalized)) bonus += 0.08;
+    } else if (queryIntent === 'treatment_rx') {
+      if (/\b(indications?|contraindications?|complications?|follow-?up|postoperative|timing)\b/.test(normalized)) bonus += 0.08;
+    }
+
+    return Math.min(0.16, bonus);
+  }
+
+  private scoreGenerationSideTopicPenalty(content: string, queryIntent?: QueryIntent): number {
+    const normalized = (content || '').toLowerCase();
+    if (!normalized || !queryIntent) return 0;
+
+    let penalty = 0;
+
+    if (/\b(figure|fig\.|courtesy of|photomicrograph|original magnification)\b/.test(normalized)) {
+      penalty -= 0.08;
+    }
+
+    if (queryIntent !== 'difference_between' && /\b(differential diagnosis|differential diagnoses)\b/.test(normalized)) {
+      penalty -= 0.22;
+    }
+
+    if (queryIntent !== 'risk_factors' && /\b(risk factors?|predisposing factors?)\b/.test(normalized)) {
+      penalty -= 0.1;
+    }
+
+    if (queryIntent === 'clinical_features_history_exam') {
+      if (/\b(differential diagnosis|table \d+|summary box \d+\.\d+\s*risk factors?)\b/.test(normalized)) penalty -= 0.14;
+      if (/\b(management|treatment|investigation|diagnosis|classification|types of)\b/.test(normalized)) penalty -= 0.14;
+    } else if (queryIntent === 'investigations') {
+      if (/\b(management|treatment|therapy|classification|types of|differential diagnosis)\b/.test(normalized)) penalty -= 0.14;
+    } else if (queryIntent === 'treatment_rx') {
+      if (/\b(differential diagnosis|classification|types of|risk factors?|causes?)\b/.test(normalized)) penalty -= 0.12;
+    } else if (queryIntent === 'classification_types') {
+      if (/\b(management|treatment|differential diagnosis|history|examination)\b/.test(normalized)) penalty -= 0.12;
+    } else if (queryIntent === 'causes' || queryIntent === 'risk_factors') {
+      if (/\b(management|treatment|differential diagnosis|examination)\b/.test(normalized)) penalty -= 0.12;
+    } else if (queryIntent === 'definition') {
+      if (/\b(differential diagnosis|management|treatment|investigation|complications?)\b/.test(normalized)) penalty -= 0.12;
+    }
+
+    return Math.max(-0.32, penalty);
+  }
+
+  private getGenerationContentTokens(content: string): Set<string> {
+    const stopwords = new Set([
+      'the', 'and', 'for', 'that', 'with', 'from', 'this', 'have', 'which', 'into', 'over', 'under',
+      'when', 'will', 'then', 'than', 'they', 'them', 'their', 'there', 'were', 'been', 'being',
+      'also', 'only', 'very', 'more', 'most', 'some', 'such', 'does', 'done', 'used', 'use',
+      'page', 'chapter', 'patient', 'patients'
+    ]);
+
+    return new Set(
+      (content || '')
+        .toLowerCase()
+        .replace(/[^\w\s-]/g, ' ')
+        .split(/\s+/)
+        .filter((token) => token.length >= 4 && !stopwords.has(token))
+    );
+  }
+
+  private scoreGenerationRedundancyPenalty(
+    candidate: VectorSearchResult & { quality?: ChunkQualityAssessment },
+    selected: Array<VectorSearchResult & { quality?: ChunkQualityAssessment }>
+  ): number {
+    if (selected.length === 0) return 0;
+
+    const candidateTokens = this.getGenerationContentTokens(candidate.chunk.content || '');
+    if (candidateTokens.size === 0) return 0;
+
+    let maxOverlap = 0;
+    for (const item of selected) {
+      const itemTokens = this.getGenerationContentTokens(item.chunk.content || '');
+      if (itemTokens.size === 0) continue;
+
+      let intersection = 0;
+      for (const token of candidateTokens) {
+        if (itemTokens.has(token)) intersection += 1;
+      }
+
+      const overlap = intersection / Math.max(candidateTokens.size, 1);
+      if (overlap > maxOverlap) maxOverlap = overlap;
+    }
+
+    if (maxOverlap >= 0.75) return -0.28;
+    if (maxOverlap >= 0.6) return -0.18;
+    if (maxOverlap >= 0.45) return -0.1;
+    return 0;
+  }
+
+  private scoreGenerationCoverageBonus(
+    candidate: VectorSearchResult & { quality?: ChunkQualityAssessment },
+    selected: Array<VectorSearchResult & { quality?: ChunkQualityAssessment }>,
+    queryIntent?: QueryIntent
+  ): number {
+    const candidateFacets = this.getGenerationFacetLabels(candidate.chunk.content || '', queryIntent);
+    if (candidateFacets.length === 0) return 0;
+
+    const selectedFacets = new Set(
+      selected.flatMap((item) => this.getGenerationFacetLabels(item.chunk.content || '', queryIntent))
+    );
+
+    let bonus = 0;
+    for (const facet of candidateFacets) {
+      if (!selectedFacets.has(facet)) {
+        bonus += 0.08;
+      }
+    }
+
+    return Math.min(0.2, bonus);
+  }
+
   private selectGenerationChunksByPageCluster(
     chunks: Array<VectorSearchResult & { quality: ChunkQualityAssessment }>,
-    maxResults: number
+    maxResults: number,
+    queryIntent?: QueryIntent
   ): Array<VectorSearchResult & { quality: ChunkQualityAssessment }> {
     if (chunks.length === 0 || maxResults <= 0) {
       return [];
@@ -1828,13 +2052,20 @@ export class ChatPipeline {
 
     for (const cluster of clusters.values()) {
       const sortedChunks = [...cluster.chunks].sort(
-        (a, b) => this.rankGenerationCandidate(b) - this.rankGenerationCandidate(a)
+        (a, b) => this.rankGenerationCandidate(b, queryIntent) - this.rankGenerationCandidate(a, queryIntent)
       );
-      const bestScore = this.rankGenerationCandidate(sortedChunks[0]);
+      const topScores = sortedChunks
+        .slice(0, 2)
+        .map((chunk) => this.rankGenerationCandidate(chunk, queryIntent));
+      const bestScore = topScores[0] || 0;
+      const representativeScore =
+        topScores.length >= 2
+          ? (bestScore * 0.7) + (topScores[1] * 0.3)
+          : bestScore;
       const companionBonus = Math.min(sortedChunks.length - 1, 2) * 0.08;
-      const structuredBonus = cluster.hasStructuredChunk ? 0.12 : 0;
+      const structuredBonus = cluster.hasStructuredChunk ? 0.06 : 0;
       cluster.richness = this.calculatePageRichness(sortedChunks);
-      cluster.score = bestScore + companionBonus + structuredBonus + cluster.richness;
+      cluster.score = representativeScore + companionBonus + structuredBonus + cluster.richness;
       cluster.chunks = sortedChunks;
     }
 
@@ -1940,9 +2171,18 @@ export class ChatPipeline {
                   ? Math.min(passIndex === 0 ? 2 : 1, remainingSlots, cluster.chunks.length)
                   : Math.min(1, remainingSlots, cluster.chunks.length);
 
-        for (const chunk of cluster.chunks.slice(0, takeCount)) {
+        const clusterPool = [...cluster.chunks];
+        const chosenFromCluster: Array<VectorSearchResult & { quality: ChunkQualityAssessment }> = [];
+        while (chosenFromCluster.length < takeCount && clusterPool.length > 0) {
+          clusterPool.sort((a, b) => (
+            this.rankGenerationBackfillCandidate(b, [...selected, ...chosenFromCluster], strongestCluster, queryIntent) -
+            this.rankGenerationBackfillCandidate(a, [...selected, ...chosenFromCluster], strongestCluster, queryIntent)
+          ));
+          const chunk = clusterPool.shift();
+          if (!chunk) break;
           if (usedChunkIds.has(chunk.chunk.id)) continue;
           selected.push(chunk);
+          chosenFromCluster.push(chunk);
           usedChunkIds.add(chunk.chunk.id);
         }
       }
@@ -1951,7 +2191,7 @@ export class ChatPipeline {
     if (selected.length < maxResults) {
       const rankedBackfillCandidates = chunks
         .filter((chunk) => !usedChunkIds.has(chunk.chunk.id))
-        .sort((a, b) => this.rankGenerationBackfillCandidate(b, selected, strongestCluster) - this.rankGenerationBackfillCandidate(a, selected, strongestCluster));
+        .sort((a, b) => this.rankGenerationBackfillCandidate(b, selected, strongestCluster, queryIntent) - this.rankGenerationBackfillCandidate(a, selected, strongestCluster, queryIntent));
 
       const localBackfillCandidates = localFocusActive
         ? rankedBackfillCandidates.filter((chunk) => isPreferredLocalChunk(chunk))
@@ -2000,7 +2240,7 @@ export class ChatPipeline {
     generationPageSelectionDebug.selectedPages = selectedPageSummary;
     this.lastGenerationPageSelectionDebug = generationPageSelectionDebug;
 
-    return selected.sort((a, b) => this.rankGenerationCandidate(b) - this.rankGenerationCandidate(a));
+    return selected.sort((a, b) => this.rankGenerationCandidate(b, queryIntent) - this.rankGenerationCandidate(a, queryIntent));
   }
 
   private rankGenerationBackfillCandidate(
@@ -2009,9 +2249,10 @@ export class ChatPipeline {
     strongestCluster?: {
       documentId: string;
       page: number | null;
-    } | null
+    } | null,
+    queryIntent?: QueryIntent
   ): number {
-    return this.rankGenerationCandidate(candidate) + this.scoreGenerationContinuityBonus(candidate, selected, strongestCluster);
+    return this.rankGenerationCandidate(candidate, queryIntent, selected) + this.scoreGenerationContinuityBonus(candidate, selected, strongestCluster);
   }
 
   private scoreGenerationContinuityBonus(
@@ -3350,7 +3591,7 @@ ${normalizedOriginal}
       const MIN_SIMILARITY_FLOOR = 0.55;
 
       const sortedGenerationCandidates = [...searchResults]
-        .sort((a, b) => this.rankGenerationCandidate(b) - this.rankGenerationCandidate(a))
+        .sort((a, b) => this.rankGenerationCandidate(b, queryIntent) - this.rankGenerationCandidate(a, queryIntent))
         .filter((chunk) => chunk.similarity >= MIN_SIMILARITY_FLOOR);
 
       console.log(
@@ -3361,7 +3602,8 @@ ${normalizedOriginal}
       const qualityFilteredChunks = this.filterQualityChunks(sortedGenerationCandidates);
       let generationChunksForModel = this.selectGenerationChunksByPageCluster(
         qualityFilteredChunks.kept,
-        GENERATION_CHUNK_CAP
+        GENERATION_CHUNK_CAP,
+        queryIntent
       );
       const evaluatedChunkById = new Map(
         qualityFilteredChunks.evaluated.map((chunk) => [chunk.chunk.id, chunk] as const)
@@ -3382,7 +3624,7 @@ ${normalizedOriginal}
           const evaluatedCandidate = evaluatedChunkById.get(candidate.chunk.id);
           if (!evaluatedCandidate) continue;
           generationChunksForModel.push(evaluatedCandidate);
-          generationChunksForModel.sort((a, b) => this.rankGenerationCandidate(b) - this.rankGenerationCandidate(a));
+          generationChunksForModel.sort((a, b) => this.rankGenerationCandidate(b, queryIntent) - this.rankGenerationCandidate(a, queryIntent));
           if (generationChunksForModel.length >= GENERATION_CHUNK_CAP) {
             break;
           }
@@ -3907,6 +4149,9 @@ You MUST follow these rules:
 6) Read each chunk carefully and include all relevant information from every chunk that supports the answer. Do not stop after the first matching chunk.
 7) If a retrieved chunk contains extra relevant detail beyond the exact question, include that detail too under a suitable heading or subheading, as long as it is explicitly present in the source.
 8) If a chunk contains a table, figure, summary box, scoring system, list, or criteria set, unpack all relevant rows, items, components, and thresholds from it instead of only naming the headline.
+9) Before writing, mentally scan ALL provided chunks and extract the distinct facts from each one. Do not ignore a chunk just because another chunk from the same page already overlaps with it.
+10) If two chunks overlap, keep the shared point once but still add any extra details that appear only in the later chunk.
+11) Do not say information is "not found" if relevant facts are present anywhere in the provided chunks.
 
 Output format requirements:
 - Use only the section titles from the contract below.
@@ -3928,6 +4173,8 @@ Output format requirements:
 - Be thorough and complete. Do not stop after the first few points if the source has more detail.
 - If the source contains several related items, keep listing them in a clear structure instead of compressing them into a short summary.
 - For classification-style questions, include every distinct system, subtype, and criterion found in the retrieved text.
+- When multiple chunks from the same page or adjacent pages continue the same topic, combine them into one fuller section instead of taking only the first chunk's points.
+- Prefer extracting more supported bullets over giving a short polished summary.
 
 Coverage requirements:
 - Do NOT summarize when the source contains detailed points.
@@ -3936,6 +4183,7 @@ Coverage requirements:
 - Include all relevant classifications, subtypes, criteria, and key notes that appear in the retrieved context.
 - Do not omit important source points for brevity.
 - Prefer completeness over brevity while staying strictly grounded to cited text.
+- Treat every provided chunk as required reading. The answer is incomplete if a fed chunk contains a relevant unique detail that is missing from the final response.
 
 Medical shorthand:
 - rx/tx => treatment or management
