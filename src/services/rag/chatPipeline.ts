@@ -62,6 +62,65 @@ interface ChunkQualityAssessment {
   exclusionType: 'bibliography' | 'index' | 'caption-only' | 'mixed' | 'other';
 }
 
+interface RetrievedChunkGenerationDecision {
+  fedToGenerator: boolean;
+  reason?: string;
+}
+
+interface GenerationPageSelectionDebug {
+  strongestCluster: {
+    documentId: string;
+    page: number | null;
+    score: number;
+    chunkCount: number;
+  } | null;
+  localFocusActive: boolean;
+  preferredLocalWindow: {
+    documentId: string;
+    pages: number[];
+  } | null;
+  rankedClusters: Array<{
+    documentId: string;
+    page: number | null;
+    score: number;
+    chunkCount: number;
+    preferredLocal: boolean;
+  }>;
+  selectedChunkCount: number;
+  selectedPages: Array<{
+    documentId: string;
+    page: number | null;
+    count: number;
+    chunkIds: string[];
+  }>;
+}
+
+interface RetrievalAnchorWindowDebug {
+  mode: 'anchor_window_only' | 'anchor_window_plus_fallback' | 'multi_page_fallback' | 'insufficient_input';
+  queryIntent?: QueryIntent;
+  anchor: {
+    documentId: string;
+    page: number | null;
+    anchorScore: number;
+    baseScore: number;
+    intentScore: number;
+    chunkCount: number;
+    marginVsNext: number;
+  } | null;
+  localPages: number[];
+  localBaseChunkCount: number;
+  localWindowChunkCount: number;
+  rankedPageGroups: Array<{
+    documentId: string;
+    page: number | null;
+    anchorScore: number;
+    baseScore: number;
+    intentScore: number;
+    chunkCount: number;
+  }>;
+  reason: string;
+}
+
 interface StructuredSourceGroup {
   key: string;
   order: number;
@@ -165,6 +224,8 @@ export class ChatPipeline {
   private sessionWarmCache = new Map<string, SessionWarmCacheEntry>();
   private documentEmbeddingCache = new Map<string, DocumentEmbeddingCacheEntry>();
   private retrievalWarmupEmbeddingCache: RetrievalWarmupEmbeddingCacheEntry | null = null;
+  private lastRetrievalAnchorWindowDebug: RetrievalAnchorWindowDebug | null = null;
+  private lastGenerationPageSelectionDebug: GenerationPageSelectionDebug | null = null;
   private rewriteTelemetry: RewriteTelemetry = {
     totalRequests: 0,
     skippedClear: 0,
@@ -1268,6 +1329,8 @@ export class ChatPipeline {
     const commaPageHits = (content.match(/,\s*\d{1,4}(?:\b|,)/g) || []).length;
     const pageLikeNumberHits = (content.match(/\b\d{3,4}\b/g) || []).length;
     const shortLineCount = lines.filter((line) => line.split(/\s+/).filter(Boolean).length <= 8).length;
+    const listMarkerHits = (content.match(/[●○■]/g) || []).length;
+    const headingLikeContent = lines.join(' ').replace(/[-:;]+/g, ' ').trim();
 
     if (indexEntryMatches.length >= 5 || commaPageHits >= 8) {
       penalty += 0.4;
@@ -1287,6 +1350,22 @@ export class ChatPipeline {
     if (sentences.length <= 2 && words.length >= 45) {
       penalty += 0.15;
       reasons.push('too_few_sentences');
+    }
+
+    const hasLectureTitlePattern =
+      /\b(prof|lecture|chapter|class|youtube|ppt|slide)\b/i.test(content) ||
+      /\s-\s/.test(content);
+    const isShortHeadingLike =
+      words.length <= 12 &&
+      lines.length <= 2 &&
+      sentences.length <= 1 &&
+      listMarkerHits === 0 &&
+      !/\b\d+\b/.test(content) &&
+      hasLectureTitlePattern &&
+      headingLikeContent.length > 0;
+    if (isShortHeadingLike) {
+      penalty += 0.75;
+      reasons.push('too_short_heading_like');
     }
 
     const figureOnlyPattern = /\b(?:figure|fig\.|table|plate|diagram)\b/i;
@@ -1343,10 +1422,12 @@ export class ChatPipeline {
       'reference_style_markers',
       'author_year_list',
     ];
+    const weakFormattingSignals = [
+      'many_short_lines',
+    ];
     const indexSignals = [
       'index_entry_density',
       'high_page_number_density',
-      'many_short_lines',
       'toc_or_index_like',
       'index_style_entry_density',
       'index_like_page_density',
@@ -1362,6 +1443,7 @@ export class ChatPipeline {
     if (hasAny(bibliographySignals) && signalCount === 1) return 'bibliography';
     if (hasAny(indexSignals) && signalCount === 1) return 'index';
     if (hasAny(captionSignals) && signalCount === 1) return 'caption-only';
+    if (hasAny(weakFormattingSignals) && signalCount === 0) return 'other';
     if (signalCount > 1) return 'mixed';
     return 'other';
   }
@@ -1446,9 +1528,16 @@ export class ChatPipeline {
     const commaPageHits = (content.match(/,\s*\d{1,4}(?:\b|,)/g) || []).length;
     const sentenceBreaks = (content.match(/[.!?]/g) || []).length;
     const hasStrongStructuredRows = this.hasRichStructuredRows(content);
+    const hasStrongIndexSignals =
+      chunk.quality.reasons.includes('index_entry_density') ||
+      chunk.quality.reasons.includes('high_page_number_density') ||
+      chunk.quality.reasons.includes('toc_or_index_like') ||
+      chunk.quality.reasons.includes('index_style_entry_density') ||
+      chunk.quality.reasons.includes('index_like_page_density') ||
+      chunk.quality.reasons.includes('clearly_index_like');
 
     const clearlyIndexLike =
-      chunk.quality.exclusionType === 'index' ||
+      hasStrongIndexSignals ||
       chunk.quality.reasons.includes('clearly_index_like') ||
       (numericHits >= 8 && commaPageHits >= 3 && sentenceBreaks <= 1);
 
@@ -1597,6 +1686,53 @@ export class ChatPipeline {
     return chapterMatch?.[1] ? `chapter:${chapterMatch[1]}` : null;
   }
 
+  private scoreRetrievalIntentAlignment(text: string, queryIntent?: QueryIntent): number {
+    const normalized = (text || '').toLowerCase();
+    if (!normalized || !queryIntent) return 0;
+
+    let score = 0;
+
+    if (queryIntent === 'clinical_features_history_exam') {
+      if (/\b(clinical presentation|presenting complaints|types of pain|history findings|examination of)\b/.test(normalized)) score += 0.18;
+      if (/\b(renal pain|ureteric colic|radiation|hematuria|nausea|vomiting|fever|tenderness|inspection|palpation|symptoms?|signs?|pain)\b/.test(normalized)) score += 0.14;
+      if (/\b(management|treatment|therapy|stone analysis)\b/.test(normalized)) score -= 0.14;
+      if (/\b(calcium oxalate|phosphate stones?|uric acid stones?|cystine stones?|mixed stones?|primary vs\.? secondary|staghorn)\b/.test(normalized)) score -= 0.16;
+    } else if (queryIntent === 'investigations') {
+      if (/\b(ct|ct kub|x-?ray|k?ub|ivu|urogram|ultrasonography|cystoscopy|diagnos|imaging)\b/.test(normalized)) score += 0.18;
+      if (/\b(management|treatment|therapy)\b/.test(normalized)) score -= 0.1;
+    } else if (queryIntent === 'classification_types') {
+      if (/\b(types?|classification|primary vs\.? secondary|calcium oxalate|phosphate|uric acid|cystine|mixed)\b/.test(normalized)) score += 0.18;
+      if (/\b(management|treatment|therapy)\b/.test(normalized)) score -= 0.08;
+    } else if (queryIntent === 'treatment_rx') {
+      if (/\b(management|treatment|therapy|surgery|procedure|eswl|lithotripsy)\b/.test(normalized)) score += 0.18;
+      if (/\b(types of pain|symptoms?|signs?|classification)\b/.test(normalized)) score -= 0.1;
+    } else if (queryIntent === 'causes' || queryIntent === 'risk_factors') {
+      if (/\b(causes?|risk factors?|predisposing|etiology|aetiology|geography|climate|water intake|obstruction|stasis|drugs)\b/.test(normalized)) score += 0.16;
+      if (/\b(management|treatment|therapy)\b/.test(normalized)) score -= 0.08;
+    }
+
+    return Math.max(-0.22, Math.min(0.32, score));
+  }
+
+  private hasLocalContinuationSignals(text: string, queryIntent?: QueryIntent): boolean {
+    const normalized = (text || '').toLowerCase();
+    if (!normalized) return false;
+
+    if (queryIntent === 'clinical_features_history_exam') {
+      return /\b(radiation|radiate|colic|pain|onset|associated symptoms?|nature of pain|bladder pain|strangury|hematuria|nausea|vomiting|examination)\b/.test(normalized);
+    }
+
+    if (queryIntent === 'investigations') {
+      return /\b(ct|x-?ray|ivu|urogram|ultrasonography|cystoscopy|radiopaque|radiolucent)\b/.test(normalized);
+    }
+
+    if (queryIntent === 'classification_types') {
+      return /\b(calcium oxalate|phosphate|uric acid|cystine|mixed|primary|secondary)\b/.test(normalized);
+    }
+
+    return /\b(clinical|history|examination|management|investigation|classification|pain|radiation|symptoms?)\b/.test(normalized);
+  }
+
   private selectGenerationChunksByPageCluster(
     chunks: Array<VectorSearchResult & { quality: ChunkQualityAssessment }>,
     maxResults: number
@@ -1649,7 +1785,7 @@ export class ChatPipeline {
       cluster.chunks = sortedChunks;
     }
 
-    const rankedClusters = Array.from(clusters.values())
+    const preliminaryRankedClusters = Array.from(clusters.values())
       .sort((a, b) => {
         if (b.score !== a.score) return b.score - a.score;
         if (a.documentId !== b.documentId) return a.documentId.localeCompare(b.documentId);
@@ -1658,38 +1794,244 @@ export class ChatPipeline {
 
     const selected: Array<VectorSearchResult & { quality: ChunkQualityAssessment }> = [];
     const usedChunkIds = new Set<string>();
-    const strongestCluster = rankedClusters[0] || null;
+    const strongestCluster = preliminaryRankedClusters[0] || null;
     const stopDrift = strongestCluster ? this.isPageCoverageStrong(strongestCluster.chunks) : false;
+    const localFocusActive = Boolean(
+      strongestCluster &&
+      strongestCluster.page !== null &&
+      (
+        stopDrift ||
+        strongestCluster.chunks.length >= 2 ||
+        strongestCluster.score >= 0.7
+      )
+    );
+    const isPreferredLocalChunk = (chunk: VectorSearchResult & { quality: ChunkQualityAssessment }): boolean =>
+      Boolean(
+        localFocusActive &&
+        strongestCluster &&
+        strongestCluster.page !== null &&
+        chunk.document.id === strongestCluster.documentId &&
+        this.getChunkPageNumber(chunk.chunk) !== null &&
+        Math.abs((this.getChunkPageNumber(chunk.chunk) as number) - strongestCluster.page) <= 1
+      );
+    const isPreferredLocalCluster = (cluster: Cluster): boolean =>
+      Boolean(
+        localFocusActive &&
+        strongestCluster &&
+        strongestCluster.page !== null &&
+        cluster.documentId === strongestCluster.documentId &&
+        cluster.page !== null &&
+        Math.abs(cluster.page - strongestCluster.page) <= 1
+      );
 
-    for (const cluster of rankedClusters) {
-      if (selected.length >= maxResults) {
-        break;
-      }
+    const rankedClusters = [...preliminaryRankedClusters].sort((a, b) => {
+      const aPreferred = isPreferredLocalCluster(a);
+      const bPreferred = isPreferredLocalCluster(b);
+      if (aPreferred !== bPreferred) return aPreferred ? -1 : 1;
+      const aSameDoc = strongestCluster ? a.documentId === strongestCluster.documentId : false;
+      const bSameDoc = strongestCluster ? b.documentId === strongestCluster.documentId : false;
+      if (aSameDoc !== bSameDoc) return aSameDoc ? -1 : 1;
+      if (b.score !== a.score) return b.score - a.score;
+      if (a.documentId !== b.documentId) return a.documentId.localeCompare(b.documentId);
+      return (a.page ?? 0) - (b.page ?? 0);
+    });
 
-      const remainingSlots = maxResults - selected.length;
-      const takeCount = stopDrift && strongestCluster && cluster.key === strongestCluster.key
-        ? Math.min(3, remainingSlots, cluster.chunks.length)
-        : cluster.hasStructuredChunk
-          ? Math.min(2, remainingSlots, cluster.chunks.length)
-          : Math.min(1, remainingSlots, cluster.chunks.length);
+    const clusterPasses = localFocusActive
+      ? [
+          rankedClusters.filter((cluster) => isPreferredLocalCluster(cluster)),
+          rankedClusters.filter((cluster) => !isPreferredLocalCluster(cluster)),
+        ]
+      : [rankedClusters];
+    const generationPageSelectionDebug: GenerationPageSelectionDebug = {
+      strongestCluster: strongestCluster
+        ? {
+            documentId: strongestCluster.documentId,
+            page: strongestCluster.page,
+            score: Number(strongestCluster.score.toFixed(3)),
+            chunkCount: strongestCluster.chunks.length,
+          }
+        : null,
+      localFocusActive,
+      preferredLocalWindow: strongestCluster && strongestCluster.page !== null
+        ? {
+            documentId: strongestCluster.documentId,
+            pages: [strongestCluster.page - 1, strongestCluster.page, strongestCluster.page + 1].filter((page) => page > 0),
+          }
+        : null,
+      rankedClusters: rankedClusters.map((cluster) => ({
+        documentId: cluster.documentId,
+        page: cluster.page,
+        score: Number(cluster.score.toFixed(3)),
+        chunkCount: cluster.chunks.length,
+        preferredLocal: isPreferredLocalCluster(cluster),
+      })),
+      selectedChunkCount: 0,
+      selectedPages: [],
+    };
 
-      for (const chunk of cluster.chunks.slice(0, takeCount)) {
-        if (usedChunkIds.has(chunk.chunk.id)) continue;
-        selected.push(chunk);
-        usedChunkIds.add(chunk.chunk.id);
+    for (const [passIndex, clusterGroup] of clusterPasses.entries()) {
+      for (const cluster of clusterGroup) {
+        if (selected.length >= maxResults) {
+          break;
+        }
+
+        const remainingSlots = maxResults - selected.length;
+        const takeCount =
+          localFocusActive && strongestCluster && cluster.key === strongestCluster.key
+            ? Math.min(4, remainingSlots, cluster.chunks.length)
+            : localFocusActive && isPreferredLocalCluster(cluster)
+              ? Math.min(3, remainingSlots, cluster.chunks.length)
+              : stopDrift && strongestCluster && cluster.key === strongestCluster.key
+                ? Math.min(3, remainingSlots, cluster.chunks.length)
+                : cluster.hasStructuredChunk
+                  ? Math.min(passIndex === 0 ? 2 : 1, remainingSlots, cluster.chunks.length)
+                  : Math.min(1, remainingSlots, cluster.chunks.length);
+
+        for (const chunk of cluster.chunks.slice(0, takeCount)) {
+          if (usedChunkIds.has(chunk.chunk.id)) continue;
+          selected.push(chunk);
+          usedChunkIds.add(chunk.chunk.id);
+        }
       }
     }
 
     if (selected.length < maxResults) {
-      for (const chunk of chunks) {
+      const rankedBackfillCandidates = chunks
+        .filter((chunk) => !usedChunkIds.has(chunk.chunk.id))
+        .sort((a, b) => this.rankGenerationBackfillCandidate(b, selected, strongestCluster) - this.rankGenerationBackfillCandidate(a, selected, strongestCluster));
+
+      const localBackfillCandidates = localFocusActive
+        ? rankedBackfillCandidates.filter((chunk) => isPreferredLocalChunk(chunk))
+        : [];
+      const fallbackBackfillCandidates = localFocusActive
+        ? rankedBackfillCandidates.filter((chunk) => !isPreferredLocalChunk(chunk))
+        : rankedBackfillCandidates;
+
+      for (const chunk of localBackfillCandidates) {
         if (selected.length >= maxResults) break;
-        if (usedChunkIds.has(chunk.chunk.id)) continue;
         selected.push(chunk);
         usedChunkIds.add(chunk.chunk.id);
       }
+
+      const selectedLocalCount = selected.filter((chunk) => isPreferredLocalChunk(chunk)).length;
+      const hasStrongLocalWindow = localFocusActive && selectedLocalCount >= Math.min(maxResults, 4);
+
+      if (!hasStrongLocalWindow) {
+        for (const chunk of fallbackBackfillCandidates) {
+          if (selected.length >= maxResults) break;
+          selected.push(chunk);
+          usedChunkIds.add(chunk.chunk.id);
+        }
+      }
     }
 
+    const selectedPageSummary = Array.from(
+      selected.reduce((acc, chunk) => {
+        const page = this.getChunkPageNumber(chunk.chunk);
+        const key = `${chunk.document.id}:${page ?? 'unknown'}`;
+        const current = acc.get(key) || {
+          documentId: chunk.document.id,
+          page,
+          count: 0,
+          chunkIds: [] as string[],
+        };
+        current.count += 1;
+        current.chunkIds.push(chunk.chunk.id);
+        acc.set(key, current);
+        return acc;
+      }, new Map<string, { documentId: string; page: number | null; count: number; chunkIds: string[] }>())
+        .values()
+    );
+
+    generationPageSelectionDebug.selectedChunkCount = selected.length;
+    generationPageSelectionDebug.selectedPages = selectedPageSummary;
+    this.lastGenerationPageSelectionDebug = generationPageSelectionDebug;
+
     return selected.sort((a, b) => this.rankGenerationCandidate(b) - this.rankGenerationCandidate(a));
+  }
+
+  private rankGenerationBackfillCandidate(
+    candidate: VectorSearchResult & { quality: ChunkQualityAssessment },
+    selected: Array<VectorSearchResult & { quality: ChunkQualityAssessment }>,
+    strongestCluster?: {
+      documentId: string;
+      page: number | null;
+    } | null
+  ): number {
+    return this.rankGenerationCandidate(candidate) + this.scoreGenerationContinuityBonus(candidate, selected, strongestCluster);
+  }
+
+  private scoreGenerationContinuityBonus(
+    candidate: VectorSearchResult & { quality: ChunkQualityAssessment },
+    selected: Array<VectorSearchResult & { quality: ChunkQualityAssessment }>,
+    strongestCluster?: {
+      documentId: string;
+      page: number | null;
+    } | null
+  ): number {
+    const candidateIndex = this.getEffectiveChunkIndex(candidate.chunk);
+    const candidatePage = this.getChunkPageNumber(candidate.chunk);
+    const sameDocSelected = selected.filter((item) => item.document.id === candidate.document.id);
+
+    if (sameDocSelected.length === 0) {
+      return 0;
+    }
+
+    let bonus = 0;
+
+    const samePageSelected = candidatePage !== null && sameDocSelected.some(
+      (item) => this.getChunkPageNumber(item.chunk) === candidatePage
+    );
+    if (samePageSelected) {
+      bonus += 0.04;
+    }
+
+    if (candidateIndex !== null) {
+      const selectedIndices = sameDocSelected
+        .map((item) => this.getEffectiveChunkIndex(item.chunk))
+        .filter((index): index is number => index !== null)
+        .sort((a, b) => a - b);
+
+      if (selectedIndices.some((index) => Math.abs(index - candidateIndex) === 1)) {
+        bonus += 0.1;
+      }
+
+      for (let i = 0; i < selectedIndices.length - 1; i++) {
+        const left = selectedIndices[i];
+        const right = selectedIndices[i + 1];
+        const isBridgeChunk =
+          candidateIndex > left &&
+          candidateIndex < right &&
+          candidateIndex - left <= 2 &&
+          right - candidateIndex <= 2;
+
+        if (isBridgeChunk) {
+          bonus += 0.16;
+          break;
+        }
+      }
+    }
+
+    const content = (candidate.chunk.content || '').toLowerCase();
+    const hasSymptomContinuationSignals =
+      /\b(radiation|radiate|colic|pain|symptom|symptoms|nausea|vomiting|hematuria|examination)\b/.test(content);
+    if (hasSymptomContinuationSignals) {
+      bonus += 0.03;
+    }
+
+    if (
+      strongestCluster &&
+      strongestCluster.page !== null &&
+      candidate.document.id === strongestCluster.documentId &&
+      candidatePage !== null
+    ) {
+      const pageDistance = Math.abs(candidatePage - strongestCluster.page);
+      if (pageDistance === 0) bonus += 0.16;
+      if (pageDistance === 1) bonus += 0.12;
+      if (pageDistance >= 2) bonus -= Math.min(0.08, pageDistance * 0.03);
+    }
+
+    return Math.min(0.24, bonus);
   }
 
   private classifyRetrievedChunkForDebug(
@@ -1753,7 +2095,8 @@ export class ChatPipeline {
   private logRetrievedChunkDetails(
     retrievedChunks: VectorSearchResult[],
     generationChunks: VectorSearchResult[],
-    baseSearchResults: VectorSearchResult[]
+    baseSearchResults: VectorSearchResult[],
+    generationDecisionsByChunkId: Map<string, RetrievedChunkGenerationDecision>
   ): void {
     if (retrievedChunks.length === 0) {
       console.log('[RETRIEVAL CHUNK DEBUG] No chunks were found.');
@@ -1791,11 +2134,18 @@ export class ChatPipeline {
       neighborChunksAdded: Math.max(0, retrievedChunks.length - baseSearchResults.length),
       generationFloorApplied: retrievedChunks.length > generationChunks.length,
     });
+    if (this.lastRetrievalAnchorWindowDebug) {
+      console.log('[RETRIEVAL ANCHOR WINDOW]', this.lastRetrievalAnchorWindowDebug);
+    }
+    if (this.lastGenerationPageSelectionDebug) {
+      console.log('[MODEL PAGE SELECTION]', this.lastGenerationPageSelectionDebug);
+    }
 
     console.log('\n=== RETRIEVAL CHUNK CONTENT START ===');
     rankedResults.forEach((result, index) => {
       const rank = index + 1;
       const wasFedToModel = generationChunks.some(g => g.chunk.id === result.chunk.id);
+      const generationDecision = generationDecisionsByChunkId.get(result.chunk.id);
       const modelInputOrder = retrievedChunks.findIndex((item) => item.chunk.id === result.chunk.id) + 1;
       const debugInfo = this.classifyRetrievedChunkForDebug(
         result,
@@ -1809,14 +2159,17 @@ export class ChatPipeline {
       const neighborChunkNumber = debugInfo.neighborOfChunkId
         ? chunkNumberById.get(debugInfo.neighborOfChunkId)
         : undefined;
+      const reasonSuffix = !wasFedToModel && generationDecision?.reason
+        ? ` [REASON: ${generationDecision.reason}]`
+        : '';
 
       console.log('--------------------------------------------------');
       if (debugInfo.isNeighborChunk) {
         const neighborOffset = debugInfo.neighborRelation === 'above' ? '-1' : '+1';
         const neighborChunkLabel = neighborChunkNumber ? `Chunk ${neighborChunkNumber}` : 'Chunk ?';
-        console.log(`${neighborOffset} Neighbor chunk ${neighborChunkLabel} | Similarity score: ${result.similarity.toFixed(3)} | Fed to generator: ${wasFedToModel ? 'YES' : 'NO'}`);
+        console.log(`${neighborOffset} Neighbor chunk ${neighborChunkLabel} | Similarity score: ${result.similarity.toFixed(3)} | Fed to generator: ${wasFedToModel ? 'YES' : 'NO'}${reasonSuffix}`);
       } else {
-        console.log(`Chunk ${rank} | Similarity score: ${result.similarity.toFixed(3)} | Fed to generator: ${wasFedToModel ? 'YES' : 'NO'}`);
+        console.log(`Chunk ${rank} | Similarity score: ${result.similarity.toFixed(3)} | Fed to generator: ${wasFedToModel ? 'YES' : 'NO'}${reasonSuffix}`);
       }
       console.log(`Page: ${chunkPage ?? 'N/A'} | Document title: ${result.document.title}`);
       console.log('Content:');
@@ -1977,12 +2330,23 @@ export class ChatPipeline {
     sessionEmbeddings: EmbeddingChunk[],
     queryEmbedding: Float32Array,
     queryText: string = '',
+    queryIntent?: QueryIntent,
     minSimilarity: number = 0.12,
     maxTotal: number = 16,
     topResultsToExpand: number = 3,
     chunkSpan: number = 2
   ): VectorSearchResult[] {
     if (baseResults.length === 0 || sessionEmbeddings.length === 0) {
+      this.lastRetrievalAnchorWindowDebug = {
+        mode: 'insufficient_input',
+        queryIntent,
+        anchor: null,
+        localPages: [],
+        localBaseChunkCount: 0,
+        localWindowChunkCount: 0,
+        rankedPageGroups: [],
+        reason: 'Skipped anchor-window retrieval because base results or embeddings were unavailable.',
+      };
       console.log(
         '[TOP CHUNK CONTEXT] Skipped (insufficient input): baseResults=%d embeddings=%d',
         baseResults.length,
@@ -1993,6 +2357,16 @@ export class ChatPipeline {
 
     const availableSlots = Math.max(0, maxTotal - baseResults.length);
     if (availableSlots <= 0) {
+      this.lastRetrievalAnchorWindowDebug = {
+        mode: 'insufficient_input',
+        queryIntent,
+        anchor: null,
+        localPages: [],
+        localBaseChunkCount: baseResults.length,
+        localWindowChunkCount: baseResults.length,
+        rankedPageGroups: [],
+        reason: 'Skipped anchor-window expansion because there was no retrieval headroom.',
+      };
       console.log(
         '[TOP CHUNK CONTEXT] Skipped (no space): current=%d maxTotal=%d',
         baseResults.length,
@@ -2003,7 +2377,25 @@ export class ChatPipeline {
 
     const existingChunkIds = new Set(baseResults.map((r) => r.chunk.id));
     const docInfoById = new Map(baseResults.map((r) => [r.document.id, r.document] as const));
-    const pageGroups = new Map<string, { docId: string; page: number; chunks: VectorSearchResult[]; score: number; richness: number; chapterCue: string | null }>();
+    type RetrievalCandidate = {
+      chunk: EmbeddingChunk;
+      similarity: number;
+      document: {
+        id: string;
+        title: string;
+        fileName: string;
+      };
+    };
+    const pageGroups = new Map<string, {
+      docId: string;
+      page: number;
+      chunks: VectorSearchResult[];
+      score: number;
+      richness: number;
+      intentScore: number;
+      anchorScore: number;
+      chapterCue: string | null;
+    }>();
 
     for (const result of baseResults) {
       const page = this.getChunkPageNumber(result.chunk);
@@ -2020,6 +2412,8 @@ export class ChatPipeline {
           chunks: [result],
           score: result.similarity,
           richness: 0,
+          intentScore: 0,
+          anchorScore: 0,
           chapterCue: this.extractChapterCueFromText(result.chunk.content || ''),
         });
       }
@@ -2028,6 +2422,11 @@ export class ChatPipeline {
     for (const group of pageGroups.values()) {
       group.richness = this.calculatePageRichness(group.chunks);
       group.score = Math.min(1, group.score + group.richness);
+      group.intentScore = this.scoreRetrievalIntentAlignment(
+        group.chunks.map((chunk) => chunk.chunk.content || '').join('\n'),
+        queryIntent
+      );
+      group.anchorScore = group.score + (Math.min(group.chunks.length - 1, 2) * 0.06) + group.intentScore;
       if (!group.chapterCue) {
         group.chapterCue = group.chunks
           .map((chunk) => this.extractChapterCueFromText(chunk.chunk.content || ''))
@@ -2036,7 +2435,10 @@ export class ChatPipeline {
     }
 
     const rankedPageGroups = Array.from(pageGroups.entries())
-      .sort((a, b) => b[1].score - a[1].score)
+      .sort((a, b) => {
+        if (b[1].anchorScore !== a[1].anchorScore) return b[1].anchorScore - a[1].anchorScore;
+        return b[1].score - a[1].score;
+      })
       .slice(0, Math.min(topResultsToExpand, pageGroups.size));
 
     console.log(
@@ -2046,7 +2448,9 @@ export class ChatPipeline {
         docId: group.docId,
         page: group.page,
         chunkCount: group.chunks.length,
-        score: Number(group.score.toFixed(3))
+        score: Number(group.score.toFixed(3)),
+        intentScore: Number(group.intentScore.toFixed(3)),
+        anchorScore: Number(group.anchorScore.toFixed(3)),
       })),
       availableSlots,
       minSimilarity,
@@ -2081,24 +2485,230 @@ export class ChatPipeline {
       );
     };
 
-    const candidatesByChunkId = new Map<string, { chunk: EmbeddingChunk; similarity: number; document: { id: string; title: string; fileName: string } }>();
+    const buildCandidate = (chunk: EmbeddingChunk): RetrievalCandidate => ({
+      chunk,
+      similarity: cosineSimilarity(queryEmbedding, chunk.embedding),
+      document: docInfoById.get(chunk.documentId) || {
+        id: chunk.documentId,
+        title: chunk.metadata?.documentTitle || chunk.source || 'Document',
+        fileName: chunk.source || chunk.metadata?.documentTitle || 'Document',
+      },
+    });
+
+    const candidatesByChunkId = new Map<string, RetrievalCandidate>();
+    const embeddingsByDocAndIndex = new Map<string, Map<number, EmbeddingChunk>>();
+
+    for (const chunk of sessionEmbeddings) {
+      const chunkIndex = this.getEffectiveChunkIndex(chunk);
+      if (chunkIndex === null) continue;
+      const perDoc = embeddingsByDocAndIndex.get(chunk.documentId) || new Map<number, EmbeddingChunk>();
+      perDoc.set(chunkIndex, chunk);
+      embeddingsByDocAndIndex.set(chunk.documentId, perDoc);
+    }
 
     const strongestGroup = rankedPageGroups[0]?.[1] || null;
+    const secondGroup = rankedPageGroups[1]?.[1] || null;
+    const anchorMargin = strongestGroup
+      ? strongestGroup.anchorScore - (secondGroup?.anchorScore ?? (strongestGroup.anchorScore - 0.05))
+      : 0;
     const stopDrift = strongestGroup ? this.isPageCoverageStrong(strongestGroup.chunks) : false;
+    let bridgeCandidateCount = 0;
+    let localWindowCandidateCount = 0;
+    const localPages = strongestGroup && strongestGroup.page !== null
+      ? [strongestGroup.page - 1, strongestGroup.page, strongestGroup.page + 1].filter((page) => page > 0)
+      : [];
+    const isLocalFocusPage = (docId: string, page: number | null): boolean =>
+      Boolean(
+        strongestGroup &&
+        strongestGroup.page !== null &&
+        page !== null &&
+        docId === strongestGroup.docId &&
+        Math.abs(page - strongestGroup.page) <= 1
+      );
+    const anchorWindowEligible = Boolean(
+      strongestGroup &&
+      strongestGroup.page !== null &&
+      (
+        strongestGroup.anchorScore >= 0.78 ||
+        strongestGroup.intentScore >= 0.12 ||
+        strongestGroup.chunks.length >= 2 ||
+        anchorMargin >= 0.06
+      )
+    );
+
+    const buildLocalWindowResults = (): VectorSearchResult[] => {
+      if (!strongestGroup || strongestGroup.page === null) return [];
+
+      const localResultsByChunkId = new Map<string, VectorSearchResult>();
+      const strongestIndices = strongestGroup.chunks
+        .map((chunk) => this.getEffectiveChunkIndex(chunk.chunk))
+        .filter((index): index is number => index !== null)
+        .sort((a, b) => a - b);
+      const localWindowStart = strongestIndices.length > 0
+        ? Math.max(0, strongestIndices[0] - Math.max(2, chunkSpan))
+        : 0;
+      const localWindowEnd = strongestIndices.length > 0
+        ? strongestIndices[strongestIndices.length - 1] + Math.max(8, chunkSpan * 4)
+        : Number.MAX_SAFE_INTEGER;
+
+      for (const result of baseResults) {
+        const page = this.getChunkPageNumber(result.chunk);
+        if (
+          result.document.id === strongestGroup.docId &&
+          page !== null &&
+          localPages.includes(page)
+        ) {
+          localResultsByChunkId.set(result.chunk.id, result);
+        }
+      }
+
+      for (const chunk of sessionEmbeddings) {
+        if (chunk.documentId !== strongestGroup.docId) continue;
+        if (localResultsByChunkId.has(chunk.id)) continue;
+
+        const page = this.getChunkPageNumber(chunk);
+        const chunkIndex = this.getEffectiveChunkIndex(chunk);
+        if (page === null || !localPages.includes(page)) continue;
+
+        const candidate = buildCandidate(chunk);
+        if (page === strongestGroup.page) {
+          localResultsByChunkId.set(chunk.id, {
+            chunk,
+            similarity: Math.max(candidate.similarity, 0.01),
+            document: candidate.document,
+          });
+          continue;
+        }
+
+        const nearLocalWindow =
+          chunkIndex !== null &&
+          chunkIndex >= localWindowStart &&
+          chunkIndex <= localWindowEnd;
+        const continuationSignal = this.hasLocalContinuationSignals(chunk.content || '', queryIntent);
+
+        if (nearLocalWindow && (candidate.similarity >= 0.02 || continuationSignal)) {
+          localResultsByChunkId.set(chunk.id, candidate);
+        }
+      }
+
+      return Array.from(localResultsByChunkId.values()).sort((a, b) => {
+        const aPage = this.getChunkPageNumber(a.chunk);
+        const bPage = this.getChunkPageNumber(b.chunk);
+        const aPageDistance = aPage !== null ? Math.abs(aPage - strongestGroup.page) : 99;
+        const bPageDistance = bPage !== null ? Math.abs(bPage - strongestGroup.page) : 99;
+        if (aPageDistance !== bPageDistance) return aPageDistance - bPageDistance;
+        const aIndex = this.getEffectiveChunkIndex(a.chunk);
+        const bIndex = this.getEffectiveChunkIndex(b.chunk);
+        if (aIndex !== null && bIndex !== null && strongestIndices.length > 0) {
+          const strongestMin = Math.min(...strongestIndices);
+          const strongestMax = Math.max(...strongestIndices);
+          const aDistance = aIndex < strongestMin ? strongestMin - aIndex : aIndex > strongestMax ? aIndex - strongestMax : 0;
+          const bDistance = bIndex < strongestMin ? strongestMin - bIndex : bIndex > strongestMax ? bIndex - strongestMax : 0;
+          if (aDistance !== bDistance) return aDistance - bDistance;
+        }
+        return b.similarity - a.similarity;
+      });
+    };
+
+    const localWindowResults = anchorWindowEligible ? buildLocalWindowResults() : [];
+    const localBaseChunkCount = baseResults.filter((result) => {
+      const page = this.getChunkPageNumber(result.chunk);
+      return strongestGroup && strongestGroup.page !== null && result.document.id === strongestGroup.docId && page !== null && localPages.includes(page);
+    }).length;
+    localWindowCandidateCount = Math.max(0, localWindowResults.length - localBaseChunkCount);
+    const anchorPageChunkCount = localWindowResults.filter((result) => this.getChunkPageNumber(result.chunk) === strongestGroup?.page).length;
+    const localWindowStrong = Boolean(
+      strongestGroup &&
+      anchorWindowEligible &&
+      (
+        (anchorPageChunkCount >= 2 && localWindowResults.length >= 4) ||
+        strongestGroup.intentScore >= 0.16 ||
+        (strongestGroup.chunks.length >= 2 && localWindowResults.length >= 3)
+      )
+    );
+
+    if (anchorWindowEligible && localWindowStrong && localWindowResults.length > 0) {
+      this.lastRetrievalAnchorWindowDebug = {
+        mode: 'anchor_window_only',
+        queryIntent,
+        anchor: strongestGroup
+          ? {
+              documentId: strongestGroup.docId,
+              page: strongestGroup.page,
+              anchorScore: Number(strongestGroup.anchorScore.toFixed(3)),
+              baseScore: Number(strongestGroup.score.toFixed(3)),
+              intentScore: Number(strongestGroup.intentScore.toFixed(3)),
+              chunkCount: strongestGroup.chunks.length,
+              marginVsNext: Number(anchorMargin.toFixed(3)),
+            }
+          : null,
+        localPages,
+        localBaseChunkCount,
+        localWindowChunkCount: localWindowResults.length,
+        rankedPageGroups: rankedPageGroups.map(([, group]) => ({
+          documentId: group.docId,
+          page: group.page,
+          anchorScore: Number(group.anchorScore.toFixed(3)),
+          baseScore: Number(group.score.toFixed(3)),
+          intentScore: Number(group.intentScore.toFixed(3)),
+          chunkCount: group.chunks.length,
+        })),
+        reason: 'Strong anchor page identified; using anchor page plus adjacent continuation window before any remote pages.',
+      };
+
+      console.log('[ANCHOR WINDOW RETRIEVAL] Using local anchor window only: %o', this.lastRetrievalAnchorWindowDebug);
+      return localWindowResults.slice(0, Math.min(maxTotal, Math.max(baseResults.length, localWindowResults.length)));
+    }
+
+    const baseResultsByDoc = new Map<string, VectorSearchResult[]>();
+    for (const result of baseResults) {
+      const current = baseResultsByDoc.get(result.document.id) || [];
+      current.push(result);
+      baseResultsByDoc.set(result.document.id, current);
+    }
+
+    for (const [documentId, docResults] of baseResultsByDoc.entries()) {
+      const sortedDocResults = docResults
+        .map((result) => ({ result, chunkIndex: this.getEffectiveChunkIndex(result.chunk) }))
+        .filter((item): item is { result: VectorSearchResult; chunkIndex: number } => item.chunkIndex !== null)
+        .sort((a, b) => a.chunkIndex - b.chunkIndex);
+
+      const indexedEmbeddings = embeddingsByDocAndIndex.get(documentId);
+      if (!indexedEmbeddings || sortedDocResults.length < 2) continue;
+
+      for (let i = 0; i < sortedDocResults.length - 1; i++) {
+        const current = sortedDocResults[i];
+        const next = sortedDocResults[i + 1];
+        const missingCount = next.chunkIndex - current.chunkIndex - 1;
+
+        if (missingCount <= 0 || missingCount > chunkSpan) {
+          continue;
+        }
+
+        for (let missingIndex = current.chunkIndex + 1; missingIndex < next.chunkIndex; missingIndex++) {
+          const missingChunk = indexedEmbeddings.get(missingIndex);
+          if (!missingChunk || existingChunkIds.has(missingChunk.id) || candidatesByChunkId.has(missingChunk.id)) {
+            continue;
+          }
+
+          const candidate = buildCandidate(missingChunk);
+          const pageDistance =
+            Math.abs((this.getChunkPageNumber(current.result.chunk) || 0) - (this.getChunkPageNumber(missingChunk) || 0)) <= 1 &&
+            Math.abs((this.getChunkPageNumber(next.result.chunk) || 0) - (this.getChunkPageNumber(missingChunk) || 0)) <= 1;
+
+          if (candidate.similarity >= Math.max(0.05, minSimilarity * 0.6) || pageDistance) {
+            candidatesByChunkId.set(candidate.chunk.id, candidate);
+            bridgeCandidateCount += 1;
+          }
+        }
+      }
+    }
 
     for (const [, group] of rankedPageGroups) {
       const samePageCandidates = sessionEmbeddings
         .filter((chunk) => chunk.documentId === group.docId && this.getChunkPageNumber(chunk) === group.page)
         .filter((chunk) => !existingChunkIds.has(chunk.id))
-        .map((chunk) => ({
-          chunk,
-          similarity: cosineSimilarity(queryEmbedding, chunk.embedding),
-          document: docInfoById.get(chunk.documentId) || {
-            id: chunk.documentId,
-            title: chunk.metadata?.documentTitle || chunk.source || 'Document',
-            fileName: chunk.source || chunk.metadata?.documentTitle || 'Document',
-          },
-        }))
+        .map((chunk) => buildCandidate(chunk))
         .filter((candidate) => candidate.similarity >= minSimilarity || structuredSignals(candidate.chunk.content))
         .sort((a, b) => b.similarity - a.similarity);
 
@@ -2108,11 +2718,18 @@ export class ChatPipeline {
         }
       }
 
-      if (stopDrift || !this.isPageThin(group.chunks, samePageCandidates.length)) {
+      const allowImmediateContinuation =
+        strongestGroup !== null &&
+        group.docId === strongestGroup.docId &&
+        group.page === strongestGroup.page;
+
+      if ((stopDrift && !allowImmediateContinuation) || (!allowImmediateContinuation && !this.isPageThin(group.chunks, samePageCandidates.length))) {
         continue;
       }
 
-      const fallbackPages = [group.page - 1, group.page + 1, group.page - 2, group.page + 2].filter((page) => page > 0);
+      const fallbackPages = allowImmediateContinuation
+        ? [group.page - 1, group.page + 1].filter((page) => page > 0)
+        : [group.page - 1, group.page + 1, group.page - 2, group.page + 2].filter((page) => page > 0);
       for (const page of fallbackPages) {
         const fallbackCandidates = sessionEmbeddings
           .filter((chunk) => {
@@ -2122,16 +2739,22 @@ export class ChatPipeline {
             return !candidateCue || candidateCue === group.chapterCue || Math.abs(page - group.page) === 1;
           })
           .filter((chunk) => !existingChunkIds.has(chunk.id) && !candidatesByChunkId.has(chunk.id))
-          .map((chunk) => ({
-            chunk,
-            similarity: cosineSimilarity(queryEmbedding, chunk.embedding),
-            document: docInfoById.get(chunk.documentId) || {
-              id: chunk.documentId,
-              title: chunk.metadata?.documentTitle || chunk.source || 'Document',
-              fileName: chunk.source || chunk.metadata?.documentTitle || 'Document',
-            },
-          }))
-          .filter((candidate) => candidate.similarity >= Math.max(0.08, minSimilarity * 0.85))
+          .map((chunk) => buildCandidate(chunk))
+          .filter((candidate) => {
+            if (!allowImmediateContinuation) {
+              return candidate.similarity >= Math.max(0.08, minSimilarity * 0.85);
+            }
+
+            const candidateIndex = this.getEffectiveChunkIndex(candidate.chunk);
+            const strongestIndices = group.chunks
+              .map((item) => this.getEffectiveChunkIndex(item.chunk))
+              .filter((index): index is number => index !== null);
+            const nearStrongestChunk =
+              candidateIndex !== null &&
+              strongestIndices.some((index) => Math.abs(index - candidateIndex) <= Math.max(3, chunkSpan * 2));
+
+            return candidate.similarity >= Math.max(0.02, minSimilarity * 0.35) || nearStrongestChunk;
+          })
           .sort((a, b) => b.similarity - a.similarity);
 
         for (const candidate of fallbackCandidates) {
@@ -2143,12 +2766,79 @@ export class ChatPipeline {
     }
 
     if (candidatesByChunkId.size === 0) {
+      this.lastRetrievalAnchorWindowDebug = {
+        mode: anchorWindowEligible ? 'anchor_window_plus_fallback' : 'multi_page_fallback',
+        queryIntent,
+        anchor: strongestGroup
+          ? {
+              documentId: strongestGroup.docId,
+              page: strongestGroup.page,
+              anchorScore: Number(strongestGroup.anchorScore.toFixed(3)),
+              baseScore: Number(strongestGroup.score.toFixed(3)),
+              intentScore: Number(strongestGroup.intentScore.toFixed(3)),
+              chunkCount: strongestGroup.chunks.length,
+              marginVsNext: Number(anchorMargin.toFixed(3)),
+            }
+          : null,
+        localPages,
+        localBaseChunkCount,
+        localWindowChunkCount: localWindowResults.length,
+        rankedPageGroups: rankedPageGroups.map(([, group]) => ({
+          documentId: group.docId,
+          page: group.page,
+          anchorScore: Number(group.anchorScore.toFixed(3)),
+          baseScore: Number(group.score.toFixed(3)),
+          intentScore: Number(group.intentScore.toFixed(3)),
+          chunkCount: group.chunks.length,
+        })),
+        reason: 'No extra local-window candidates were added; returning base retrieval results.',
+      };
       console.log('[TOP CHUNK CONTEXT] Attempted but added 0 chunk(s).');
       return baseResults;
     }
 
+    if (bridgeCandidateCount > 0) {
+      console.log('[TOP CHUNK CONTEXT] Added %d chunk-gap bridge candidate(s).', bridgeCandidateCount);
+    }
+
+    if (localWindowCandidateCount > 0) {
+      console.log('[TOP CHUNK CONTEXT] Added %d strongest-page local-window candidate(s).', localWindowCandidateCount);
+    }
+
     const additions = Array.from(candidatesByChunkId.values())
-      .sort((a, b) => b.similarity - a.similarity)
+      .sort((a, b) => {
+        const aLocalFocus = isLocalFocusPage(a.chunk.documentId, this.getChunkPageNumber(a.chunk));
+        const bLocalFocus = isLocalFocusPage(b.chunk.documentId, this.getChunkPageNumber(b.chunk));
+        if (aLocalFocus !== bLocalFocus) return aLocalFocus ? -1 : 1;
+        const aIndex = this.getEffectiveChunkIndex(a.chunk);
+        const bIndex = this.getEffectiveChunkIndex(b.chunk);
+        if (strongestGroup && strongestGroup.page !== null && aIndex !== null && bIndex !== null) {
+          const strongestIndices = strongestGroup.chunks
+            .map((result) => this.getEffectiveChunkIndex(result.chunk))
+            .filter((index): index is number => index !== null);
+          if (strongestIndices.length > 0) {
+            const strongestMin = Math.min(...strongestIndices);
+            const strongestMax = Math.max(...strongestIndices);
+            const aDistance = aIndex < strongestMin ? strongestMin - aIndex : aIndex > strongestMax ? aIndex - strongestMax : 0;
+            const bDistance = bIndex < strongestMin ? strongestMin - bIndex : bIndex > strongestMax ? bIndex - strongestMax : 0;
+            if (aDistance !== bDistance) return aDistance - bDistance;
+          }
+        }
+        const aGap = baseResults.some((result) => {
+          if (result.document.id !== a.chunk.documentId) return false;
+          const anchorIndex = this.getEffectiveChunkIndex(result.chunk);
+          const candidateIndex = this.getEffectiveChunkIndex(a.chunk);
+          return anchorIndex !== null && candidateIndex !== null && Math.abs(anchorIndex - candidateIndex) <= chunkSpan;
+        });
+        const bGap = baseResults.some((result) => {
+          if (result.document.id !== b.chunk.documentId) return false;
+          const anchorIndex = this.getEffectiveChunkIndex(result.chunk);
+          const candidateIndex = this.getEffectiveChunkIndex(b.chunk);
+          return anchorIndex !== null && candidateIndex !== null && Math.abs(anchorIndex - candidateIndex) <= chunkSpan;
+        });
+        if (aGap !== bGap) return aGap ? -1 : 1;
+        return b.similarity - a.similarity;
+      })
       .slice(0, availableSlots);
 
     console.log(
@@ -2160,6 +2850,36 @@ export class ChatPipeline {
         similarity: Number(a.similarity.toFixed(3))
       }))
     );
+
+    this.lastRetrievalAnchorWindowDebug = {
+      mode: anchorWindowEligible ? 'anchor_window_plus_fallback' : 'multi_page_fallback',
+      queryIntent,
+      anchor: strongestGroup
+        ? {
+            documentId: strongestGroup.docId,
+            page: strongestGroup.page,
+            anchorScore: Number(strongestGroup.anchorScore.toFixed(3)),
+            baseScore: Number(strongestGroup.score.toFixed(3)),
+            intentScore: Number(strongestGroup.intentScore.toFixed(3)),
+            chunkCount: strongestGroup.chunks.length,
+            marginVsNext: Number(anchorMargin.toFixed(3)),
+          }
+        : null,
+      localPages,
+      localBaseChunkCount,
+      localWindowChunkCount: localWindowResults.length,
+      rankedPageGroups: rankedPageGroups.map(([, group]) => ({
+        documentId: group.docId,
+        page: group.page,
+        anchorScore: Number(group.anchorScore.toFixed(3)),
+        baseScore: Number(group.score.toFixed(3)),
+        intentScore: Number(group.intentScore.toFixed(3)),
+        chunkCount: group.chunks.length,
+      })),
+      reason: anchorWindowEligible
+        ? 'Anchor page was identified but local window was too thin, so fallback pages were allowed.'
+        : 'No strong anchor page was identified, so multi-page retrieval fallback remained enabled.',
+    };
 
     return [...baseResults, ...additions.map(({ chunk, similarity, document }) => ({
       chunk,
@@ -2542,7 +3262,7 @@ ${normalizedOriginal}
       const embeddings = await this.getEmbeddingsForRetrievedDocs(sessionId, baseSearchResults);
 
       // Same-page neighborhood expansion: keep nearby chunks from the strongest pages.
-      searchResults = this.includeTopChunkAdjacentChunks(searchResults, embeddings, queryEmbedding, retrievalQuery, 0.12, 16, 3, 2);
+      searchResults = this.includeTopChunkAdjacentChunks(searchResults, embeddings, queryEmbedding, retrievalQuery, queryIntent, 0.12, 16, 3, 2);
       const retrievalPostprocess = postProcessRetrievalResults(searchResults, { maxResults: retrievalChunkCap, maxPerPageCluster: 3 });
       searchResults = retrievalPostprocess.results;
       retrievalMs = Date.now() - retrievalStartMs;
@@ -2661,6 +3381,47 @@ ${normalizedOriginal}
         );
       }
 
+      const generationChunkIds = new Set(generationChunksForModel.map((chunk) => chunk.chunk.id));
+      const generationCandidateIds = new Set(sortedGenerationCandidates.map((chunk) => chunk.chunk.id));
+      const removedChunkById = new Map(
+        qualityFilteredChunks.removed.map((chunk) => [chunk.chunk.id, chunk] as const)
+      );
+      const generationDecisionsByChunkId = new Map<string, RetrievedChunkGenerationDecision>();
+
+      for (const chunk of searchResults) {
+        const chunkId = chunk.chunk.id;
+
+        if (generationChunkIds.has(chunkId)) {
+          generationDecisionsByChunkId.set(chunkId, { fedToGenerator: true });
+          continue;
+        }
+
+        const removedChunk = removedChunkById.get(chunkId);
+        if (removedChunk) {
+          const reasonDetails = removedChunk.quality.reasons.length > 0
+            ? `; triggers=${removedChunk.quality.reasons.join(', ')}`
+            : '';
+          generationDecisionsByChunkId.set(chunkId, {
+            fedToGenerator: false,
+            reason: `removed by quality filter (${removedChunk.quality.exclusionType}, score=${removedChunk.quality.score.toFixed(2)}${reasonDetails})`,
+          });
+          continue;
+        }
+
+        if (!generationCandidateIds.has(chunkId)) {
+          generationDecisionsByChunkId.set(chunkId, {
+            fedToGenerator: false,
+            reason: `below similarity floor (${MIN_SIMILARITY_FLOOR.toFixed(2)})`,
+          });
+          continue;
+        }
+
+        generationDecisionsByChunkId.set(chunkId, {
+          fedToGenerator: false,
+          reason: `excluded by generation cap (${GENERATION_CHUNK_CAP}) after page-cluster prioritization`,
+        });
+      }
+
       // Build context from generation chunks only
       console.log('[CONTEXT BUILDING]', 'Constructing context from search results...');
       const context = this.buildContext(generationChunksForModel, retrievalQuery);
@@ -2680,8 +3441,8 @@ ${normalizedOriginal}
       generationMs = Date.now() - generationStartMs;
       postprocessMs = generationMetrics?.postprocessMs ?? 0;
 
-      // Log exact chunk content passed to the model at the end of the pipeline.
-      this.logRetrievedChunkDetails(searchResults, generationChunksForModel, baseSearchResults);
+      // Log exact chunk content passed to the model, plus explicit skip reasons.
+      this.logRetrievedChunkDetails(searchResults, generationChunksForModel, baseSearchResults, generationDecisionsByChunkId);
       console.log('[QUALITY METRICS]', {
         intent_detected: queryIntent,
         contract_pass_before_fix: generationMetrics?.contractPassBeforeFix ?? true,
