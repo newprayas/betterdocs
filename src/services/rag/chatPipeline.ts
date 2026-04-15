@@ -2386,6 +2386,49 @@ export class ChatPipeline {
     };
   }
 
+  private formatRetrievalAnchorWindowDebug(debug: RetrievalAnchorWindowDebug): string[] {
+    const anchor = debug.anchor
+      ? `anchor_page=${debug.anchor.page ?? 'unknown'} anchor_score=${debug.anchor.anchorScore.toFixed(3)} base_score=${debug.anchor.baseScore.toFixed(3)} intent_score=${debug.anchor.intentScore.toFixed(3)} anchor_chunks=${debug.anchor.chunkCount} margin_vs_next=${debug.anchor.marginVsNext.toFixed(3)}`
+      : 'anchor_page=none';
+    const localPages = debug.localPages.length > 0 ? debug.localPages.join(',') : 'none';
+    const rankedPages = debug.rankedPageGroups.length > 0
+      ? debug.rankedPageGroups
+          .map((group) => `p${group.page ?? '?'}(score=${group.anchorScore.toFixed(3)},base=${group.baseScore.toFixed(3)},intent=${group.intentScore.toFixed(3)},chunks=${group.chunkCount})`)
+          .join(' | ')
+      : 'none';
+
+    return [
+      `[RETRIEVAL ANCHOR WINDOW] mode=${debug.mode} intent=${debug.queryIntent ?? 'unknown'} ${anchor} local_pages=${localPages} local_base_chunks=${debug.localBaseChunkCount} local_window_chunks=${debug.localWindowChunkCount}`,
+      `[RETRIEVAL ANCHOR WINDOW RANKED PAGES] ${rankedPages}`,
+      `[RETRIEVAL ANCHOR WINDOW REASON] ${debug.reason}`,
+    ];
+  }
+
+  private formatGenerationPageSelectionDebug(debug: GenerationPageSelectionDebug): string[] {
+    const strongestCluster = debug.strongestCluster
+      ? `strongest_page=${debug.strongestCluster.page ?? 'unknown'} strongest_score=${debug.strongestCluster.score.toFixed(3)} strongest_chunks=${debug.strongestCluster.chunkCount}`
+      : 'strongest_page=none';
+    const preferredPages = debug.preferredLocalWindow?.pages?.length
+      ? debug.preferredLocalWindow.pages.join(',')
+      : 'none';
+    const rankedClusters = debug.rankedClusters.length > 0
+      ? debug.rankedClusters
+          .map((cluster) => `p${cluster.page ?? '?'}(score=${cluster.score.toFixed(3)},chunks=${cluster.chunkCount},preferred=${cluster.preferredLocal ? 'yes' : 'no'})`)
+          .join(' | ')
+      : 'none';
+    const selectedPages = debug.selectedPages.length > 0
+      ? debug.selectedPages
+          .map((page) => `p${page.page ?? '?'}(count=${page.count})`)
+          .join(' | ')
+      : 'none';
+
+    return [
+      `[MODEL PAGE SELECTION] ${strongestCluster} local_focus=${debug.localFocusActive ? 'yes' : 'no'} preferred_window=${preferredPages} selected_chunks=${debug.selectedChunkCount}`,
+      `[MODEL PAGE SELECTION RANKED CLUSTERS] ${rankedClusters}`,
+      `[MODEL PAGE SELECTION SELECTED PAGES] ${selectedPages}`,
+    ];
+  }
+
   private logRetrievedChunkDetails(
     retrievedChunks: VectorSearchResult[],
     generationChunks: VectorSearchResult[],
@@ -2429,10 +2472,12 @@ export class ChatPipeline {
       generationFloorApplied: retrievedChunks.length > generationChunks.length,
     });
     if (this.lastRetrievalAnchorWindowDebug) {
-      console.log('[RETRIEVAL ANCHOR WINDOW]', this.lastRetrievalAnchorWindowDebug);
+      this.formatRetrievalAnchorWindowDebug(this.lastRetrievalAnchorWindowDebug)
+        .forEach((line) => console.log(line));
     }
     if (this.lastGenerationPageSelectionDebug) {
-      console.log('[MODEL PAGE SELECTION]', this.lastGenerationPageSelectionDebug);
+      this.formatGenerationPageSelectionDebug(this.lastGenerationPageSelectionDebug)
+        .forEach((line) => console.log(line));
     }
 
     console.log('\n=== RETRIEVAL CHUNK CONTENT START ===');
