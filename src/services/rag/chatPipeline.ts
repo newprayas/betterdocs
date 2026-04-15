@@ -4314,6 +4314,7 @@ You MUST follow these rules:
 9) Before writing, mentally scan ALL provided chunks and extract the distinct facts from each one. Do not ignore a chunk just because another chunk from the same page already overlaps with it.
 10) If two chunks overlap, keep the shared point once but still add any extra details that appear only in the later chunk.
 11) Do not say information is "not found" if relevant facts are present anywhere in the provided chunks.
+12) If a single chunk contains multiple headings, subsections, or topic blocks, use ONLY the subsection that is relevant to the user query and ignore unrelated subsection content from the same chunk.
 
 Output format requirements:
 - Use only the section titles from the contract below.
@@ -4337,6 +4338,7 @@ Output format requirements:
 - For classification-style questions, include every distinct system, subtype, and criterion found in the retrieved text.
 - When multiple chunks from the same page or adjacent pages continue the same topic, combine them into one fuller section instead of taking only the first chunk's points.
 - Prefer extracting more supported bullets over giving a short polished summary.
+- If a chunk mixes two different headings or sections, do not borrow facts from the wrong heading just because they are nearby in the same chunk.
 
 Coverage requirements:
 - Do NOT summarize when the source contains detailed points.
