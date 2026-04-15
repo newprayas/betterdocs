@@ -3903,6 +3903,7 @@ ${normalizedOriginal}
         answerContract,
         contractInstruction,
         queryIntent,
+        retrievalQuery,
         onStreamEvent
       );
       generationMs = Date.now() - generationStartMs;
@@ -4091,6 +4092,7 @@ ${normalizedOriginal}
     answerContract: AnswerContract,
     contractInstruction: string,
     queryIntent: QueryIntent,
+    retrievalQuery?: string,
     onStreamEvent?: (event: ChatStreamEvent) => void
   ): Promise<SimplifiedGenerationMetrics | null> {
     console.log('\n=== SIMPLIFIED CONTEXTUAL RESPONSE MODE (WITH RAG) ===');
@@ -4103,20 +4105,38 @@ ${normalizedOriginal}
     if (!session) {
       throw new Error('Session not found');
     }
-    const systemPrompt = this.getSimplifiedSystemPrompt(searchResults, contractInstruction);
-    console.log('[SIMPLIFIED SYSTEM PROMPT]', 'Using default simplified system prompt');
-
     const settings = await this.indexedDBServices.settingsService.getSettings(session.userId);
     console.log('[SIMPLIFIED RAG SETTINGS]', 'Settings loaded for simplified contextual response');
 
     let fullResponse = '';
+    let promptContext = context;
+    let promptSearchResults = searchResults;
+    let systemPrompt = this.getSimplifiedSystemPrompt(searchResults, contractInstruction);
+    console.log('[SIMPLIFIED SYSTEM PROMPT]', 'Using default simplified system prompt');
 
-    // Build context-aware prompt for inference service
+    let postprocessMs = 0;
+    let contractPassBeforeFix = true;
+    let contractPassAfterFix = true;
+    let hadNumberingFix = false;
+    let hadMissingSectionFill = false;
+    const cappedTemperature = Math.min(settings?.temperature ?? 0.7, 0.2);
+    const maxTokens = Math.max(settings?.maxTokens || 2048, 3072);
     const groqModel = ANSWER_GENERATION_MODEL;
 
-    const groqPrompt = `
+    const isExactTpmOverflowError = (error: unknown): boolean => {
+      const message = error instanceof Error ? error.message : String(error);
+      const normalizedMessage = message.toLowerCase();
+      return (
+        normalizedMessage.includes('payload too large') &&
+        normalizedMessage.includes('request too large for model') &&
+        normalizedMessage.includes('tokens per minute (tpm)') &&
+        normalizedMessage.includes('please reduce your message size and try again')
+      );
+    };
+
+    const buildGroqPrompt = (contextToUse: string): string => `
       <CONTEXT_SOURCES>
-      ${context}
+      ${contextToUse}
       </CONTEXT_SOURCES>
 
       Answer Intent: ${queryIntent}
@@ -4124,19 +4144,11 @@ ${normalizedOriginal}
       New Question: ${content}
     `;
 
-    try {
-      let postprocessMs = 0;
-      let contractPassBeforeFix = true;
-      let contractPassAfterFix = true;
-      let hadNumberingFix = false;
-      let hadMissingSectionFill = false;
-
-      const cappedTemperature = Math.min(settings?.temperature ?? 0.7, 0.2);
-      const maxTokens = Math.max(settings?.maxTokens || 2048, 3072);
-
+    const streamResponse = async (contextToUse: string, systemPromptToUse: string): Promise<void> => {
+      fullResponse = '';
       await groqService.generateStreamingResponse(
-        groqPrompt,
-        systemPrompt,
+        buildGroqPrompt(contextToUse),
+        systemPromptToUse,
         groqModel,
         {
           temperature: cappedTemperature,
@@ -4148,6 +4160,26 @@ ${normalizedOriginal}
           }
         }
       );
+    };
+
+    try {
+      try {
+        await streamResponse(promptContext, systemPrompt);
+      } catch (error) {
+        if (isExactTpmOverflowError(error) && promptSearchResults.length > 1) {
+          const reducedSearchResults = promptSearchResults.slice(0, -1);
+          promptSearchResults = reducedSearchResults;
+          systemPrompt = this.getSimplifiedSystemPrompt(reducedSearchResults, contractInstruction);
+          promptContext = this.buildContext(reducedSearchResults, retrievalQuery);
+          console.warn(
+            '[SIMPLIFIED RAG MODE]',
+            'Exact TPM overflow hit; retrying once with the least important chunk removed.'
+          );
+          await streamResponse(promptContext, systemPrompt);
+        } else {
+          throw error;
+        }
+      }
 
       console.log('[SIMPLIFIED RESPONSE COMPLETE]', `Generated ${fullResponse.length} characters`);
 
@@ -4157,7 +4189,7 @@ ${normalizedOriginal}
 
       const structuredResponse = this.parseStructuredAnswerResponse(fullResponse);
       const directStructuredResult = structuredResponse
-        ? this.renderStructuredAnswerMarkdownWithCitations(structuredResponse, answerContract, searchResults)
+        ? this.renderStructuredAnswerMarkdownWithCitations(structuredResponse, answerContract, promptSearchResults)
         : null;
       const responseBody = directStructuredResult
         ? directStructuredResult.content
@@ -4217,10 +4249,10 @@ ${normalizedOriginal}
         citationMetadata = consistentCitationOutput.citations;
         responseForCitationConsistency = consistentCitationOutput.content;
       } else {
-        const citationResult = citationService.processSimplifiedCitations(responseForCitation, searchResults);
+        const citationResult = citationService.processSimplifiedCitations(responseForCitation, promptSearchResults);
         citationMetadata = citationResult.citations.length > 0
           ? citationService.convertSimplifiedToMessageCitations(citationResult.citations)
-          : this.buildFallbackCitationsFromSearchResults(searchResults, Math.min(8, searchResults.length));
+          : this.buildFallbackCitationsFromSearchResults(promptSearchResults, Math.min(8, promptSearchResults.length));
         const consistentCitationOutput = this.enforceCitationConsistency(
           citationResult.renumberedResponse || responseForCitation,
           citationMetadata
@@ -4229,13 +4261,10 @@ ${normalizedOriginal}
           consistentCitationOutput.content,
           consistentCitationOutput.citations,
           consistentCitationOutput.citations.map(c => {
-            // Find the original search result that corresponds to this citation
-            // Note: citation sourceIndex is 1-based, array is 0-based.
-            // We only use the generationChunks here as that's what was evaluated.
             const originalIndex = c.sourceIndex ? c.sourceIndex - 1 : -1;
-            return originalIndex >= 0 && originalIndex < searchResults.length 
-              ? searchResults[originalIndex].similarity 
-              : 1; // default to 1 if unknown
+            return originalIndex >= 0 && originalIndex < promptSearchResults.length
+              ? promptSearchResults[originalIndex].similarity
+              : 1;
           })
         );
         const isNoEvidenceResponse = this.isInsufficientEvidenceResponse(citationBackfilledContent);
@@ -4252,12 +4281,12 @@ ${normalizedOriginal}
           responseForCitationConsistency = citationBackfilledContent;
         }
       }
+
       const responseWithQueryHeader = this.prependAnsweredQueryHeader(
         responseForCitationConsistency,
         content
       );
 
-      // Save assistant message with formatted response
       const assistantMessage: MessageCreate = {
         sessionId,
         content: responseWithQueryHeader,
@@ -4290,10 +4319,9 @@ ${normalizedOriginal}
           message: error instanceof Error ? error.message : 'Failed to generate response via inference provider'
         });
       }
+      console.log('=== SIMPLIFIED CONTEXTUAL RESPONSE MODE END ===\n');
+      return null;
     }
-
-    console.log('=== SIMPLIFIED CONTEXTUAL RESPONSE MODE END ===\n');
-    return null;
   }
 
   /**

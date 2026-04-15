@@ -59,6 +59,16 @@ export class GroqService {
     return status === 429 || (status >= 500 && status < 600);
   }
 
+  private isExactTpmPayloadTooLargeError(message: string): boolean {
+    const normalizedMessage = message.toLowerCase();
+    return (
+      normalizedMessage.includes('payload too large') &&
+      normalizedMessage.includes('request too large for model') &&
+      normalizedMessage.includes('tokens per minute (tpm)') &&
+      normalizedMessage.includes('please reduce your message size and try again')
+    );
+  }
+
   private extractWaitTime(message: string): number {
     const match = message.match(/try again in ([\d.]+)s/i);
     if (match) {
@@ -323,10 +333,14 @@ export class GroqService {
 
         return;
       } catch (error) {
-        const canRetry = !streamStarted && attempt < maxFailoverRetries;
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        const canRetry =
+          !streamStarted &&
+          attempt < maxFailoverRetries &&
+          !this.isExactTpmPayloadTooLargeError(errorMessage);
         if (canRetry) {
           const delayMs = retryBackoffMs * attemptNumber;
-          console.warn('[GROQ SERVICE STREAM RETRY]', `attempt=${attemptNumber} error="${error instanceof Error ? error.message : String(error)}" next=${delayMs}ms`);
+          console.warn('[GROQ SERVICE STREAM RETRY]', `attempt=${attemptNumber} error="${errorMessage}" next=${delayMs}ms`);
           await new Promise((resolve) => setTimeout(resolve, delayMs));
           attempt += 1;
           continue;
