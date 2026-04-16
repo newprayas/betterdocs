@@ -876,18 +876,14 @@ export class ChatPipeline {
       .filter((msg) => msg?.role === 'assistant' && typeof msg?.content === 'string')
       .map((msg) => msg.content as string);
 
-    for (let i = assistantMessages.length - 1; i >= 0; i--) {
-      const content = assistantMessages[i];
-      const match = content.match(/\*\*Answer for:\*\*\s*"([^"]+)"/i)
-        || content.match(/Answer for:\s*"([^"]+)"/i);
-      const clarified = match?.[1]?.trim();
-      const normalizedClarified = clarified ? this.normalizeStandaloneQueryShape(clarified) : '';
-      if (normalizedClarified) {
-        return normalizedClarified;
-      }
-    }
+    const latestAssistantMessage = assistantMessages[assistantMessages.length - 1];
+    if (!latestAssistantMessage) return null;
 
-    return null;
+    const match = latestAssistantMessage.match(/\*\*Answer for:\*\*\s*"([^"]+)"/i)
+      || latestAssistantMessage.match(/Answer for:\s*"([^"]+)"/i);
+    const clarified = match?.[1]?.trim();
+    const normalizedClarified = clarified ? this.normalizeStandaloneQueryShape(clarified) : '';
+    return normalizedClarified || null;
   }
 
   private extractMostRecentAnswerForLine(history: any[]): string | null {
@@ -911,20 +907,20 @@ export class ChatPipeline {
       .filter((msg) => msg?.role === 'assistant' && typeof msg?.content === 'string')
       .map((msg) => msg.content as string);
 
-    for (let i = assistantMessages.length - 1; i >= 0; i--) {
-      const content = assistantMessages[i];
-      const match = content.match(/\*\*Answer for:\*\*\s*"([^"]+)"/i)
-        || content.match(/Answer for:\s*"([^"]+)"/i);
-      const clarified = match?.[1]?.trim();
-      if (!clarified) continue;
+    const latestAssistantMessage = assistantMessages[assistantMessages.length - 1];
+    if (!latestAssistantMessage) return null;
 
-      const normalizedClarified = this.normalizeStandaloneQueryShape(clarified);
-      if (!normalizedClarified) continue;
+    const match = latestAssistantMessage.match(/\*\*Answer for:\*\*\s*"([^"]+)"/i)
+      || latestAssistantMessage.match(/Answer for:\s*"([^"]+)"/i);
+    const clarified = match?.[1]?.trim();
+    if (!clarified) return null;
 
-      const topic = this.extractTopicFromClarifiedQuery(normalizedClarified);
-      if (topic) {
-        return normalizedClarified;
-      }
+    const normalizedClarified = this.normalizeStandaloneQueryShape(clarified);
+    if (!normalizedClarified) return null;
+
+    const topic = this.extractTopicFromClarifiedQuery(normalizedClarified);
+    if (topic) {
+      return normalizedClarified;
     }
 
     return null;
@@ -3466,7 +3462,10 @@ export class ChatPipeline {
    */
   private async generateStandaloneQuery(
     content: string,
-    previousUserQuery: string | null | undefined
+    rewriteContext: {
+      previousUserQuery?: string | null;
+      previousAssistantClarifiedQuery?: string | null;
+    }
   ): Promise<StandaloneRewriteResult> {
     const REWRITE_TIMEOUT_MS = 10000;
     const normalizedOriginal = this.normalizeStandaloneQueryShape(
@@ -3474,10 +3473,17 @@ export class ChatPipeline {
     );
     this.rewriteTelemetry.totalRequests += 1;
 
-    const normalizedPreviousUserQuery = typeof previousUserQuery === 'string'
-      ? previousUserQuery.trim()
+    const normalizedPreviousUserQuery = typeof rewriteContext.previousUserQuery === 'string'
+      ? rewriteContext.previousUserQuery.trim()
       : '';
-    const hasPreviousContext = Boolean(normalizedPreviousUserQuery);
+    const normalizedPreviousAssistantClarifiedQuery = typeof rewriteContext.previousAssistantClarifiedQuery === 'string'
+      ? rewriteContext.previousAssistantClarifiedQuery.trim()
+      : '';
+    const hasPreviousContext = Boolean(normalizedPreviousUserQuery || normalizedPreviousAssistantClarifiedQuery);
+    const contextualFallback = this.buildContextualRewriteFallback(
+      normalizedOriginal,
+      normalizedPreviousAssistantClarifiedQuery || null
+    );
     const rewriterSystemPrompt =
       'You rewrite medical user input into one high-quality standalone retrieval query. Preserve the user scope exactly. If the user asks for clinical features or features, expand only to patient history and physical examination findings; do not add investigations, imaging, diagnosis, treatment, management, classification, causes, or complications unless the user explicitly asked. Return strict JSON only.';
     const rewriterSystemPromptStrict =
@@ -3492,7 +3498,7 @@ Goals:
 1) Understand user intent and express it as a clearer, more complete query.
 2) Expand short/fragmented wording into natural phrasing that improves retrieval.
 3) Correct spelling/grammar.
-4) Use ONLY the immediate previous user query below; ignore all other history.
+4) Use ONLY the immediate previous user query and the most recent assistant clarified query below; ignore all other history.
 5) If context is unrelated/absent, rewrite current query standalone without context.
 6) Keep meaning faithful to user intent; do not invent a new topic.
 7) If user asks for Rx or treatment in query, include BOTH medical and surgical treatment wording.
@@ -3501,6 +3507,9 @@ Goals:
 
 Immediate Previous User Query:
 ${normalizedPreviousUserQuery || 'None'}
+
+Most Recent Assistant Clarified Query:
+${normalizedPreviousAssistantClarifiedQuery || 'None'}
 
 Latest User Query:
 ${normalizedOriginal}
@@ -3518,6 +3527,9 @@ Do not add investigations, imaging, diagnosis, treatment, management, classifica
 Immediate Previous User Query:
 ${normalizedPreviousUserQuery || 'None'}
 
+Most Recent Assistant Clarified Query:
+${normalizedPreviousAssistantClarifiedQuery || 'None'}
+
 Latest User Query:
 ${normalizedOriginal}
 `.trim();
@@ -3525,6 +3537,8 @@ ${normalizedOriginal}
     console.log('[QUERY REWRITER CONTEXT]', {
       latestUserQuery: normalizedOriginal,
       previousUserQuery: normalizedPreviousUserQuery || null,
+      previousAssistantClarifiedQuery: normalizedPreviousAssistantClarifiedQuery || null,
+      contextualFallback: contextualFallback || null,
       usedImmediateContext: hasPreviousContext,
     });
     console.log('[QUERY REWRITER PROMPT][SYSTEM][PRIMARY]', rewriterSystemPrompt);
@@ -3584,17 +3598,22 @@ ${normalizedOriginal}
         }
       }
 
+      if (!cleanedQuery && contextualFallback) {
+        cleanedQuery = contextualFallback;
+      }
+
       const rewriterRateLimitNotice = this.extractRateLimitNotice(cleanedQuery);
       if (rewriterRateLimitNotice) {
         console.warn('[QUERY REWRITER]', `Rate-limited rewrite response detected. Falling back to original query.`);
         this.rewriteTelemetry.fallbackDueToRateLimit += 1;
         this.rewriteTelemetry.fallbackToOriginal += 1;
         this.logRewriteTelemetrySummary();
+        const fallbackQuery = contextualFallback || this.normalizeStandaloneQueryShape(normalizedOriginal);
         return {
-          query: this.normalizeStandaloneQueryShape(normalizedOriginal),
-          wasRewritten: false,
+          query: fallbackQuery,
+          wasRewritten: fallbackQuery.toLowerCase() !== normalizedOriginal.toLowerCase(),
           usedImmediateContext: hasPreviousContext,
-          mode: 'fallback_original',
+          mode: fallbackQuery.toLowerCase() === normalizedOriginal.toLowerCase() ? 'fallback_original' : 'rewritten',
         };
       }
 
@@ -3605,11 +3624,12 @@ ${normalizedOriginal}
         this.rewriteTelemetry.fallbackDueToWeak += 1;
         this.rewriteTelemetry.fallbackToOriginal += 1;
         this.logRewriteTelemetrySummary();
+        const fallbackQuery = contextualFallback || this.normalizeStandaloneQueryShape(normalizedOriginal);
         return {
-          query: this.normalizeStandaloneQueryShape(normalizedOriginal),
-          wasRewritten: false,
+          query: fallbackQuery,
+          wasRewritten: fallbackQuery.toLowerCase() !== normalizedOriginal.toLowerCase(),
           usedImmediateContext: hasPreviousContext,
-          mode: 'fallback_original',
+          mode: fallbackQuery.toLowerCase() === normalizedOriginal.toLowerCase() ? 'fallback_original' : 'rewritten',
         };
       }
 
@@ -3618,11 +3638,12 @@ ${normalizedOriginal}
         this.rewriteTelemetry.fallbackDueToTruncated += 1;
         this.rewriteTelemetry.fallbackToOriginal += 1;
         this.logRewriteTelemetrySummary();
+        const fallbackQuery = contextualFallback || this.normalizeStandaloneQueryShape(normalizedOriginal);
         return {
-          query: this.normalizeStandaloneQueryShape(normalizedOriginal),
-          wasRewritten: false,
+          query: fallbackQuery,
+          wasRewritten: fallbackQuery.toLowerCase() !== normalizedOriginal.toLowerCase(),
           usedImmediateContext: hasPreviousContext,
-          mode: 'fallback_original',
+          mode: fallbackQuery.toLowerCase() === normalizedOriginal.toLowerCase() ? 'fallback_original' : 'rewritten',
         };
       }
 
@@ -3710,8 +3731,10 @@ ${normalizedOriginal}
         20
       );
       const previousUserQuery = this.extractPreviousUserQuery(recentMessages, content);
+      const previousAssistantClarifiedQuery = this.extractMostRecentClarifiedQuery(recentMessages);
       console.log('[QUERY REWRITER CONTEXT SOURCE]', {
         previousUserQuery: previousUserQuery || null,
+        previousAssistantClarifiedQuery: previousAssistantClarifiedQuery || null,
         recentMessageCount: recentMessages.length,
       });
 
@@ -3721,7 +3744,10 @@ ${normalizedOriginal}
       const rewriteStartMs = Date.now();
       const standaloneRewrite = await this.generateStandaloneQuery(
         content,
-        previousUserQuery
+        {
+          previousUserQuery,
+          previousAssistantClarifiedQuery,
+        }
       );
       const standaloneQuery = standaloneRewrite.query;
       rewriteMs = Date.now() - rewriteStartMs;
