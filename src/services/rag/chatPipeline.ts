@@ -668,12 +668,35 @@ export class ChatPipeline {
       .map((line) => line.trim())
       .find((line) => line.length > 0) || '';
 
-    return firstLine
+    const jsonishQuery = this.extractQueryFromJsonishText(firstLine);
+    const cleaned = (jsonishQuery || firstLine)
       .replace(/^standalone\s+query\s*:\s*/i, '')
       .replace(/^rewritten\s+query\s*:\s*/i, '')
+      .replace(/^query\s*:\s*/i, '')
       .replace(/^[-*]\s+/, '')
       .replace(/^["'`]|["'`]$/g, '')
       .trim();
+
+    return cleaned;
+  }
+
+  private extractQueryFromJsonishText(raw: string): string | null {
+    const queryMatch = raw.match(/"query"\s*:\s*"([\s\S]*)$/i);
+    if (!queryMatch?.[1]) return null;
+
+    const value = queryMatch[1]
+      .replace(/"\s*[,}\]]?\s*$/g, '')
+      .replace(/[}\]]+\s*$/g, '')
+      .trim();
+
+    return value || null;
+  }
+
+  private looksLikeMalformedRewriteJsonOutput(raw: string): boolean {
+    const trimmed = (raw || '').trim();
+    if (!trimmed) return false;
+
+    return /^\{\s*"?query"?\s*:\s*"/i.test(trimmed) && !/\}\s*$/.test(trimmed);
   }
 
   private parseStructuredRewriteOutput(raw: string): string {
@@ -816,7 +839,7 @@ export class ChatPipeline {
   private enforceRewriteScope(
     originalQuery: string,
     rewrittenQuery: string,
-    immediateRewriteQuery: string | null
+    previousUserQuery: string | null
   ): string {
     if (!this.shouldExpandToClinicalHistoryAndExam(originalQuery)) {
       return rewrittenQuery;
@@ -827,8 +850,8 @@ export class ChatPipeline {
       this.extractTopicFromQuery(rewrittenQuery) ||
       this.extractTopicFromClarifiedQuery(originalQuery) ||
       this.extractTopicFromQuery(originalQuery) ||
-      (immediateRewriteQuery
-        ? (this.extractTopicFromClarifiedQuery(immediateRewriteQuery) || this.extractTopicFromQuery(immediateRewriteQuery))
+      (previousUserQuery
+        ? (this.extractTopicFromClarifiedQuery(previousUserQuery) || this.extractTopicFromQuery(previousUserQuery))
         : null);
 
     if (!topic) {
@@ -3443,7 +3466,7 @@ export class ChatPipeline {
    */
   private async generateStandaloneQuery(
     content: string,
-    latestRewriteQueryResponse: string | null | undefined
+    previousUserQuery: string | null | undefined
   ): Promise<StandaloneRewriteResult> {
     const REWRITE_TIMEOUT_MS = 10000;
     const normalizedOriginal = this.normalizeStandaloneQueryShape(
@@ -3451,11 +3474,10 @@ export class ChatPipeline {
     );
     this.rewriteTelemetry.totalRequests += 1;
 
-    const normalizedLatestRewriteQueryResponse = typeof latestRewriteQueryResponse === 'string'
-      ? latestRewriteQueryResponse.trim()
+    const normalizedPreviousUserQuery = typeof previousUserQuery === 'string'
+      ? previousUserQuery.trim()
       : '';
-    const immediateRewriteQuery = this.parseStructuredRewriteOutput(normalizedLatestRewriteQueryResponse);
-    const hasImmediateContext = Boolean(immediateRewriteQuery);
+    const hasPreviousContext = Boolean(normalizedPreviousUserQuery);
     const rewriterSystemPrompt =
       'You rewrite medical user input into one high-quality standalone retrieval query. Preserve the user scope exactly. If the user asks for clinical features or features, expand only to patient history and physical examination findings; do not add investigations, imaging, diagnosis, treatment, management, classification, causes, or complications unless the user explicitly asked. Return strict JSON only.';
     const rewriterSystemPromptStrict =
@@ -3470,15 +3492,15 @@ Goals:
 1) Understand user intent and express it as a clearer, more complete query.
 2) Expand short/fragmented wording into natural phrasing that improves retrieval.
 3) Correct spelling/grammar.
-4) Use ONLY the immediate previous assistant context below; ignore all other history.
+4) Use ONLY the immediate previous user query below; ignore all other history.
 5) If context is unrelated/absent, rewrite current query standalone without context.
 6) Keep meaning faithful to user intent; do not invent a new topic.
 7) If user asks for Rx or treatment in query, include BOTH medical and surgical treatment wording.
 8) If user asks for clinical features or features, expand ONLY to patient history and physical examination findings.
 9) Do NOT add investigations, imaging, diagnosis, treatment, management, classification, causes, complications, or any other extra facet unless the user explicitly asked for it.
 
-Immediate Previous Rewrite Response (JSON):
-${normalizedLatestRewriteQueryResponse || 'None'}
+Immediate Previous User Query:
+${normalizedPreviousUserQuery || 'None'}
 
 Latest User Query:
 ${normalizedOriginal}
@@ -3493,8 +3515,8 @@ Preserve user scope exactly.
 If user asks for clinical features or features, expand only to patient history and physical examination findings.
 Do not add investigations, imaging, diagnosis, treatment, management, classification, causes, or complications unless explicitly requested.
 
-Immediate Previous Rewrite Response (JSON):
-${normalizedLatestRewriteQueryResponse || 'None'}
+Immediate Previous User Query:
+${normalizedPreviousUserQuery || 'None'}
 
 Latest User Query:
 ${normalizedOriginal}
@@ -3502,9 +3524,8 @@ ${normalizedOriginal}
 
     console.log('[QUERY REWRITER CONTEXT]', {
       latestUserQuery: normalizedOriginal,
-      latestRewriteQueryResponse: normalizedLatestRewriteQueryResponse || null,
-      immediateRewriteQuery: immediateRewriteQuery || null,
-      usedImmediateContext: hasImmediateContext,
+      previousUserQuery: normalizedPreviousUserQuery || null,
+      usedImmediateContext: hasPreviousContext,
     });
     console.log('[QUERY REWRITER PROMPT][SYSTEM][PRIMARY]', rewriterSystemPrompt);
     console.log('[QUERY REWRITER PROMPT][USER][PRIMARY]', prompt);
@@ -3533,13 +3554,17 @@ ${normalizedOriginal}
         'openai/gpt-oss-120b',
         {
           temperature: 0.1,
-          maxTokens: 180,
+          maxTokens: 256,
           timeoutMs: REWRITE_TIMEOUT_MS,
         }
       );
       console.log('[QUERY REWRITER RAW][PRIMARY]', rewrittenQuery);
 
       let cleanedQuery = this.parseStructuredRewriteOutput(rewrittenQuery);
+      if (this.looksLikeMalformedRewriteJsonOutput(rewrittenQuery)) {
+        console.warn('[QUERY REWRITER]', 'Primary rewrite returned truncated JSON. Retrying with strict prompt.');
+        cleanedQuery = '';
+      }
 
       // Hard retry once with stricter prompt if primary output is empty.
       if (!cleanedQuery) {
@@ -3553,6 +3578,10 @@ ${normalizedOriginal}
         );
         console.log('[QUERY REWRITER RAW][STRICT]', rewrittenQuery);
         cleanedQuery = this.parseStructuredRewriteOutput(rewrittenQuery);
+        if (this.looksLikeMalformedRewriteJsonOutput(rewrittenQuery)) {
+          console.warn('[QUERY REWRITER]', 'Strict rewrite returned truncated JSON. Falling back to original query.');
+          cleanedQuery = '';
+        }
       }
 
       const rewriterRateLimitNotice = this.extractRateLimitNotice(cleanedQuery);
@@ -3564,7 +3593,7 @@ ${normalizedOriginal}
         return {
           query: this.normalizeStandaloneQueryShape(normalizedOriginal),
           wasRewritten: false,
-          usedImmediateContext: hasImmediateContext,
+          usedImmediateContext: hasPreviousContext,
           mode: 'fallback_original',
         };
       }
@@ -3579,7 +3608,7 @@ ${normalizedOriginal}
         return {
           query: this.normalizeStandaloneQueryShape(normalizedOriginal),
           wasRewritten: false,
-          usedImmediateContext: hasImmediateContext,
+          usedImmediateContext: hasPreviousContext,
           mode: 'fallback_original',
         };
       }
@@ -3592,7 +3621,7 @@ ${normalizedOriginal}
         return {
           query: this.normalizeStandaloneQueryShape(normalizedOriginal),
           wasRewritten: false,
-          usedImmediateContext: hasImmediateContext,
+          usedImmediateContext: hasPreviousContext,
           mode: 'fallback_original',
         };
       }
@@ -3600,13 +3629,13 @@ ${normalizedOriginal}
       const scopeAlignedQuery = this.enforceRewriteScope(
         normalizedOriginal,
         cleanedQuery,
-        immediateRewriteQuery
+        normalizedPreviousUserQuery || null
       );
       const finalRewritten = this.normalizeStandaloneQueryShape(scopeAlignedQuery);
       const wasRewritten = finalRewritten.toLowerCase() !== normalizedOriginal.toLowerCase();
       if (wasRewritten) {
         this.rewriteTelemetry.rewritten += 1;
-        if (hasImmediateContext) {
+        if (hasPreviousContext) {
           this.rewriteTelemetry.rewrittenWithImmediateContext += 1;
         }
       }
@@ -3616,7 +3645,7 @@ ${normalizedOriginal}
       return {
         query: finalRewritten,
         wasRewritten,
-        usedImmediateContext: hasImmediateContext,
+        usedImmediateContext: hasPreviousContext,
         mode: 'rewritten',
       };
 
@@ -3628,7 +3657,7 @@ ${normalizedOriginal}
       return {
         query: this.normalizeStandaloneQueryShape(normalizedOriginal),
         wasRewritten: false,
-        usedImmediateContext: hasImmediateContext,
+        usedImmediateContext: hasPreviousContext,
         mode: 'fallback_original',
       };
     }
@@ -3675,13 +3704,24 @@ ${normalizedOriginal}
       const retrievalMode: 'ann_rerank_v1' = 'ann_rerank_v1';
       console.log('[RETRIEVAL MODE]', retrievalMode);
 
+      const recentMessages = await this.indexedDBServices.messageService.getMessagesBySession(
+        sessionId,
+        sessionForDocuments.userId,
+        20
+      );
+      const previousUserQuery = this.extractPreviousUserQuery(recentMessages, content);
+      console.log('[QUERY REWRITER CONTEXT SOURCE]', {
+        previousUserQuery: previousUserQuery || null,
+        recentMessageCount: recentMessages.length,
+      });
+
       // 1. GENERATE STANDALONE QUERY
       // This converts "What are its causes?" -> "What are the causes of cataract?"
       console.log('[REWRITING]', 'Generating standalone query...');
       const rewriteStartMs = Date.now();
       const standaloneRewrite = await this.generateStandaloneQuery(
         content,
-        sessionForDocuments.latestRewriteQueryResponse
+        previousUserQuery
       );
       const standaloneQuery = standaloneRewrite.query;
       rewriteMs = Date.now() - rewriteStartMs;
