@@ -775,6 +775,31 @@ export class ChatPipeline {
     return ['it', 'this', 'that', 'these', 'those', 'them', 'they', 'their', 'its'].includes(normalized);
   }
 
+  private isGenericTopicWord(topic: string): boolean {
+    const normalized = topic.trim().toLowerCase();
+    return [
+      'other',
+      'others',
+      'another',
+      'different',
+      'condition',
+      'conditions',
+      'disease',
+      'diseases',
+      'problem',
+      'problems',
+      'issue',
+      'issues',
+      'mimic',
+      'mimics',
+      'mimicking',
+      'similar',
+      'look',
+      'looks',
+      'like',
+    ].includes(normalized);
+  }
+
   private sanitizeExtractedTopic(rawTopic: string): string | null {
     const topic = rawTopic
       .replace(/^(the|a|an)\s+/i, '')
@@ -784,6 +809,7 @@ export class ChatPipeline {
 
     if (!topic) return null;
     if (this.isPronounTopic(topic)) return null;
+    if (this.isGenericTopicWord(topic)) return null;
     return topic;
   }
 
@@ -857,34 +883,7 @@ export class ChatPipeline {
     rewrittenQuery: string,
     previousUserQuery: string | null
   ): string {
-    if (!this.shouldExpandToClinicalHistoryAndExam(originalQuery)) {
-      return rewrittenQuery;
-    }
-
-    const topic =
-      this.extractTopicFromClarifiedQuery(rewrittenQuery) ||
-      this.extractTopicFromQuery(rewrittenQuery) ||
-      this.extractTopicFromClarifiedQuery(originalQuery) ||
-      this.extractTopicFromQuery(originalQuery) ||
-      (previousUserQuery
-        ? (this.extractTopicFromClarifiedQuery(previousUserQuery) || this.extractTopicFromQuery(previousUserQuery))
-        : null);
-
-    if (!topic) {
-      return rewrittenQuery;
-    }
-
-    const enforced = this.buildClinicalFeaturesHistoryExamRewrite(topic);
-    if (enforced.toLowerCase() !== rewrittenQuery.toLowerCase()) {
-      console.log('[QUERY REWRITER SCOPE GUARD]', {
-        reason: 'clinical_features_to_history_and_exam_only',
-        originalQuery,
-        rewrittenQuery,
-        enforcedQuery: enforced,
-      });
-    }
-
-    return enforced;
+    return rewrittenQuery;
   }
 
   private extractMostRecentClarifiedQuery(history: any[]): string | null {
@@ -947,13 +946,11 @@ export class ChatPipeline {
     if (!normalized) return false;
 
     // Clear continuation signals (pronouns / referential phrases).
-    if (/\b(it|its|this|that|these|those|they|them|their|same|above|previous|former|latter)\b/.test(normalized)) {
+    if (/\b(it|its|this|that|these|those|they|them|their)\b/.test(normalized)) {
       return true;
     }
 
-    if (/^(and|also)\b/.test(normalized)) return true;
     if (/\b(of it|for it|about it)\b/.test(normalized)) return true;
-    if (/^(what about|how about)\b/.test(normalized)) return true;
 
     return false;
   }
@@ -1010,6 +1007,18 @@ export class ChatPipeline {
       .trim();
     if (!cleaned) return null;
 
+    const mimicMatch = cleaned.match(/\b(?:mimic|mimics|mimicking|look like|looks like|simulate|similar to)\s+(?:an?|the)?\s*(.+)$/i);
+    if (mimicMatch?.[1]) {
+      const topic = this.sanitizeExtractedTopic(mimicMatch[1]);
+      if (topic) return topic;
+    }
+
+    const mimicClauseMatch = cleaned.match(/\b(?:conditions?|diseases?|problems?|issues?)\s+that\s+can\s+(?:mimic|look like)\s+(?:an?|the)?\s*(.+)$/i);
+    if (mimicClauseMatch?.[1]) {
+      const topic = this.sanitizeExtractedTopic(mimicClauseMatch[1]);
+      if (topic) return topic;
+    }
+
     const genericOfMatch = cleaned.match(/\bof\s+(.+)$/i);
     if (genericOfMatch?.[1]) {
       return this.sanitizeExtractedTopic(genericOfMatch[1]);
@@ -1038,7 +1047,8 @@ export class ChatPipeline {
       ]);
       const tokens = normalized.split(' ').filter((token) => token.length > 1 && !stopwords.has(token));
       if (tokens.length > 0) {
-        return this.sanitizeExtractedTopic(tokens[0]);
+        const candidate = this.sanitizeExtractedTopic(tokens[0]);
+        if (candidate) return candidate;
       }
     }
 
@@ -1118,7 +1128,7 @@ export class ChatPipeline {
       return rewrittenQuery;
     }
 
-    const shouldApply = this.isLikelyContextContinuation(originalQuery) || this.isLikelyFacetFollowUp(originalQuery);
+    const shouldApply = this.isLikelyContextContinuation(originalQuery);
     if (!shouldApply) return rewrittenQuery;
 
     const resolved = `${rewrittenQuery} of ${topic}`.replace(/\s+/g, ' ').trim();
@@ -3699,35 +3709,26 @@ export class ChatPipeline {
     );
     this.rewriteTelemetry.totalRequests += 1;
 
-    const normalizedPreviousUserQuery = typeof rewriteContext.previousUserQuery === 'string'
+    const normalizedPreviousUserQueryRaw = typeof rewriteContext.previousUserQuery === 'string'
       ? rewriteContext.previousUserQuery.trim()
       : '';
-    const normalizedPreviousAssistantClarifiedQuery = typeof rewriteContext.previousAssistantClarifiedQuery === 'string'
+    const normalizedPreviousAssistantClarifiedQueryRaw = typeof rewriteContext.previousAssistantClarifiedQuery === 'string'
       ? rewriteContext.previousAssistantClarifiedQuery.trim()
       : '';
-    const hasPreviousContext = Boolean(normalizedPreviousUserQuery || normalizedPreviousAssistantClarifiedQuery);
-    const contextualFallback = this.buildContextualRewriteFallback(
-      normalizedOriginal,
-      normalizedPreviousAssistantClarifiedQuery || null
-    );
-    const forceTreatmentRewrite = this.shouldForceMedicalAndSurgicalTreatmentRewrite(normalizedOriginal);
-    const treatmentTopic = forceTreatmentRewrite
-      ? (
-        this.extractTopicFromClarifiedQuery(normalizedPreviousAssistantClarifiedQuery) ||
-        this.extractTopicFromQuery(normalizedPreviousAssistantClarifiedQuery) ||
-        this.extractTopicFromClarifiedQuery(normalizedPreviousUserQuery) ||
-        this.extractTopicFromQuery(normalizedPreviousUserQuery) ||
-        this.extractTopicFromClarifiedQuery(normalizedOriginal) ||
-        this.extractTopicFromQuery(normalizedOriginal)
+    const hasPreviousContext = Boolean(normalizedPreviousUserQueryRaw || normalizedPreviousAssistantClarifiedQueryRaw);
+    const shouldUseImmediateContext = hasPreviousContext && this.isLikelyContextContinuation(normalizedOriginal);
+    const normalizedPreviousUserQuery = shouldUseImmediateContext ? normalizedPreviousUserQueryRaw : '';
+    const normalizedPreviousAssistantClarifiedQuery = shouldUseImmediateContext ? normalizedPreviousAssistantClarifiedQueryRaw : '';
+    const contextualFallback = shouldUseImmediateContext
+      ? this.buildContextualRewriteFallback(
+        normalizedOriginal,
+        normalizedPreviousAssistantClarifiedQuery || null
       )
       : null;
-    const treatmentFallback = treatmentTopic
-      ? this.buildMedicalAndSurgicalTreatmentRewrite(treatmentTopic)
-      : null;
     const rewriterSystemPrompt =
-      'You rewrite medical user input into one high-quality standalone retrieval query. Preserve the user scope exactly. If the user asks for clinical features or features, expand only to patient history and physical examination findings; do not add investigations, imaging, diagnosis, treatment, management, classification, causes, or complications unless the user explicitly asked. If the user asks for Rx, tx, or a short treatment query, prefer the exact phrasing "What are the medical and surgical treatment options for <topic>?" and avoid using "conservative" unless explicitly requested. Return strict JSON only.';
+      'You rewrite medical user input into one high-quality standalone retrieval query. Preserve the user\'s exact intent. Use prior chat context only for clear follow-ups like it, this, that, or its. If the user already names a disease or condition, do not swap it with the prior topic. For short Rx, tx, or treatment queries, rewrite into: "Medical (conservative) and surgical management of <disease>" using the disease from the current query or very clear immediate context. Rewrite naturally and do not invent a new topic. Return strict JSON only.';
     const rewriterSystemPromptStrict =
-      'Return STRICT JSON ONLY in this exact schema: {"query":"<standalone medical retrieval query>"}. Preserve scope exactly. For clinical features/features queries, expand only to history and physical examination findings unless the user explicitly asked for other facets. If the user asks for Rx, tx, or a short treatment query, prefer the exact phrasing "What are the medical and surgical treatment options for <topic>?" and avoid using "conservative" unless explicitly requested. No markdown, no extra keys, no commentary.';
+      'Return STRICT JSON ONLY in this exact schema: {"query":"<standalone medical retrieval query>"}. Preserve the user\'s exact intent. Use prior chat context only for clear follow-ups like it, this, that, or its. If the user already names a disease or condition, do not swap it with the prior topic. For short Rx, tx, or treatment queries, rewrite into: "Medical (conservative) and surgical management of <disease>" using the disease from the current query or very clear immediate context. Rewrite naturally and do not invent a new topic. No markdown, no extra keys, no commentary.';
 
     const prompt = `
 Rewrite the latest user query into one standalone retrieval query.
@@ -3738,13 +3739,11 @@ Goals:
 1) Understand user intent and express it as a clearer, more complete query.
 2) Expand short/fragmented wording into natural phrasing that improves retrieval.
 3) Correct spelling/grammar.
-4) Use ONLY the immediate previous user query and the most recent assistant clarified query below; ignore all other history.
-5) If context is unrelated/absent, rewrite current query standalone without context.
-6) Keep meaning faithful to user intent; do not invent a new topic.
-7) If user asks for Rx or treatment in query, include BOTH medical and surgical treatment wording.
-7b) If the query is a short Rx/tx/treatment shorthand, prefer the exact wording "What are the medical and surgical treatment options for <topic>?".
-8) If user asks for clinical features or features, expand ONLY to patient history and physical examination findings.
-9) Do NOT add investigations, imaging, diagnosis, treatment, management, classification, causes, complications, or any other extra facet unless the user explicitly asked for it.
+4) Use the previous context fields only when the latest query is a clear follow-up like it, this, that, or its. If the latest query already names a disease or condition, ignore previous context.
+5) If context is unrelated or absent, rewrite current query standalone without context.
+6) Keep meaning faithful to user intent; do not invent a new topic or change conservative treatment into medical and surgical treatment.
+7) For short Rx, tx, or treatment queries, rewrite into "Medical (conservative) and surgical management of <disease>" using the disease from the current query or very clear immediate context.
+8) Do NOT add investigations, imaging, diagnosis, management, classification, causes, complications, or any other extra facet unless the user explicitly asked for it.
 
 Immediate Previous User Query:
 ${normalizedPreviousUserQuery || 'None'}
@@ -3762,9 +3761,10 @@ Return STRICT JSON ONLY:
 Do not add markdown, code fences, labels, or extra keys.
 Use ONLY immediate context below when needed.
 Preserve user scope exactly.
-If user asks for clinical features or features, expand only to patient history and physical examination findings.
-Do not add investigations, imaging, diagnosis, treatment, management, classification, causes, or complications unless explicitly requested.
-If the query is a short Rx/tx/treatment shorthand, prefer the exact wording "What are the medical and surgical treatment options for <topic>?".
+Use prior context only for clear follow-ups like it, this, that, or its. If the latest query already names a disease or condition, ignore previous context.
+Keep the user's exact intent.
+For short Rx, tx, or treatment queries, rewrite into "Medical (conservative) and surgical management of <disease>" using the disease from the current query or very clear immediate context.
+Do not add investigations, imaging, diagnosis, management, classification, causes, or complications unless explicitly requested.
 
 Immediate Previous User Query:
 ${normalizedPreviousUserQuery || 'None'}
@@ -3776,14 +3776,13 @@ Latest User Query:
 ${normalizedOriginal}
 `.trim();
 
-    console.log('[QUERY REWRITER CONTEXT]', {
-      latestUserQuery: normalizedOriginal,
-      previousUserQuery: normalizedPreviousUserQuery || null,
-      previousAssistantClarifiedQuery: normalizedPreviousAssistantClarifiedQuery || null,
-      contextualFallback: contextualFallback || null,
-      treatmentFallback: treatmentFallback || null,
-      usedImmediateContext: hasPreviousContext,
-    });
+      console.log('[QUERY REWRITER CONTEXT]', {
+        latestUserQuery: normalizedOriginal,
+        previousUserQuery: normalizedPreviousUserQuery || null,
+        previousAssistantClarifiedQuery: normalizedPreviousAssistantClarifiedQuery || null,
+        contextualFallback: contextualFallback || null,
+        usedImmediateContext: shouldUseImmediateContext,
+      });
     console.log('[QUERY REWRITER PROMPT][SYSTEM][PRIMARY]', rewriterSystemPrompt);
     console.log('[QUERY REWRITER PROMPT][USER][PRIMARY]', prompt);
 
@@ -3845,10 +3844,6 @@ ${normalizedOriginal}
         cleanedQuery = contextualFallback;
       }
 
-      if (forceTreatmentRewrite && treatmentFallback) {
-        cleanedQuery = treatmentFallback;
-      }
-
       const rewriterRateLimitNotice = this.extractRateLimitNotice(cleanedQuery);
       if (rewriterRateLimitNotice) {
         console.warn('[QUERY REWRITER]', `Rate-limited rewrite response detected. Falling back to original query.`);
@@ -3859,7 +3854,7 @@ ${normalizedOriginal}
         return {
           query: fallbackQuery,
           wasRewritten: fallbackQuery.toLowerCase() !== normalizedOriginal.toLowerCase(),
-          usedImmediateContext: hasPreviousContext,
+          usedImmediateContext: shouldUseImmediateContext,
           mode: fallbackQuery.toLowerCase() === normalizedOriginal.toLowerCase() ? 'fallback_original' : 'rewritten',
         };
       }
@@ -3875,7 +3870,7 @@ ${normalizedOriginal}
         return {
           query: fallbackQuery,
           wasRewritten: fallbackQuery.toLowerCase() !== normalizedOriginal.toLowerCase(),
-          usedImmediateContext: hasPreviousContext,
+          usedImmediateContext: shouldUseImmediateContext,
           mode: fallbackQuery.toLowerCase() === normalizedOriginal.toLowerCase() ? 'fallback_original' : 'rewritten',
         };
       }
@@ -3889,21 +3884,16 @@ ${normalizedOriginal}
         return {
           query: fallbackQuery,
           wasRewritten: fallbackQuery.toLowerCase() !== normalizedOriginal.toLowerCase(),
-          usedImmediateContext: hasPreviousContext,
+          usedImmediateContext: shouldUseImmediateContext,
           mode: fallbackQuery.toLowerCase() === normalizedOriginal.toLowerCase() ? 'fallback_original' : 'rewritten',
         };
       }
 
-      const scopeAlignedQuery = this.enforceRewriteScope(
-        normalizedOriginal,
-        cleanedQuery,
-        normalizedPreviousUserQuery || null
-      );
-      const finalRewritten = this.normalizeStandaloneQueryShape(scopeAlignedQuery);
+      const finalRewritten = this.normalizeStandaloneQueryShape(cleanedQuery);
       const wasRewritten = finalRewritten.toLowerCase() !== normalizedOriginal.toLowerCase();
       if (wasRewritten) {
         this.rewriteTelemetry.rewritten += 1;
-        if (hasPreviousContext) {
+        if (shouldUseImmediateContext) {
           this.rewriteTelemetry.rewrittenWithImmediateContext += 1;
         }
       }
@@ -3913,7 +3903,7 @@ ${normalizedOriginal}
       return {
         query: finalRewritten,
         wasRewritten,
-        usedImmediateContext: hasPreviousContext,
+        usedImmediateContext: shouldUseImmediateContext,
         mode: 'rewritten',
       };
 
@@ -3925,7 +3915,7 @@ ${normalizedOriginal}
       return {
         query: this.normalizeStandaloneQueryShape(normalizedOriginal),
         wasRewritten: false,
-        usedImmediateContext: hasPreviousContext,
+        usedImmediateContext: shouldUseImmediateContext,
         mode: 'fallback_original',
       };
     }
