@@ -188,6 +188,15 @@ interface RewriteTelemetry {
   searchFallbackRecovered: number;
 }
 
+interface TopicSectionSignals {
+  score: number;
+  introLike: boolean;
+  hasFacetHeading: boolean;
+  headingMatchScore: number;
+  topicMentionScore: number;
+  topicHeading: string | null;
+}
+
 const STAGE_TIMEOUT_MS = {
   sessionLookup: 8000,
   historyLookup: 8000,
@@ -1714,7 +1723,8 @@ export class ChatPipeline {
   private rankGenerationCandidate(
     chunk: VectorSearchResult & { quality?: ChunkQualityAssessment },
     queryIntent?: QueryIntent,
-    selected: Array<VectorSearchResult & { quality?: ChunkQualityAssessment }> = []
+    selected: Array<VectorSearchResult & { quality?: ChunkQualityAssessment }> = [],
+    queryTopic?: string | null
   ): number {
     const content = `${chunk.document.title || ''}\n${chunk.chunk.source || ''}\n${chunk.chunk.content || ''}`.toLowerCase();
     const baseSimilarity = chunk.similarity || 0;
@@ -1749,9 +1759,10 @@ export class ChatPipeline {
     const detailBonus = this.scoreGenerationDetailBonus(content, queryIntent);
     const coverageBonus = this.scoreGenerationCoverageBonus(chunk, selected, queryIntent);
     const requiredCoverageBonus = this.scoreGenerationCoveragePriority(chunk, selected, queryIntent);
+    const topicSectionBonus = this.analyzeTopicSectionSignals(chunk.chunk.content || '', queryIntent, queryTopic).score;
     const redundancyPenalty = this.scoreGenerationRedundancyPenalty(chunk, selected);
     const sideTopicPenalty = this.scoreGenerationSideTopicPenalty(content, queryIntent);
-    return baseSimilarity + bonus + intentBonus + detailBonus + coverageBonus + requiredCoverageBonus + redundancyPenalty + sideTopicPenalty + (qualityScore * 0.02);
+    return baseSimilarity + bonus + intentBonus + detailBonus + coverageBonus + requiredCoverageBonus + topicSectionBonus + redundancyPenalty + sideTopicPenalty + (qualityScore * 0.02);
   }
 
   private isHighValueStructuredGenerationChunk(
@@ -1813,6 +1824,311 @@ export class ChatPipeline {
     return chapterMatch?.[1] ? `chapter:${chapterMatch[1]}` : null;
   }
 
+  private stripRetrievalDecorators(text: string): string {
+    return (text || '')
+      .replace(/\s*\[Context - related to[^\]]*\]/gi, '')
+      .replace(/\s*\[Retrieval hints:[^\]]*\]/gi, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  private normalizeTopicText(text: string): string {
+    return this.normalizeCommonMedicalTypos(this.stripRetrievalDecorators(text || ''))
+      .toLowerCase()
+      .replace(/[^a-z0-9\s-]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  private getTopicTokens(text: string): string[] {
+    const stopWords = new Set([
+      'the', 'and', 'for', 'with', 'without', 'from', 'into', 'than', 'that', 'this',
+      'what', 'which', 'where', 'when', 'who', 'whom', 'whose', 'why', 'how', 'are',
+      'is', 'was', 'were', 'be', 'being', 'been', 'of', 'in', 'on', 'at', 'by', 'to',
+      'a', 'an', 'or', 'as', 'its', 'their', 'his', 'her', 'our', 'your', 'about'
+    ]);
+
+    return this.normalizeTopicText(text)
+      .split(/\s+/)
+      .map((token) => token.replace(/(?:es|s)$/i, ''))
+      .filter((token) => token.length >= 3 && !stopWords.has(token));
+  }
+
+  private extractQueryTopic(queryText: string, queryIntent?: QueryIntent): string | null {
+    if (!queryText || queryIntent === 'difference_between') return null;
+
+    let normalized = this.normalizeTopicText(queryText)
+      .replace(/^answer for\s+/i, '')
+      .replace(/^what\s+(?:are|is)\s+(?:the\s+)?/i, '')
+      .replace(/^tell me\s+(?:about\s+)?/i, '')
+      .replace(/^describe\s+(?:the\s+)?/i, '')
+      .replace(/^explain\s+(?:the\s+)?/i, '')
+      .replace(/^list\s+(?:the\s+)?/i, '')
+      .replace(/^outline\s+(?:the\s+)?/i, '')
+      .trim();
+
+    const intentPhrasePatterns: Partial<Record<QueryIntent, RegExp[]>> = {
+      clinical_features_history_exam: [
+        /\bclinical features?\b/gi,
+        /\bfeatures?\b/gi,
+        /\bsigns?\s+and\s+symptoms?\b/gi,
+        /\bhistory\s+and\s+exam(?:ination)?\b/gi,
+        /\bhistory\s+and\s+examination\s+findings?\b/gi,
+        /\bexamination\s+findings?\b/gi,
+      ],
+      investigations: [
+        /\binvestigations?\b/gi,
+        /\bworkup\b/gi,
+        /\bdiagnostic\s+tests?\b/gi,
+        /\bevaluation\b/gi,
+      ],
+      treatment_rx: [
+        /\bmedical\s+and\s+surgical\s+treatment\s+options\b/gi,
+        /\bmedical\s+and\s+surgical\s+management\b/gi,
+        /\bmanagement\b/gi,
+        /\btreatment\b/gi,
+        /\btherapy\b/gi,
+        /\brx\b/gi,
+        /\btx\b/gi,
+      ],
+      classification_types: [
+        /\bclassification\b/gi,
+        /\btypes?\b/gi,
+        /\bsubtypes?\b/gi,
+        /\bgrading\b/gi,
+        /\bstages?\b/gi,
+        /\bcriteria\b/gi,
+      ],
+      causes: [
+        /\bcauses?\b/gi,
+        /\betiology\b/gi,
+        /\baetiology\b/gi,
+        /\betiopathogenesis\b/gi,
+      ],
+      risk_factors: [
+        /\brisk\s+factors?\b/gi,
+        /\bpredisposing\s+factors?\b/gi,
+        /\brisk\b/gi,
+      ],
+      complications: [
+        /\bcomplications?\b/gi,
+        /\bsequelae\b/gi,
+        /\badverse\s+outcomes?\b/gi,
+      ],
+      prognosis: [
+        /\bprognosis\b/gi,
+        /\boutcomes?\b/gi,
+        /\boutlook\b/gi,
+        /\bcourse\b/gi,
+      ],
+      position_location: [
+        /\bpositions?\s+of\b/gi,
+        /\blocations?\s+of\b/gi,
+        /\bwhere\s+(?:is|are|does)\b/gi,
+        /\banatomical\s+positions?\b/gi,
+        /\banatomical\s+locations?\b/gi,
+        /\blocated\b/gi,
+        /\bsituated\b/gi,
+        /\bsite\s+of\b/gi,
+      ],
+      definition: [
+        /\bdefinition\b/gi,
+        /\bdefine\b/gi,
+        /\bwhat\s+is\b/gi,
+        /\bmeaning\s+of\b/gi,
+      ],
+      how_to_procedure: [
+        /\bstep(?:s| by step)?\b/gi,
+        /\boperative\s+steps?\b/gi,
+        /\bhow\s+to\b/gi,
+        /\bprocedure\b/gi,
+        /\btechnique\b/gi,
+        /\bperform(?:ing)?\b/gi,
+      ],
+    };
+
+    (intentPhrasePatterns[queryIntent || 'generic_fallback'] || []).forEach((pattern) => {
+      normalized = normalized.replace(pattern, ' ');
+    });
+
+    normalized = normalized
+      .replace(/\b(?:of|for|in|with|about|regarding)\b/gi, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    if (!normalized) return null;
+
+    const topicTokens = this.getTopicTokens(normalized);
+    if (topicTokens.length === 0) return null;
+
+    return topicTokens.join(' ');
+  }
+
+  private getStructuredLines(content: string, maxLines: number = 28): string[] {
+    return (content || '')
+      .replace(/\r\n/g, '\n')
+      .split('\n')
+      .map((line) => line.replace(/[ \t]+/g, ' ').trim())
+      .filter(Boolean)
+      .slice(0, maxLines);
+  }
+
+  private normalizeHeadingCandidate(line: string): string {
+    return (line || '')
+      .replace(/^#{1,6}\s+/, '')
+      .replace(/^[\dIVXLCM]+\s+[A-Za-z]/, (match) => match.replace(/^[\dIVXLCM]+\s+/, ''))
+      .replace(/^[•●○■\-*]+\s*/, '')
+      .replace(/\s*\([^)]*\)\s*$/g, '')
+      .replace(/[.:;]+$/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  private isFacetHeadingLine(line: string, queryIntent?: QueryIntent): boolean {
+    const normalized = this.normalizeHeadingCandidate(line).toLowerCase();
+    if (!normalized) return false;
+
+    const commonFacetPatterns = [
+      /\bdefinition\b/,
+      /\bincidence\b/,
+      /\bepidemiology\b/,
+      /\bpathophysiology\b/,
+      /\bclinical features?\b/,
+      /\bclinical signs?\b/,
+      /\bhistory\b/,
+      /\bpresentation\b/,
+      /\bpresenting complaints?\b/,
+      /\bdifferential diagnosis\b/,
+      /\binvestigations?\b/,
+      /\bmanagement\b/,
+      /\btreatment\b/,
+      /\bcomplications?\b/,
+      /\bclassification\b/,
+      /\bprognosis\b/,
+      /\bsummary box\b/,
+    ];
+
+    if (commonFacetPatterns.some((pattern) => pattern.test(normalized))) return true;
+    if (queryIntent === 'position_location' && /\bposition|location|relations?\b/.test(normalized)) return true;
+    if (queryIntent === 'how_to_procedure' && /\bprocedure|technique|steps?\b/.test(normalized)) return true;
+    return false;
+  }
+
+  private isStructuralNoiseLine(line: string): boolean {
+    const normalized = this.normalizeHeadingCandidate(line).toLowerCase();
+    if (!normalized) return true;
+
+    return (
+      /^(page\s+\d+|part\s+\d+|chapter\s+\d+|figure\s+\d+|table\s+\d+)$/i.test(normalized) ||
+      /\blearning objectives\b/.test(normalized) ||
+      /\bto diagnose and manage\b/.test(normalized) ||
+      /\bbailey\b/.test(normalized) ||
+      /\bpart\s+\d+\b/.test(normalized) ||
+      /\bchapter\s+\d+\b/.test(normalized)
+    );
+  }
+
+  private isLikelyTopicHeading(line: string, queryIntent?: QueryIntent): boolean {
+    const clean = this.normalizeHeadingCandidate(line);
+    if (!clean || this.isStructuralNoiseLine(clean) || this.isFacetHeadingLine(clean, queryIntent)) return false;
+
+    const wordCount = clean.split(/\s+/).filter(Boolean).length;
+    if (wordCount < 2 || wordCount > 12 || clean.length < 6 || clean.length > 96) return false;
+    if (/\d{3,}/.test(clean)) return false;
+    if (/[.!?]$/.test(clean)) return false;
+    if (/\b(?:occurs?|presents?|causes?|results?|means|suggests|includes?|contains?|requires?|should|helpful|useful)\b/i.test(clean)) return false;
+
+    const lettersOnly = clean.replace(/[^A-Za-z]/g, '');
+    if (!lettersOnly) return false;
+
+    const upperRatio = lettersOnly.length > 0
+      ? (lettersOnly.match(/[A-Z]/g) || []).length / lettersOnly.length
+      : 0;
+    const isTitleLike = /^[A-Z][A-Za-z'’/-]+(?:\s+(?:of|the|and|in|to|with|without|for|on|at|[A-Z][A-Za-z'’/-]+))+$/i.test(clean);
+
+    return upperRatio >= 0.7 || isTitleLike;
+  }
+
+  private scoreTopicPhraseAgainstText(text: string, queryTopic?: string | null): number {
+    if (!text || !queryTopic) return 0;
+
+    const normalizedText = this.normalizeTopicText(text);
+    const normalizedTopic = this.normalizeTopicText(queryTopic);
+    if (!normalizedText || !normalizedTopic) return 0;
+    if (normalizedText.includes(normalizedTopic)) return 1;
+
+    const topicTokens = this.getTopicTokens(normalizedTopic);
+    if (topicTokens.length === 0) return 0;
+    const textTokens = new Set(this.getTopicTokens(normalizedText));
+    let matches = 0;
+    for (const token of topicTokens) {
+      if (textTokens.has(token)) matches += 1;
+    }
+
+    return matches / topicTokens.length;
+  }
+
+  private analyzeTopicSectionSignals(
+    content: string,
+    queryIntent?: QueryIntent,
+    queryTopic?: string | null
+  ): TopicSectionSignals {
+    if (!queryTopic) {
+      return {
+        score: 0,
+        introLike: false,
+        hasFacetHeading: false,
+        headingMatchScore: 0,
+        topicMentionScore: 0,
+        topicHeading: null,
+      };
+    }
+
+    const lines = this.getStructuredLines(content);
+    const topLines = lines.slice(0, 12);
+    const introLike = topLines.some((line) =>
+      /\blearning objectives\b|\bto diagnose and manage\b|\bchapter\s+\d+\b|\bpart\s+\d+\b/i.test(line)
+    );
+    const headingCandidates = lines
+      .filter((line) => this.isLikelyTopicHeading(line, queryIntent))
+      .map((line) => this.normalizeHeadingCandidate(line));
+    const topicHeadingScores = headingCandidates.map((heading) => ({
+      heading,
+      score: this.scoreTopicPhraseAgainstText(heading, queryTopic),
+    }));
+    const bestTopicHeading = topicHeadingScores.sort((a, b) => b.score - a.score)[0] || null;
+    const headingMatchScore = bestTopicHeading?.score || 0;
+    const topicMentionScore = this.scoreTopicPhraseAgainstText(content, queryTopic);
+    const hasFacetHeading = lines.some((line) => this.isFacetHeadingLine(line, queryIntent));
+    const listLikeIntro =
+      introLike &&
+      (content.match(/[•●○■]/g) || []).length >= 2;
+
+    let score = 0;
+
+    if (headingMatchScore >= 0.95) score += 0.32;
+    else if (headingMatchScore >= 0.72) score += 0.22;
+    else if (headingCandidates.length > 0) score -= 0.2;
+
+    if (topicMentionScore >= 0.95) score += introLike ? 0.04 : 0.12;
+    else if (topicMentionScore >= 0.72) score += 0.06;
+
+    if (hasFacetHeading && headingMatchScore >= 0.72) score += 0.12;
+    if (hasFacetHeading && headingMatchScore < 0.45 && topicMentionScore < 0.45) score -= 0.12;
+
+    if (introLike && headingMatchScore < 0.72) score -= 0.18;
+    if (listLikeIntro && headingMatchScore < 0.72) score -= 0.08;
+
+    return {
+      score: Math.max(-0.38, Math.min(0.38, score)),
+      introLike,
+      hasFacetHeading,
+      headingMatchScore,
+      topicMentionScore,
+      topicHeading: bestTopicHeading?.heading || null,
+    };
+  }
+
   private isSectionStyleIntent(queryIntent?: QueryIntent): boolean {
     return [
       'clinical_features_history_exam',
@@ -1826,16 +2142,28 @@ export class ChatPipeline {
     ].includes(queryIntent || 'generic_fallback');
   }
 
-  private getPreferredAnchorWindowPages(anchorPage: number, queryIntent?: QueryIntent): number[] {
+  private getPreferredAnchorWindowPages(
+    anchorPage: number,
+    queryIntent?: QueryIntent,
+    options?: {
+      weakTopicOwnership?: boolean;
+      introLike?: boolean;
+    }
+  ): number[] {
+    const needsWiderForwardWindow = Boolean(options?.weakTopicOwnership || options?.introLike);
     const offsets = this.isSectionStyleIntent(queryIntent)
-      ? [-2, -1, 0, 1]
-      : [-1, 0, 1];
+      ? needsWiderForwardWindow
+        ? [-2, -1, 0, 1, 2, 3]
+        : [-2, -1, 0, 1]
+      : needsWiderForwardWindow
+        ? [-1, 0, 1, 2]
+        : [-1, 0, 1];
     return offsets
       .map((offset) => anchorPage + offset)
       .filter((page) => page > 0);
   }
 
-  private scoreSectionHeadingAlignment(text: string, queryIntent?: QueryIntent): number {
+  private scoreSectionHeadingAlignment(text: string, queryIntent?: QueryIntent, queryTopic?: string | null): number {
     const normalized = (text || '').toLowerCase();
     if (!normalized || !queryIntent) return 0;
 
@@ -1945,10 +2273,11 @@ export class ChatPipeline {
         break;
     }
 
-    return Math.max(-0.32, Math.min(0.32, bonus - penalty));
+    const topicSectionSignals = this.analyzeTopicSectionSignals(text, queryIntent, queryTopic);
+    return Math.max(-0.4, Math.min(0.42, bonus - penalty + topicSectionSignals.score));
   }
 
-  private scoreRetrievalIntentAlignment(text: string, queryIntent?: QueryIntent): number {
+  private scoreRetrievalIntentAlignment(text: string, queryIntent?: QueryIntent, queryTopic?: string | null): number {
     const normalized = (text || '').toLowerCase();
     if (!normalized || !queryIntent) return 0;
 
@@ -1973,7 +2302,7 @@ export class ChatPipeline {
       if (/\b(management|treatment|therapy)\b/.test(normalized)) score -= 0.08;
     }
 
-    score += this.scoreSectionHeadingAlignment(normalized, queryIntent);
+    score += this.scoreSectionHeadingAlignment(text, queryIntent, queryTopic);
 
     return Math.max(-0.34, Math.min(0.42, score));
   }
@@ -2352,11 +2681,14 @@ export class ChatPipeline {
   private selectGenerationChunksByPageCluster(
     chunks: Array<VectorSearchResult & { quality: ChunkQualityAssessment }>,
     maxResults: number,
-    queryIntent?: QueryIntent
+    queryIntent?: QueryIntent,
+    queryText: string = ''
   ): Array<VectorSearchResult & { quality: ChunkQualityAssessment }> {
     if (chunks.length === 0 || maxResults <= 0) {
       return [];
     }
+
+    const queryTopic = this.extractQueryTopic(queryText, queryIntent);
 
     type Cluster = {
       key: string;
@@ -2366,6 +2698,8 @@ export class ChatPipeline {
       score: number;
       hasStructuredChunk: boolean;
       richness: number;
+      sectionScore: number;
+      introLike: boolean;
     };
 
     const clusters = new Map<string, Cluster>();
@@ -2387,16 +2721,18 @@ export class ChatPipeline {
         score: 0,
         hasStructuredChunk: this.isHighValueStructuredGenerationChunk(chunk),
         richness: 0,
+        sectionScore: 0,
+        introLike: false,
       });
     }
 
     for (const cluster of clusters.values()) {
       const sortedChunks = [...cluster.chunks].sort(
-        (a, b) => this.rankGenerationCandidate(b, queryIntent) - this.rankGenerationCandidate(a, queryIntent)
+        (a, b) => this.rankGenerationCandidate(b, queryIntent, [], queryTopic) - this.rankGenerationCandidate(a, queryIntent, [], queryTopic)
       );
       const topScores = sortedChunks
         .slice(0, 2)
-        .map((chunk) => this.rankGenerationCandidate(chunk, queryIntent));
+        .map((chunk) => this.rankGenerationCandidate(chunk, queryIntent, [], queryTopic));
       const bestScore = topScores[0] || 0;
       const representativeScore =
         topScores.length >= 2
@@ -2404,8 +2740,15 @@ export class ChatPipeline {
           : bestScore;
       const companionBonus = Math.min(sortedChunks.length - 1, 2) * 0.08;
       const structuredBonus = cluster.hasStructuredChunk ? 0.06 : 0;
+      const topicSectionSignals = this.analyzeTopicSectionSignals(
+        sortedChunks.map((chunk) => chunk.chunk.content || '').join('\n'),
+        queryIntent,
+        queryTopic
+      );
       cluster.richness = this.calculatePageRichness(sortedChunks);
-      cluster.score = representativeScore + companionBonus + structuredBonus + cluster.richness;
+      cluster.sectionScore = topicSectionSignals.score;
+      cluster.introLike = topicSectionSignals.introLike;
+      cluster.score = representativeScore + companionBonus + structuredBonus + cluster.richness + cluster.sectionScore;
       cluster.chunks = sortedChunks;
     }
 
@@ -2430,7 +2773,10 @@ export class ChatPipeline {
       )
     );
     const preferredLocalPages = strongestCluster && strongestCluster.page !== null
-      ? this.getPreferredAnchorWindowPages(strongestCluster.page, queryIntent)
+      ? this.getPreferredAnchorWindowPages(strongestCluster.page, queryIntent, {
+          weakTopicOwnership: strongestCluster.sectionScore < 0.12,
+          introLike: strongestCluster.introLike,
+        })
       : [];
     const isPreferredLocalChunk = (chunk: VectorSearchResult & { quality: ChunkQualityAssessment }): boolean =>
       Boolean(
@@ -2518,8 +2864,8 @@ export class ChatPipeline {
         const chosenFromCluster: Array<VectorSearchResult & { quality: ChunkQualityAssessment }> = [];
         while (chosenFromCluster.length < takeCount && clusterPool.length > 0) {
           clusterPool.sort((a, b) => (
-            this.rankGenerationBackfillCandidate(b, [...selected, ...chosenFromCluster], strongestCluster, queryIntent) -
-            this.rankGenerationBackfillCandidate(a, [...selected, ...chosenFromCluster], strongestCluster, queryIntent)
+            this.rankGenerationBackfillCandidate(b, [...selected, ...chosenFromCluster], strongestCluster, queryIntent, queryTopic) -
+            this.rankGenerationBackfillCandidate(a, [...selected, ...chosenFromCluster], strongestCluster, queryIntent, queryTopic)
           ));
           const chunk = clusterPool.shift();
           if (!chunk) break;
@@ -2534,7 +2880,7 @@ export class ChatPipeline {
     if (selected.length < maxResults) {
       const rankedBackfillCandidates = chunks
         .filter((chunk) => !usedChunkIds.has(chunk.chunk.id))
-        .sort((a, b) => this.rankGenerationBackfillCandidate(b, selected, strongestCluster, queryIntent) - this.rankGenerationBackfillCandidate(a, selected, strongestCluster, queryIntent));
+        .sort((a, b) => this.rankGenerationBackfillCandidate(b, selected, strongestCluster, queryIntent, queryTopic) - this.rankGenerationBackfillCandidate(a, selected, strongestCluster, queryIntent, queryTopic));
 
       const localBackfillCandidates = localFocusActive
         ? rankedBackfillCandidates.filter((chunk) => isPreferredLocalChunk(chunk))
@@ -2583,7 +2929,7 @@ export class ChatPipeline {
     generationPageSelectionDebug.selectedPages = selectedPageSummary;
     this.lastGenerationPageSelectionDebug = generationPageSelectionDebug;
 
-    return selected.sort((a, b) => this.rankGenerationCandidate(b, queryIntent) - this.rankGenerationCandidate(a, queryIntent));
+    return selected.sort((a, b) => this.rankGenerationCandidate(b, queryIntent, [], queryTopic) - this.rankGenerationCandidate(a, queryIntent, [], queryTopic));
   }
 
   private rankGenerationBackfillCandidate(
@@ -2593,9 +2939,10 @@ export class ChatPipeline {
       documentId: string;
       page: number | null;
     } | null,
-    queryIntent?: QueryIntent
+    queryIntent?: QueryIntent,
+    queryTopic?: string | null
   ): number {
-    return this.rankGenerationCandidate(candidate, queryIntent, selected) + this.scoreGenerationContinuityBonus(candidate, selected, strongestCluster, queryIntent);
+    return this.rankGenerationCandidate(candidate, queryIntent, selected, queryTopic) + this.scoreGenerationContinuityBonus(candidate, selected, strongestCluster, queryIntent);
   }
 
   private scoreGenerationContinuityBonus(
@@ -3190,6 +3537,7 @@ export class ChatPipeline {
         fileName: string;
       };
     };
+    const queryTopic = this.extractQueryTopic(queryText, queryIntent);
     const pageGroups = new Map<string, {
       docId: string;
       page: number;
@@ -3199,6 +3547,8 @@ export class ChatPipeline {
       intentScore: number;
       anchorScore: number;
       chapterCue: string | null;
+      sectionScore: number;
+      introLike: boolean;
     }>();
 
     for (const result of baseResults) {
@@ -3219,18 +3569,25 @@ export class ChatPipeline {
           intentScore: 0,
           anchorScore: 0,
           chapterCue: this.extractChapterCueFromText(result.chunk.content || ''),
+          sectionScore: 0,
+          introLike: false,
         });
       }
     }
 
     for (const group of pageGroups.values()) {
+      const groupContent = group.chunks.map((chunk) => chunk.chunk.content || '').join('\n');
+      const topicSectionSignals = this.analyzeTopicSectionSignals(groupContent, queryIntent, queryTopic);
       group.richness = this.calculatePageRichness(group.chunks);
       group.score = Math.min(1, group.score + group.richness);
       group.intentScore = this.scoreRetrievalIntentAlignment(
-        group.chunks.map((chunk) => chunk.chunk.content || '').join('\n'),
-        queryIntent
+        groupContent,
+        queryIntent,
+        queryTopic
       );
-      group.anchorScore = group.score + (Math.min(group.chunks.length - 1, 2) * 0.06) + group.intentScore;
+      group.sectionScore = topicSectionSignals.score;
+      group.introLike = topicSectionSignals.introLike;
+      group.anchorScore = group.score + (Math.min(group.chunks.length - 1, 2) * 0.06) + group.intentScore + group.sectionScore;
       if (!group.chapterCue) {
         group.chapterCue = group.chunks
           .map((chunk) => this.extractChapterCueFromText(chunk.chunk.content || ''))
@@ -3254,6 +3611,8 @@ export class ChatPipeline {
         chunkCount: group.chunks.length,
         score: Number(group.score.toFixed(3)),
         intentScore: Number(group.intentScore.toFixed(3)),
+        sectionScore: Number(group.sectionScore.toFixed(3)),
+        introLike: group.introLike,
         anchorScore: Number(group.anchorScore.toFixed(3)),
       })),
       availableSlots,
@@ -3319,7 +3678,10 @@ export class ChatPipeline {
     let bridgeCandidateCount = 0;
     let localWindowCandidateCount = 0;
     const localPages = strongestGroup && strongestGroup.page !== null
-      ? this.getPreferredAnchorWindowPages(strongestGroup.page, queryIntent)
+      ? this.getPreferredAnchorWindowPages(strongestGroup.page, queryIntent, {
+          weakTopicOwnership: strongestGroup.sectionScore < 0.12,
+          introLike: strongestGroup.introLike,
+        })
       : [];
     const isLocalFocusPage = (docId: string, page: number | null): boolean =>
       Boolean(
@@ -4015,6 +4377,7 @@ ${normalizedOriginal}
       // Modify this line to pass 'standaloneQuery' instead of 'content'
       const enhancedQuery = await this.enhanceQueryWithContext(sessionId, standaloneQuery, queryIntent);
       const retrievalQuery = enhancedQuery;
+      const queryTopic = this.extractQueryTopic(retrievalQuery, queryIntent);
       console.log('[FINAL SEARCH QUERY]', enhancedQuery);
 
       const documents = await this.indexedDBServices.documentService.getDocumentsBySession(sessionId, sessionForDocuments.userId);
@@ -4149,7 +4512,7 @@ ${normalizedOriginal}
       const MIN_SIMILARITY_FLOOR = 0.55;
 
       const sortedGenerationCandidates = [...searchResults]
-        .sort((a, b) => this.rankGenerationCandidate(b, queryIntent) - this.rankGenerationCandidate(a, queryIntent))
+        .sort((a, b) => this.rankGenerationCandidate(b, queryIntent, [], queryTopic) - this.rankGenerationCandidate(a, queryIntent, [], queryTopic))
         .filter((chunk) => chunk.similarity >= this.getGenerationSimilarityFloor(chunk, queryIntent, MIN_SIMILARITY_FLOOR));
       const relaxedFloorCount = sortedGenerationCandidates.filter(
         (chunk) => this.getGenerationSimilarityFloor(chunk, queryIntent, MIN_SIMILARITY_FLOOR) < MIN_SIMILARITY_FLOOR
@@ -4164,7 +4527,8 @@ ${normalizedOriginal}
       let generationChunksForModel = this.selectGenerationChunksByPageCluster(
         qualityFilteredChunks.kept,
         GENERATION_CHUNK_CAP,
-        queryIntent
+        queryIntent,
+        retrievalQuery
       );
       const evaluatedChunkById = new Map(
         qualityFilteredChunks.evaluated.map((chunk) => [chunk.chunk.id, chunk] as const)
@@ -4185,7 +4549,7 @@ ${normalizedOriginal}
           const evaluatedCandidate = evaluatedChunkById.get(candidate.chunk.id);
           if (!evaluatedCandidate) continue;
           generationChunksForModel.push(evaluatedCandidate);
-          generationChunksForModel.sort((a, b) => this.rankGenerationCandidate(b, queryIntent) - this.rankGenerationCandidate(a, queryIntent));
+          generationChunksForModel.sort((a, b) => this.rankGenerationCandidate(b, queryIntent, [], queryTopic) - this.rankGenerationCandidate(a, queryIntent, [], queryTopic));
           if (generationChunksForModel.length >= GENERATION_CHUNK_CAP) {
             break;
           }
