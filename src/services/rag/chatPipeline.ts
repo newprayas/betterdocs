@@ -4261,21 +4261,44 @@ ${normalizedOriginal}
     };
 
     try {
-      try {
-        await streamResponse(promptContext, systemPrompt);
-      } catch (error) {
-        if (isExactTpmOverflowError(error) && promptSearchResults.length > 1) {
-          const reducedSearchResults = promptSearchResults.slice(0, -1);
+      const SIMPLIFIED_OVERFLOW_CHUNK_CAP = 5;
+
+      const trimOverflowSearchResults = (results: any[]): any[] => {
+        if (results.length <= 1) {
+          return results;
+        }
+
+        const nextCount = results.length > SIMPLIFIED_OVERFLOW_CHUNK_CAP
+          ? SIMPLIFIED_OVERFLOW_CHUNK_CAP
+          : results.length - 1;
+
+        return results.slice(0, nextCount);
+      };
+
+      while (true) {
+        try {
+          await streamResponse(promptContext, systemPrompt);
+          break;
+        } catch (error) {
+          if (!isExactTpmOverflowError(error) || promptSearchResults.length <= 1) {
+            throw error;
+          }
+
+          const reducedSearchResults = trimOverflowSearchResults(promptSearchResults);
+          if (reducedSearchResults.length === promptSearchResults.length) {
+            throw error;
+          }
+
           promptSearchResults = reducedSearchResults;
           systemPrompt = this.getSimplifiedSystemPrompt(reducedSearchResults, contractInstruction);
           promptContext = this.buildContext(reducedSearchResults, retrievalQuery);
+
           console.warn(
             '[SIMPLIFIED RAG MODE]',
-            'Exact TPM overflow hit; retrying once with the least important chunk removed.'
+            reducedSearchResults.length === SIMPLIFIED_OVERFLOW_CHUNK_CAP
+              ? 'Exact TPM overflow hit; retrying with only the top 5 chunks.'
+              : `Exact TPM overflow hit; retrying with only ${reducedSearchResults.length} chunk(s).`
           );
-          await streamResponse(promptContext, systemPrompt);
-        } else {
-          throw error;
         }
       }
 

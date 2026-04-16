@@ -62,8 +62,8 @@ export class GroqService {
   private isExactTpmPayloadTooLargeError(message: string): boolean {
     const normalizedMessage = message.toLowerCase();
     return (
-      normalizedMessage.includes('payload too large') &&
-      normalizedMessage.includes('request too large for model') &&
+      (normalizedMessage.includes('payload too large') ||
+        normalizedMessage.includes('request too large for model')) &&
       normalizedMessage.includes('tokens per minute (tpm)') &&
       normalizedMessage.includes('please reduce your message size and try again')
     );
