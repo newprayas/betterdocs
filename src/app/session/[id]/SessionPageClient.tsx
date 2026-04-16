@@ -12,6 +12,7 @@ import {
 } from "../../../store";
 import { TabBar, ChatTabs } from "../../../components/layout";
 import { ChatList, MessageInput, PhrasePills } from "../../../components/chat";
+import type { MessageInputHandle } from "../../../components/chat";
 import {
   DocumentList,
   JsonUpload,
@@ -146,13 +147,13 @@ export default function SessionPage() {
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isLibraryOpen, setIsLibraryOpen] = useState(false);
   const [isSourcesPanelOpen, setIsSourcesPanelOpen] = useState(false);
-  const [messageInput, setMessageInput] = useState("");
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [isPreparingDrugDataset, setIsPreparingDrugDataset] = useState(false);
   const [togglingDocumentIds, setTogglingDocumentIds] = useState<Set<string>>(
     new Set(),
   );
   const messageInputRef = useRef<HTMLTextAreaElement>(null);
+  const messageInputControllerRef = useRef<MessageInputHandle | null>(null);
   const rawSessionMode = sessionModeBySession[sessionId] || "chat";
   const sessionMode: SessionChatMode =
     rawSessionMode === "ask-drug" ? "drug" : rawSessionMode;
@@ -437,7 +438,7 @@ export default function SessionPage() {
 
     try {
       await sendMessage(sessionId, content);
-      setMessageInput(""); // Clear the input after sending
+      messageInputControllerRef.current?.clear();
     } catch (error) {
       console.error("Failed to send message:", error);
     }
@@ -452,7 +453,7 @@ export default function SessionPage() {
         query,
       });
       useChatStore.getState().markSkipNextDrugFollowUpRewriteForSession(sessionId);
-      setMessageInput("");
+      messageInputControllerRef.current?.clear();
       await sendMessage(sessionId, query);
       console.log("[DRUG ACTION][SESSION PAGE] sent", {
         sessionId,
@@ -497,32 +498,27 @@ export default function SessionPage() {
 
   const handlePhraseSelect = useCallback((phrase: string) => {
     if (isDatasetModeEnabled && drugSuggestionPhrases.includes(phrase)) {
-      setMessageInput(`${phrase} `);
-
+      messageInputControllerRef.current?.setValue(`${phrase} `);
       requestAnimationFrame(() => {
-        if (messageInputRef.current) {
-          messageInputRef.current.focus();
-          const length = messageInputRef.current.value.length;
-          messageInputRef.current.setSelectionRange(length, length);
-        }
+        messageInputControllerRef.current?.focusToEnd();
       });
       return;
     }
 
-    // Append the selected phrase to the current message input with an extra space
-    setMessageInput((currentMessage) =>
-      currentMessage ? `${currentMessage} ${phrase} ` : `${phrase} `,
-    );
-
     // Focus the input field and position cursor at the end
     requestAnimationFrame(() => {
-      if (messageInputRef.current) {
-        messageInputRef.current.focus();
-        const length = messageInputRef.current.value.length;
-        messageInputRef.current.setSelectionRange(length, length);
-      }
+      const currentValue = messageInputControllerRef.current?.getValue() || "";
+      const nextValue = currentValue
+        ? `${currentValue} ${phrase} `
+        : `${phrase} `;
+      messageInputControllerRef.current?.setValue(nextValue);
+      messageInputControllerRef.current?.focusToEnd();
     });
   }, [drugSuggestionPhrases, isDatasetModeEnabled]);
+
+  useEffect(() => {
+    messageInputControllerRef.current?.clear();
+  }, [sessionId]);
 
   const handleDeleteSession = async () => {
     if (!sessionId) return;
@@ -965,9 +961,8 @@ export default function SessionPage() {
                         (!hasDocuments || !hasDocumentDataForSession))
                     }
                     placeholder={messagePlaceholder}
-                    value={messageInput}
-                    onChange={setMessageInput}
                     inputRef={messageInputRef}
+                    controllerRef={messageInputControllerRef}
                     autoCorrect={isDatasetModeEnabled ? "off" : "on"}
                     autoCapitalize={isDatasetModeEnabled ? "none" : "sentences"}
                     spellCheck={!isDatasetModeEnabled}
@@ -1109,9 +1104,8 @@ export default function SessionPage() {
                         (!hasDocuments || !hasDocumentDataForSession))
                     }
                     placeholder={messagePlaceholder}
-                    value={messageInput}
-                    onChange={setMessageInput}
                     inputRef={messageInputRef}
+                    controllerRef={messageInputControllerRef}
                     autoCorrect={isDatasetModeEnabled ? "off" : "on"}
                     autoCapitalize={isDatasetModeEnabled ? "none" : "sentences"}
                     spellCheck={!isDatasetModeEnabled}

@@ -2,6 +2,15 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Button } from '../ui/Button';
 import { useChat } from '../../store';
 
+export interface MessageInputHandle {
+  clear: () => void;
+  focus: () => void;
+  focusToEnd: () => void;
+  getValue: () => string;
+  setValue: (value: string) => void;
+  appendValue: (value: string) => void;
+}
+
 interface MessageInputProps {
   sessionId: string;
   onSendMessage?: (message: string) => void;
@@ -11,6 +20,7 @@ interface MessageInputProps {
   value?: string;
   onChange?: (value: string) => void;
   inputRef?: React.RefObject<HTMLTextAreaElement>;
+  controllerRef?: React.MutableRefObject<MessageInputHandle | null>;
   autoCorrect?: 'on' | 'off';
   autoCapitalize?: 'none' | 'sentences' | 'words' | 'characters' | 'on' | 'off';
   spellCheck?: boolean;
@@ -25,6 +35,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
   value,
   onChange,
   inputRef,
+  controllerRef,
   autoCorrect = 'on',
   autoCapitalize = 'sentences',
   spellCheck = true,
@@ -50,14 +61,36 @@ export const MessageInput: React.FC<MessageInputProps> = ({
   const message = value !== undefined ? value : internalMessage;
   const textareaRef = inputRef || internalTextareaRef;
 
-  // Handle message changes
-  const handleMessageChange = (newValue: string) => {
+  const setMessageValue = useCallback((newValue: string) => {
     if (onChange) {
       onChange(newValue);
     } else {
       setInternalMessage(newValue);
     }
-  };
+  }, [onChange]);
+
+  const focusTextarea = useCallback(() => {
+    if (textareaRef.current && !disabled) {
+      textareaRef.current.focus();
+    }
+  }, [disabled, textareaRef]);
+
+  const focusTextareaToEnd = useCallback(() => {
+    if (!textareaRef.current || disabled) return;
+
+    textareaRef.current.focus();
+    const length = textareaRef.current.value.length;
+    textareaRef.current.setSelectionRange(length, length);
+  }, [disabled, textareaRef]);
+
+  const getCurrentValue = useCallback(() => {
+    return textareaRef.current?.value ?? message;
+  }, [message, textareaRef]);
+
+  // Handle message changes
+  const handleMessageChange = useCallback((newValue: string) => {
+    setMessageValue(newValue);
+  }, [setMessageValue]);
 
   // Auto-resize textarea
   useEffect(() => {
@@ -70,10 +103,36 @@ export const MessageInput: React.FC<MessageInputProps> = ({
 
   // Focus on mount
   useEffect(() => {
-    if (textareaRef.current && !disabled) {
-      textareaRef.current.focus();
-    }
-  }, [disabled]);
+    focusTextarea();
+  }, [focusTextarea]);
+
+  useEffect(() => {
+    if (!controllerRef) return;
+
+    controllerRef.current = {
+      clear: () => setMessageValue(''),
+      focus: () => focusTextarea(),
+      focusToEnd: () => focusTextareaToEnd(),
+      getValue: () => getCurrentValue(),
+      setValue: (nextValue: string) => setMessageValue(nextValue),
+      appendValue: (nextValue: string) => {
+        const currentValue = getCurrentValue();
+        setMessageValue(`${currentValue}${nextValue}`);
+      },
+    };
+
+    return () => {
+      if (controllerRef.current) {
+        controllerRef.current = null;
+      }
+    };
+  }, [
+    controllerRef,
+    focusTextarea,
+    focusTextareaToEnd,
+    getCurrentValue,
+    setMessageValue,
+  ]);
 
   // Cleanup countdown interval on unmount
   useEffect(() => {
