@@ -36,9 +36,9 @@ export const MessageInput: React.FC<MessageInputProps> = ({
   onChange,
   inputRef,
   controllerRef,
-  autoCorrect = 'on',
-  autoCapitalize = 'sentences',
-  spellCheck = true,
+  autoCorrect = 'off',
+  autoCapitalize = 'none',
+  spellCheck = false,
 }) => {
   const [internalMessage, setInternalMessage] = useState('');
   const [isComposing, setIsComposing] = useState(false);

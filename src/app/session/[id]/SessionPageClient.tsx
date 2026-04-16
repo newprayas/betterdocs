@@ -963,9 +963,9 @@ export default function SessionPage() {
                     placeholder={messagePlaceholder}
                     inputRef={messageInputRef}
                     controllerRef={messageInputControllerRef}
-                    autoCorrect={isDatasetModeEnabled ? "off" : "on"}
-                    autoCapitalize={isDatasetModeEnabled ? "none" : "sentences"}
-                    spellCheck={!isDatasetModeEnabled}
+                    autoCorrect="off"
+                    autoCapitalize="none"
+                    spellCheck={false}
                   />
                 </div>
               </div>
@@ -1106,9 +1106,9 @@ export default function SessionPage() {
                     placeholder={messagePlaceholder}
                     inputRef={messageInputRef}
                     controllerRef={messageInputControllerRef}
-                    autoCorrect={isDatasetModeEnabled ? "off" : "on"}
-                    autoCapitalize={isDatasetModeEnabled ? "none" : "sentences"}
-                    spellCheck={!isDatasetModeEnabled}
+                    autoCorrect="off"
+                    autoCapitalize="none"
+                    spellCheck={false}
                   />
                 </div>
               </>
