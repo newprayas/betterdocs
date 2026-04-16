@@ -1581,6 +1581,7 @@ export class ChatPipeline {
     const commaPageHits = (content.match(/,\s*\d{1,4}(?:\b|,)/g) || []).length;
     const sentenceBreaks = (content.match(/[.!?]/g) || []).length;
     const hasStrongStructuredRows = this.hasRichStructuredRows(content);
+    const hasMedicalCriteriaStructure = this.hasMedicalCriteriaStructure(content);
     const hasStrongIndexSignals =
       chunk.quality.reasons.includes('index_entry_density') ||
       chunk.quality.reasons.includes('high_page_number_density') ||
@@ -1594,20 +1595,39 @@ export class ChatPipeline {
       chunk.quality.reasons.includes('clearly_index_like') ||
       (numericHits >= 8 && commaPageHits >= 3 && sentenceBreaks <= 1);
 
-    return clearlyIndexLike && !hasStrongStructuredRows;
+    return clearlyIndexLike && !hasStrongStructuredRows && !hasMedicalCriteriaStructure;
   }
 
   private hasRichStructuredRows(content: string): boolean {
     const rowLikeMatches =
       content.match(/\b[a-z][a-z\s()/-]{2,40}\s+\d+(?:\.\d+)?\b/g) || [];
+    const numberedCriteriaLines =
+      content.match(/(?:^|\n)\s*(?:[A-Z]\.|[1-9][)\.]?)\s*[A-Za-z]/g) || [];
     const numericHits = (content.match(/\b\d+(?:\.\d+)?\b/g) || []).length;
+    const hasCriteriaTerms =
+      /\b(criteria|diagnostic|diagnosis|grading|grade|severity|classification|consensus|suspected diagnosis|definite diagnosis|murphy|fever|crp|wbc|white cell count|platelet|creatinine|pt-?inr|pao2\/fio2)\b/.test(content);
     return (
       rowLikeMatches.length >= 4 ||
       (
         numericHits >= 4 &&
         /\b(symptoms?|signs?|laboratory|laboratories|total|score|scores|criteria|thresholds?)\b/.test(content)
-      )
+      ) ||
+      (hasCriteriaTerms && numberedCriteriaLines.length >= 3)
     );
+  }
+
+  private hasMedicalCriteriaStructure(content: string): boolean {
+    const normalized = (content || '').toLowerCase();
+    if (!normalized) return false;
+
+    const numberedCriteriaLines =
+      normalized.match(/(?:^|\n)\s*(?:[a-z]\.|[1-9][)\.]?)\s*[a-z]/g) || [];
+    const hasCriteriaTerms =
+      /\b(criteria|diagnostic|diagnosis|grading|grade|severity|classification|consensus|suspected diagnosis|definite diagnosis|murphy|fever|crp|wbc|white cell count|platelet|creatinine|pt-?inr|pao2\/fio2)\b/.test(normalized);
+    const hasRuleLikeStatements =
+      /\b(associated with any one|does not meet the criteria|1 item in a \+ 1 item in b|1 item in a \+ 1 item in b \+ c)\b/.test(normalized);
+
+    return hasCriteriaTerms && (numberedCriteriaLines.length >= 3 || hasRuleLikeStatements);
   }
 
   private shouldRescueStructuredChunk(
@@ -1622,7 +1642,8 @@ export class ChatPipeline {
     const hasThresholdStructure =
       /\b(threshold|indication|indications|level|levels)\b/.test(content) &&
       /\b\d+\b/.test(content);
-    const hasHighValueStructure = hasTableLikeStructure || hasScoringStructure || hasThresholdStructure;
+    const hasMedicalCriteriaStructure = this.hasMedicalCriteriaStructure(content);
+    const hasHighValueStructure = hasTableLikeStructure || hasScoringStructure || hasThresholdStructure || hasMedicalCriteriaStructure;
 
     if (!hasHighValueStructure) {
       return false;
@@ -1635,11 +1656,11 @@ export class ChatPipeline {
     }
 
     if (chunk.quality.exclusionType === 'index') {
-      return hasRichStructuredRows && hasScoringStructure;
+      return hasRichStructuredRows && (hasScoringStructure || hasMedicalCriteriaStructure);
     }
 
     if (chunk.quality.exclusionType === 'caption-only') {
-      return hasScoringStructure || hasThresholdStructure || hasRichStructuredRows;
+      return hasScoringStructure || hasThresholdStructure || hasRichStructuredRows || hasMedicalCriteriaStructure;
     }
 
     return true;
@@ -1761,8 +1782,8 @@ export class ChatPipeline {
       if (/\b(ct|ct kub|x-?ray|k?ub|ivu|urogram|ultrasonography|cystoscopy|diagnos|imaging)\b/.test(normalized)) score += 0.18;
       if (/\b(management|treatment|therapy)\b/.test(normalized)) score -= 0.1;
     } else if (queryIntent === 'classification_types') {
-      if (/\b(types?|classification|primary vs\.? secondary|calcium oxalate|phosphate|uric acid|cystine|mixed)\b/.test(normalized)) score += 0.18;
-      if (/\b(management|treatment|therapy)\b/.test(normalized)) score -= 0.08;
+      if (/\b(types?|classification|criteria|diagnostic|grading|grade|severity|tokyo|murphy|primary vs\.? secondary|calcium oxalate|phosphate|uric acid|cystine|mixed|white cell count|wbc|crp|platelet|creatinine|pt-?inr|pao2\/fio2|suspected diagnosis|definite diagnosis)\b/.test(normalized)) score += 0.18;
+      if (/\b(management|treatment|therapy)\b/.test(normalized) && !/\b(criteria|diagnostic|grading|grade|severity|classification)\b/.test(normalized)) score -= 0.08;
     } else if (queryIntent === 'treatment_rx') {
       if (/\b(management|treatment|therapy|surgery|procedure|eswl|lithotripsy)\b/.test(normalized)) score += 0.18;
       if (/\b(types of pain|symptoms?|signs?|classification)\b/.test(normalized)) score -= 0.1;
@@ -1787,7 +1808,7 @@ export class ChatPipeline {
     }
 
     if (queryIntent === 'classification_types') {
-      return /\b(calcium oxalate|phosphate|uric acid|cystine|mixed|primary|secondary)\b/.test(normalized);
+      return /\b(calcium oxalate|phosphate|uric acid|cystine|mixed|primary|secondary|criteria|diagnostic|grading|grade|severity|tokyo|murphy|white cell count|wbc|crp|platelet|creatinine|pt-?inr|pao2\/fio2|suspected diagnosis|definite diagnosis)\b/.test(normalized);
     }
 
     return /\b(clinical|history|examination|management|investigation|classification|pain|radiation|symptoms?)\b/.test(normalized);
@@ -1814,6 +1835,8 @@ export class ChatPipeline {
         if (/\b(types?|classification|subtypes?)\b/.test(normalized)) facets.add('types');
         if (/\b(primary|secondary|acute|chronic|specific|non-?specific)\b/.test(normalized)) facets.add('subgroups');
         if (/\b(criteria|grading|grade|feature|difference|compared|versus)\b/.test(normalized)) facets.add('criteria');
+        if (/\b(diagnostic|diagnosis|suspected diagnosis|definite diagnosis|murphy|fever|crp|wbc|white cell count)\b/.test(normalized)) facets.add('diagnostic_criteria');
+        if (/\b(severity|grade i|grade ii|grade iii|platelet|creatinine|pt-?inr|pao2\/fio2)\b/.test(normalized)) facets.add('severity_grading');
         break;
       case 'treatment_rx':
         if (/\b(conservative|medical|drug|antibiotic|analgesia|fluids?)\b/.test(normalized)) facets.add('medical');
@@ -1932,6 +1955,9 @@ export class ChatPipeline {
       if (/\b(differential diagnosis|classification|types of|risk factors?|causes?)\b/.test(normalized)) penalty -= 0.12;
     } else if (queryIntent === 'classification_types') {
       if (/\b(management|treatment|differential diagnosis|history|examination)\b/.test(normalized)) penalty -= 0.12;
+      if (/\b(management|treatment|algorithm|observation|drainage|cholecystectomy|early lc|delayed\/ elective lc|advanced centre|poor ps|good ps)\b/.test(normalized) && !this.hasDetailedClassificationContent(normalized)) {
+        penalty -= 0.18;
+      }
     } else if (queryIntent === 'causes' || queryIntent === 'risk_factors') {
       if (/\b(management|treatment|differential diagnosis|examination)\b/.test(normalized)) penalty -= 0.12;
     } else if (queryIntent === 'definition') {
@@ -1939,6 +1965,71 @@ export class ChatPipeline {
     }
 
     return Math.max(-0.32, penalty);
+  }
+
+  private hasDetailedClassificationContent(content: string): boolean {
+    const normalized = (content || '').toLowerCase();
+    if (!normalized) return false;
+
+    return (
+      /\bsuspected diagnosis\b/.test(normalized) ||
+      /\bdefinite diagnosis\b/.test(normalized) ||
+      /\bgrade\s+i\b/.test(normalized) ||
+      /\bgrade\s+ii\b/.test(normalized) ||
+      /\bgrade\s+iii\b/.test(normalized) ||
+      /\bplatelet count\b/.test(normalized) ||
+      /\bwhite cell count\b/.test(normalized) ||
+      /\bpalpable tender mass\b/.test(normalized) ||
+      /\bduration of complaint\b/.test(normalized) ||
+      /\bpericholecystic abscess\b/.test(normalized) ||
+      /\bemphysematous cholecystitis\b/.test(normalized) ||
+      /\bdoes not meet the criteria\b/.test(normalized) ||
+      /\bassociated with any one of the following conditions\b/.test(normalized) ||
+      /\bassociated with dysfunction of any one\b/.test(normalized)
+    );
+  }
+
+  private isStructuredContinuationPair(
+    left: VectorSearchResult,
+    right: VectorSearchResult
+  ): boolean {
+    if (left.document.id !== right.document.id) return false;
+
+    const leftIndex = this.getEffectiveChunkIndex(left.chunk);
+    const rightIndex = this.getEffectiveChunkIndex(right.chunk);
+    if (leftIndex === null || rightIndex === null || Math.abs(leftIndex - rightIndex) !== 1) {
+      return false;
+    }
+
+    const leftPage = this.getChunkPageNumber(left.chunk);
+    const rightPage = this.getChunkPageNumber(right.chunk);
+    if (leftPage !== null && rightPage !== null && Math.abs(leftPage - rightPage) > 1) {
+      return false;
+    }
+
+    const leftText = (left.chunk.content || '').toLowerCase();
+    const rightText = (right.chunk.content || '').toLowerCase();
+    const eitherStructured =
+      this.hasDetailedClassificationContent(leftText) ||
+      this.hasDetailedClassificationContent(rightText) ||
+      /\btable\b/.test(leftText) ||
+      /\btable\b/.test(rightText) ||
+      /\bcriteria\b/.test(leftText) ||
+      /\bcriteria\b/.test(rightText);
+    const continuationStart =
+      this.looksLikeContinuationFragment(right.chunk.content || '') ||
+      /^[\s\d(]/.test(right.chunk.content || '') ||
+      /\bgrade\s+ii\b/.test(rightText) ||
+      /\bgrade\s+i\b/.test(rightText) ||
+      /\bplatelet count\b/.test(rightText) ||
+      /\bassociated with any one of the following conditions\b/.test(rightText);
+    const leftLooksCutOff =
+      /\bhaematological dysfuncti\b/.test(leftText) ||
+      /\btable\s+\d+(?:\.\d+)?\b/.test(leftText) ||
+      /\bgrade\s+iii\b/.test(leftText) ||
+      !/[.!?]\s*$/.test((left.chunk.content || '').trim());
+
+    return eitherStructured && (continuationStart || leftLooksCutOff);
   }
 
   private getGenerationContentTokens(content: string): Set<string> {
@@ -2286,7 +2377,10 @@ export class ChatPipeline {
         .filter((index): index is number => index !== null)
         .sort((a, b) => a - b);
 
-      if (selectedIndices.some((index) => Math.abs(index - candidateIndex) === 1)) {
+      const adjacentStructuredChunk = sameDocSelected.find((item) => this.isStructuredContinuationPair(item, candidate));
+      if (adjacentStructuredChunk) {
+        bonus += 0.22;
+      } else if (selectedIndices.some((index) => Math.abs(index - candidateIndex) === 1)) {
         bonus += 0.1;
       }
 
@@ -2313,6 +2407,10 @@ export class ChatPipeline {
       bonus += 0.03;
     }
 
+    if (this.hasDetailedClassificationContent(content)) {
+      bonus += 0.05;
+    }
+
     if (
       strongestCluster &&
       strongestCluster.page !== null &&
@@ -2325,7 +2423,7 @@ export class ChatPipeline {
       if (pageDistance >= 2) bonus -= Math.min(0.08, pageDistance * 0.03);
     }
 
-    return Math.min(0.24, bonus);
+    return Math.min(0.34, bonus);
   }
 
   private getCurrentLocalGenerationFocus(): {
@@ -4364,6 +4462,7 @@ Output format requirements:
 - Be thorough and complete. Do not stop after the first few points if the source has more detail.
 - If the source contains several related items, keep listing them in a clear structure instead of compressing them into a short summary.
 - For classification-style questions, include every distinct system, subtype, and criterion found in the retrieved text.
+- For classification-style questions, if the retrieved text contains diagnostic criteria and severity grades, include both. Do not omit suspected/definite criteria, Grade I, Grade II, or Grade III when they are present.
 - When multiple chunks from the same page or adjacent pages continue the same topic, combine them into one fuller section instead of taking only the first chunk's points.
 - Prefer extracting more supported bullets over giving a short polished summary.
 - If a chunk mixes two different headings or sections, do not borrow facts from the wrong heading just because they are nearby in the same chunk.

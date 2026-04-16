@@ -6,6 +6,7 @@ export interface TrustScoreBreakdown {
   baseSimilarity: number;
   trustBoost: number;
   structureBoost: number;
+  continuationBoost: number;
   adjustedScore: number;
   sourceTrustClass: SourceTrustClass;
 }
@@ -69,6 +70,7 @@ interface RankedResult {
   adjustedScore: number;
   sourceTrustClass: SourceTrustClass;
   structureBoost: number;
+  continuationBoost: number;
   normalizedContent: string;
   tokens: Set<string>;
   pageClusterKey: string;
@@ -103,7 +105,8 @@ export function postProcessRetrievalResults(
     const sourceTrustClass = classifySourceTrust(result);
     const trustBoost = sourceTrustClass === 'textbook' ? config.textbookBoost : 0;
     const structureBoost = scoreStructuredChunkBoost(result, config.structureBoost);
-    const adjustedScore = Math.min(1, result.similarity + trustBoost + structureBoost);
+    const continuationBoost = scoreStructuredContinuationBoost(result, dedupedByExactContent, config.structureBoost);
+    const adjustedScore = Math.min(1, result.similarity + trustBoost + structureBoost + continuationBoost);
     const normalizedContent = normalizeContent(result.chunk.content || '');
     const tokens = tokenizeForOverlap(normalizedContent);
     const pageClusterKey = buildPageClusterKey(result);
@@ -116,6 +119,7 @@ export function postProcessRetrievalResults(
       adjustedScore,
       sourceTrustClass,
       structureBoost,
+      continuationBoost,
       normalizedContent,
       tokens,
       pageClusterKey,
@@ -172,9 +176,10 @@ export function postProcessRetrievalResults(
   for (const item of finalRanked) {
     sourceMixDistribution[item.sourceTrustClass] += 1;
     trustScoreBreakdown[item.result.chunk.id] = {
-      baseSimilarity: Math.max(0, item.adjustedScore - (item.sourceTrustClass === 'textbook' ? config.textbookBoost : 0) - item.structureBoost),
+      baseSimilarity: Math.max(0, item.adjustedScore - (item.sourceTrustClass === 'textbook' ? config.textbookBoost : 0) - item.structureBoost - item.continuationBoost),
       trustBoost: item.sourceTrustClass === 'textbook' ? config.textbookBoost : 0,
       structureBoost: item.structureBoost,
+      continuationBoost: item.continuationBoost,
       adjustedScore: item.adjustedScore,
       sourceTrustClass: item.sourceTrustClass,
     };
@@ -265,6 +270,52 @@ function scoreStructuredChunkBoost(result: VectorSearchResult, maxBoost: number)
   return Math.min(maxBoost, boost);
 }
 
+function scoreStructuredContinuationBoost(
+  result: VectorSearchResult,
+  allResults: VectorSearchResult[],
+  maxBoost: number
+): number {
+  const candidateIndex = getEffectiveChunkIndex(result);
+  const candidatePage = getChunkPageNumber(result);
+  if (candidateIndex === null) return 0;
+
+  const sameDocResults = allResults.filter((item) => item.document.id === result.document.id);
+  const previousChunk = sameDocResults.find((item) => getEffectiveChunkIndex(item) === candidateIndex - 1);
+  const nextChunk = sameDocResults.find((item) => getEffectiveChunkIndex(item) === candidateIndex + 1);
+  const candidateText = normalizeContent(result.chunk.content || '');
+  let boost = 0;
+
+  const considerNeighbor = (neighbor: VectorSearchResult | undefined, direction: 'previous' | 'next') => {
+    if (!neighbor) return;
+
+    const neighborPage = getChunkPageNumber(neighbor);
+    const closePage =
+      candidatePage !== null &&
+      neighborPage !== null &&
+      Math.abs(candidatePage - neighborPage) <= 1;
+    if (!closePage) return;
+
+    const neighborText = normalizeContent(neighbor.chunk.content || '');
+    const pairLooksLikeContinuation =
+      isStructuredMedicalChunk(candidateText) &&
+      isStructuredMedicalChunk(neighborText) &&
+      (
+        looksLikeStructuredContinuationStart(candidateText) ||
+        looksLikeStructuredContinuationEnding(neighborText) ||
+        shareStructuredSequence(neighborText, candidateText)
+      );
+
+    if (!pairLooksLikeContinuation) return;
+
+    boost += direction === 'previous' ? maxBoost * 0.95 : maxBoost * 0.4;
+  };
+
+  considerNeighbor(previousChunk, 'previous');
+  considerNeighbor(nextChunk, 'next');
+
+  return Math.min(maxBoost, boost);
+}
+
 function normalizeContent(content: string): string {
   return content
     .toLowerCase()
@@ -272,6 +323,59 @@ function normalizeContent(content: string): string {
     .replace(/[^\w\s]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+function getEffectiveChunkIndex(result: VectorSearchResult): number | null {
+  if (Number.isFinite(result.chunk.chunkIndex)) return result.chunk.chunkIndex as number;
+  if (Number.isFinite(result.chunk.metadata?.chunkIndex)) return result.chunk.metadata?.chunkIndex as number;
+  return null;
+}
+
+function getChunkPageNumber(result: VectorSearchResult): number | null {
+  if (result.chunk.metadata?.pageNumbers?.[0]) return result.chunk.metadata.pageNumbers[0];
+  if (result.chunk.page && result.chunk.page > 0) return result.chunk.page;
+  if (result.chunk.metadata?.pageNumber && result.chunk.metadata.pageNumber > 0) return result.chunk.metadata.pageNumber;
+  return null;
+}
+
+function isStructuredMedicalChunk(normalizedContent: string): boolean {
+  return (
+    /\btable\b/.test(normalizedContent) ||
+    /\bcriteria\b/.test(normalizedContent) ||
+    /\bclassification\b/.test(normalizedContent) ||
+    /\bgrade\s+[i1v]+\b/.test(normalizedContent) ||
+    /\bgrading\b/.test(normalizedContent) ||
+    /\bsuspected diagnosis\b/.test(normalizedContent) ||
+    /\bdefinite diagnosis\b/.test(normalizedContent) ||
+    /\bplatelet\b/.test(normalizedContent) ||
+    /\bcreatinine\b/.test(normalizedContent) ||
+    /\bpt inr\b/.test(normalizedContent) ||
+    /\bpao2 fio2\b/.test(normalizedContent)
+  );
+}
+
+function looksLikeStructuredContinuationStart(normalizedContent: string): boolean {
+  return (
+    /^(?:\d+\s+[a-z]|grade\s+[i1v]+|associated with|does not meet the criteria|platelet count)/.test(normalizedContent) ||
+    /\bgrade\s+ii\b/.test(normalizedContent) ||
+    /\bgrade\s+i\b/.test(normalizedContent)
+  );
+}
+
+function looksLikeStructuredContinuationEnding(normalizedContent: string): boolean {
+  return (
+    /\bhaematological dysfuncti\b/.test(normalizedContent) ||
+    /\bassociated with dysfunction of any one of the following organs systems\b/.test(normalizedContent) ||
+    /\btable\s+\d+(?:\.\d+)?\b/.test(normalizedContent)
+  );
+}
+
+function shareStructuredSequence(left: string, right: string): boolean {
+  const leftHasGradeThree = /\bgrade\s+iii\b/.test(left);
+  const rightHasLowerGrades = /\bgrade\s+ii\b/.test(right) || /\bgrade\s+i\b/.test(right);
+  const leftHasDiagnosisCriteria = /\bsuspected diagnosis\b/.test(left) || /\bdefinite diagnosis\b/.test(left);
+  const rightHasCriteriaContinuation = /\bimaging findings\b/.test(right) || /\bdefinite diagnosis\b/.test(right);
+  return (leftHasGradeThree && rightHasLowerGrades) || (leftHasDiagnosisCriteria && rightHasCriteriaContinuation);
 }
 
 function tokenizeForOverlap(normalizedContent: string): Set<string> {
@@ -305,6 +409,38 @@ function isNearDuplicate(a: RankedResult, b: RankedResult, threshold: number): b
   const sameDoc = a.result.document.id === b.result.document.id;
   const samePageCluster = a.pageClusterKey === b.pageClusterKey;
   const overlap = jaccardOverlap(a.tokens, b.tokens);
+  if (sameDoc && isDirectStructuredContinuationPair(a.result, b.result)) {
+    return false;
+  }
   if (sameDoc && samePageCluster && overlap >= 0.5) return true;
   return overlap >= threshold;
+}
+
+function isDirectStructuredContinuationPair(a: VectorSearchResult, b: VectorSearchResult): boolean {
+  const aIndex = getEffectiveChunkIndex(a);
+  const bIndex = getEffectiveChunkIndex(b);
+  if (aIndex === null || bIndex === null || Math.abs(aIndex - bIndex) !== 1) {
+    return false;
+  }
+
+  const aPage = getChunkPageNumber(a);
+  const bPage = getChunkPageNumber(b);
+  if (aPage !== null && bPage !== null && Math.abs(aPage - bPage) > 1) {
+    return false;
+  }
+
+  const aText = normalizeContent(a.chunk.content || '');
+  const bText = normalizeContent(b.chunk.content || '');
+  return (
+    isStructuredMedicalChunk(aText) &&
+    isStructuredMedicalChunk(bText) &&
+    (
+      looksLikeStructuredContinuationEnding(aText) ||
+      looksLikeStructuredContinuationEnding(bText) ||
+      looksLikeStructuredContinuationStart(aText) ||
+      looksLikeStructuredContinuationStart(bText) ||
+      shareStructuredSequence(aText, bText) ||
+      shareStructuredSequence(bText, aText)
+    )
+  );
 }

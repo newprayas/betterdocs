@@ -60,7 +60,7 @@ export function getAnswerContract(intent: QueryIntent): AnswerContract {
         intent,
         label: 'Classification',
         sections: [
-          { title: 'Classification', guidance: 'Provide every distinct classification system, type, subtype, grading rule, and distinguishing detail found in the source. Keep each system separate and do not skip later items.' },
+          { title: 'Classification', guidance: 'Provide every distinct classification system, diagnostic criteria set, severity grading rule, type, subtype, and distinguishing detail found in the source. Keep each system separate. For tables or criteria sets, include all rows, grades, thresholds, suspected/definite criteria, and definitions. Do not skip intermediate grades or later items.' },
         ],
       };
     case 'risk_factors':
@@ -181,6 +181,7 @@ ${STRUCTURED_EXTRACTION_INSTRUCTION}
 - If a source sentence or paragraph contains multiple connected qualifiers, keep them together in one claim or subsection when they are all explicitly present.
 - Use plain bullet points for claims.
 - Keep subheadings short and specific.
+- For classification-style questions, include all classes/grades/types, the diagnostic or defining criteria for each one, and any explicit thresholds or rule combinations shown in the source.
 - If a required section is missing from sources, include the section and write "${DEFAULT_PLACEHOLDER}" under it.
 - Keep the section titles exactly as requested below.
 - Keep language simple and direct.
@@ -207,6 +208,7 @@ export function applyAnswerContract(
   working = working.replace(/^\s*(?:[-*•]|\d+\.)\s*$/gm, '');
 
   working = normalizeHeadings(working);
+  working = ensureClassificationWrapper(working, contract);
   const numbering = renumberOrderedLists(working);
   working = numbering.content;
 
@@ -245,6 +247,26 @@ export function applyAnswerContract(
     removedEmptyFragments,
     missingSections: finalCheck.missingSections,
   };
+}
+
+function ensureClassificationWrapper(text: string, contract: AnswerContract): string {
+  if (contract.intent !== 'classification_types') {
+    return text;
+  }
+
+  if (/^\s*##\s+Classification\b/im.test(text)) {
+    return text;
+  }
+
+  const hasClassificationSubsections =
+    /^\s*##\s+(?:Diagnostic criteria|Severity grading|Grade I|Grade II|Grade III)\b/im.test(text) ||
+    /^\s*###\s+(?:Diagnostic criteria|Severity grading|Grade I|Grade II|Grade III)\b/im.test(text);
+
+  if (!hasClassificationSubsections) {
+    return text;
+  }
+
+  return `## Classification\n${text.trim()}`;
 }
 
 export function buildContractFallbackResponse(contract: AnswerContract, reason?: string): string {
