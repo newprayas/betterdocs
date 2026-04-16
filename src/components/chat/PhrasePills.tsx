@@ -90,7 +90,7 @@ const PhrasePill: React.FC<PhrasePillProps> = ({
 };
 
 // Main PhrasePills Component
-export const PhrasePills: React.FC<PhrasePillsProps> = ({
+const PhrasePillsComponent: React.FC<PhrasePillsProps> = ({
   phrases = DEFAULT_PHRASES,
   onPhraseSelect,
   selectedPhrase,
@@ -198,5 +198,8 @@ export const PhrasePills: React.FC<PhrasePillsProps> = ({
     </div>
   );
 };
+
+export const PhrasePills = React.memo(PhrasePillsComponent);
+PhrasePills.displayName = "PhrasePills";
 
 export default PhrasePills;

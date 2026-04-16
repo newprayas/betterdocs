@@ -11,6 +11,9 @@ interface MessageInputProps {
   value?: string;
   onChange?: (value: string) => void;
   inputRef?: React.RefObject<HTMLTextAreaElement>;
+  autoCorrect?: 'on' | 'off';
+  autoCapitalize?: 'none' | 'sentences' | 'words' | 'characters' | 'on' | 'off';
+  spellCheck?: boolean;
 }
 
 export const MessageInput: React.FC<MessageInputProps> = ({
@@ -22,6 +25,9 @@ export const MessageInput: React.FC<MessageInputProps> = ({
   value,
   onChange,
   inputRef,
+  autoCorrect = 'on',
+  autoCapitalize = 'sentences',
+  spellCheck = true,
 }) => {
   const [internalMessage, setInternalMessage] = useState('');
   const [isComposing, setIsComposing] = useState(false);
@@ -263,6 +269,9 @@ export const MessageInput: React.FC<MessageInputProps> = ({
               placeholder={isWaiting ? 'Waiting to send your question...' : placeholder}
               disabled={disabled || isStreaming || isWaiting}
               rows={1}
+              autoCorrect={autoCorrect}
+              autoCapitalize={autoCapitalize}
+              spellCheck={spellCheck}
               className={`
                 w-full min-h-12 sm:min-h-0 px-3 py-2 sm:px-4 sm:py-3 pr-10 sm:pr-12
                 border rounded-lg

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 
 
@@ -443,7 +443,7 @@ export default function SessionPage() {
     }
   };
 
-  const handleDrugActionClick = async (query: string) => {
+  const handleDrugActionClick = useCallback(async (query: string) => {
     if (!sessionId) return;
 
     try {
@@ -465,7 +465,7 @@ export default function SessionPage() {
         error,
       });
     }
-  };
+  }, [sessionId, sendMessage]);
 
   const handleSessionModeChange = async (mode: SessionChatMode) => {
     if (isDrugOnlySessionMode && mode !== "drug") {
@@ -495,7 +495,7 @@ export default function SessionPage() {
     }
   };
 
-  const handlePhraseSelect = (phrase: string) => {
+  const handlePhraseSelect = useCallback((phrase: string) => {
     if (isDatasetModeEnabled && drugSuggestionPhrases.includes(phrase)) {
       setMessageInput(`${phrase} `);
 
@@ -510,10 +510,9 @@ export default function SessionPage() {
     }
 
     // Append the selected phrase to the current message input with an extra space
-    const newMessage = messageInput
-      ? `${messageInput} ${phrase} `
-      : `${phrase} `;
-    setMessageInput(newMessage);
+    setMessageInput((currentMessage) =>
+      currentMessage ? `${currentMessage} ${phrase} ` : `${phrase} `,
+    );
 
     // Focus the input field and position cursor at the end
     requestAnimationFrame(() => {
@@ -523,7 +522,7 @@ export default function SessionPage() {
         messageInputRef.current.setSelectionRange(length, length);
       }
     });
-  };
+  }, [drugSuggestionPhrases, isDatasetModeEnabled]);
 
   const handleDeleteSession = async () => {
     if (!sessionId) return;
@@ -969,6 +968,9 @@ export default function SessionPage() {
                     value={messageInput}
                     onChange={setMessageInput}
                     inputRef={messageInputRef}
+                    autoCorrect={isDatasetModeEnabled ? "off" : "on"}
+                    autoCapitalize={isDatasetModeEnabled ? "none" : "sentences"}
+                    spellCheck={!isDatasetModeEnabled}
                   />
                 </div>
               </div>
@@ -1110,6 +1112,9 @@ export default function SessionPage() {
                     value={messageInput}
                     onChange={setMessageInput}
                     inputRef={messageInputRef}
+                    autoCorrect={isDatasetModeEnabled ? "off" : "on"}
+                    autoCapitalize={isDatasetModeEnabled ? "none" : "sentences"}
+                    spellCheck={!isDatasetModeEnabled}
                   />
                 </div>
               </>

@@ -21,7 +21,7 @@ interface ChatListProps {
   onDrugActionClick?: (query: string) => void;
 }
 
-export const ChatList: React.FC<ChatListProps> = ({
+const ChatListComponent: React.FC<ChatListProps> = ({
   sessionId,
   className,
   onDrugActionClick,
@@ -141,6 +141,9 @@ export const ChatList: React.FC<ChatListProps> = ({
     </div>
   );
 };
+
+export const ChatList = React.memo(ChatListComponent);
+ChatList.displayName = 'ChatList';
 
 // Helper component for date dividers
 interface DateDividerProps {
