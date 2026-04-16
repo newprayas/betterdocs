@@ -836,6 +836,22 @@ export class ChatPipeline {
     return `What are the clinical features, including patient history and physical examination findings, of ${topic}?`;
   }
 
+  private buildMedicalAndSurgicalTreatmentRewrite(topic: string): string {
+    return `What are the medical and surgical treatment options for ${topic}?`;
+  }
+
+  private shouldForceMedicalAndSurgicalTreatmentRewrite(query: string): boolean {
+    const normalized = (query || '').toLowerCase().replace(/\s+/g, ' ').trim();
+    if (!normalized) return false;
+
+    const wordCount = normalized.split(' ').filter(Boolean).length;
+    const hasTreatmentSignal = /\b(rx|tx)\b/.test(normalized) || /^(treatment|management|therapy)\b/.test(normalized);
+    if (!hasTreatmentSignal) return false;
+
+    // Only force the template for short shorthand-style queries.
+    return wordCount <= 6 && !/\b(medical\s+treatment|surgical\s+treatment|conservative\s+management|conservative\s+treatment)\b/.test(normalized);
+  }
+
   private enforceRewriteScope(
     originalQuery: string,
     rewrittenQuery: string,
@@ -3484,10 +3500,24 @@ export class ChatPipeline {
       normalizedOriginal,
       normalizedPreviousAssistantClarifiedQuery || null
     );
+    const forceTreatmentRewrite = this.shouldForceMedicalAndSurgicalTreatmentRewrite(normalizedOriginal);
+    const treatmentTopic = forceTreatmentRewrite
+      ? (
+        this.extractTopicFromClarifiedQuery(normalizedPreviousAssistantClarifiedQuery) ||
+        this.extractTopicFromQuery(normalizedPreviousAssistantClarifiedQuery) ||
+        this.extractTopicFromClarifiedQuery(normalizedPreviousUserQuery) ||
+        this.extractTopicFromQuery(normalizedPreviousUserQuery) ||
+        this.extractTopicFromClarifiedQuery(normalizedOriginal) ||
+        this.extractTopicFromQuery(normalizedOriginal)
+      )
+      : null;
+    const treatmentFallback = treatmentTopic
+      ? this.buildMedicalAndSurgicalTreatmentRewrite(treatmentTopic)
+      : null;
     const rewriterSystemPrompt =
-      'You rewrite medical user input into one high-quality standalone retrieval query. Preserve the user scope exactly. If the user asks for clinical features or features, expand only to patient history and physical examination findings; do not add investigations, imaging, diagnosis, treatment, management, classification, causes, or complications unless the user explicitly asked. Return strict JSON only.';
+      'You rewrite medical user input into one high-quality standalone retrieval query. Preserve the user scope exactly. If the user asks for clinical features or features, expand only to patient history and physical examination findings; do not add investigations, imaging, diagnosis, treatment, management, classification, causes, or complications unless the user explicitly asked. If the user asks for Rx, tx, or a short treatment query, prefer the exact phrasing "What are the medical and surgical treatment options for <topic>?" and avoid using "conservative" unless explicitly requested. Return strict JSON only.';
     const rewriterSystemPromptStrict =
-      'Return STRICT JSON ONLY in this exact schema: {"query":"<standalone medical retrieval query>"}. Preserve scope exactly. For clinical features/features queries, expand only to history and physical examination findings unless the user explicitly asked for other facets. No markdown, no extra keys, no commentary.';
+      'Return STRICT JSON ONLY in this exact schema: {"query":"<standalone medical retrieval query>"}. Preserve scope exactly. For clinical features/features queries, expand only to history and physical examination findings unless the user explicitly asked for other facets. If the user asks for Rx, tx, or a short treatment query, prefer the exact phrasing "What are the medical and surgical treatment options for <topic>?" and avoid using "conservative" unless explicitly requested. No markdown, no extra keys, no commentary.';
 
     const prompt = `
 Rewrite the latest user query into one standalone retrieval query.
@@ -3502,6 +3532,7 @@ Goals:
 5) If context is unrelated/absent, rewrite current query standalone without context.
 6) Keep meaning faithful to user intent; do not invent a new topic.
 7) If user asks for Rx or treatment in query, include BOTH medical and surgical treatment wording.
+7b) If the query is a short Rx/tx/treatment shorthand, prefer the exact wording "What are the medical and surgical treatment options for <topic>?".
 8) If user asks for clinical features or features, expand ONLY to patient history and physical examination findings.
 9) Do NOT add investigations, imaging, diagnosis, treatment, management, classification, causes, complications, or any other extra facet unless the user explicitly asked for it.
 
@@ -3523,6 +3554,7 @@ Use ONLY immediate context below when needed.
 Preserve user scope exactly.
 If user asks for clinical features or features, expand only to patient history and physical examination findings.
 Do not add investigations, imaging, diagnosis, treatment, management, classification, causes, or complications unless explicitly requested.
+If the query is a short Rx/tx/treatment shorthand, prefer the exact wording "What are the medical and surgical treatment options for <topic>?".
 
 Immediate Previous User Query:
 ${normalizedPreviousUserQuery || 'None'}
@@ -3539,6 +3571,7 @@ ${normalizedOriginal}
       previousUserQuery: normalizedPreviousUserQuery || null,
       previousAssistantClarifiedQuery: normalizedPreviousAssistantClarifiedQuery || null,
       contextualFallback: contextualFallback || null,
+      treatmentFallback: treatmentFallback || null,
       usedImmediateContext: hasPreviousContext,
     });
     console.log('[QUERY REWRITER PROMPT][SYSTEM][PRIMARY]', rewriterSystemPrompt);
@@ -3600,6 +3633,10 @@ ${normalizedOriginal}
 
       if (!cleanedQuery && contextualFallback) {
         cleanedQuery = contextualFallback;
+      }
+
+      if (forceTreatmentRewrite && treatmentFallback) {
+        cleanedQuery = treatmentFallback;
       }
 
       const rewriterRateLimitNotice = this.extractRateLimitNotice(cleanedQuery);
