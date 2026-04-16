@@ -1738,9 +1738,10 @@ export class ChatPipeline {
     const intentBonus = this.scoreGenerationIntentAlignment(content, queryIntent);
     const detailBonus = this.scoreGenerationDetailBonus(content, queryIntent);
     const coverageBonus = this.scoreGenerationCoverageBonus(chunk, selected, queryIntent);
+    const requiredCoverageBonus = this.scoreGenerationCoveragePriority(chunk, selected, queryIntent);
     const redundancyPenalty = this.scoreGenerationRedundancyPenalty(chunk, selected);
     const sideTopicPenalty = this.scoreGenerationSideTopicPenalty(content, queryIntent);
-    return baseSimilarity + bonus + intentBonus + detailBonus + coverageBonus + redundancyPenalty + sideTopicPenalty + (qualityScore * 0.02);
+    return baseSimilarity + bonus + intentBonus + detailBonus + coverageBonus + requiredCoverageBonus + redundancyPenalty + sideTopicPenalty + (qualityScore * 0.02);
   }
 
   private isHighValueStructuredGenerationChunk(
@@ -1802,6 +1803,141 @@ export class ChatPipeline {
     return chapterMatch?.[1] ? `chapter:${chapterMatch[1]}` : null;
   }
 
+  private isSectionStyleIntent(queryIntent?: QueryIntent): boolean {
+    return [
+      'clinical_features_history_exam',
+      'investigations',
+      'classification_types',
+      'treatment_rx',
+      'causes',
+      'risk_factors',
+      'complications',
+      'prognosis',
+    ].includes(queryIntent || 'generic_fallback');
+  }
+
+  private getPreferredAnchorWindowPages(anchorPage: number, queryIntent?: QueryIntent): number[] {
+    const offsets = this.isSectionStyleIntent(queryIntent)
+      ? [-2, -1, 0, 1]
+      : [-1, 0, 1];
+    return offsets
+      .map((offset) => anchorPage + offset)
+      .filter((page) => page > 0);
+  }
+
+  private scoreSectionHeadingAlignment(text: string, queryIntent?: QueryIntent): number {
+    const normalized = (text || '').toLowerCase();
+    if (!normalized || !queryIntent) return 0;
+
+    const hasAny = (patterns: RegExp[]): boolean => patterns.some((pattern) => pattern.test(normalized));
+    let bonus = 0;
+    let penalty = 0;
+
+    switch (queryIntent) {
+      case 'clinical_features_history_exam': {
+        const coreFeatureHeadings = [
+          /\bclinical features?\b/,
+          /\bclinical diagnosis\b/,
+          /\bhistory\b/,
+          /\bpresentation\b/,
+          /\bpresenting complaints?\b/,
+          /\bphysical examination\b/,
+          /\bexamination findings?\b/,
+          /\bclinical signs?\b/,
+          /\bsymptoms? of\b/,
+        ];
+        const historyHeadings = [
+          /\bhistory\b/,
+          /\bpresentation\b/,
+          /\bpresenting complaints?\b/,
+          /\bsymptoms? of\b/,
+        ];
+        const examHeadings = [
+          /\bphysical examination\b/,
+          /\bexamination findings?\b/,
+          /\bclinical signs?\b/,
+          /\bsigns to elicit\b/,
+        ];
+        const wrongSections = [
+          /\bdifferential diagnosis\b/,
+          /\bdifferential diagnoses\b/,
+          /\binvestigations?\b/,
+          /\bdiagnostic tests?\b/,
+          /\bimaging\b/,
+          /\bmanagement\b/,
+          /\btreatment\b/,
+          /\btherapy\b/,
+          /\bclassification\b/,
+          /\bcomplications?\b/,
+        ];
+        const variantSections = [
+          /\bretrocaecal\b/,
+          /\bpelvic\b/,
+          /\bpostileal\b/,
+          /\bsubhepatic\b/,
+          /\bpreileal\b/,
+        ];
+
+        if (hasAny(coreFeatureHeadings)) bonus += 0.2;
+        if (hasAny(historyHeadings)) bonus += 0.08;
+        if (hasAny(examHeadings)) bonus += 0.08;
+        if (hasAny(wrongSections)) penalty += 0.22;
+        if (hasAny(variantSections) && !hasAny(coreFeatureHeadings)) penalty += 0.08;
+        break;
+      }
+      case 'investigations':
+        if (hasAny([/\binvestigations?\b/, /\bworkup\b/, /\bdiagnostic tests?\b/, /\bevaluation\b/, /\bimaging\b/, /\blaboratory\b/])) bonus += 0.22;
+        if (hasAny([/\bfindings?\b/, /\bdiagnosis\b/, /\bdiagnostic\b/])) bonus += 0.06;
+        if (hasAny([/\bmanagement\b/, /\btreatment\b/, /\btherapy\b/, /\bclassification\b/, /\bdifferential diagnosis\b/])) penalty += 0.18;
+        break;
+      case 'treatment_rx':
+        if (hasAny([/\btreatment\b/, /\bmanagement\b/, /\btherapy\b/, /\bmedical management\b/, /\bsurgical management\b/, /\boperative\b/])) bonus += 0.22;
+        if (hasAny([/\bconservative\b/, /\bmedical\b/, /\bsurgical\b/, /\bprocedure\b/])) bonus += 0.06;
+        if (hasAny([/\bdifferential diagnosis\b/, /\binvestigations?\b/, /\bclassification\b/, /\bcauses?\b/, /\brisk factors?\b/])) penalty += 0.18;
+        break;
+      case 'classification_types':
+        if (hasAny([/\bclassification\b/, /\btypes?\b/, /\bsubtypes?\b/, /\bgrading\b/, /\bstages?\b/, /\bcriteria\b/])) bonus += 0.22;
+        if (hasAny([/\bgrade\b/, /\bseverity\b/, /\bdiagnostic criteria\b/])) bonus += 0.06;
+        if (hasAny([/\bmanagement\b/, /\btreatment\b/, /\bdifferential diagnosis\b/, /\bhistory\b/, /\bexamination\b/])) penalty += 0.18;
+        break;
+      case 'causes':
+      case 'risk_factors':
+        if (hasAny([/\bcauses?\b/, /\betiology\b/, /\baetiology\b/, /\bpathogenesis\b/, /\brisk factors?\b/, /\bpredisposing factors?\b/])) bonus += 0.22;
+        if (hasAny([/\bassociated\b/, /\bpredisposing\b/, /\bmechanism\b/])) bonus += 0.05;
+        if (hasAny([/\bmanagement\b/, /\btreatment\b/, /\binvestigations?\b/, /\bdifferential diagnosis\b/])) penalty += 0.16;
+        break;
+      case 'complications':
+        if (hasAny([/\bcomplications?\b/, /\bsequelae\b/, /\badverse outcomes?\b/, /\bconsequences?\b/])) bonus += 0.22;
+        if (hasAny([/\bearly\b/, /\blate\b/, /\blocal\b/, /\bsystemic\b/])) bonus += 0.05;
+        if (hasAny([/\bmanagement\b/, /\btreatment\b/, /\binvestigations?\b/, /\bdifferential diagnosis\b/])) penalty += 0.14;
+        break;
+      case 'prognosis':
+        if (hasAny([/\bprognosis\b/, /\boutcomes?\b/, /\boutlook\b/, /\bcourse\b/])) bonus += 0.22;
+        if (hasAny([/\bmortality\b/, /\bsurvival\b/, /\brecovery\b/, /\brecurrence\b/])) bonus += 0.05;
+        if (hasAny([/\bmanagement\b/, /\btreatment\b/, /\binvestigations?\b/])) penalty += 0.14;
+        break;
+      case 'position_location':
+        if (hasAny([/\bposition\b/, /\blocation\b/, /\banatomical\b/, /\bsurface marking\b/, /\brelations?\b/, /\bsituated\b/])) bonus += 0.22;
+        if (hasAny([/\bmanagement\b/, /\btreatment\b/, /\binvestigations?\b/])) penalty += 0.14;
+        break;
+      case 'difference_between':
+        if (hasAny([/\bdifference\b/, /\bdifferentiate\b/, /\bdistinguish\b/, /\bcompare\b/, /\bversus\b/, /\bvs\b/])) bonus += 0.22;
+        break;
+      case 'how_to_procedure':
+        if (hasAny([/\bprocedure\b/, /\btechnique\b/, /\boperative steps?\b/, /\bsteps?\b/, /\bhow to\b/, /\bperform\b/])) bonus += 0.22;
+        if (hasAny([/\bmanagement\b/, /\bclassification\b/, /\bdifferential diagnosis\b/])) penalty += 0.14;
+        break;
+      case 'definition':
+        if (hasAny([/\bdefinition\b/, /\bdefined as\b/, /\bwhat is\b/, /\bmeaning of\b/])) bonus += 0.2;
+        if (hasAny([/\bmanagement\b/, /\btreatment\b/, /\binvestigations?\b/, /\bcomplications?\b/])) penalty += 0.14;
+        break;
+      default:
+        break;
+    }
+
+    return Math.max(-0.32, Math.min(0.32, bonus - penalty));
+  }
+
   private scoreRetrievalIntentAlignment(text: string, queryIntent?: QueryIntent): number {
     const normalized = (text || '').toLowerCase();
     if (!normalized || !queryIntent) return 0;
@@ -1827,7 +1963,9 @@ export class ChatPipeline {
       if (/\b(management|treatment|therapy)\b/.test(normalized)) score -= 0.08;
     }
 
-    return Math.max(-0.22, Math.min(0.32, score));
+    score += this.scoreSectionHeadingAlignment(normalized, queryIntent);
+
+    return Math.max(-0.34, Math.min(0.42, score));
   }
 
   private hasLocalContinuationSignals(text: string, queryIntent?: QueryIntent): boolean {
@@ -1835,11 +1973,11 @@ export class ChatPipeline {
     if (!normalized) return false;
 
     if (queryIntent === 'clinical_features_history_exam') {
-      return /\b(radiation|radiate|colic|pain|onset|associated symptoms?|nature of pain|bladder pain|strangury|hematuria|nausea|vomiting|examination)\b/.test(normalized);
+      return /\b(history|clinical diagnosis|presentation|presenting complaints?|signs?|physical examination|examination|radiation|radiate|colic|pain|onset|associated symptoms?|nature of pain|bladder pain|strangury|hematuria|nausea|vomiting)\b/.test(normalized);
     }
 
     if (queryIntent === 'investigations') {
-      return /\b(ct|x-?ray|ivu|urogram|ultrasonography|cystoscopy|radiopaque|radiolucent)\b/.test(normalized);
+      return /\b(investigations?|workup|diagnostic tests?|ct|x-?ray|ivu|urogram|ultrasonography|cystoscopy|radiopaque|radiolucent)\b/.test(normalized);
     }
 
     if (queryIntent === 'classification_types') {
@@ -2135,6 +2273,72 @@ export class ChatPipeline {
     return Math.min(0.2, bonus);
   }
 
+  private getRequiredCoverageFacets(queryIntent?: QueryIntent): string[] {
+    switch (queryIntent) {
+      case 'clinical_features_history_exam':
+        return ['history', 'examination'];
+      case 'investigations':
+        return ['modality', 'findings'];
+      case 'classification_types':
+        return ['types', 'criteria'];
+      case 'treatment_rx':
+        return ['medical', 'surgical'];
+      case 'causes':
+      case 'risk_factors':
+        return ['cause_core', 'risk_factors'];
+      case 'difference_between':
+        return ['contrast', 'comparison_points'];
+      case 'how_to_procedure':
+        return ['steps', 'procedure_context'];
+      case 'position_location':
+        return ['location', 'relations'];
+      case 'prognosis':
+        return ['outcomes', 'predictors'];
+      case 'complications':
+        return ['complications', 'categories'];
+      case 'definition':
+        return ['definition'];
+      default:
+        return [];
+    }
+  }
+
+  private scoreGenerationCoveragePriority(
+    candidate: VectorSearchResult & { quality?: ChunkQualityAssessment },
+    selected: Array<VectorSearchResult & { quality?: ChunkQualityAssessment }>,
+    queryIntent?: QueryIntent
+  ): number {
+    const requiredFacets = this.getRequiredCoverageFacets(queryIntent);
+    if (requiredFacets.length === 0) return 0;
+
+    const candidateFacets = new Set(this.getGenerationFacetLabels(candidate.chunk.content || '', queryIntent));
+    if (candidateFacets.size === 0) return 0;
+
+    const selectedFacets = new Set(
+      selected.flatMap((item) => this.getGenerationFacetLabels(item.chunk.content || '', queryIntent))
+    );
+    const missingFacets = requiredFacets.filter((facet) => !selectedFacets.has(facet));
+
+    let bonus = 0;
+    for (const facet of missingFacets) {
+      if (candidateFacets.has(facet)) {
+        bonus += requiredFacets.length > 1 ? 0.15 : 0.1;
+      }
+    }
+
+    if (
+      queryIntent === 'clinical_features_history_exam' &&
+      missingFacets.length > 0 &&
+      candidateFacets.has('special_features') &&
+      !candidateFacets.has('history') &&
+      !candidateFacets.has('examination')
+    ) {
+      bonus -= 0.08;
+    }
+
+    return Math.max(-0.08, Math.min(0.28, bonus));
+  }
+
   private selectGenerationChunksByPageCluster(
     chunks: Array<VectorSearchResult & { quality: ChunkQualityAssessment }>,
     maxResults: number,
@@ -2215,6 +2419,9 @@ export class ChatPipeline {
         strongestCluster.score >= 0.7
       )
     );
+    const preferredLocalPages = strongestCluster && strongestCluster.page !== null
+      ? this.getPreferredAnchorWindowPages(strongestCluster.page, queryIntent)
+      : [];
     const isPreferredLocalChunk = (chunk: VectorSearchResult & { quality: ChunkQualityAssessment }): boolean =>
       Boolean(
         localFocusActive &&
@@ -2222,7 +2429,7 @@ export class ChatPipeline {
         strongestCluster.page !== null &&
         chunk.document.id === strongestCluster.documentId &&
         this.getChunkPageNumber(chunk.chunk) !== null &&
-        Math.abs((this.getChunkPageNumber(chunk.chunk) as number) - strongestCluster.page) <= 1
+        preferredLocalPages.includes(this.getChunkPageNumber(chunk.chunk) as number)
       );
     const isPreferredLocalCluster = (cluster: Cluster): boolean =>
       Boolean(
@@ -2231,7 +2438,7 @@ export class ChatPipeline {
         strongestCluster.page !== null &&
         cluster.documentId === strongestCluster.documentId &&
         cluster.page !== null &&
-        Math.abs(cluster.page - strongestCluster.page) <= 1
+        preferredLocalPages.includes(cluster.page)
       );
 
     const rankedClusters = [...preliminaryRankedClusters].sort((a, b) => {
@@ -2265,7 +2472,7 @@ export class ChatPipeline {
       preferredLocalWindow: strongestCluster && strongestCluster.page !== null
         ? {
             documentId: strongestCluster.documentId,
-            pages: [strongestCluster.page - 1, strongestCluster.page, strongestCluster.page + 1].filter((page) => page > 0),
+            pages: preferredLocalPages,
           }
         : null,
       rankedClusters: rankedClusters.map((cluster) => ({
@@ -2378,7 +2585,7 @@ export class ChatPipeline {
     } | null,
     queryIntent?: QueryIntent
   ): number {
-    return this.rankGenerationCandidate(candidate, queryIntent, selected) + this.scoreGenerationContinuityBonus(candidate, selected, strongestCluster);
+    return this.rankGenerationCandidate(candidate, queryIntent, selected) + this.scoreGenerationContinuityBonus(candidate, selected, strongestCluster, queryIntent);
   }
 
   private scoreGenerationContinuityBonus(
@@ -2387,7 +2594,8 @@ export class ChatPipeline {
     strongestCluster?: {
       documentId: string;
       page: number | null;
-    } | null
+    } | null,
+    queryIntent?: QueryIntent
   ): number {
     const candidateIndex = this.getEffectiveChunkIndex(candidate.chunk);
     const candidatePage = this.getChunkPageNumber(candidate.chunk);
@@ -2452,10 +2660,12 @@ export class ChatPipeline {
       candidate.document.id === strongestCluster.documentId &&
       candidatePage !== null
     ) {
+      const preferredLocalPages = this.getPreferredAnchorWindowPages(strongestCluster.page, queryIntent);
       const pageDistance = Math.abs(candidatePage - strongestCluster.page);
       if (pageDistance === 0) bonus += 0.16;
       if (pageDistance === 1) bonus += 0.12;
-      if (pageDistance >= 2) bonus -= Math.min(0.08, pageDistance * 0.03);
+      if (pageDistance >= 2 && preferredLocalPages.includes(candidatePage)) bonus += 0.08;
+      if (pageDistance >= 2 && !preferredLocalPages.includes(candidatePage)) bonus -= Math.min(0.08, pageDistance * 0.03);
     }
 
     return Math.min(0.34, bonus);
@@ -3099,7 +3309,7 @@ export class ChatPipeline {
     let bridgeCandidateCount = 0;
     let localWindowCandidateCount = 0;
     const localPages = strongestGroup && strongestGroup.page !== null
-      ? [strongestGroup.page - 1, strongestGroup.page, strongestGroup.page + 1].filter((page) => page > 0)
+      ? this.getPreferredAnchorWindowPages(strongestGroup.page, queryIntent)
       : [];
     const isLocalFocusPage = (docId: string, page: number | null): boolean =>
       Boolean(
@@ -3107,7 +3317,7 @@ export class ChatPipeline {
         strongestGroup.page !== null &&
         page !== null &&
         docId === strongestGroup.docId &&
-        Math.abs(page - strongestGroup.page) <= 1
+        localPages.includes(page)
       );
     const anchorWindowEligible = Boolean(
       strongestGroup &&
