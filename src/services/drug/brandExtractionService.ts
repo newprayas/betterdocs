@@ -10,8 +10,7 @@ import type { ChatStreamEvent } from '@/services/rag';
 import { drugModeService } from './drugModeService';
 import type { DrugBrandLookupResult } from './drugModeService';
 
-const BRAND_EXTRACTION_PARSER_MODEL = 'llama-3.3-70b-versatile';
-const BRAND_EXTRACTION_ANSWER_MODEL = 'moonshotai/kimi-k2-instruct-0905';
+const BRAND_EXTRACTION_MODEL = 'openai/gpt-oss-120b';
 const BRAND_EXTRACTION_PROMPT_LOG_CHUNK_SIZE = 4000;
 const MAX_GENERICS = 5;
 const MAX_BRANDS_PER_GENERIC = 5;
@@ -273,7 +272,7 @@ export class BrandExtractionService {
     const raw = await groqService.generateResponseWithGroq(
       request.answerText,
       systemPrompt,
-      BRAND_EXTRACTION_PARSER_MODEL,
+      BRAND_EXTRACTION_MODEL,
       {
         temperature: 0,
         maxTokens: 700,
@@ -400,7 +399,7 @@ ${JSON.stringify(missing, null, 2)}`;
     await groqService.generateStreamingResponse(
       prompt,
       BRAND_EXTRACTION_ANSWER_SYSTEM_PROMPT,
-      BRAND_EXTRACTION_ANSWER_MODEL,
+      BRAND_EXTRACTION_MODEL,
       {
         temperature: 0.2,
         maxTokens: 1800,

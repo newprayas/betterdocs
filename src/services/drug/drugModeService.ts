@@ -24,8 +24,7 @@ import type {
 import { MessageSender } from '@/types/message';
 import type { ChatStreamEvent } from '@/services/rag';
 
-const DRUG_QUERY_PARSER_MODEL = 'moonshotai/kimi-k2-instruct-0905';
-const DRUG_ANSWER_MODEL = 'moonshotai/kimi-k2-instruct-0905';
+const DRUG_MODE_MODEL = 'openai/gpt-oss-120b';
 const DRUG_PROMPT_LOG_CHUNK_SIZE = 4000;
 const DRUG_NAME_DENYLIST = new Set(['ACE', 'FDA', 'KN.VDN', 'CNS']);
 const VERIFIED_DRUG_NAMES_URL = '/drug/verified-drug-names.txt';
@@ -167,6 +166,21 @@ const stripTrailingRequestedDoseAudience = (value: string): string => {
   const trimmed = compactField(value) || '';
   if (!trimmed) return '';
   return trimmed.replace(/\s+for\s+(adult|child)\s*$/i, '').trim();
+};
+
+const sanitizeRequestedIndication = (value: string): string => {
+  const trimmed = compactField(value) || '';
+  if (!trimmed) return '';
+
+  return trimmed
+    .replace(/^['"`]+|['"`]+$/g, '')
+    .replace(/^(?:for|in|about|with)\s+/i, '')
+    .replace(
+      /\s+(?:\d+(?:\.\d+)?\s*(?:mg|g|mcg|µg|ug|ml|mL|iu|units?)?|once|twice|thrice|daily|weekly|bid|tid|qid|q\d+h|oral|iv|im|intravenous|intramuscular|subcutaneous|tablet|tablets|capsule|capsules|syrup|suspension|injection)\b.*$/i,
+      '',
+    )
+    .replace(/[?!.,;:]+$/g, '')
+    .trim();
 };
 
 const hasMinimumSuggestionLength = (value: string): boolean =>
@@ -2592,7 +2606,7 @@ Rules:
     const raw = await groqService.generateResponseWithGroq(
       content,
       systemPrompt,
-      DRUG_QUERY_PARSER_MODEL,
+      DRUG_MODE_MODEL,
       {
         temperature: 0,
         maxTokens: 700,
@@ -2617,13 +2631,20 @@ Rules:
     const inferredDrugName = inferDrugNameFromRawQuery(content);
     const resolvedDrugName = parserDrugName || inferredDrugName;
     const parserRequestedIndication = stripTrailingRequestedDoseAudience(
-      compactField(
+      sanitizeRequestedIndication(
         String(parsed.requested_indication || recovered.requested_indication || ''),
-      ) || '',
+      ),
     );
     const inferredRequestedIndication = stripTrailingRequestedDoseAudience(
-      inferRequestedIndicationFromQuery(content) || '',
+      sanitizeRequestedIndication(inferRequestedIndicationFromQuery(content) || ''),
     );
+    const resolvedDrugConfidence = resolvedDrugName
+      ? typeof parsed.confidence === 'number'
+        ? Math.max(0, Math.min(1, parsed.confidence))
+        : typeof recovered.confidence === 'number'
+          ? Math.max(0, Math.min(1, recovered.confidence))
+          : 0
+      : 0;
     const resolvedRequestedIndication =
       inferredRequestedIndication &&
       (!parserRequestedIndication ||
@@ -2633,13 +2654,8 @@ Rules:
         : parserRequestedIndication;
     const safeParsed: DrugQueryParseResult = {
       drug_name: canonicalizeDrugQueryCase(resolvedDrugName),
-      requested_indication: resolvedRequestedIndication,
-      confidence:
-        typeof parsed.confidence === 'number'
-          ? Math.max(0, Math.min(1, parsed.confidence))
-          : typeof recovered.confidence === 'number'
-            ? Math.max(0, Math.min(1, recovered.confidence))
-          : 0,
+      requested_indication: resolvedDrugName ? resolvedRequestedIndication : '',
+      confidence: resolvedDrugName ? resolvedDrugConfidence : 0,
     };
 
     console.log('[DRUG PARSER]', 'Parsed query JSON', safeParsed);
@@ -2767,7 +2783,7 @@ Rules:
       const raw = await groqService.generateResponseWithGroq(
         content,
         systemPrompt,
-        DRUG_QUERY_PARSER_MODEL,
+        DRUG_MODE_MODEL,
         {
           temperature: 0,
           maxTokens: 120,
@@ -4143,7 +4159,7 @@ ${stringifyEntryForPrompt(promptContextForModel)}`;
           const extractionOutput = await groqService.generateResponseWithGroq(
             contextPrompt,
             pass1SystemPrompt,
-            DRUG_ANSWER_MODEL,
+            DRUG_MODE_MODEL,
             {
               temperature: 0.1,
               maxTokens: 2400,
@@ -4170,7 +4186,7 @@ ${stringifyEntryForPrompt(promptContextForModel)}`;
           const verificationOutput = await groqService.generateResponseWithGroq(
             pass2UserPrompt,
             pass2SystemPrompt,
-            DRUG_ANSWER_MODEL,
+            DRUG_MODE_MODEL,
             {
               temperature: 0.1,
               maxTokens: 2400,
@@ -4231,7 +4247,7 @@ ${stringifyEntryForPrompt(promptContextForModel)}`;
         await groqService.generateStreamingResponse(
           contextPrompt,
           systemPrompt,
-          DRUG_ANSWER_MODEL,
+          DRUG_MODE_MODEL,
           {
             temperature: 0.2,
             maxTokens: 2400,

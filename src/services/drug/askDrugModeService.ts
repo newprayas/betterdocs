@@ -23,8 +23,7 @@ import type {
 import { MessageSender } from '@/types/message';
 import type { ChatStreamEvent } from '@/services/rag';
 
-const ASK_DRUG_QUERY_PARSER_MODEL = 'llama-3.3-70b-versatile';
-const ASK_DRUG_ANSWER_MODEL = 'llama-3.3-70b-versatile';
+const ASK_DRUG_MODEL = 'openai/gpt-oss-120b';
 const ASK_DRUG_PROMPT_LOG_CHUNK_SIZE = 4000;
 const ASK_DRUG_MATCH_LIMIT = 25;
 const ASK_DRUG_SUGGESTION_LIMIT = 8;
@@ -1392,7 +1391,7 @@ Rules:
     const raw = await groqService.generateResponse(
       content,
       systemPrompt,
-      ASK_DRUG_QUERY_PARSER_MODEL,
+      ASK_DRUG_MODEL,
       {
         temperature: 0,
         maxTokens: 700,
@@ -1797,7 +1796,7 @@ ${JSON.stringify(promptContext, null, 2)}`;
     await groqService.generateStreamingResponse(
       prompt,
       systemPrompt,
-      ASK_DRUG_ANSWER_MODEL,
+      ASK_DRUG_MODEL,
       {
         temperature: 0.1,
         maxTokens: 1600,
@@ -2621,7 +2620,7 @@ ${JSON.stringify(promptContext, null, 2)}`;
         await groqService.generateStreamingResponse(
           prompt,
           namedSystemPrompt,
-          ASK_DRUG_ANSWER_MODEL,
+          ASK_DRUG_MODEL,
           {
             temperature: 0.1,
             maxTokens: 1600,
@@ -2714,7 +2713,7 @@ ${JSON.stringify(
       await groqService.generateStreamingResponse(
         prompt,
         broadSystemPrompt,
-        ASK_DRUG_ANSWER_MODEL,
+        ASK_DRUG_MODEL,
         {
           temperature: 0.1,
           maxTokens: 1600,
