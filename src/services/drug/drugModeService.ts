@@ -6,7 +6,6 @@ import {
   buildDrugAudienceActionLink,
   buildDrugAudienceLinkLabel,
   decorateIndicationLinks,
-  shouldDecorateIndicationLinksForQuery,
 } from './drugActionLinks';
 import type {
   AskDrugIndicationsAndDoseStructured,
@@ -4304,8 +4303,7 @@ ${stringifyEntryForPrompt(promptContextForModel)}`;
           : fullResponse;
       const normalizedResponse = normalizeContraindicationCapitalization(formattedResponse);
       const finalResponse =
-        intent.answerKind === 'dose_with_brands' &&
-        shouldDecorateIndicationLinksForQuery(content)
+        intent.answerKind === 'dose_with_brands'
           ? decorateIndicationLinks(
               normalizedResponse,
               parsed.drug_name,
