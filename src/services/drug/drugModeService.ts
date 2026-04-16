@@ -374,6 +374,24 @@ const normalizeDrugIntentTypos = (value: string): string =>
 
 const normalizeDrugQueryText = (value: string): string => normalizeDrugIntentTypos(value);
 
+const isBareDrugNameQuery = (value: string): boolean => {
+  const compact = normalizeDrugQueryText(value).trim();
+  if (!compact) return false;
+  if (/[?]/.test(compact)) return false;
+  if (
+    /\b(dose|doses|dosage|dosing|regimen|schedule|brand|brands|brand\s+name(?:s)?|company|companies|price|prices|cost|costs|indication|indications|side[\s-]?effects?|contra[\s-]?indications?|cautions?|pregnancy|breast[\s-]?feeding|what(?:'s|s|\s+is))\b/i.test(
+      compact,
+    )
+  ) {
+    return false;
+  }
+
+  const tokens = compact.split(/\s+/).filter(Boolean);
+  if (tokens.length < 1 || tokens.length > 3) return false;
+
+  return tokens.every((token) => /^[A-Za-z][A-Za-z0-9.'-]*$/.test(token));
+};
+
 const sanitizeParsedDrugName = (value: string): string => {
   let cleaned = compactField(value) || '';
   if (!cleaned) return '';
@@ -2629,7 +2647,8 @@ Rules:
       String(parsed.drug_name || recovered.drug_name || ''),
     );
     const inferredDrugName = inferDrugNameFromRawQuery(content);
-    const resolvedDrugName = parserDrugName || inferredDrugName;
+    const bareQueryDrugName = isBareDrugNameQuery(content) ? canonicalizeDrugQueryCase(content) : '';
+    const resolvedDrugName = parserDrugName || inferredDrugName || bareQueryDrugName;
     const parserRequestedIndication = stripTrailingRequestedDoseAudience(
       sanitizeRequestedIndication(
         String(parsed.requested_indication || recovered.requested_indication || ''),
@@ -2655,7 +2674,9 @@ Rules:
     const safeParsed: DrugQueryParseResult = {
       drug_name: canonicalizeDrugQueryCase(resolvedDrugName),
       requested_indication: resolvedDrugName ? resolvedRequestedIndication : '',
-      confidence: resolvedDrugName ? resolvedDrugConfidence : 0,
+      confidence: resolvedDrugName
+        ? resolvedDrugConfidence || (bareQueryDrugName ? 0.9 : 0)
+        : 0,
     };
 
     console.log('[DRUG PARSER]', 'Parsed query JSON', safeParsed);
@@ -2728,6 +2749,16 @@ Rules:
       return {
         requestedFields: [],
         answerKind: 'brands',
+        needsBrands: true,
+      };
+    }
+
+    if (isBareDrugNameQuery(content)) {
+      addField('indications');
+      addField('dose');
+      return {
+        requestedFields,
+        answerKind: 'dose_with_brands',
         needsBrands: true,
       };
     }

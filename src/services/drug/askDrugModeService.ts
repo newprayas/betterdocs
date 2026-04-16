@@ -90,6 +90,31 @@ const ASK_DRUG_BROAD_TERM_EXPANSIONS: Record<string, string[]> = {
   'shortness of breath': ['shortness of breath', 'breathlessness', 'dyspnoea'],
 };
 
+const isDoseFocusedNamedDrugQuery = (content: string): boolean => {
+  const compact = compactField(content) || '';
+  if (!compact) return false;
+
+  const normalized = normalizeText(compact);
+  if (
+    /\b(indication|indications|side[\s-]?effects?|contra[\s-]?indications?|cautions?|pregnancy|breast[\s-]?feeding|renal|hepatic|safety|details?|all details|everything|information)\b/i.test(
+      normalized,
+    )
+  ) {
+    return false;
+  }
+
+  if (
+    /^(?:dose|doses|dosage|dosing|schedule|regimen|how much|how many)\b.*\b(?:of|for)\b/i.test(
+      normalized,
+    )
+  ) {
+    return true;
+  }
+
+  const bareDrugNamePattern = /^[A-Za-z][A-Za-z0-9.'-]*(?:\s+[A-Za-z][A-Za-z0-9.'-]*){0,2}$/;
+  return bareDrugNamePattern.test(compact);
+};
+
 export const ASK_DRUG_DATASET_CONFIG: DrugDatasetConfig = {
   id: 'drug_sections_bnf',
   name: 'BNF drug sections',
@@ -2443,6 +2468,15 @@ ${JSON.stringify(promptContext, null, 2)}`;
         : requestedSections.map(sectionLabel).join(', ');
 
       console.log('[ASK DRUG PARSER]', 'Parsed query JSON', parsed);
+
+      if (parsed.drug_name.trim() && isDoseFocusedNamedDrugQuery(content)) {
+        console.log('[ASK DRUG ROUTE]', 'Redirecting dose-focused named query to drug mode', {
+          originalQuery: content,
+          parsedDrugName: parsed.drug_name,
+        });
+        await drugModeService.sendMessage(sessionId, content, onStreamEvent);
+        return;
+      }
 
       if (parsed.drug_name.trim()) {
         onStreamEvent?.({ type: 'status', message: 'Ask Drug Search' });

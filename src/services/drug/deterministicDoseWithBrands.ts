@@ -899,7 +899,10 @@ const groupBlocksByHeading = (
       priority: 2,
       // Keep no-dose fallback blocks after real dosing blocks, even for a matching indication.
       queryPriority: 1,
-      content: renderNoBrandRouteBlock(selectedIndication.indication, headingRouteMappings),
+      content: renderNoBrandRouteBlock(
+        selectedIndication.indication,
+        headingRouteMappings,
+      ),
     });
     sequence += 1;
   }
