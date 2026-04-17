@@ -3631,24 +3631,6 @@ export class ChatPipeline {
     }
 
     const availableSlots = Math.max(0, maxTotal - baseResults.length);
-    if (availableSlots <= 0) {
-      this.lastRetrievalAnchorWindowDebug = {
-        mode: 'insufficient_input',
-        queryIntent,
-        anchor: null,
-        localPages: [],
-        localBaseChunkCount: baseResults.length,
-        localWindowChunkCount: baseResults.length,
-        rankedPageGroups: [],
-        reason: 'Skipped anchor-window expansion because there was no retrieval headroom.',
-      };
-      console.log(
-        '[TOP CHUNK CONTEXT] Skipped (no space): current=%d maxTotal=%d',
-        baseResults.length,
-        maxTotal
-      );
-      return baseResults;
-    }
 
     const existingChunkIds = new Set(baseResults.map((r) => r.chunk.id));
     const docInfoById = new Map(baseResults.map((r) => [r.document.id, r.document] as const));
