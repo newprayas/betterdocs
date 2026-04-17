@@ -4632,7 +4632,7 @@ ${normalizedOriginal}
       }
 
       // Cap chunks fed to the LLM to stay within TPM limits.
-      const GENERATION_CHUNK_CAP = 6;
+      const GENERATION_CHUNK_CAP = 8;
       const MIN_SIMILARITY_FLOOR = 0.55;
 
       const sortedGenerationCandidates = [...searchResults]
@@ -5023,15 +5023,8 @@ ${normalizedOriginal}
       );
     };
 
-    const buildGroqPrompt = (contextToUse: string): string => `
-      <CONTEXT_SOURCES>
-      ${contextToUse}
-      </CONTEXT_SOURCES>
-
-      Answer Intent: ${queryIntent}
-
-      New Question: ${content}
-    `;
+    const buildGroqPrompt = (contextToUse: string): string =>
+      `${contextToUse}\n\nQ: ${content}`;
 
     const streamResponse = async (contextToUse: string, systemPromptToUse: string): Promise<void> => {
       fullResponse = '';
@@ -5052,7 +5045,7 @@ ${normalizedOriginal}
     };
 
     try {
-      const SIMPLIFIED_OVERFLOW_CHUNK_CAP = 5;
+      const SIMPLIFIED_OVERFLOW_CHUNK_CAP = 7;
 
       const trimOverflowSearchResults = (results: any[]): any[] => {
         if (results.length <= 1) {
@@ -5240,64 +5233,23 @@ ${normalizedOriginal}
    * Get simplified system prompt for page-based citation system
    */
   private getSimplifiedSystemPrompt(searchResults?: any[], contractInstruction?: string): string {
-    return `You are a medical RAG assistant.
+    return `Medical RAG assistant. Use ONLY provided context. No external knowledge.
+If context is insufficient: "I cannot answer this question based on the provided documents."
 
-You MUST follow these rules:
-1) Use ONLY the provided context sources. No external knowledge.
-2) If context is insufficient, say: "I cannot answer this question based on the provided documents."
-3) Return STRICT MARKDOWN ONLY.
-4) Do not include citation markers, bracket numbers, code fences, or commentary.
-5) Conversation continuity rule: if the new question is a short follow-up that is clearly related to the previous user question, continue with the same medical topic/condition unless the user explicitly changes topic.
-6) Read each chunk carefully and include all relevant information from every chunk that supports the answer. Do not stop after the first matching chunk.
-7) If a retrieved chunk contains extra relevant detail beyond the exact question, include that detail too under a suitable heading or subheading, as long as it is explicitly present in the source.
-8) If a chunk contains a table, figure, summary box, scoring system, list, or criteria set, unpack all relevant rows, items, components, and thresholds from it instead of only naming the headline.
-9) Before writing, mentally scan ALL provided chunks and extract the distinct facts from each one. Do not ignore a chunk just because another chunk from the same page already overlaps with it.
-10) If two chunks overlap, keep the shared point once but still add any extra details that appear only in the later chunk.
-11) Do not say information is "not found" if relevant facts are present anywhere in the provided chunks.
-12) If a single chunk contains multiple headings, subsections, or topic blocks, use ONLY the subsection that is relevant to the user query and ignore unrelated subsection content from the same chunk.
+Rules:
+- Return strict markdown. No citation markers, code fences, or commentary.
+- Extract ALL relevant facts from EVERY provided chunk. Do not stop at the first match.
+- If chunks overlap, keep shared facts once but add any unique details from each chunk.
+- Unpack tables, scoring systems, criteria sets, and summary boxes fully — list all rows, items, thresholds.
+- Use ONLY the subsection relevant to the query from multi-topic chunks.
+- Write full descriptive bullets, never single-word bullets.
+- If a section is missing from sources, write "Not found in provided sources."
+- For classifications: include all types, subtypes, grades, criteria, and thresholds present in the source.
+- Do not add claims not explicitly present in retrieved text.
 
-Output format requirements:
-- Use only the section titles from the contract below.
-- Use subsections when the source naturally breaks into groups, subtypes, or distinctions.
-- Use the same page and adjacent pages (page N, N-1, N+1) as a continuity signal: if the topic is clearly continuing, keep those facts under the same heading or subsection.
-- If the source heading or section cue changes, start a new subsection instead of merging the ideas.
-- Prefer smaller, source-faithful subsections over one large mixed subsection.
-- Do not merge preoperative, intraoperative, postoperative, early, medium, and late content into one bucket unless the source explicitly groups them together.
-- Only output claims that are explicitly present in the retrieved text. Do not add interpretation, thresholds, or conclusions unless the exact wording or a near-verbatim line appears in the source.
-- If a claim is not explicitly supported by the retrieved text, omit it.
-- If a source sentence or paragraph contains multiple connected qualifiers, keep them together in one claim or subsection when they are all explicitly present.
-- Use plain bullet points for claims.
-- WRITE FULL, DESCRIPTIVE BULLETS. Never write single-word bullets like "Pain" or "Infection". Instead write "Pain occurs early in the disease process" or "Infection risk increases with immunosuppression." Single-word bullets are strictly forbidden.
-- Use subheadings when the retrieved chunks contain multiple related groups of facts.
-- Prefer grouping bullets from the same page or same source cluster under one short subheading.
-- Do not flatten everything into one long bullet list if the answer naturally has sections.
-- Keep subheadings short and specific.
-- If a required section is missing from sources, include the section and write "Not found in provided sources." under it.
-- Be thorough and complete. Do not stop after the first few points if the source has more detail.
-- If the source contains several related items, keep listing them in a clear structure instead of compressing them into a short summary.
-- For classification-style questions, include every distinct system, subtype, and criterion found in the retrieved text.
-- For classification-style questions, if the retrieved text contains diagnostic criteria and severity grades, include both. Do not omit suspected/definite criteria, Grade I, Grade II, or Grade III when they are present.
-- When multiple chunks from the same page or adjacent pages continue the same topic, combine them into one fuller section instead of taking only the first chunk's points.
-- Prefer extracting more supported bullets over giving a short polished summary.
-- If a chunk mixes two different headings or sections, do not borrow facts from the wrong heading just because they are nearby in the same chunk.
-
-Coverage requirements:
-- Do NOT summarize when the source contains detailed points.
-- Reorganize and present the provided information; do not compress it into a short summary.
-- YOU MUST DRAW CONTENT FROM ALL PROVIDED SOURCES if they contain relevant information. Do not ignore later sources just because the first few sources answer the question.
-- Include all relevant classifications, subtypes, criteria, and key notes that appear in the retrieved context.
-- Do not omit important source points for brevity.
-- Prefer completeness over brevity while staying strictly grounded to cited text.
-- Treat every provided chunk as required reading. The answer is incomplete if a fed chunk contains a relevant unique detail that is missing from the final response.
-
-Medical shorthand:
-- rx/tx => treatment or management
-- dx => diagnosis
-- inv => investigations
-- "clinical features" => history + examination (not investigations)
+Shorthand: rx/tx=treatment, dx=diagnosis, inv=investigations, clinical features=history+examination.
 ${contractInstruction ? `\n${contractInstruction}\n` : ''}
-
-Goal: accurate, full-detail, source-grounded answer; citations and references are added by the app after generation.`;
+Citations are added by the app after generation.`;
   }
 
   /**
@@ -5313,77 +5265,73 @@ Goal: accurate, full-detail, source-grounded answer; citations and references ar
     console.log('\n=== CONTEXT BUILDING DEBUG ===');
     console.log('[BUILDING CONTEXT]', `Processing ${searchResults.length} search results for context`);
 
-    const contextParts: string[] = [];
-    contextParts.push('Retrieved Context Sources:\n');
-    contextParts.push('Grouping hint: content from the same page and adjacent pages (page N, N-1, N+1) often belongs to the same heading or subsection when the topic continues.');
-    contextParts.push('Grouping rule: if the source heading or section cue changes, start a new subsection instead of merging the ideas.');
-    contextParts.push('Continuation rule: if a source on the next page clearly continues the same list, same examples, or same subsection, treat it as a direct continuation instead of a new unrelated block.');
-    contextParts.push('');
+    // Merge adjacent chunks from the same document+page into one block
+    // to save per-chunk formatting overhead (~50-80 tokens per chunk header).
+    interface MergedBlock {
+      documentTitle: string;
+      page: number | null;
+      contents: string[];
+      chunkIds: string[];
+      bestSimilarity: number;
+    }
 
-    for (let i = 0; i < searchResults.length; i++) {
-      const result = searchResults[i];
+    const blocks: MergedBlock[] = [];
+
+    for (const result of searchResults) {
       const chunk = result.chunk;
       const document = result.document;
-      const previousResult = i > 0 ? searchResults[i - 1] : null;
+      const page = this.getChunkPageNumber(chunk);
+      const content = (chunk.content || '').trim();
+      if (!content) continue;
 
-      // Enhanced page number detection - same logic as citation service
-      let pageInfo = '';
-      if (chunk.metadata?.pageNumbers && chunk.metadata.pageNumbers.length > 0) {
-        pageInfo = ` (Page ${chunk.metadata.pageNumbers[0]})`;
-      } else if (chunk.page && chunk.page > 0) {
-        pageInfo = ` (Page ${chunk.page})`;
-      } else if (chunk.metadata?.pageNumber && chunk.metadata.pageNumber > 0) {
-        pageInfo = ` (Page ${chunk.metadata.pageNumber})`;
-      } else {
-        // Try to extract from content
-        const pagePatterns = [
-          /page\s+(\d+)/i,
-          /p\.?\s*(\d+)/i,
-          /第(\d+)页/,
-          /page\s+(\d+)\s+of/i,
-        ];
+      // Try to merge into the previous block if same document + same/adjacent page.
+      const lastBlock = blocks[blocks.length - 1];
+      const canMerge =
+        lastBlock &&
+        lastBlock.documentTitle === (document.title || document.fileName) &&
+        lastBlock.page !== null &&
+        page !== null &&
+        Math.abs(page - lastBlock.page) <= 1;
 
-        for (const pattern of pagePatterns) {
-          const match = chunk.content.match(pattern);
-          if (match && match[1]) {
-            const extractedPage = parseInt(match[1], 10);
-            if (extractedPage > 0) {
-              pageInfo = ` (Page ${extractedPage})`;
-              break;
-            }
-          }
+      if (canMerge) {
+        lastBlock.contents.push(content);
+        lastBlock.chunkIds.push(chunk.id);
+        lastBlock.bestSimilarity = Math.max(lastBlock.bestSimilarity, result.similarity || 0);
+        // Update page to the latest if it advanced.
+        if (page !== null && (lastBlock.page === null || page > lastBlock.page)) {
+          lastBlock.page = page;
         }
+      } else {
+        blocks.push({
+          documentTitle: document.title || document.fileName || 'Document',
+          page,
+          contents: [content],
+          chunkIds: [chunk.id],
+          bestSimilarity: result.similarity || 0,
+        });
       }
+    }
 
-      // Create content preview centered around query terms if possible
-      const contentPreview = this.createContentPreview(chunk.content, retrievalQuery);
-      const sectionCue = this.createSectionCue(chunk.content);
-      const similarityScore = result.similarity ? ` (Similarity: ${(result.similarity * 100).toFixed(1)}%)` : '';
-      const continuationCue = this.describeContextContinuation(previousResult, result);
+    console.log('[CONTEXT MERGE]', `Merged ${searchResults.length} chunks into ${blocks.length} context block(s)`);
 
-      console.log(`[CONTEXT SOURCE ${i + 1}]`, {
-        documentTitle: document.title,
-        pageInfo: pageInfo.trim(),
-        similarity: result.similarity,
-        chunkId: chunk.id,
-        contentPreview: contentPreview,
-        continuationCue,
-        isCombined: chunk.metadata?.isCombined,
-        originalChunkCount: chunk.metadata?.originalChunkCount
+    // Build minimal context string — every token counts at 6K TPM.
+    const contextParts: string[] = [];
+
+    for (let i = 0; i < blocks.length; i++) {
+      const block = blocks[i];
+      const pageLabel = block.page !== null ? `, p.${block.page}` : '';
+      contextParts.push(`[${i + 1}] ${block.documentTitle}${pageLabel}`);
+      contextParts.push(block.contents.join('\n'));
+      contextParts.push('');
+
+      console.log(`[CONTEXT BLOCK ${i + 1}]`, {
+        documentTitle: block.documentTitle,
+        page: block.page,
+        mergedChunks: block.chunkIds.length,
+        chunkIds: block.chunkIds,
+        bestSimilarity: Number(block.bestSimilarity.toFixed(3)),
+        contentLength: block.contents.join('\n').length,
       });
-
-      contextParts.push(`<SOURCE ${i + 1}>`);
-      contextParts.push(`Source ID: [${i + 1}]`);
-      contextParts.push(`Document: ${document.title}${pageInfo}${similarityScore}`);
-      contextParts.push(`Section cue: ${sectionCue || 'No explicit heading detected'}`);
-      contextParts.push(`Continuation cue: ${continuationCue}`);
-      contextParts.push(`Preview: ${contentPreview}`);
-      contextParts.push('');
-      contextParts.push('Full Content:');
-      contextParts.push(chunk.content.trim());
-      contextParts.push('');
-      contextParts.push(`</SOURCE>`);
-      contextParts.push('');
     }
 
     const finalContext = contextParts.join('\n').trim();
