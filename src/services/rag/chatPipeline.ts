@@ -103,7 +103,6 @@ interface RetrievalAnchorWindowDebug {
     page: number | null;
     anchorScore: number;
     baseScore: number;
-    intentScore: number;
     chunkCount: number;
     marginVsNext: number;
   } | null;
@@ -115,7 +114,6 @@ interface RetrievalAnchorWindowDebug {
     page: number | null;
     anchorScore: number;
     baseScore: number;
-    intentScore: number;
     chunkCount: number;
   }>;
   reason: string;
@@ -2228,11 +2226,13 @@ export class ChatPipeline {
         if (hasAny([/\bfindings?\b/, /\bdiagnosis\b/, /\bdiagnostic\b/])) bonus += 0.06;
         if (hasAny([/\bmanagement\b/, /\btreatment\b/, /\btherapy\b/, /\bclassification\b/, /\bdifferential diagnosis\b/])) penalty += 0.18;
         break;
-      case 'treatment_rx':
-        if (hasAny([/\btreatment\b/, /\bmanagement\b/, /\btherapy\b/, /\bmedical management\b/, /\bsurgical management\b/, /\boperative\b/])) bonus += 0.22;
-        if (hasAny([/\bconservative\b/, /\bmedical\b/, /\bsurgical\b/, /\bprocedure\b/])) bonus += 0.06;
+      case 'treatment_rx': {
+        const looksIntroContext = /\blearning objectives\b|\bto understand\b|\bto diagnose and manage\b/i.test(normalized);
+        if (hasAny([/\btreatment\b/, /\bmanagement\b/, /\btherapy\b/, /\bmedical management\b/, /\bsurgical management\b/, /\boperative\b/])) bonus += looksIntroContext ? 0.04 : 0.22;
+        if (hasAny([/\bconservative\b/, /\bmedical\b/, /\bsurgical\b/, /\bprocedure\b/])) bonus += looksIntroContext ? 0.01 : 0.06;
         if (hasAny([/\bdifferential diagnosis\b/, /\binvestigations?\b/, /\bclassification\b/, /\bcauses?\b/, /\brisk factors?\b/])) penalty += 0.18;
         break;
+      }
       case 'classification_types':
         if (hasAny([/\bclassification\b/, /\btypes?\b/, /\bsubtypes?\b/, /\bgrading\b/, /\bstages?\b/, /\bcriteria\b/])) bonus += 0.22;
         if (hasAny([/\bgrade\b/, /\bseverity\b/, /\bdiagnostic criteria\b/])) bonus += 0.06;
@@ -3200,12 +3200,12 @@ export class ChatPipeline {
 
   private formatRetrievalAnchorWindowDebug(debug: RetrievalAnchorWindowDebug): string[] {
     const anchor = debug.anchor
-      ? `anchor_page=${debug.anchor.page ?? 'unknown'} anchor_score=${debug.anchor.anchorScore.toFixed(3)} base_score=${debug.anchor.baseScore.toFixed(3)} intent_score=${debug.anchor.intentScore.toFixed(3)} anchor_chunks=${debug.anchor.chunkCount} margin_vs_next=${debug.anchor.marginVsNext.toFixed(3)}`
+      ? `anchor_page=${debug.anchor.page ?? 'unknown'} anchor_score=${debug.anchor.anchorScore.toFixed(3)} base_score=${debug.anchor.baseScore.toFixed(3)} anchor_chunks=${debug.anchor.chunkCount} margin_vs_next=${debug.anchor.marginVsNext.toFixed(3)}`
       : 'anchor_page=none';
     const localPages = debug.localPages.length > 0 ? debug.localPages.join(',') : 'none';
     const rankedPages = debug.rankedPageGroups.length > 0
       ? debug.rankedPageGroups
-          .map((group) => `p${group.page ?? '?'}(score=${group.anchorScore.toFixed(3)},base=${group.baseScore.toFixed(3)},intent=${group.intentScore.toFixed(3)},chunks=${group.chunkCount})`)
+          .map((group) => `p${group.page ?? '?'}(score=${group.anchorScore.toFixed(3)},base=${group.baseScore.toFixed(3)},chunks=${group.chunkCount})`)
           .join(' | ')
       : 'none';
 
@@ -3544,10 +3544,8 @@ export class ChatPipeline {
       chunks: VectorSearchResult[];
       score: number;
       richness: number;
-      intentScore: number;
       anchorScore: number;
       chapterCue: string | null;
-      sectionScore: number;
       introLike: boolean;
     }>();
 
@@ -3566,10 +3564,8 @@ export class ChatPipeline {
           chunks: [result],
           score: result.similarity,
           richness: 0,
-          intentScore: 0,
           anchorScore: 0,
           chapterCue: this.extractChapterCueFromText(result.chunk.content || ''),
-          sectionScore: 0,
           introLike: false,
         });
       }
@@ -3580,14 +3576,8 @@ export class ChatPipeline {
       const topicSectionSignals = this.analyzeTopicSectionSignals(groupContent, queryIntent, queryTopic);
       group.richness = this.calculatePageRichness(group.chunks);
       group.score = Math.min(1, group.score + group.richness);
-      group.intentScore = this.scoreRetrievalIntentAlignment(
-        groupContent,
-        queryIntent,
-        queryTopic
-      );
-      group.sectionScore = topicSectionSignals.score;
       group.introLike = topicSectionSignals.introLike;
-      group.anchorScore = group.score + (Math.min(group.chunks.length - 1, 2) * 0.06) + group.intentScore + group.sectionScore;
+      group.anchorScore = group.score + (Math.min(group.chunks.length - 1, 2) * 0.06);
       if (!group.chapterCue) {
         group.chapterCue = group.chunks
           .map((chunk) => this.extractChapterCueFromText(chunk.chunk.content || ''))
@@ -3610,8 +3600,6 @@ export class ChatPipeline {
         page: group.page,
         chunkCount: group.chunks.length,
         score: Number(group.score.toFixed(3)),
-        intentScore: Number(group.intentScore.toFixed(3)),
-        sectionScore: Number(group.sectionScore.toFixed(3)),
         introLike: group.introLike,
         anchorScore: Number(group.anchorScore.toFixed(3)),
       })),
@@ -3677,9 +3665,9 @@ export class ChatPipeline {
     const stopDrift = strongestGroup ? this.isPageCoverageStrong(strongestGroup.chunks) : false;
     let bridgeCandidateCount = 0;
     let localWindowCandidateCount = 0;
-    const localPages = strongestGroup && strongestGroup.page !== null
+        const localPages = strongestGroup && strongestGroup.page !== null
       ? this.getPreferredAnchorWindowPages(strongestGroup.page, queryIntent, {
-          weakTopicOwnership: strongestGroup.sectionScore < 0.12,
+          weakTopicOwnership: false,
           introLike: strongestGroup.introLike,
         })
       : [];
@@ -3696,7 +3684,6 @@ export class ChatPipeline {
       strongestGroup.page !== null &&
       (
         strongestGroup.anchorScore >= 0.78 ||
-        strongestGroup.intentScore >= 0.12 ||
         strongestGroup.chunks.length >= 2 ||
         anchorMargin >= 0.06
       )
@@ -3788,7 +3775,6 @@ export class ChatPipeline {
       anchorWindowEligible &&
       (
         (anchorPageChunkCount >= 2 && localWindowResults.length >= 4) ||
-        strongestGroup.intentScore >= 0.16 ||
         (strongestGroup.chunks.length >= 2 && localWindowResults.length >= 3)
       )
     );
@@ -3803,7 +3789,6 @@ export class ChatPipeline {
               page: strongestGroup.page,
               anchorScore: Number(strongestGroup.anchorScore.toFixed(3)),
               baseScore: Number(strongestGroup.score.toFixed(3)),
-              intentScore: Number(strongestGroup.intentScore.toFixed(3)),
               chunkCount: strongestGroup.chunks.length,
               marginVsNext: Number(anchorMargin.toFixed(3)),
             }
@@ -3816,7 +3801,6 @@ export class ChatPipeline {
           page: group.page,
           anchorScore: Number(group.anchorScore.toFixed(3)),
           baseScore: Number(group.score.toFixed(3)),
-          intentScore: Number(group.intentScore.toFixed(3)),
           chunkCount: group.chunks.length,
         })),
         reason: 'Strong anchor page identified; using anchor page plus adjacent continuation window before any remote pages.',
@@ -3941,7 +3925,6 @@ export class ChatPipeline {
               page: strongestGroup.page,
               anchorScore: Number(strongestGroup.anchorScore.toFixed(3)),
               baseScore: Number(strongestGroup.score.toFixed(3)),
-              intentScore: Number(strongestGroup.intentScore.toFixed(3)),
               chunkCount: strongestGroup.chunks.length,
               marginVsNext: Number(anchorMargin.toFixed(3)),
             }
@@ -3954,7 +3937,6 @@ export class ChatPipeline {
           page: group.page,
           anchorScore: Number(group.anchorScore.toFixed(3)),
           baseScore: Number(group.score.toFixed(3)),
-          intentScore: Number(group.intentScore.toFixed(3)),
           chunkCount: group.chunks.length,
         })),
         reason: 'No extra local-window candidates were added; returning base retrieval results.',
@@ -4026,7 +4008,6 @@ export class ChatPipeline {
             page: strongestGroup.page,
             anchorScore: Number(strongestGroup.anchorScore.toFixed(3)),
             baseScore: Number(strongestGroup.score.toFixed(3)),
-            intentScore: Number(strongestGroup.intentScore.toFixed(3)),
             chunkCount: strongestGroup.chunks.length,
             marginVsNext: Number(anchorMargin.toFixed(3)),
           }
@@ -4039,7 +4020,6 @@ export class ChatPipeline {
         page: group.page,
         anchorScore: Number(group.anchorScore.toFixed(3)),
         baseScore: Number(group.score.toFixed(3)),
-        intentScore: Number(group.intentScore.toFixed(3)),
         chunkCount: group.chunks.length,
       })),
       reason: anchorWindowEligible
