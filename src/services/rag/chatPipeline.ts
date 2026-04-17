@@ -102,6 +102,8 @@ interface RetrievalAnchorWindowDebug {
     documentId: string;
     page: number | null;
     anchorScore: number;
+    clusterScore?: number;
+    rawWeight?: number;
     baseScore: number;
     chunkCount: number;
     marginVsNext: number;
@@ -113,6 +115,8 @@ interface RetrievalAnchorWindowDebug {
     documentId: string;
     page: number | null;
     anchorScore: number;
+    clusterScore?: number;
+    rawWeight?: number;
     baseScore: number;
     chunkCount: number;
   }>;
@@ -3320,12 +3324,12 @@ export class ChatPipeline {
 
   private formatRetrievalAnchorWindowDebug(debug: RetrievalAnchorWindowDebug): string[] {
     const anchor = debug.anchor
-      ? `anchor_page=${debug.anchor.page ?? 'unknown'} anchor_score=${debug.anchor.anchorScore.toFixed(3)} base_score=${debug.anchor.baseScore.toFixed(3)} anchor_chunks=${debug.anchor.chunkCount} margin_vs_next=${debug.anchor.marginVsNext.toFixed(3)}`
+      ? `anchor_page=${debug.anchor.page ?? 'unknown'} anchor_score=${debug.anchor.anchorScore.toFixed(3)} cluster_score=${debug.anchor.clusterScore?.toFixed(3) ?? 'N/A'} raw_weight=${debug.anchor.rawWeight ?? 'N/A'} base_score=${debug.anchor.baseScore.toFixed(3)} anchor_chunks=${debug.anchor.chunkCount} margin_vs_next=${debug.anchor.marginVsNext.toFixed(3)}`
       : 'anchor_page=none';
     const localPages = debug.localPages.length > 0 ? debug.localPages.join(',') : 'none';
     const rankedPages = debug.rankedPageGroups.length > 0
       ? debug.rankedPageGroups
-          .map((group) => `p${group.page ?? '?'}(score=${group.anchorScore.toFixed(3)},base=${group.baseScore.toFixed(3)},chunks=${group.chunkCount})`)
+          .map((group) => `p${group.page ?? '?'}(score=${group.anchorScore.toFixed(3)},cluster=${group.clusterScore?.toFixed(3) ?? 'N/A'},weight=${group.rawWeight ?? 'N/A'},base=${group.baseScore.toFixed(3)},chunks=${group.chunkCount})`)
           .join(' | ')
       : 'none';
 
@@ -3665,18 +3669,30 @@ export class ChatPipeline {
       score: number;
       richness: number;
       anchorScore: number;
+      rawWeight: number;
+      clusterScore: number;
       chapterCue: string | null;
       introLike: boolean;
     }>();
+
+    const rankedBaseResults = [...baseResults].sort((a, b) => b.similarity - a.similarity);
+    const chunkRankMap = new Map<string, number>();
+    rankedBaseResults.forEach((res, index) => {
+      chunkRankMap.set(res.chunk.id, index + 1);
+    });
 
     for (const result of baseResults) {
       const page = this.getChunkPageNumber(result.chunk);
       if (page === null) continue;
       const key = `${result.document.id}:${page}`;
       const existing = pageGroups.get(key);
+      const rank = chunkRankMap.get(result.chunk.id) || 999;
+      const voteWeight = rank <= 10 ? 5 : 2;
+
       if (existing) {
         existing.chunks.push(result);
         existing.score = Math.max(existing.score, result.similarity);
+        existing.rawWeight += voteWeight;
       } else {
         pageGroups.set(key, {
           docId: result.document.id,
@@ -3685,6 +3701,8 @@ export class ChatPipeline {
           score: result.similarity,
           richness: 0,
           anchorScore: 0,
+          rawWeight: voteWeight,
+          clusterScore: 0,
           chapterCue: this.extractChapterCueFromText(result.chunk.content || ''),
           introLike: false,
         });
@@ -3697,12 +3715,21 @@ export class ChatPipeline {
       group.richness = this.calculatePageRichness(group.chunks);
       group.score = Math.min(1, group.score + group.richness);
       group.introLike = topicSectionSignals.introLike;
-      group.anchorScore = group.score + (Math.min(group.chunks.length - 1, 2) * 0.06);
       if (!group.chapterCue) {
         group.chapterCue = group.chunks
           .map((chunk) => this.extractChapterCueFromText(chunk.chunk.content || ''))
           .find((cue) => Boolean(cue)) || null;
       }
+    }
+
+    for (const group of pageGroups.values()) {
+      const prevPageKey = `${group.docId}:${group.page - 1}`;
+      const nextPageKey = `${group.docId}:${group.page + 1}`;
+      const prevWeight = pageGroups.get(prevPageKey)?.rawWeight || 0;
+      const nextWeight = pageGroups.get(nextPageKey)?.rawWeight || 0;
+      
+      group.clusterScore = group.rawWeight + (prevWeight * 0.5) + (nextWeight * 0.5);
+      group.anchorScore = group.clusterScore + (group.score * 0.01);
     }
 
     const rankedPageGroups = Array.from(pageGroups.entries())
@@ -3908,6 +3935,8 @@ export class ChatPipeline {
               documentId: strongestGroup.docId,
               page: strongestGroup.page,
               anchorScore: Number(strongestGroup.anchorScore.toFixed(3)),
+              clusterScore: Number(strongestGroup.clusterScore.toFixed(3)),
+              rawWeight: strongestGroup.rawWeight,
               baseScore: Number(strongestGroup.score.toFixed(3)),
               chunkCount: strongestGroup.chunks.length,
               marginVsNext: Number(anchorMargin.toFixed(3)),
@@ -3920,6 +3949,8 @@ export class ChatPipeline {
           documentId: group.docId,
           page: group.page,
           anchorScore: Number(group.anchorScore.toFixed(3)),
+          clusterScore: Number(group.clusterScore.toFixed(3)),
+          rawWeight: group.rawWeight,
           baseScore: Number(group.score.toFixed(3)),
           chunkCount: group.chunks.length,
         })),
@@ -4044,6 +4075,8 @@ export class ChatPipeline {
               documentId: strongestGroup.docId,
               page: strongestGroup.page,
               anchorScore: Number(strongestGroup.anchorScore.toFixed(3)),
+              clusterScore: Number(strongestGroup.clusterScore.toFixed(3)),
+              rawWeight: strongestGroup.rawWeight,
               baseScore: Number(strongestGroup.score.toFixed(3)),
               chunkCount: strongestGroup.chunks.length,
               marginVsNext: Number(anchorMargin.toFixed(3)),
@@ -4056,6 +4089,8 @@ export class ChatPipeline {
           documentId: group.docId,
           page: group.page,
           anchorScore: Number(group.anchorScore.toFixed(3)),
+          clusterScore: Number(group.clusterScore.toFixed(3)),
+          rawWeight: group.rawWeight,
           baseScore: Number(group.score.toFixed(3)),
           chunkCount: group.chunks.length,
         })),
@@ -4127,6 +4162,8 @@ export class ChatPipeline {
             documentId: strongestGroup.docId,
             page: strongestGroup.page,
             anchorScore: Number(strongestGroup.anchorScore.toFixed(3)),
+            clusterScore: Number(strongestGroup.clusterScore.toFixed(3)),
+            rawWeight: strongestGroup.rawWeight,
             baseScore: Number(strongestGroup.score.toFixed(3)),
             chunkCount: strongestGroup.chunks.length,
             marginVsNext: Number(anchorMargin.toFixed(3)),
@@ -4139,6 +4176,8 @@ export class ChatPipeline {
         documentId: group.docId,
         page: group.page,
         anchorScore: Number(group.anchorScore.toFixed(3)),
+        clusterScore: Number(group.clusterScore.toFixed(3)),
+        rawWeight: group.rawWeight,
         baseScore: Number(group.score.toFixed(3)),
         chunkCount: group.chunks.length,
       })),
@@ -4548,7 +4587,7 @@ ${normalizedOriginal}
 
       // 5. PERFORM SEARCH USING THE REWRITTEN QUERY
       console.log('[VECTOR SEARCH]', 'Performing hybrid search...');
-      const retrievalChunkCap = 12;
+      const retrievalChunkCap = 40;
 
       let searchResults = await vectorSearchService.searchHybridEnhanced(
         queryEmbedding,
@@ -4612,7 +4651,7 @@ ${normalizedOriginal}
       // Allow up to 6 chunks from the same page cluster (depth over diversity).
       // The old cap of 3 per page was scattering chunks across unrelated pages,
       // wasting the precious 6-chunk budget on irrelevant content.
-      const retrievalPostprocess = postProcessRetrievalResults(searchResults, { maxResults: retrievalChunkCap, maxPerPageCluster: 6, maxPerDocument: 12 });
+      const retrievalPostprocess = postProcessRetrievalResults(searchResults, { maxResults: 16, maxPerPageCluster: 6, maxPerDocument: 12 });
       searchResults = retrievalPostprocess.results;
       retrievalMs = Date.now() - retrievalStartMs;
 

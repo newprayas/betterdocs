@@ -578,11 +578,8 @@ export class VectorSearchService {
       const rankedResults = Array.from(combinedResults.values())
         .sort((a, b) => b.similarity - a.similarity)
         .slice(0, maxResults);
-
-      const pageFirstResults = this.prioritizePageClusters(rankedResults, maxResults, 3, queryText);
-      const postProcessed = postProcessRetrievalResults(pageFirstResults, { maxResults, maxPerPageCluster: 3 });
-      console.log('[RETRIEVAL POSTPROCESS][HYBRID]', postProcessed.telemetry);
-      return postProcessed.results;
+        
+      return rankedResults;
     } catch (error) {
       console.error('Error in hybrid search:', error);
       throw new Error('Failed to perform hybrid search');
@@ -878,10 +875,12 @@ export class VectorSearchService {
         finalVectorWeight,
         finalTextWeight
       );
-      const pageFirstResults = this.prioritizePageClusters(combinedResults, maxResults, 3, queryText);
-      const postProcessed = postProcessRetrievalResults(pageFirstResults, { maxResults, maxPerPageCluster: 3 });
-      console.log('[RETRIEVAL POSTPROCESS][HYBRID_ENHANCED]', postProcessed.telemetry);
-      return postProcessed.results;
+      
+      const rankedResults = Array.from(combinedResults.values())
+        .sort((a, b) => b.similarity - a.similarity)
+        .slice(0, maxResults);
+
+      return rankedResults;
     } catch (error) {
       console.error('Error in enhanced hybrid search:', error);
       throw new Error('Failed to perform enhanced hybrid search');
