@@ -873,6 +873,126 @@ export class ChatPipeline {
     return `What are the medical and surgical treatment options for ${topic}?`;
   }
 
+  /**
+   * Intent-aware query expansion templates.
+   * Maps each detected intent to a verbose retrieval-friendly query shape.
+   * The LLM rewriter only handles pronoun resolution and typo correction;
+   * the template provides the semantic expansion.
+   */
+  private static readonly INTENT_EXPANSION_TEMPLATES: Partial<Record<QueryIntent, string>> = {
+    treatment_rx: 'Conservative (medical) and surgical management of {topic}',
+    clinical_features_history_exam: 'History findings and physical examination findings of {topic}',
+    investigations: 'Initial and confirmatory investigations for {topic}',
+    classification_types: 'Classification, types, subtypes, and diagnostic criteria of {topic}',
+    causes: 'Etiology, causes, and pathogenesis of {topic}',
+    risk_factors: 'Risk factors and predisposing factors for {topic}',
+    complications: 'Disease complications and post-operative complications of {topic}',
+    prognosis: 'Prognosis and factors affecting outcome of {topic}',
+    definition: 'Definition and key characteristics of {topic}',
+    how_to_procedure: 'Step-by-step operative procedure and technique for {topic}',
+    position_location: 'Anatomical position, location, and relations of {topic}',
+    difference_between: 'Differences between {topic}',
+  };
+
+  /**
+   * Builds an intent-expanded query using the template map.
+   * Returns null if intent is generic_fallback or no topic can be extracted.
+   */
+  private buildIntentExpandedQuery(
+    normalizedQuery: string,
+    intent: QueryIntent
+  ): string | null {
+    if (intent === 'generic_fallback') return null;
+
+    const template = ChatPipeline.INTENT_EXPANSION_TEMPLATES[intent];
+    if (!template) return null;
+
+    // Extract the medical topic by stripping intent-related keywords.
+    const topic = this.extractTopicFromQueryForExpansion(normalizedQuery, intent);
+    if (!topic) return null;
+
+    return template.replace('{topic}', topic);
+  }
+
+  /**
+   * Extracts the core medical topic from a query by removing intent keywords.
+   * E.g. "Dx of appendicitis" → "appendicitis"
+   *      "features cholecystitis" → "cholecystitis"
+   *      "Rx appendicitis" → "appendicitis"
+   */
+  private extractTopicFromQueryForExpansion(
+    query: string,
+    intent: QueryIntent
+  ): string | null {
+    let cleaned = (query || '').replace(/[?!.]+$/g, '').replace(/\s+/g, ' ').trim();
+    if (!cleaned) return null;
+
+    // Remove common question prefixes.
+    cleaned = cleaned
+      .replace(/^(?:what\s+(?:are|is)\s+(?:the\s+)?)/i, '')
+      .replace(/^(?:tell\s+me\s+(?:about\s+)?)/i, '')
+      .replace(/^(?:describe\s+(?:the\s+)?)/i, '')
+      .replace(/^(?:explain\s+(?:the\s+)?)/i, '')
+      .replace(/^(?:list\s+(?:the\s+)?)/i, '')
+      .trim();
+
+    // Intent-specific keyword stripping patterns.
+    const intentStripPatterns: Partial<Record<QueryIntent, RegExp[]>> = {
+      treatment_rx: [
+        /\b(?:rx|tx|treatment|management|therapy|medical\s+and\s+surgical\s+treatment|conservative\s+management)\b/gi,
+      ],
+      clinical_features_history_exam: [
+        /\b(?:dx|diagnosis|clinical\s+features?|features?|signs?\s+and\s+symptoms?|history\s+and\s+exam(?:ination)?|examination\s+findings?)\b/gi,
+      ],
+      investigations: [
+        /\b(?:inv|investigations?|workup|diagnostic\s+tests?|evaluation)\b/gi,
+      ],
+      classification_types: [
+        /\b(?:classification|types?|subtypes?|grading|stages?|criteria)\b/gi,
+      ],
+      causes: [
+        /\b(?:causes?|etiology|aetiology|etiopathogenesis|pathogenesis)\b/gi,
+      ],
+      risk_factors: [
+        /\b(?:risk\s+factors?|predisposing\s+factors?|risk)\b/gi,
+      ],
+      complications: [
+        /\b(?:complications?|sequelae|adverse\s+outcomes?)\b/gi,
+      ],
+      prognosis: [
+        /\b(?:prognosis|outcomes?|outlook|course)\b/gi,
+      ],
+      definition: [
+        /\b(?:definition|define|meaning\s+of)\b/gi,
+      ],
+      how_to_procedure: [
+        /\b(?:step(?:s|\s+by\s+step)?|operative\s+steps?|how\s+to|procedure|technique|perform(?:ing)?)\b/gi,
+      ],
+      position_location: [
+        /\b(?:positions?|locations?|anatomical\s+positions?|anatomical\s+locations?|where\s+(?:is|are|does)|located|situated|site)\b/gi,
+      ],
+      difference_between: [
+        /\b(?:difference\s+between|differentiate|distinguish|compare|vs\.?|versus)\b/gi,
+      ],
+    };
+
+    const patterns = intentStripPatterns[intent] || [];
+    for (const pattern of patterns) {
+      cleaned = cleaned.replace(pattern, ' ');
+    }
+
+    // Remove prepositions and articles left behind.
+    cleaned = cleaned
+      .replace(/\b(?:of|for|in|with|about|regarding|between|the|a|an)\b/gi, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    if (!cleaned || cleaned.length < 2) return null;
+
+    // Capitalize first letter.
+    return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+  }
+
   private shouldForceMedicalAndSurgicalTreatmentRewrite(query: string): boolean {
     const normalized = (query || '').toLowerCase().replace(/\s+/g, ' ').trim();
     if (!normalized) return false;
@@ -4067,10 +4187,22 @@ export class ChatPipeline {
         normalizedPreviousAssistantClarifiedQuery || null
       )
       : null;
+    // Detect intent early so we can build a template-expanded query.
+    const earlyIntent = classifyQueryIntent(normalizedOriginal);
+    const templateExpanded = this.buildIntentExpandedQuery(normalizedOriginal, earlyIntent);
+    console.log('[QUERY REWRITER INTENT EXPANSION]', {
+      earlyIntent,
+      templateExpanded: templateExpanded || '(no template — generic_fallback)',
+    });
+
     const rewriterSystemPrompt =
-      'You rewrite medical user input into one high-quality standalone retrieval query. Preserve the user\'s exact intent. Use prior chat context only for clear follow-ups like it, this, that, or its. If the user already names a disease or condition, do not swap it with the prior topic. For short Rx, tx, or treatment queries, rewrite into: "Medical (conservative) and surgical management of <disease>" using the disease from the current query or very clear immediate context. Rewrite naturally and do not invent a new topic. Return strict JSON only.';
+      'You rewrite medical user input into one high-quality standalone retrieval query. Your ONLY jobs are: (1) resolve pronouns like it, this, that, its using the prior chat context, (2) correct spelling and grammar, (3) if a target query shape is provided, use it as-is but substitute the correct topic. Preserve the user\'s exact intent. Do not invent a new topic. Return strict JSON only.';
     const rewriterSystemPromptStrict =
-      'Return STRICT JSON ONLY in this exact schema: {"query":"<standalone medical retrieval query>"}. Preserve the user\'s exact intent. Use prior chat context only for clear follow-ups like it, this, that, or its. If the user already names a disease or condition, do not swap it with the prior topic. For short Rx, tx, or treatment queries, rewrite into: "Medical (conservative) and surgical management of <disease>" using the disease from the current query or very clear immediate context. Rewrite naturally and do not invent a new topic. No markdown, no extra keys, no commentary.';
+      'Return STRICT JSON ONLY in this exact schema: {"query":"<standalone medical retrieval query>"}. Your ONLY jobs are: (1) resolve pronouns using prior context, (2) correct spelling. If a target query shape is provided, return it with the correct topic substituted. No markdown, no extra keys, no commentary.';
+
+    const targetQueryShapeInstruction = templateExpanded
+      ? `\nTarget query shape (use this as the output format, substituting the correct medical topic):\n"${templateExpanded}"\n`
+      : '';
 
     const prompt = `
 Rewrite the latest user query into one standalone retrieval query.
@@ -4078,15 +4210,13 @@ Return STRICT JSON ONLY:
 {"query":"..."}
 
 Goals:
-1) Understand user intent and express it as a clearer, more complete query.
-2) Expand short/fragmented wording into natural phrasing that improves retrieval.
-3) Correct spelling/grammar.
-4) Use the previous context fields only when the latest query is a clear follow-up like it, this, that, or its. If the latest query already names a disease or condition, ignore previous context.
-5) If context is unrelated or absent, rewrite current query standalone without context.
-6) Keep meaning faithful to user intent; do not invent a new topic or change conservative treatment into medical and surgical treatment.
-7) For short Rx, tx, or treatment queries, rewrite into "Medical (conservative) and surgical management of <disease>" using the disease from the current query or very clear immediate context.
-8) Do NOT add investigations, imaging, diagnosis, management, classification, causes, complications, or any other extra facet unless the user explicitly asked for it.
-
+1) Resolve pronouns (it, this, that, its, they) by substituting the correct medical topic from the previous context.
+2) Correct spelling and grammar.
+3) If a target query shape is provided below, use it as the output — just make sure the topic is correct.
+4) Use the previous context fields ONLY when the latest query is a clear follow-up (it, this, that, its). If the latest query already names a disease or condition, ignore previous context.
+5) Do NOT change the intent or add extra facets not present in the target shape.
+6) Do NOT invent a new topic.
+${targetQueryShapeInstruction}
 Immediate Previous User Query:
 ${normalizedPreviousUserQuery || 'None'}
 
@@ -4101,12 +4231,8 @@ ${normalizedOriginal}
 Return STRICT JSON ONLY:
 {"query":"<standalone medical retrieval query>"}
 Do not add markdown, code fences, labels, or extra keys.
-Use ONLY immediate context below when needed.
-Preserve user scope exactly.
-Use prior context only for clear follow-ups like it, this, that, or its. If the latest query already names a disease or condition, ignore previous context.
-Keep the user's exact intent.
-For short Rx, tx, or treatment queries, rewrite into "Medical (conservative) and surgical management of <disease>" using the disease from the current query or very clear immediate context.
-Do not add investigations, imaging, diagnosis, management, classification, causes, or complications unless explicitly requested.
+Resolve pronouns (it, this, that, its) using context. Correct spelling.
+${targetQueryShapeInstruction ? `Use this target shape: "${templateExpanded}" — substitute the correct topic.` : 'Preserve user scope exactly.'}
 
 Immediate Previous User Query:
 ${normalizedPreviousUserQuery || 'None'}
@@ -4184,6 +4310,17 @@ ${normalizedOriginal}
 
       if (!cleanedQuery && contextualFallback) {
         cleanedQuery = contextualFallback;
+      }
+
+      // If LLM rewrite succeeded but template expansion was available,
+      // validate that the rewrite didn't drop the intent expansion.
+      // Fall back to template if the LLM went off-script.
+      if (cleanedQuery && templateExpanded) {
+        const rewriteIntent = classifyQueryIntent(cleanedQuery);
+        if (rewriteIntent !== earlyIntent && earlyIntent !== 'generic_fallback') {
+          console.warn('[QUERY REWRITER]', `LLM rewrite changed intent from ${earlyIntent} to ${rewriteIntent}. Falling back to template expansion.`);
+          cleanedQuery = templateExpanded;
+        }
       }
 
       const rewriterRateLimitNotice = this.extractRateLimitNotice(cleanedQuery);
@@ -4387,11 +4524,15 @@ ${normalizedOriginal}
         return;
       }
 
-      // 4. GENERATE EMBEDDING USING THE REWRITTEN QUERY
+      // 4. GENERATE EMBEDDING USING THE CLEAN STANDALONE QUERY (no decorators)
+      // Context decorators like [Context - related to Bailey Surgery] push the
+      // embedding toward the general textbook rather than the specific section.
+      // Use standaloneQuery for precise vector search; keep retrievalQuery
+      // (with decorators) for text-based reranking only.
       const retrievalStartMs = Date.now();
-      console.log('[EMBEDDING GENERATION]', 'Creating vector embedding for enhanced query...');
-      const queryEmbedding = await embeddingService.generateEmbedding(retrievalQuery);
-      console.log('[EMBEDDING GENERATED]', `Vector created with ${queryEmbedding.length} dimensions`);
+      console.log('[EMBEDDING GENERATION]', 'Creating vector embedding for standalone query (no decorators)...');
+      const queryEmbedding = await embeddingService.generateEmbedding(standaloneQuery);
+      console.log('[EMBEDDING GENERATED]', `Vector created with ${queryEmbedding.length} dimensions (source: standaloneQuery)`);
       const routePrefilter = await this.buildRoutePrefilterPlan(retrievalDocuments, queryEmbedding);
       console.log(
         '[ANSWER ROUTING] companion-prefilter applied=%s docs=%d chunkAllowList=%d',
@@ -4468,7 +4609,10 @@ ${normalizedOriginal}
 
       // Same-page neighborhood expansion: keep nearby chunks from the strongest pages.
       searchResults = this.includeTopChunkAdjacentChunks(searchResults, embeddings, queryEmbedding, retrievalQuery, queryIntent, 0.12, 16, 3, 2);
-      const retrievalPostprocess = postProcessRetrievalResults(searchResults, { maxResults: retrievalChunkCap, maxPerPageCluster: 3 });
+      // Allow up to 6 chunks from the same page cluster (depth over diversity).
+      // The old cap of 3 per page was scattering chunks across unrelated pages,
+      // wasting the precious 6-chunk budget on irrelevant content.
+      const retrievalPostprocess = postProcessRetrievalResults(searchResults, { maxResults: retrievalChunkCap, maxPerPageCluster: 6, maxPerDocument: 12 });
       searchResults = retrievalPostprocess.results;
       retrievalMs = Date.now() - retrievalStartMs;
 
