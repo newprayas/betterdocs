@@ -6,6 +6,7 @@ import {
   type SubscriptionStatus,
   parseSubscriptionStatusPayload,
 } from '@/utils/subscription';
+import { flushPendingTrialUsage } from '@/services/subscriptionUsageTracker';
 
 const COOLDOWN_MS = 5 * 60 * 1000;
 const BUFFER_HOURS = 6;
@@ -108,6 +109,12 @@ export async function checkSubscriptionStatus(
     if (skip && cache) {
       return calculateStatusFromCache(cache);
     }
+  }
+
+  try {
+    await flushPendingTrialUsage();
+  } catch (error) {
+    console.warn('[SUBSCRIPTION] Failed to flush pending trial usage before status check:', error);
   }
 
   const { data, error } = await supabase.rpc('get_subscription_access_status');

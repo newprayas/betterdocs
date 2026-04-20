@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
-import { parseSubscriptionStatusPayload } from '@/utils/subscription';
 
 export const dynamic = 'force-dynamic';
 
@@ -87,26 +86,6 @@ export async function POST(req: NextRequest) {
 
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    const { data: accessPayload, error: accessError } = await supabase.rpc(
-      'get_subscription_access_status',
-    );
-
-    if (accessError) {
-      console.error('[API PROXY] Failed to verify subscription access:', accessError);
-      return NextResponse.json({ error: 'Failed to verify subscription access.' }, { status: 500 });
-    }
-
-    const accessStatus = parseSubscriptionStatusPayload(accessPayload);
-    if (!accessStatus?.hasAccess) {
-      return NextResponse.json(
-        {
-          error: 'Your free questions are finished. Please redeem a subscription code to continue.',
-          status: accessPayload,
-        },
-        { status: 402 },
-      );
     }
 
     const body = (await req.json()) as ProxyRequest;
