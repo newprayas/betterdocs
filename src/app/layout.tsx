@@ -5,7 +5,6 @@ import "../styles/mobile-touch.css";
 import { AppInitializer } from "./AppInitializer";
 import SubscriptionModal from "@/components/SubscriptionModal";
 import { RouteErrorBoundary } from "@/components/common/RouteErrorBoundary";
-import { InstallPrompt } from "@/components/common/InstallPrompt";
 import { ThemeProvider } from "@/components/common/ThemeProvider";
 
 export const metadata: Metadata = {
@@ -69,7 +68,6 @@ export default function RootLayout({
               <GlobalLoadingScreen minDisplayTime={1000} />
               <ServiceWorkerRegister />
               <SubscriptionModal />
-              <InstallPrompt />
               {children}
             </div>
           </RouteErrorBoundary>
