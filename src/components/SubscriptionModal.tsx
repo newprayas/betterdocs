@@ -99,6 +99,9 @@ export default function SubscriptionModal() {
 
   const trialQueryLimit = status?.trialQueryLimit ?? 30;
   const trialQueriesUsed = status?.trialQueriesUsed ?? trialQueryLimit;
+  const telegramSubscriptionLink =
+    'https://t.me/meddyapp?text=' +
+    encodeURIComponent('Can i get 3 months meddy subscription?');
 
   return (
     <Transition.Root show={open} as={Fragment}>
@@ -139,25 +142,34 @@ export default function SubscriptionModal() {
                       ref={titleRef}
                       tabIndex={-1}
                     >
-                      Free questions finished
+                      Hey there!
                     </Dialog.Title>
 
                     <div className="mt-4 space-y-4 text-left">
                       <p className="text-sm sm:text-base text-gray-600 dark:text-gray-300 leading-relaxed">
-                        You have used {trialQueriesUsed} out of {trialQueryLimit} free questions.
-                        To keep using the app, please subscribe or enter your code below.
+                        It's awesome that you have been using the app and we are so happy you love it. We are grateful for your support.
                       </p>
-
                       <p className="text-sm sm:text-base text-gray-600 dark:text-gray-300 leading-relaxed">
-                        Your support helps us pay for hosting, search, and answer generation so
-                        the app can stay online for everyone.
+                        However, to keep this app running we need to pay some bills. Mainly the cost of building this app, monthly server costs to host this website, and API cost to provide your answers.
+                      </p>
+                      <p className="text-sm sm:text-base text-gray-600 dark:text-gray-300 leading-relaxed">
+                        We really wish we could keep this app as a free service, but these costs are unavoidable. We have to pay these companies to run our app, otherwise they will shut it down.
+                      </p>
+                      <p className="text-sm sm:text-base text-gray-600 dark:text-gray-300 leading-relaxed">
+                        Hence if you find this app useful and want it to continue existing, please consider subscribing for a small fee.
                       </p>
 
                       <div className="bg-indigo-50 dark:bg-indigo-900/20 p-4 rounded-xl border border-indigo-100 dark:border-indigo-800/30">
                         <p className="text-sm sm:text-base font-medium text-gray-800 dark:text-gray-200 leading-relaxed text-center">
-                          Simple plans. Manual payment. Instant code redemption.
+                          Prices are less than a cup of coffee a month.
+                          <br />
+                          All the medical knowledge in the world in your pocket.
                         </p>
                       </div>
+
+                      <p className="text-sm sm:text-base text-gray-600 dark:text-gray-300 leading-relaxed">
+                        Without your support we will sadly have to shut this app down for everyone.
+                      </p>
 
                       <p className="text-sm sm:text-base font-medium text-gray-900 dark:text-white text-center mt-6">
                         Choose a plan:
@@ -198,12 +210,48 @@ export default function SubscriptionModal() {
                         ))}
                       </div>
 
+                      <div className="rounded-xl border border-gray-200 dark:border-slate-700 p-4 bg-gray-50 dark:bg-slate-950/40 space-y-4">
+                        <p className="text-sm font-semibold text-gray-900 dark:text-white">
+                          Simple steps:
+                        </p>
+                        <div className="space-y-3">
+                          <div className="rounded-lg bg-white/80 dark:bg-slate-900/70 border border-gray-200 dark:border-slate-800 px-4 py-3">
+                            <p className="text-sm font-medium text-gray-900 dark:text-white">
+                              1. Ask for a code in Telegram with your plan
+                            </p>
+                            <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
+                              Example message: Can i get 3 months meddy subscription?
+                            </p>
+                            <a
+                              href={telegramSubscriptionLink}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="mt-3 inline-flex items-center justify-center rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-indigo-500/20 transition hover:bg-indigo-500"
+                            >
+                              Ask on Telegram
+                            </a>
+                          </div>
+
+                          <div className="rounded-lg bg-white/80 dark:bg-slate-900/70 border border-gray-200 dark:border-slate-800 px-4 py-3">
+                            <p className="text-sm font-medium text-gray-900 dark:text-white">
+                              2. Make payment via Bkash
+                            </p>
+                          </div>
+
+                          <div className="rounded-lg bg-white/80 dark:bg-slate-900/70 border border-gray-200 dark:border-slate-800 px-4 py-3">
+                            <p className="text-sm font-medium text-gray-900 dark:text-white">
+                              3. Enter your code in the app
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
                       <div className="rounded-xl border border-gray-200 dark:border-slate-700 p-4 bg-gray-50 dark:bg-slate-950/40">
                         <label
                           htmlFor="subscription-code"
                           className="block text-sm font-medium text-gray-900 dark:text-white mb-2"
                         >
-                          Already paid? Enter your code
+                          Enter your code
                         </label>
                         <div className="flex flex-col gap-3 sm:flex-row">
                           <input
@@ -240,23 +288,6 @@ export default function SubscriptionModal() {
                   </div>
                 </div>
 
-                <div className="mt-8 flex flex-col gap-3">
-                  <a
-                    href="https://t.me/meddyapp"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex w-full flex-col items-center justify-center rounded-xl bg-gradient-to-r from-indigo-600 to-blue-600 px-4 py-3.5 text-white shadow-lg shadow-indigo-500/25 hover:from-indigo-500 hover:to-blue-500 hover:shadow-indigo-500/40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 transition-all"
-                  >
-                    <span className="text-sm font-medium opacity-90 mb-0.5">
-                      Need a code?
-                    </span>
-                    <span className="text-lg font-bold">Contact us on Telegram</span>
-                  </a>
-                  <p className="text-sm text-center font-normal text-gray-900 dark:text-white mt-2">
-                    After payment, we will send you a code. Enter it here and continue using the
-                    app right away.
-                  </p>
-                </div>
               </Dialog.Panel>
             </Transition.Child>
           </div>
