@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createServerClient, type CookieOptions } from '@supabase/ssr';
+import { createClient } from '@/utils/supabase/server';
+import { parseSubscriptionStatusPayload } from '@/utils/subscription';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,29 +22,6 @@ type ProxyRequest = {
 };
 
 let groqRotationIndex = 0;
-
-function getSupabaseClient(request: NextRequest) {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-  if (!supabaseUrl || !supabaseAnonKey) {
-    return null;
-  }
-
-  return createServerClient(supabaseUrl, supabaseAnonKey, {
-    cookies: {
-      get(name: string) {
-        return request.cookies.get(name)?.value;
-      },
-      set(_name: string, _value: string, _options: CookieOptions) {
-        // Read-only auth check for this route.
-      },
-      remove(_name: string, _options: CookieOptions) {
-        // Read-only auth check for this route.
-      },
-    },
-  });
-}
 
 function loadGroqApiKeys(): string[] {
   const explicitKeys = [
@@ -102,22 +80,32 @@ async function parseGroqError(response: Response): Promise<string> {
 
 export async function POST(req: NextRequest) {
   try {
-    const supabase = getSupabaseClient(req);
-    if (!supabase) {
-      return NextResponse.json(
-        { error: 'Missing Supabase configuration' },
-        { status: 500 }
-      );
-    }
-
+    const supabase = createClient();
     const {
       data: { user },
     } = await supabase.auth.getUser();
 
     if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const { data: accessPayload, error: accessError } = await supabase.rpc(
+      'get_subscription_access_status',
+    );
+
+    if (accessError) {
+      console.error('[API PROXY] Failed to verify subscription access:', accessError);
+      return NextResponse.json({ error: 'Failed to verify subscription access.' }, { status: 500 });
+    }
+
+    const accessStatus = parseSubscriptionStatusPayload(accessPayload);
+    if (!accessStatus?.hasAccess) {
       return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
+        {
+          error: 'Your free questions are finished. Please redeem a subscription code to continue.',
+          status: accessPayload,
+        },
+        { status: 402 },
       );
     }
 
@@ -134,7 +122,7 @@ export async function POST(req: NextRequest) {
     if (groqKeys.length === 0) {
       return NextResponse.json(
         { error: 'Missing Groq API key. Set GROQ_API_1 through GROQ_API_7 in server environment variables.' },
-        { status: 500 }
+        { status: 500 },
       );
     }
 
@@ -166,12 +154,13 @@ export async function POST(req: NextRequest) {
       if (!groqResponse.body) {
         return NextResponse.json(
           { error: 'Streaming response body is not available' },
-          { status: 502 }
+          { status: 502 },
         );
       }
 
       const headers = new Headers();
-      const contentType = groqResponse.headers.get('content-type') || 'text/event-stream; charset=utf-8';
+      const contentType =
+        groqResponse.headers.get('content-type') || 'text/event-stream; charset=utf-8';
       headers.set('content-type', contentType);
       headers.set('cache-control', 'no-cache, no-transform');
       headers.set('x-accel-buffering', 'no');
@@ -193,7 +182,8 @@ export async function POST(req: NextRequest) {
       return new NextResponse(responseText, {
         status: groqResponse.status,
         headers: {
-          'content-type': groqResponse.headers.get('content-type') || 'text/plain; charset=utf-8',
+          'content-type':
+            groqResponse.headers.get('content-type') || 'text/plain; charset=utf-8',
         },
       });
     }
@@ -201,7 +191,7 @@ export async function POST(req: NextRequest) {
     console.error('[API PROXY] Fatal Groq proxy error:', error);
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Failed to proxy Groq request' },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

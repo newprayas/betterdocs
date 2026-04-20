@@ -12,6 +12,11 @@ import { useSessionStore } from './sessionStore';
 import { userIdLogger } from '../utils/userIdDebugLogger';
 import { runOrphanCleanupIfDue } from '../services/orphanCleanupService';
 import type { SessionChatMode } from '@/types';
+import {
+  consumeQueryAccess,
+  notifySubscriptionRefresh,
+} from '@/services/subscriptionActionService';
+import { clearSubscriptionCache } from '@/services/subscriptionCheckService';
 
 const PRELOAD_SESSION_TIMEOUT_MS = 4000;
 const PIPELINE_TIMEOUT_MS = 90000;
@@ -416,6 +421,51 @@ export const useChatStore = create<ChatStore>()(
           const rawSessionMode = get().sessionModeBySession[sessionId] || 'chat';
           const sessionMode: SessionChatMode =
             rawSessionMode === 'ask-drug' ? 'drug' : rawSessionMode;
+
+          try {
+            const accessResult = await consumeQueryAccess();
+            clearSubscriptionCache();
+
+            if (!accessResult.allowed) {
+              notifySubscriptionRefresh();
+              set({
+                error:
+                  accessResult.reason === 'trial_exhausted'
+                    ? 'Your free 30 questions are finished. Please redeem a subscription code to continue.'
+                    : 'You do not have access right now. Please redeem a subscription code to continue.',
+                isStreaming: false,
+                streamingContent: '',
+                streamingCitations: [],
+                isReadingSources: false,
+                progressPercentage: 0,
+                currentProgressStep: '',
+                pipelineStartedAt: null,
+              });
+              userIdLogger.logOperationEnd('ChatStore', operationId, currentUserId);
+              return;
+            }
+          } catch (error) {
+            set({
+              error:
+                error instanceof Error
+                  ? error.message
+                  : 'Failed to verify access before sending your question.',
+              isStreaming: false,
+              streamingContent: '',
+              streamingCitations: [],
+              isReadingSources: false,
+              progressPercentage: 0,
+              currentProgressStep: '',
+              pipelineStartedAt: null,
+            });
+            userIdLogger.logError(
+              'ChatStore.sendMessage.accessCheck',
+              error instanceof Error ? error.message : String(error),
+              currentUserId,
+            );
+            userIdLogger.logOperationEnd('ChatStore', operationId, currentUserId);
+            return;
+          }
 
           if (currentUserId && sessionMode === 'chat') {
             await runOrphanCleanupIfDue(currentUserId);
