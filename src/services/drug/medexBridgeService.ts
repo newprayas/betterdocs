@@ -6,8 +6,8 @@ const MEDEX_HELPER_HOSTS = ['127.0.0.1', 'localhost'];
 const HEALTH_TIMEOUT_MS = 1200;
 const QUERY_TIMEOUT_MS = 30000;
 const MEMORY_CACHE_TTL_MS = 5 * 60 * 1000;
-const PERSISTENT_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
-const MEDEX_CACHE_SCHEMA_VERSION = 'v2';
+const MEDEX_CACHE_SCHEMA_VERSION = 'v3';
+const LOCAL_HELPER_HOSTNAME_SET = new Set(['localhost', '127.0.0.1']);
 
 type CacheEntry = {
   payload: MedexResolvedPayload;
@@ -90,10 +90,6 @@ class MedexBridgeService {
     const record = directRecord || fallbackRecord;
 
     if (!record) return null;
-    if (Date.now() - new Date(record.cachedAt).getTime() > PERSISTENT_CACHE_TTL_MS) {
-      await cacheService.deleteCache(record.id);
-      return null;
-    }
 
     console.log('[MEDEX CACHE] IndexedDB hit', {
       query,
@@ -157,29 +153,14 @@ class MedexBridgeService {
     );
   }
 
-  async queryDrug(query: string, includeAlternate = false): Promise<MedexResolvedPayload> {
-    const trimmedQuery = query.trim();
-    if (!trimmedQuery) {
-      throw new Error('Drug query is empty');
-    }
+  private shouldPreferLocalHelper(): boolean {
+    if (typeof window === 'undefined') return false;
+    return LOCAL_HELPER_HOSTNAME_SET.has(window.location.hostname);
+  }
 
-    const cached = this.getCached(trimmedQuery, includeAlternate);
-    if (cached) return cached;
-
-    const persistentCached = await this.getPersistentCached(trimmedQuery, includeAlternate);
-    if (persistentCached) return persistentCached;
-
-    console.log('[MEDEX CACHE] Miss -> live fetch', {
-      query: trimmedQuery,
-      includeAlternate,
-    });
-
-    const baseUrl = await this.discoverBaseUrl();
-    const url = new URL(`${baseUrl}/query`);
-    url.searchParams.set('q', trimmedQuery);
-    if (includeAlternate) {
-      url.searchParams.set('include_alternate', '1');
-    }
+  private async queryViaServerRoute(query: string): Promise<MedexResolvedPayload> {
+    const url = new URL('/api/medex/query', window.location.origin);
+    url.searchParams.set('q', query);
 
     const response = await withTimeout(
       () =>
@@ -199,7 +180,7 @@ class MedexBridgeService {
       };
       if (errorPayload.code === 'no_exact_match') {
         throw new MedexNoExactMatchError(
-          errorPayload.query || trimmedQuery,
+          errorPayload.query || query,
           Array.isArray(errorPayload.suggestions) ? errorPayload.suggestions : [],
           errorPayload.error || 'No exact MedEx match found',
         );
@@ -208,6 +189,86 @@ class MedexBridgeService {
     }
 
     const payload = raw as MedexResolvedPayload;
+    console.log('[MEDEX SERVER]', 'Route response', {
+      query,
+      cacheStatus: payload.logs?.server_cache_status || 'unknown',
+      searchFetchMs: payload.logs?.search_fetch_ms ?? null,
+      brandFetchMs: payload.logs?.brand_fetch_ms ?? null,
+      alternateFetchMs: payload.logs?.alternate_brands_fetch_ms ?? null,
+      parseMs: payload.logs?.parse_ms ?? null,
+      routeTotalMs: payload.logs?.route_total_ms ?? null,
+    });
+    return payload;
+  }
+
+  async queryDrug(query: string, includeAlternate = false): Promise<MedexResolvedPayload> {
+    const trimmedQuery = query.trim();
+    if (!trimmedQuery) {
+      throw new Error('Drug query is empty');
+    }
+
+    const cached = this.getCached(trimmedQuery, includeAlternate);
+    if (cached) return cached;
+
+    const persistentCached = await this.getPersistentCached(trimmedQuery, includeAlternate);
+    if (persistentCached) return persistentCached;
+
+    console.log('[MEDEX CACHE] Miss -> live fetch', {
+      query: trimmedQuery,
+      includeAlternate,
+    });
+
+    let payload: MedexResolvedPayload;
+    if (this.shouldPreferLocalHelper()) {
+      try {
+        const baseUrl = await this.discoverBaseUrl();
+        const url = new URL(`${baseUrl}/query`);
+        url.searchParams.set('q', trimmedQuery);
+        if (includeAlternate) {
+          url.searchParams.set('include_alternate', '1');
+        }
+
+        const response = await withTimeout(
+          () =>
+            fetch(url.toString(), {
+              method: 'GET',
+            }),
+          QUERY_TIMEOUT_MS,
+        );
+
+        const raw = (await response.json()) as MedexResolvedPayload | { error?: string };
+        if (!response.ok) {
+          const errorPayload = raw as {
+            error?: string;
+            code?: string;
+            query?: string;
+            suggestions?: string[];
+          };
+          if (errorPayload.code === 'no_exact_match') {
+            throw new MedexNoExactMatchError(
+              errorPayload.query || trimmedQuery,
+              Array.isArray(errorPayload.suggestions) ? errorPayload.suggestions : [],
+              errorPayload.error || 'No exact MedEx match found',
+            );
+          }
+          throw new Error(errorPayload.error || 'MedEx query failed');
+        }
+
+        payload = raw as MedexResolvedPayload;
+      } catch (error) {
+        if (isMedexHelperUnavailableError(error)) {
+          console.warn('[MEDEX BRIDGE] Local helper unavailable, falling back to server route', {
+            query: trimmedQuery,
+          });
+          payload = await this.queryViaServerRoute(trimmedQuery);
+        } else {
+          throw error;
+        }
+      }
+    } else {
+      payload = await this.queryViaServerRoute(trimmedQuery);
+    }
+
     this.setCached(trimmedQuery, includeAlternate, payload);
     await this.setPersistentCached(trimmedQuery, includeAlternate, payload);
     console.log('[MEDEX CACHE] Saved', {

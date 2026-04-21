@@ -250,6 +250,10 @@ export interface MedexResolvedPayload {
     brand_fetch_ms?: number;
     total_ms?: number;
     alternate_brands_fetch_ms?: number;
+    parse_ms?: number;
+    route_total_ms?: number;
+    source?: 'local_helper' | 'server';
+    server_cache_status?: 'hit' | 'miss';
     http_status?: Record<string, number>;
   };
 }

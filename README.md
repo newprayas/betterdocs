@@ -128,7 +128,34 @@ npm run start        # Start production server
 npm run lint         # Run ESLint
 npm run type-check   # Type checking only
 npm run format       # Format code with Prettier
+npm run medex-helper # Local MedEx helper for desktop development only
 ```
+
+## MedEx Production Setup
+
+### Production behavior
+
+- Production web and mobile web now use the server route:
+  - `/api/medex/query`
+- Local desktop development can still use:
+  - `npm run medex-helper`
+- Common MedEx drug results can be shared across users with Vercel KV cache
+
+### Environment variables
+
+- Add these to Vercel if you want persistent shared MedEx cache:
+  - `KV_REST_API_URL`
+  - `KV_REST_API_TOKEN`
+- Fallback Upstash variable names are also supported:
+  - `UPSTASH_REDIS_REST_URL`
+  - `UPSTASH_REDIS_REST_TOKEN`
+
+### Cache behavior
+
+- The app stores the final parsed MedEx payload
+- Cache is intended to stay indefinitely
+- Raw MedEx HTML is not stored
+- If KV is not configured, the route still works, but responses are uncached
 
 ## Browser Support
 
