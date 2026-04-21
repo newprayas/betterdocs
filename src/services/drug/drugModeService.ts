@@ -7,7 +7,11 @@ import {
   buildDrugAudienceLinkLabel,
   decorateIndicationLinks,
 } from './drugActionLinks';
-import { isMedexHelperUnavailableError, medexBridgeService } from './medexBridgeService';
+import {
+  isMedexHelperUnavailableError,
+  isMedexNoExactMatchError,
+  medexBridgeService,
+} from './medexBridgeService';
 import { formatMedexBrandsAnswer, formatMedexDoseAnswer } from './medexFormatService';
 import type {
   AskDrugIndicationsAndDoseStructured,
@@ -2622,15 +2626,23 @@ Rules:
     console.log('[DRUG PARSER PROMPT][SYSTEM]', systemPrompt);
     console.log('[DRUG PARSER PROMPT][USER]', content);
 
-    const raw = await groqService.generateResponseWithGroq(
-      content,
-      systemPrompt,
-      DRUG_MODE_MODEL,
-      {
-        temperature: 0,
-        maxTokens: 700,
-      },
-    );
+    let raw = '';
+    try {
+      raw = await groqService.generateResponseWithGroq(
+        content,
+        systemPrompt,
+        DRUG_MODE_MODEL,
+        {
+          temperature: 0,
+          maxTokens: 700,
+        },
+      );
+    } catch (error) {
+      console.warn('[DRUG PARSER]', 'Groq parser unavailable, using local fallback', {
+        query: content,
+        error,
+      });
+    }
 
     console.log('[DRUG PARSER]', 'Raw parser output', raw);
 
@@ -3935,10 +3947,10 @@ Rules:
   ): string {
     const unmatched = parsed.drug_name.trim() || inferDrugNameFromRawQuery(content) || content;
     if (suggestions.length === 0) {
-      return `I could not find a matching drug entry for: ${unmatched}. Please check the spelling or ask with the exact generic or brand name.`;
+      return `I could not find any drug named **${unmatched}**.\n\nPlease check the spelling and try again.`;
     }
 
-    return `I could not find a matching drug entry for: ${unmatched}. Did you mean: ${suggestions.join(', ')}?`;
+    return `I could not find any drug named **${unmatched}**.\n\nDid you mean?`;
   }
 
   buildNoBrandEntryMessage(entry: DrugEntry): string {
@@ -4061,6 +4073,30 @@ Rules:
           });
           return;
         } catch (error) {
+          if (isMedexNoExactMatchError(error)) {
+            const noMatchMessage = this.buildNoMatchMessage(
+              content,
+              {
+                drug_name: error.queryName,
+                requested_indication: parsed.requested_indication,
+                confidence: parsed.confidence,
+              },
+              error.suggestions,
+            );
+            if (error.suggestions.length > 0) {
+              onStreamEvent?.({
+                type: 'suggestions',
+                suggestions: error.suggestions,
+              });
+            }
+            await this.saveAssistantMessage(sessionId, noMatchMessage);
+            onStreamEvent?.({
+              type: 'done',
+              content: noMatchMessage,
+            });
+            return;
+          }
+
           if (!isMedexHelperUnavailableError(error)) {
             throw error;
           }

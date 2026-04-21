@@ -29,6 +29,51 @@ import type { Document, SessionChatMode } from "../../../types";
 import { useAuthGuard } from "@/hooks/useAuthGuard";
 import { isDrugOnlySession } from "@/utils/sessionType";
 
+const DRUG_ACTION_PILLS = [
+  "Dose",
+  "Brands",
+  "ADR",
+  "Contraindication",
+  "Breastfeeding",
+] as const;
+
+const normalizePhraseValue = (value: string): string => value.trim().toLowerCase();
+
+const buildDrugActionPillQuery = (pillLabel: string, drugName: string): string => {
+  const normalized = normalizePhraseValue(pillLabel);
+  if (normalized === "dose") return drugName ? `dose of ${drugName}` : "dose of ";
+  if (normalized === "brands") return drugName ? `brands of ${drugName}` : "brands of ";
+  if (normalized === "adr") return drugName ? `side effects of ${drugName}` : "side effects of ";
+  if (normalized === "contraindication") {
+    return drugName ? `contraindication of ${drugName}` : "contraindication of ";
+  }
+  if (normalized === "breastfeeding") {
+    return drugName ? `breastfeeding for ${drugName}` : "breastfeeding for ";
+  }
+  return pillLabel;
+};
+
+const buildDrugSuggestionFollowUpQuery = (
+  latestUserQuery: string,
+  suggestedDrugName: string,
+): string => {
+  const normalized = normalizePhraseValue(latestUserQuery);
+  if (!normalized) return suggestedDrugName;
+
+  if (/\bbrands?\b/.test(normalized)) return `brands of ${suggestedDrugName}`;
+  if (/\b(adr|side[\s-]?effects?|adverse\s+effects?|adverse\s+reactions?)\b/.test(normalized)) {
+    return `side effects of ${suggestedDrugName}`;
+  }
+  if (/\bcontra[\w-]*\b/.test(normalized)) return `contraindication of ${suggestedDrugName}`;
+  if (/\bbreast[\s-]?feeding\b/.test(normalized)) return `breastfeeding for ${suggestedDrugName}`;
+  if (/\bpregnan\w*\b/.test(normalized)) return `pregnancy for ${suggestedDrugName}`;
+  if (/\binteractions?\b/.test(normalized)) return `interactions of ${suggestedDrugName}`;
+  if (/\bindications?\b/.test(normalized)) return `indications of ${suggestedDrugName}`;
+  if (/\b(dose|dosage|schedule|regimen|how much)\b/.test(normalized)) return `dose of ${suggestedDrugName}`;
+
+  return suggestedDrugName;
+};
+
 const getDocumentDisplayName = (document: Document): string => {
   if (document.originalPath?.startsWith("library:")) {
     const libraryBookId = document.originalPath.slice("library:".length);
@@ -121,6 +166,7 @@ export default function SessionPage() {
     loadMessages,
     sessionModeBySession,
     drugSuggestionsBySession,
+    drugContextBySession,
     setSessionModeForSession,
   } = useChatStore();
 
@@ -160,11 +206,22 @@ export default function SessionPage() {
   const isDrugModeEnabled = sessionMode === "drug";
   const isDatasetModeEnabled = sessionMode !== "chat";
   const drugSuggestionPhrases = drugSuggestionsBySession[sessionId] || [];
-  const shouldShowPhrasePills =
-    !isDatasetModeEnabled || drugSuggestionPhrases.length > 0;
+  const lastDrugContextName = drugContextBySession[sessionId]?.lastDrugName || "";
+  const latestUserMessageForSession = useMemo(
+    () =>
+      [...messages]
+        .reverse()
+        .find((message) => message.sessionId === sessionId && message.role === "user")
+        ?.content || "",
+    [messages, sessionId],
+  );
   const visiblePhrasePhrases = isDatasetModeEnabled
-    ? drugSuggestionPhrases
+    ? drugSuggestionPhrases.length > 0
+      ? drugSuggestionPhrases
+      : [...DRUG_ACTION_PILLS]
     : undefined;
+  const shouldShowPhrasePills =
+    !isDatasetModeEnabled || (visiblePhrasePhrases?.length ?? 0) > 0;
   const modeLabel =
     isDrugOnlySessionMode ? "Drug mode only" : sessionMode === "drug" ? "Drugs" : "Chat Mode";
   const readyTitle =
@@ -497,8 +554,11 @@ export default function SessionPage() {
   };
 
   const handlePhraseSelect = useCallback((phrase: string) => {
-    if (isDatasetModeEnabled && drugSuggestionPhrases.includes(phrase)) {
-      messageInputControllerRef.current?.setValue(`${phrase} `);
+    if (isDatasetModeEnabled) {
+      const nextValue = drugSuggestionPhrases.includes(phrase)
+        ? buildDrugSuggestionFollowUpQuery(latestUserMessageForSession, phrase)
+        : buildDrugActionPillQuery(phrase, lastDrugContextName);
+      messageInputControllerRef.current?.setValue(nextValue);
       requestAnimationFrame(() => {
         messageInputControllerRef.current?.focusToEnd();
       });
@@ -514,7 +574,7 @@ export default function SessionPage() {
       messageInputControllerRef.current?.setValue(nextValue);
       messageInputControllerRef.current?.focusToEnd();
     });
-  }, [drugSuggestionPhrases, isDatasetModeEnabled]);
+  }, [drugSuggestionPhrases, isDatasetModeEnabled, lastDrugContextName, latestUserMessageForSession]);
 
   useEffect(() => {
     messageInputControllerRef.current?.clear();

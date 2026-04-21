@@ -13,6 +13,19 @@ type CacheEntry = {
   cachedAt: number;
 };
 
+export class MedexNoExactMatchError extends Error {
+  queryName: string;
+
+  suggestions: string[];
+
+  constructor(queryName: string, suggestions: string[], message?: string) {
+    super(message || `No exact MedEx result found for '${queryName}'`);
+    this.name = 'MedexNoExactMatchError';
+    this.queryName = queryName;
+    this.suggestions = suggestions;
+  }
+}
+
 const withTimeout = async <T>(promiseFactory: () => Promise<T>, timeoutMs: number): Promise<T> => {
   let timer = 0;
   try {
@@ -177,7 +190,20 @@ class MedexBridgeService {
 
     const raw = (await response.json()) as MedexResolvedPayload | { error?: string };
     if (!response.ok) {
-      throw new Error((raw as { error?: string }).error || 'MedEx query failed');
+      const errorPayload = raw as {
+        error?: string;
+        code?: string;
+        query?: string;
+        suggestions?: string[];
+      };
+      if (errorPayload.code === 'no_exact_match') {
+        throw new MedexNoExactMatchError(
+          errorPayload.query || trimmedQuery,
+          Array.isArray(errorPayload.suggestions) ? errorPayload.suggestions : [],
+          errorPayload.error || 'No exact MedEx match found',
+        );
+      }
+      throw new Error(errorPayload.error || 'MedEx query failed');
     }
 
     const payload = raw as MedexResolvedPayload;
@@ -196,3 +222,6 @@ export const medexBridgeService = new MedexBridgeService();
 export const isMedexHelperUnavailableError = (error: unknown): boolean =>
   error instanceof Error &&
   /MedEx local helper is not running/i.test(error.message);
+
+export const isMedexNoExactMatchError = (error: unknown): error is MedexNoExactMatchError =>
+  error instanceof MedexNoExactMatchError;

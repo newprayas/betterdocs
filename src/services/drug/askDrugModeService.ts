@@ -3,7 +3,11 @@ import { getIndexedDBServices } from '@/services/indexedDB';
 import { libraryService } from '@/services/libraryService';
 import { drugModeService } from './drugModeService';
 import { decorateIndicationLinks, shouldDecorateIndicationLinksForQuery } from './drugActionLinks';
-import { isMedexHelperUnavailableError, medexBridgeService } from './medexBridgeService';
+import {
+  isMedexHelperUnavailableError,
+  isMedexNoExactMatchError,
+  medexBridgeService,
+} from './medexBridgeService';
 import { formatMedexSectionAnswer } from './medexFormatService';
 import type {
   AskDrugBroadMatch,
@@ -2421,9 +2425,9 @@ ${JSON.stringify(promptContext, null, 2)}`;
       return 'I could not find matching drugs in the ask-drug dataset for that request.';
     }
     if (suggestions.length === 0) {
-      return `I could not find a matching drug entry for: ${unmatched}. Please check the spelling or use the exact generic name.`;
+      return `I could not find any drug named **${unmatched}**.\n\nPlease check the spelling and try again.`;
     }
-    return `I could not find a matching drug entry for: ${unmatched}. Did you mean: ${suggestions.join(', ')}?`;
+    return `I could not find any drug named **${unmatched}**.\n\nDid you mean?`;
   }
 
   private async saveAssistantMessage(sessionId: string, content: string): Promise<void> {
@@ -2501,6 +2505,22 @@ ${JSON.stringify(promptContext, null, 2)}`;
           onStreamEvent?.({ type: 'done', content: medexAnswer });
           return;
         } catch (error) {
+          if (isMedexNoExactMatchError(error)) {
+            const noMatchMessage = this.buildNoMatchMessage(
+              {
+                ...parsed,
+                drug_name: error.queryName,
+              },
+              error.suggestions,
+            );
+            if (error.suggestions.length > 0) {
+              onStreamEvent?.({ type: 'suggestions', suggestions: error.suggestions });
+            }
+            await this.saveAssistantMessage(sessionId, noMatchMessage);
+            onStreamEvent?.({ type: 'done', content: noMatchMessage });
+            return;
+          }
+
           if (!isMedexHelperUnavailableError(error)) {
             throw error;
           }

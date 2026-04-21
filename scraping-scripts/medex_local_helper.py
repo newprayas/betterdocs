@@ -58,6 +58,13 @@ PREFERRED_DOSAGE_FORMS = [
 ]
 
 
+class MedexSuggestionLookupError(LookupError):
+    def __init__(self, query: str, suggestions: list[str]) -> None:
+        self.query = query
+        self.suggestions = suggestions
+        super().__init__(f"No exact MedEx result found for '{query}'")
+
+
 def normalize_company(text: str | None) -> str:
     return clean(text or "") or ""
 
@@ -107,6 +114,24 @@ def pick_preferred(items: list[dict[str, Any]]) -> dict[str, Any] | None:
     return ranked[0]
 
 
+def build_result_suggestions(results: list[dict[str, Any]], limit: int = 8) -> list[str]:
+    suggestions: list[str] = []
+    seen: set[str] = set()
+
+    for item in results:
+        raw_title = item.get("title") or ""
+        suggestion = display_brand_name(raw_title) or clean(raw_title) or ""
+        normalized = normalize_choice_text(suggestion)
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        suggestions.append(suggestion)
+        if len(suggestions) >= limit:
+            break
+
+    return suggestions
+
+
 def resolve_selected_result(results: list[dict[str, Any]], query: str) -> tuple[dict[str, Any], str]:
     if not results:
         raise LookupError("No MedEx results found")
@@ -142,17 +167,8 @@ def resolve_selected_result(results: list[dict[str, Any]], query: str) -> tuple[
     if exact_generic_matches:
         return exact_generic_matches[0], "generic"
 
-    if len(generic_results) == 1:
-        return generic_results[0], "generic"
-
-    if generic_results:
-        return generic_results[0], "generic"
-
-    if brand_results:
-        selected = pick_preferred(brand_results) or brand_results[0]
-        return selected, "brand"
-
-    return results[0], str(results[0].get("kind") or "brand")
+    suggestions = build_result_suggestions(results)
+    raise MedexSuggestionLookupError(query, suggestions)
 
 
 def build_payload(query: str, include_alternate: bool = False) -> dict[str, Any]:
@@ -271,6 +287,18 @@ class MedexLocalHandler(BaseHTTPRequestHandler):
             self._set_headers(200)
             self.wfile.write(
                 json.dumps(payload, ensure_ascii=False).encode("utf-8")
+            )
+        except MedexSuggestionLookupError as error:
+            self._set_headers(404)
+            self.wfile.write(
+                json.dumps(
+                    {
+                        "error": str(error),
+                        "code": "no_exact_match",
+                        "query": error.query,
+                        "suggestions": error.suggestions,
+                    }
+                ).encode("utf-8")
             )
         except LookupError as error:
             self._set_headers(404)
