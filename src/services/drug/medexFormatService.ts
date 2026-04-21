@@ -549,6 +549,21 @@ type AlternateBrandDisplayRow = {
   price: string;
 };
 
+const pickPreferredCompanies = (
+  rows: AlternateBrandDisplayRow[],
+  limit = 4,
+): string[] => {
+  const rankedCompanies = [...new Set(rows.map((row) => row.company).filter(Boolean))].sort(
+    (left, right) => {
+      const companyDelta = companyPriority(left) - companyPriority(right);
+      if (companyDelta !== 0) return companyDelta;
+      return left.localeCompare(right);
+    },
+  );
+
+  return rankedCompanies.slice(0, limit);
+};
+
 const buildAlternateBrandRows = (rows: MedexAlternateBrandRow[]): AlternateBrandDisplayRow[] => {
   const seen = new Set<string>();
   const result: AlternateBrandDisplayRow[] = [];
@@ -723,8 +738,9 @@ export const formatMedexBrandsAnswer = (
           })),
         }));
 
+  const filteredCompanies = pickPreferredCompanies(buildAlternateBrandRows(rows), 4);
   const grouped = new Map<string, AlternateBrandDisplayRow[]>();
-  for (const row of buildAlternateBrandRows(rows)) {
+  for (const row of buildAlternateBrandRows(rows).filter((item) => filteredCompanies.includes(item.company))) {
     const bucket = grouped.get(row.dosageForm) || [];
     bucket.push(row);
     grouped.set(row.dosageForm, bucket);
@@ -732,14 +748,30 @@ export const formatMedexBrandsAnswer = (
 
   const lines = [`## ${displayTitle}`, '', `### ${sectionHeading('Other brands')}`, ''];
   for (const [dosageForm, items] of [...grouped.entries()].sort((left, right) => formulationPriority(left[0]) - formulationPriority(right[0]))) {
-    lines.push(`**${dosageForm}**`);
-    for (const item of items) {
-      lines.push(`- ${item.brandName}${item.strength ? ` ${item.strength}` : ''} - ${item.company}`.trim());
-      if (item.price) {
-        lines.push(`- Price: ${simplifyPriceText(item.price)}`);
-      }
-    }
+    lines.push(`🎉 *${dosageForm.toUpperCase()}*`);
     lines.push('');
+
+    const companyGroups = new Map<string, AlternateBrandDisplayRow[]>();
+    for (const item of items) {
+      const bucket = companyGroups.get(item.company) || [];
+      bucket.push(item);
+      companyGroups.set(item.company, bucket);
+    }
+
+    for (const [company, companyItems] of [...companyGroups.entries()].sort((left, right) => {
+      const companyDelta = companyPriority(left[0]) - companyPriority(right[0]);
+      if (companyDelta !== 0) return companyDelta;
+      return left[0].localeCompare(right[0]);
+    })) {
+      lines.push(`- **${company}**`);
+      for (const item of companyItems) {
+        const price = simplifyPriceText(item.price);
+        lines.push(
+          `    - ${item.brandName}${item.strength ? ` ${item.strength}` : ''}${price ? ` [${price}]` : ''}`,
+        );
+      }
+      lines.push('');
+    }
   }
 
   while (lines.length > 0 && lines[lines.length - 1] === '') {
