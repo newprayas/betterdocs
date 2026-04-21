@@ -7,6 +7,7 @@ const HEALTH_TIMEOUT_MS = 1200;
 const QUERY_TIMEOUT_MS = 30000;
 const MEMORY_CACHE_TTL_MS = 5 * 60 * 1000;
 const PERSISTENT_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const MEDEX_CACHE_SCHEMA_VERSION = 'v2';
 
 type CacheEntry = {
   payload: MedexResolvedPayload;
@@ -48,7 +49,7 @@ class MedexBridgeService {
   private cache = new Map<string, CacheEntry>();
 
   private getQueryKey(query: string, includeAlternate: boolean): string {
-    return `${query.trim().toLowerCase()}::${includeAlternate ? 'alt' : 'base'}`;
+    return `${MEDEX_CACHE_SCHEMA_VERSION}::${query.trim().toLowerCase()}::${includeAlternate ? 'alt' : 'base'}`;
   }
 
   private getCached(query: string, includeAlternate: boolean): MedexResolvedPayload | null {

@@ -222,8 +222,7 @@ export default function SessionPage() {
     : undefined;
   const shouldShowPhrasePills =
     !isDatasetModeEnabled || (visiblePhrasePhrases?.length ?? 0) > 0;
-  const modeLabel =
-    isDrugOnlySessionMode ? "Drug mode only" : sessionMode === "drug" ? "Drugs" : "Chat Mode";
+  const modeLabel = sessionMode === "drug" ? "Drugs" : "Chat Mode";
   const readyTitle =
     isDrugOnlySessionMode ? "Drug mode is ready" : sessionMode === "drug" ? "Drugs mode is ready" : "Start a conversation";
   const readyDescription =
@@ -950,24 +949,18 @@ export default function SessionPage() {
                 <div className="relative flex-shrink-0 mt-4 max-w-4xl mx-auto w-full">
                   {!isReadingSources && (
                     <div className="absolute bottom-full right-2 mb-2 z-20 flex items-center gap-2">
-                      {isDrugOnlySessionMode ? (
-                        <div className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-700 shadow-sm dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300 sm:text-sm">
-                          <span>Drug mode only</span>
-                        </div>
-                      ) : (
-                        <div className="inline-flex items-center gap-2 rounded-full border border-gray-300 bg-white px-3 py-2 text-xs font-medium text-gray-700 shadow-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 sm:text-sm">
-                          <span>{isPreparingDrugDataset ? "Preparing..." : "Drugs"}</span>
-                          <Switch
-                            checked={isDrugModeEnabled}
-                            onCheckedChange={() => {
-                              void handleDrugModeToggle();
-                            }}
-                            disabled={isPreparingDrugDataset}
-                            size="sm"
-                            aria-label="Toggle drugs mode"
-                          />
-                        </div>
-                      )}
+                      <div className="inline-flex items-center gap-2 rounded-full border border-gray-300 bg-white px-3 py-2 text-xs font-medium text-gray-700 shadow-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 sm:text-sm">
+                        <span>{isPreparingDrugDataset ? "Preparing..." : "Drugs"}</span>
+                        <Switch
+                          checked={isDrugModeEnabled}
+                          onCheckedChange={() => {
+                            void handleDrugModeToggle();
+                          }}
+                          disabled={isPreparingDrugDataset}
+                          size="sm"
+                          aria-label="Toggle drugs mode"
+                        />
+                      </div>
                       {!isDatasetModeEnabled && !isDrugOnlySessionMode && (
                         <button
                           type="button"
@@ -1043,24 +1036,18 @@ export default function SessionPage() {
                 <div className="relative flex-shrink-0 mt-4 max-w-4xl mx-auto w-full">
                   {!isReadingSources && (
                     <div className="absolute bottom-full right-2 mb-2 z-20 flex items-center gap-2">
-                      {isDrugOnlySessionMode ? (
-                        <div className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-700 shadow-sm dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300 sm:text-sm">
-                          <span>Drug mode only</span>
-                        </div>
-                      ) : (
-                        <div className="inline-flex items-center gap-2 rounded-full border border-gray-300 bg-white px-3 py-2 text-xs font-medium text-gray-700 shadow-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 sm:text-sm">
-                          <span>{isPreparingDrugDataset ? "Preparing..." : "Drugs"}</span>
-                          <Switch
-                            checked={isDrugModeEnabled}
-                            onCheckedChange={() => {
-                              void handleDrugModeToggle();
-                            }}
-                            disabled={isPreparingDrugDataset}
-                            size="sm"
-                            aria-label="Toggle drugs mode"
-                          />
-                        </div>
-                      )}
+                      <div className="inline-flex items-center gap-2 rounded-full border border-gray-300 bg-white px-3 py-2 text-xs font-medium text-gray-700 shadow-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 sm:text-sm">
+                        <span>{isPreparingDrugDataset ? "Preparing..." : "Drugs"}</span>
+                        <Switch
+                          checked={isDrugModeEnabled}
+                          onCheckedChange={() => {
+                            void handleDrugModeToggle();
+                          }}
+                          disabled={isPreparingDrugDataset}
+                          size="sm"
+                          aria-label="Toggle drugs mode"
+                        />
+                      </div>
                       {!isDatasetModeEnabled && !isDrugOnlySessionMode && (
                         <button
                           type="button"
