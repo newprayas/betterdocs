@@ -1,0 +1,4469 @@
+{
+  "query": "pantonix",
+  "resolved_query": "pantonix",
+  "selected_kind": "brand",
+  "search_url": "https://medex.com.bd/search?search=pantonix",
+  "search_result_count_estimate": 3,
+  "selected_result_title": "Pantonix 20 mg (Tablet)",
+  "selected_result_url": "https://medex.com.bd/brands/2199/pantonix-20-mg-tablet",
+  "summary_above_indications": {
+    "display_name": "Pantonix Tablet (Enteric Coated)",
+    "dosage_form": "Tablet (Enteric Coated)",
+    "generic_name": "Pantoprazole Sodium",
+    "manufacturer": "Incepta Pharmaceuticals Ltd.",
+    "strength": "20 mg",
+    "unit_price_bdt": "৳ 7.00",
+    "strip_price_bdt": "৳ 98.00",
+    "pricing": {
+      "unit_price_bdt": "৳ 7.00",
+      "strip_price_bdt": "৳ 98.00",
+      "packages": [
+        {
+          "label": "Unit Price",
+          "price_kind": "unit_price",
+          "price_text": "৳ 7.00",
+          "price_bdt": "7.00",
+          "pack_size_info": "(7 x 14: ৳ 686.00)"
+        }
+      ]
+    },
+    "available_as": [
+      "40 mg (Tablet)",
+      "40 mg/vial (Injection)"
+    ]
+  },
+  "sections": {
+    "description": null,
+    "indications": "Pantonix is indicated where suppression of acid secretion has therapeutic benefit; i.e\nPeptic ulcer diseases\nGastroesophageal reflux diseases\nUlcer induced by non-steroidal anti-inflammatory drugs (NSAIDs)\nEradication of Helicobacter pylori (in combination with antibiotics)\nZollinger-Ellison Syndrome",
+    "pharmacology": "Pantoprazole is a proton pump inhibitor that suppresses the final step in gastric acid production by covalently binding to the H+/K+ATPase enzyme system at the surface of the gastric parietal cell. This effect leads to inhibition of both basal and stimulated gastric acid secretion, irrespective of the stimulus that persists longer than 24 hours.",
+    "dosage_and_administration": "Oral:\nBenign gastric ulcer: 40 mg daily in the morning for 4 weeks, continued for further 4 weeks, if not fully healed.\nGastro-esophageal reflux disease: 20-40 mg daily in the morning for 4 weeks, continued for further 4 weeks, if not fully healed; maintenance dose is 20 mg daily, which may be increased to 40 mg daily.\nDuodenal ulcer: 40 mg daily in the morning for 2 weeks, continued for further 2 weeks if not fully healed.\nDuodenal ulcer associated with Helicobacter pylori: Pantoprazole is recommended at a dose of 40 mg twice daily in association with antimicrobial agents as detailed below: Amoxycillin 1 g and Clarithromycin 500 mg both twice daily for one week, or Clarithromycin 250 mg and Metronidazole 400 mg both twice daily for one week.\nProphylaxis of NSAID-associated gastric or duodenal ulcer: 20 mg daily for those require long-term NSAID treatment.\nZollinger-Ellison Syndrome: Initially 80 mg once daily adjusted according to response (elderly max. 40 mg daily); daily doses above 80 mg given in 2 divided doses.\nIV Injection:\nDuodenal ulcer and gastric ulcer: 40 mg once daily for 7-10 days\nGastroesophageal reflux disease associated with a history of erosive esophagitis: 40 mg once daily for 7-10 days\nPrevention of rebleeding in peptic ulcer: IV 80 mg, followed by 8 mg/hour infusion for 72 hours\nProphylaxis of acid aspiration: 80 mg IV every 12 h for 24 h, followed by 40mg every 12 hour\nLong-term management of Zollinger-Ellison Syndrome and other pathological hypersecretory conditions: 80 mg IV every 12 hours, may increase to 80 mg every 8 hours if needed, may titrate to higher doses depending on acid output.",
+    "interaction": "No significant drug interactions have been observed in clinical studies.",
+    "contraindications": "Pantoprazole is contraindicated in patients with known hypersensitivity to any of the components of the formulation.",
+    "side_effects": "Pantonix is well tolerated in both short-term and long-term treatment. Headache and diarrhea are the common side effects and rarely included side effects are abdominal pain, flatulence, rash, insomnia and hyperglycemia.",
+    "pregnancy_and_lactation": "US FDA Pregnancy Category of Pantoprazole is B. There are, however, no adequate and well-controlled studies in pregnant woman. Because animal reproduction studies are not always predictive of human response, this drug should be used during pregnancy only if clearly needed. Pantoprazole has been shown to be excreted in human milk. So, a decision should be made whether to discontinue nursing or to discontinue the drug, taking into account the benefit of the drug to the mother.",
+    "precautions_and_warnings": "Patients should be cautioned that Pantonix tablet should not be split, chewed or crushed. Long-term therapy of Pantonix may lead to malabsorption of cyanocobalamin (Vitamin B12) or may increase the risk of osteoporosis related disorders.",
+    "overdose_effects": "There are no known symptoms of overdosage in humans. Since Pantonix is highly protein bound, it is not readily dialyzable. Apart from symptomatic and supportive management, no specific therapy is recommended."
+  },
+  "available_brand_names": [],
+  "logs": {
+    "search_fetch_ms": 797.9,
+    "brand_fetch_ms": 442.6,
+    "total_ms": 1257.5,
+    "search_attempts": [
+      {
+        "query": "pantonix",
+        "search_url": "https://medex.com.bd/search?search=pantonix",
+        "search_result_count_estimate": 3,
+        "search_fetch_ms": 797.9,
+        "http_status": 200
+      }
+    ],
+    "http_status": {
+      "search": 200,
+      "brand": 200
+    },
+    "alternate_brands_fetch_ms": 485.9
+  },
+  "alternate_brands": {
+    "source_url": "https://medex.com.bd/generics/859/pantoprazole-sodium/brand-names",
+    "page_title": "Pantoprazole Sodium",
+    "rows": [
+      {
+        "brand_name": "AUP",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "20 mg",
+        "company": "Decent Pharma Laboratories Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2139/aup-20-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "3.00",
+        "pack_size_info": "(30's pack: ৳ 90.00)",
+        "price_text": "Unit Price: ৳ 3.00 (30's pack: ৳ 90.00)"
+      },
+      {
+        "brand_name": "AUP",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "40 mg",
+        "company": "Decent Pharma Laboratories Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2140/aup-40-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "5.00",
+        "pack_size_info": "(30's pack: ৳ 150.00)",
+        "price_text": "Unit Price: ৳ 5.00 (30's pack: ৳ 150.00)"
+      },
+      {
+        "brand_name": "Cospra",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "20 mg",
+        "company": "Cosmo Pharma Laboratories Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2141/cospra-20-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "4.00",
+        "pack_size_info": "(10 x 10: ৳ 400.00)",
+        "price_text": "Unit Price: ৳ 4.00 (10 x 10: ৳ 400.00)"
+      },
+      {
+        "brand_name": "Detonix",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "20 mg",
+        "company": "Desh Pharmaceuticals Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2143/detonix-20-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "4.00",
+        "pack_size_info": "(10 x 15: ৳ 600.00)",
+        "price_text": "Unit Price: ৳ 4.00 (10 x 15: ৳ 600.00)"
+      },
+      {
+        "brand_name": "Exipro",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "20 mg",
+        "company": "Leon Pharmaceuticals Ltd.",
+        "brand_url": "https://medex.com.bd/brands/23333/exipro-20-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "5.00",
+        "pack_size_info": "(50's pack: ৳ 250.00)",
+        "price_text": "Unit Price: ৳ 5.00 (50's pack: ৳ 250.00)"
+      },
+      {
+        "brand_name": "Exipro",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "40 mg",
+        "company": "Leon Pharmaceuticals Ltd.",
+        "brand_url": "https://medex.com.bd/brands/23334/exipro-40-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "6.00",
+        "pack_size_info": "(30's pack: ৳ 180.00)",
+        "price_text": "Unit Price: ৳ 6.00 (30's pack: ৳ 180.00)"
+      },
+      {
+        "brand_name": "Exopan",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "20 mg",
+        "company": "Edruc Limited",
+        "brand_url": "https://medex.com.bd/brands/2147/exopan-20-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "3.00",
+        "pack_size_info": "(50's pack: ৳ 150.00)",
+        "price_text": "Unit Price: ৳ 3.00 (50's pack: ৳ 150.00)"
+      },
+      {
+        "brand_name": "Gaslev",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "20 mg",
+        "company": "The White Horse Pharmaceuticals Ltd.",
+        "brand_url": "https://medex.com.bd/brands/27922/gaslev-20-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "5.00",
+        "pack_size_info": "(6 x 10: ৳ 300.00)",
+        "price_text": "Unit Price: ৳ 5.00 (6 x 10: ৳ 300.00)"
+      },
+      {
+        "brand_name": "Gaspain",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "20 mg",
+        "company": "Ethical Drugs Limited",
+        "brand_url": "https://medex.com.bd/brands/23325/gaspain-20-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "4.00",
+        "pack_size_info": "(5 x 10: ৳ 200.00)",
+        "price_text": "Unit Price: ৳ 4.00 (5 x 10: ৳ 200.00)"
+      },
+      {
+        "brand_name": "Gaspain",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "40 mg",
+        "company": "Ethical Drugs Limited",
+        "brand_url": "https://medex.com.bd/brands/23326/gaspain-40-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "6.00",
+        "pack_size_info": "(5 x 10: ৳ 300.00)",
+        "price_text": "Unit Price: ৳ 6.00 (5 x 10: ৳ 300.00)"
+      },
+      {
+        "brand_name": "Hiprazole",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "20 mg",
+        "company": "Hudson Pharmaceuticals Ltd.",
+        "brand_url": "https://medex.com.bd/brands/23328/hiprazole-20-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "5.00",
+        "pack_size_info": null,
+        "price_text": "Unit Price: ৳ 5.00"
+      },
+      {
+        "brand_name": "Labpan",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "20 mg",
+        "company": "Labaid Pharma Ltd.",
+        "brand_url": "https://medex.com.bd/brands/23332/labpan-20-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "7.00",
+        "pack_size_info": "(6 x 10: ৳ 420.00)",
+        "price_text": "Unit Price: ৳ 7.00 (6 x 10: ৳ 420.00)"
+      },
+      {
+        "brand_name": "Labpan",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "40 mg",
+        "company": "Labaid Pharma Ltd.",
+        "brand_url": "https://medex.com.bd/brands/28689/labpan-40-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "7.00",
+        "pack_size_info": "(6 x 10: ৳ 420.00)",
+        "price_text": "Unit Price: ৳ 7.00 (6 x 10: ৳ 420.00)"
+      },
+      {
+        "brand_name": "Neopanta",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "20 mg",
+        "company": "Supreme Pharmaceutical Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2148/neopanta-20-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "4.00",
+        "pack_size_info": "(30's pack: ৳ 120.00)",
+        "price_text": "Unit Price: ৳ 4.00 (30's pack: ৳ 120.00)"
+      },
+      {
+        "brand_name": "Neopanta",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "40 mg",
+        "company": "Supreme Pharmaceutical Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2149/neopanta-40-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "6.00",
+        "pack_size_info": "(50's pack: ৳ 300.00)",
+        "price_text": "Unit Price: ৳ 6.00 (50's pack: ৳ 300.00)"
+      },
+      {
+        "brand_name": "Nixpan",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "20 mg",
+        "company": "Ad-din Pharmaceuticals Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2150/nixpan-20-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "5.00",
+        "pack_size_info": "(4 x 15: ৳ 300.00)",
+        "price_text": "Unit Price: ৳ 5.00 (4 x 15: ৳ 300.00)"
+      },
+      {
+        "brand_name": "Nixpan",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "40 mg",
+        "company": "Ad-din Pharmaceuticals Ltd.",
+        "brand_url": "https://medex.com.bd/brands/23306/nixpan-40-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "7.50",
+        "pack_size_info": "(3 x 10: ৳ 225.00)",
+        "price_text": "Unit Price: ৳ 7.50 (3 x 10: ৳ 225.00)"
+      },
+      {
+        "brand_name": "Novapan",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "40 mg",
+        "company": "Novus Pharmaceuticals Ltd.",
+        "brand_url": "https://medex.com.bd/brands/23344/novapan-40-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "3.00",
+        "pack_size_info": "(30's pack: ৳ 90.00)",
+        "price_text": "Unit Price: ৳ 3.00 (30's pack: ৳ 90.00)"
+      },
+      {
+        "brand_name": "Otonix",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "20 mg",
+        "company": "Peoples Pharma Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2151/otonix-20-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "3.00",
+        "pack_size_info": "(50's pack: ৳ 150.00)",
+        "price_text": "Unit Price: ৳ 3.00 (50's pack: ৳ 150.00)"
+      },
+      {
+        "brand_name": "Otonix",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "40 mg",
+        "company": "Peoples Pharma Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2152/otonix-40-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "5.00",
+        "pack_size_info": "(50's pack: ৳ 250.00)",
+        "price_text": "Unit Price: ৳ 5.00 (50's pack: ৳ 250.00)"
+      },
+      {
+        "brand_name": "P-20",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "20 mg",
+        "company": "Asiatic Laboratories Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2153/p-20-20-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "4.00",
+        "pack_size_info": "(10 x 10: ৳ 400.00)",
+        "price_text": "Unit Price: ৳ 4.00 (10 x 10: ৳ 400.00)"
+      },
+      {
+        "brand_name": "P-40",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "40 mg",
+        "company": "Asiatic Laboratories Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2154/p-40-40-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "6.00",
+        "pack_size_info": "(5 x 10: ৳ 300.00)",
+        "price_text": "Unit Price: ৳ 6.00 (5 x 10: ৳ 300.00)"
+      },
+      {
+        "brand_name": "P-Gut",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "20 mg",
+        "company": "Globe Pharmaceuticals Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2144/p-gut-20-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "4.40",
+        "pack_size_info": "(7 x 10: ৳ 308.00)",
+        "price_text": "Unit Price: ৳ 4.40 (7 x 10: ৳ 308.00)"
+      },
+      {
+        "brand_name": "P-Gut",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "40 mg",
+        "company": "Globe Pharmaceuticals Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2145/p-gut-40-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "6.00",
+        "pack_size_info": "(3 x 10: ৳ 180.00)",
+        "price_text": "Unit Price: ৳ 6.00 (3 x 10: ৳ 180.00)"
+      },
+      {
+        "brand_name": "P-Gut",
+        "dosage_form": "IV Injection",
+        "strength": "40 mg/vial",
+        "company": "Globe Pharmaceuticals Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2146/p-gut-40-mg-injection",
+        "price_label": "40 mg vial",
+        "unit_price_bdt": "70.00",
+        "pack_size_info": null,
+        "price_text": "40 mg vial: ৳ 70.00"
+      },
+      {
+        "brand_name": "P-Lock",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "40 mg",
+        "company": "One Pharma Ltd.",
+        "brand_url": "https://medex.com.bd/brands/23345/p-lock-40-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "7.00",
+        "pack_size_info": "(3 x 10: ৳ 210.00)",
+        "price_text": "Unit Price: ৳ 7.00 (3 x 10: ৳ 210.00)"
+      },
+      {
+        "brand_name": "P-Lock",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "20 mg",
+        "company": "One Pharma Ltd.",
+        "brand_url": "https://medex.com.bd/brands/23346/p-lock-20-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "5.00",
+        "pack_size_info": "(6 x 10: ৳ 300.00)",
+        "price_text": "Unit Price: ৳ 5.00 (6 x 10: ৳ 300.00)"
+      },
+      {
+        "brand_name": "P-Proton",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "20 mg",
+        "company": "Doctor TIMS Pharmaceuticals Ltd.",
+        "brand_url": "https://medex.com.bd/brands/32550/p-proton-20-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "5.02",
+        "pack_size_info": "(3 x 10: ৳ 150.50)",
+        "price_text": "Unit Price: ৳ 5.02 (3 x 10: ৳ 150.50)"
+      },
+      {
+        "brand_name": "Pagerd",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "20 mg",
+        "company": "Novatek Pharmaceuticals Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2155/pagerd-20-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "4.02",
+        "pack_size_info": "(5 x 10: ৳ 201.00)",
+        "price_text": "Unit Price: ৳ 4.02 (5 x 10: ৳ 201.00)"
+      },
+      {
+        "brand_name": "Pagerd",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "40 mg",
+        "company": "Novatek Pharmaceuticals Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2156/pagerd-40-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "6.02",
+        "pack_size_info": "(5 x 10: ৳ 301.00)",
+        "price_text": "Unit Price: ৳ 6.02 (5 x 10: ৳ 301.00)"
+      },
+      {
+        "brand_name": "Pamel",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "20 mg",
+        "company": "Medicon Pharmaceuticals Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2157/pamel-20-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "4.00",
+        "pack_size_info": "(5 x 10: ৳ 200.00)",
+        "price_text": "Unit Price: ৳ 4.00 (5 x 10: ৳ 200.00)"
+      },
+      {
+        "brand_name": "Pamel",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "40 mg",
+        "company": "Medicon Pharmaceuticals Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2158/pamel-40-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "6.00",
+        "pack_size_info": "(5 x 10: ৳ 300.00)",
+        "price_text": "Unit Price: ৳ 6.00 (5 x 10: ৳ 300.00)"
+      },
+      {
+        "brand_name": "Panfast",
+        "dosage_form": "IV Injection",
+        "strength": "40 mg/vial",
+        "company": "Monicopharma Ltd.",
+        "brand_url": "https://medex.com.bd/brands/23338/panfast-40-mg-injection",
+        "price_label": "40 mg vial",
+        "unit_price_bdt": "90.00",
+        "pack_size_info": null,
+        "price_text": "40 mg vial: ৳ 90.00"
+      },
+      {
+        "brand_name": "Panloc",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "20 mg",
+        "company": "Kumudini Pharma Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2159/panloc-20-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "4.50",
+        "pack_size_info": "(5 x 10: ৳ 225.00)",
+        "price_text": "Unit Price: ৳ 4.50 (5 x 10: ৳ 225.00)"
+      },
+      {
+        "brand_name": "Panloc",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "40 mg",
+        "company": "Kumudini Pharma Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2160/panloc-40-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "6.00",
+        "pack_size_info": "(3 x 10: ৳ 180.00)",
+        "price_text": "Unit Price: ৳ 6.00 (3 x 10: ৳ 180.00)"
+      },
+      {
+        "brand_name": "Panoral",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "20 mg",
+        "company": "Eskayef Pharmaceuticals Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2161/panoral-20-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "5.00",
+        "pack_size_info": "(4 x 10: ৳ 200.00)",
+        "price_text": "Unit Price: ৳ 5.00 (4 x 10: ৳ 200.00)"
+      },
+      {
+        "brand_name": "Panoral",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "40 mg",
+        "company": "Eskayef Pharmaceuticals Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2162/panoral-40-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "7.00",
+        "pack_size_info": "(4 x 10: ৳ 280.00)",
+        "price_text": "Unit Price: ৳ 7.00 (4 x 10: ৳ 280.00)"
+      },
+      {
+        "brand_name": "Panosa",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "20 mg",
+        "company": "Silco Pharmaceutical Ltd.",
+        "brand_url": "https://medex.com.bd/brands/31494/panosa-20-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "5.00",
+        "pack_size_info": "(10 x 10: ৳ 500.00)",
+        "price_text": "Unit Price: ৳ 5.00 (10 x 10: ৳ 500.00)"
+      },
+      {
+        "brand_name": "Panosa",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "40 mg",
+        "company": "Silco Pharmaceutical Ltd.",
+        "brand_url": "https://medex.com.bd/brands/31495/panosa-40-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "7.00",
+        "pack_size_info": "(5 x 10: ৳ 350.00)",
+        "price_text": "Unit Price: ৳ 7.00 (5 x 10: ৳ 350.00)"
+      },
+      {
+        "brand_name": "Panotem",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "20 mg",
+        "company": "Team Pharmaceuticals Ltd.",
+        "brand_url": "https://medex.com.bd/brands/23364/panotem-20-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "4.50",
+        "pack_size_info": "(5 x 10: ৳ 225.00)",
+        "price_text": "Unit Price: ৳ 4.50 (5 x 10: ৳ 225.00)"
+      },
+      {
+        "brand_name": "Panotem",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "40 mg",
+        "company": "Team Pharmaceuticals Ltd.",
+        "brand_url": "https://medex.com.bd/brands/23365/panotem-40-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "6.50",
+        "pack_size_info": "(5 x 10: ৳ 325.00)",
+        "price_text": "Unit Price: ৳ 6.50 (5 x 10: ৳ 325.00)"
+      },
+      {
+        "brand_name": "Panoz",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "20 mg",
+        "company": "Astra Biopharmaceuticals Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2163/panoz-20-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "5.00",
+        "pack_size_info": "(6 x 10: ৳ 300.00)",
+        "price_text": "Unit Price: ৳ 5.00 (6 x 10: ৳ 300.00)"
+      },
+      {
+        "brand_name": "Panoz",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "40 mg",
+        "company": "Astra Biopharmaceuticals Ltd.",
+        "brand_url": "https://medex.com.bd/brands/35477/panoz-40-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "7.00",
+        "pack_size_info": "(5 x 10: ৳ 350.00)",
+        "price_text": "Unit Price: ৳ 7.00 (5 x 10: ৳ 350.00)"
+      },
+      {
+        "brand_name": "Panprazo",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "20 mg",
+        "company": "Pacific Pharmaceuticals Ltd.",
+        "brand_url": "https://medex.com.bd/brands/23351/panprazo-20-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "4.50",
+        "pack_size_info": "(5 x 10: ৳ 225.00)",
+        "price_text": "Unit Price: ৳ 4.50 (5 x 10: ৳ 225.00)"
+      },
+      {
+        "brand_name": "Panprin",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "20 mg",
+        "company": "Doctor’s Chemical Works Ltd.",
+        "brand_url": "https://medex.com.bd/brands/23319/panprin-20-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "4.00",
+        "pack_size_info": "(5 x 14: ৳ 280.00)",
+        "price_text": "Unit Price: ৳ 4.00 (5 x 14: ৳ 280.00)"
+      },
+      {
+        "brand_name": "Panpro",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "20 mg",
+        "company": "Biopharma Limited",
+        "brand_url": "https://medex.com.bd/brands/2164/panpro-20-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "5.50",
+        "pack_size_info": "(10 x 10: ৳ 550.00)",
+        "price_text": "Unit Price: ৳ 5.50 (10 x 10: ৳ 550.00)"
+      },
+      {
+        "brand_name": "Panpro",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "40 mg",
+        "company": "Biopharma Limited",
+        "brand_url": "https://medex.com.bd/brands/2165/panpro-40-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "7.00",
+        "pack_size_info": "(5 x 10: ৳ 350.00)",
+        "price_text": "Unit Price: ৳ 7.00 (5 x 10: ৳ 350.00)"
+      },
+      {
+        "brand_name": "Panpro",
+        "dosage_form": "IV Injection",
+        "strength": "40 mg/vial",
+        "company": "Biopharma Limited",
+        "brand_url": "https://medex.com.bd/brands/2166/panpro-40-mg-injection",
+        "price_label": "40 mg vial",
+        "unit_price_bdt": "70.00",
+        "pack_size_info": null,
+        "price_text": "40 mg vial: ৳ 70.00"
+      },
+      {
+        "brand_name": "Pansec",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "20 mg",
+        "company": "Drug International Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2167/pansec-20-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "6.00",
+        "pack_size_info": "(4 x 14: ৳ 336.00)",
+        "price_text": "Unit Price: ৳ 6.00 (4 x 14: ৳ 336.00)"
+      },
+      {
+        "brand_name": "Pansec",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "40 mg",
+        "company": "Drug International Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2168/pansec-40-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "8.00",
+        "pack_size_info": "(4 x 14: ৳ 448.00)",
+        "price_text": "Unit Price: ৳ 8.00 (4 x 14: ৳ 448.00)"
+      },
+      {
+        "brand_name": "Pansec",
+        "dosage_form": "IV Injection",
+        "strength": "40 mg/vial",
+        "company": "Drug International Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2169/pansec-40-mg-injection",
+        "price_label": "40 mg vial",
+        "unit_price_bdt": "90.30",
+        "pack_size_info": null,
+        "price_text": "40 mg vial: ৳ 90.30"
+      },
+      {
+        "brand_name": "Pansol",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "20 mg",
+        "company": "Army Pharma Limited",
+        "brand_url": "https://medex.com.bd/brands/38978/pansol-20-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "6.00",
+        "pack_size_info": "(5 x 10: ৳ 300.00)",
+        "price_text": "Unit Price: ৳ 6.00 (5 x 10: ৳ 300.00)"
+      },
+      {
+        "brand_name": "Pansos",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "20 mg",
+        "company": "NIPRO JMI Pharma Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2170/pansos-20-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "7.00",
+        "pack_size_info": "(5 x 10: ৳ 350.00)",
+        "price_text": "Unit Price: ৳ 7.00 (5 x 10: ৳ 350.00)"
+      },
+      {
+        "brand_name": "Pansos",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "40 mg",
+        "company": "NIPRO JMI Pharma Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2171/pansos-40-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "10.00",
+        "pack_size_info": "(5 x 10: ৳ 500.00)",
+        "price_text": "Unit Price: ৳ 10.00 (5 x 10: ৳ 500.00)"
+      },
+      {
+        "brand_name": "Pansos",
+        "dosage_form": "IV Injection",
+        "strength": "40 mg/vial",
+        "company": "NIPRO JMI Pharma Ltd.",
+        "brand_url": "https://medex.com.bd/brands/39372/pansos-40-mg-injection",
+        "price_label": "40 mg vial",
+        "unit_price_bdt": "90.00",
+        "pack_size_info": null,
+        "price_text": "40 mg vial: ৳ 90.00"
+      },
+      {
+        "brand_name": "Pantac",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "20 mg",
+        "company": "Navana Pharmaceuticals Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2172/pantac-20-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "4.00",
+        "pack_size_info": "(6 x 10: ৳ 240.00)",
+        "price_text": "Unit Price: ৳ 4.00 (6 x 10: ৳ 240.00)"
+      },
+      {
+        "brand_name": "Pantac",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "40 mg",
+        "company": "Navana Pharmaceuticals Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2173/pantac-40-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "6.00",
+        "pack_size_info": "(3 x 10: ৳ 180.00)",
+        "price_text": "Unit Price: ৳ 6.00 (3 x 10: ৳ 180.00)"
+      },
+      {
+        "brand_name": "Pantaloc",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "40 mg",
+        "company": "Aexim Pharmaceuticals Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2174/pantaloc-40-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "3.50",
+        "pack_size_info": "(3 x 10: ৳ 105.00)",
+        "price_text": "Unit Price: ৳ 3.50 (3 x 10: ৳ 105.00)"
+      },
+      {
+        "brand_name": "Pantex",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "40 mg",
+        "company": "ACI Limited",
+        "brand_url": "https://medex.com.bd/brands/2175/pantex-40-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "8.00",
+        "pack_size_info": "(3 x 10: ৳ 240.00)",
+        "price_text": "Unit Price: ৳ 8.00 (3 x 10: ৳ 240.00)"
+      },
+      {
+        "brand_name": "Pantex",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "20 mg",
+        "company": "ACI Limited",
+        "brand_url": "https://medex.com.bd/brands/23304/pantex-20-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "7.00",
+        "pack_size_info": "(5 x 10: ৳ 350.00)",
+        "price_text": "Unit Price: ৳ 7.00 (5 x 10: ৳ 350.00)"
+      },
+      {
+        "brand_name": "Pantex",
+        "dosage_form": "IV Injection",
+        "strength": "40 mg/vial",
+        "company": "ACI Limited",
+        "brand_url": "https://medex.com.bd/brands/23305/pantex-40-mg-injection",
+        "price_label": "40 mg vial",
+        "unit_price_bdt": "70.47",
+        "pack_size_info": null,
+        "price_text": "40 mg vial: ৳ 70.47"
+      },
+      {
+        "brand_name": "Pantid",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "20 mg",
+        "company": "Opsonin Pharma Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2176/pantid-20-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "6.00",
+        "pack_size_info": "(7 x 14: ৳ 588.00)",
+        "price_text": "Unit Price: ৳ 6.00 (7 x 14: ৳ 588.00)"
+      },
+      {
+        "brand_name": "Pantid",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "40 mg",
+        "company": "Opsonin Pharma Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2177/pantid-40-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "9.00",
+        "pack_size_info": "(4 x 14: ৳ 504.00)",
+        "price_text": "Unit Price: ৳ 9.00 (4 x 14: ৳ 504.00)"
+      },
+      {
+        "brand_name": "Pantid",
+        "dosage_form": "IV Injection",
+        "strength": "40 mg/vial",
+        "company": "Opsonin Pharma Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2178/pantid-40-mg-injection",
+        "price_label": "40 mg vial",
+        "unit_price_bdt": "100.00",
+        "pack_size_info": null,
+        "price_text": "40 mg vial: ৳ 100.00"
+      },
+      {
+        "brand_name": "Pantium",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "20 mg",
+        "company": "Jenphar Bangladesh Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2179/pantium-20-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "7.02",
+        "pack_size_info": "(6 x 10: ৳ 421.20)",
+        "price_text": "Unit Price: ৳ 7.02 (6 x 10: ৳ 421.20)"
+      },
+      {
+        "brand_name": "Panto",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "20 mg",
+        "company": "Somatec Pharmaceuticals Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2180/panto-20-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "4.00",
+        "pack_size_info": "(5 x 10: ৳ 200.00)",
+        "price_text": "Unit Price: ৳ 4.00 (5 x 10: ৳ 200.00)"
+      },
+      {
+        "brand_name": "Panto",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "40 mg",
+        "company": "Somatec Pharmaceuticals Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2181/panto-40-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "6.00",
+        "pack_size_info": "(3 x 10: ৳ 180.00)",
+        "price_text": "Unit Price: ৳ 6.00 (3 x 10: ৳ 180.00)"
+      },
+      {
+        "brand_name": "Panto SP",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "20 mg",
+        "company": "Seema Pharmaceuticals Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2204/panto-sp-20-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "3.00",
+        "pack_size_info": "(50's pack: ৳ 150.00)",
+        "price_text": "Unit Price: ৳ 3.00 (50's pack: ৳ 150.00)"
+      },
+      {
+        "brand_name": "Pantobex",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "20 mg",
+        "company": "Beximco Pharmaceuticals Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2182/pantobex-20-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "5.00",
+        "pack_size_info": "(10 x 10: ৳ 500.00)",
+        "price_text": "Unit Price: ৳ 5.00 (10 x 10: ৳ 500.00)"
+      },
+      {
+        "brand_name": "Pantobex",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "40 mg",
+        "company": "Beximco Pharmaceuticals Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2183/pantobex-40-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "7.00",
+        "pack_size_info": "(10 x 10: ৳ 700.00)",
+        "price_text": "Unit Price: ৳ 7.00 (10 x 10: ৳ 700.00)"
+      },
+      {
+        "brand_name": "Pantobex",
+        "dosage_form": "IV Injection",
+        "strength": "40 mg/vial",
+        "company": "Beximco Pharmaceuticals Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2184/pantobex-40-mg-injection",
+        "price_label": "40 mg vial",
+        "unit_price_bdt": "110.00",
+        "pack_size_info": null,
+        "price_text": "40 mg vial: ৳ 110.00"
+      },
+      {
+        "brand_name": "Pantobio",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "20 mg",
+        "company": "Biogen Pharmaceuticals Ltd.",
+        "brand_url": "https://medex.com.bd/brands/23315/pantobio-20-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "4.75",
+        "pack_size_info": "(5 x 14: ৳ 332.50)",
+        "price_text": "Unit Price: ৳ 4.75 (5 x 14: ৳ 332.50)"
+      },
+      {
+        "brand_name": "Pantochem",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "20 mg",
+        "company": "Chemist Laboratories Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2185/pantochem-20-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "5.00",
+        "pack_size_info": "(5 x 10: ৳ 250.00)",
+        "price_text": "Unit Price: ৳ 5.00 (5 x 10: ৳ 250.00)"
+      },
+      {
+        "brand_name": "Pantocure",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "20 mg",
+        "company": "Rangs Pharmaceuticals Ltd.",
+        "brand_url": "https://medex.com.bd/brands/23359/pantocure-20-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "5.00",
+        "pack_size_info": "(10 x 10: ৳ 500.00)",
+        "price_text": "Unit Price: ৳ 5.00 (10 x 10: ৳ 500.00)"
+      },
+      {
+        "brand_name": "Pantodac",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "20 mg",
+        "company": "Ziska Pharmaceuticals Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2187/pantodac-20-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "4.00",
+        "pack_size_info": "(6 x 10: ৳ 240.00)",
+        "price_text": "Unit Price: ৳ 4.00 (6 x 10: ৳ 240.00)"
+      },
+      {
+        "brand_name": "Pantodac",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "40 mg",
+        "company": "Ziska Pharmaceuticals Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2188/pantodac-40-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "6.00",
+        "pack_size_info": "(3 x 10: ৳ 180.00)",
+        "price_text": "Unit Price: ৳ 6.00 (3 x 10: ৳ 180.00)"
+      },
+      {
+        "brand_name": "Pantodac",
+        "dosage_form": "IV Injection",
+        "strength": "40 mg/vial",
+        "company": "Ziska Pharmaceuticals Ltd.",
+        "brand_url": "https://medex.com.bd/brands/36772/pantodac-40-mg-injection",
+        "price_label": "40 mg vial",
+        "unit_price_bdt": "100.00",
+        "pack_size_info": null,
+        "price_text": "40 mg vial: ৳ 100.00"
+      },
+      {
+        "brand_name": "Pantofast",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "20 mg",
+        "company": "S.N. Pharmaceutical Ltd.",
+        "brand_url": "https://medex.com.bd/brands/23360/pantofast-20-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "3.00",
+        "pack_size_info": "(30's pack: ৳ 90.00)",
+        "price_text": "Unit Price: ৳ 3.00 (30's pack: ৳ 90.00)"
+      },
+      {
+        "brand_name": "Pantogen",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "20 mg",
+        "company": "General Pharmaceuticals Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2189/pantogen-20-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "7.00",
+        "pack_size_info": "(5 x 10: ৳ 350.00)",
+        "price_text": "Unit Price: ৳ 7.00 (5 x 10: ৳ 350.00)"
+      },
+      {
+        "brand_name": "Pantogen",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "40 mg",
+        "company": "General Pharmaceuticals Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2190/pantogen-40-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "7.03",
+        "pack_size_info": "(5 x 10: ৳ 351.50)",
+        "price_text": "Unit Price: ৳ 7.03 (5 x 10: ৳ 351.50)"
+      },
+      {
+        "brand_name": "Pantogut",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "20 mg",
+        "company": "Popular Pharmaceuticals Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2191/pantogut-20-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "5.00",
+        "pack_size_info": "(10 x 10: ৳ 500.00)",
+        "price_text": "Unit Price: ৳ 5.00 (10 x 10: ৳ 500.00)"
+      },
+      {
+        "brand_name": "Pantogut",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "40 mg",
+        "company": "Popular Pharmaceuticals Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2192/pantogut-40-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "7.00",
+        "pack_size_info": "(5 x 10: ৳ 350.00)",
+        "price_text": "Unit Price: ৳ 7.00 (5 x 10: ৳ 350.00)"
+      },
+      {
+        "brand_name": "Pantogut",
+        "dosage_form": "IV Injection",
+        "strength": "40 mg/vial",
+        "company": "Popular Pharmaceuticals Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2193/pantogut-40-mg-injection",
+        "price_label": "40 mg vial",
+        "unit_price_bdt": "70.26",
+        "pack_size_info": null,
+        "price_text": "40 mg vial: ৳ 70.26"
+      },
+      {
+        "brand_name": "Pantohil",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "20 mg",
+        "company": "Goodman Pharmaceuticals Ltd.",
+        "brand_url": "https://medex.com.bd/brands/33617/pantohil-20-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "5.00",
+        "pack_size_info": "(6 x 10: ৳ 300.00)",
+        "price_text": "Unit Price: ৳ 5.00 (6 x 10: ৳ 300.00)"
+      },
+      {
+        "brand_name": "Pantohil",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "40 mg",
+        "company": "Goodman Pharmaceuticals Ltd.",
+        "brand_url": "https://medex.com.bd/brands/33618/pantohil-40-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "7.00",
+        "pack_size_info": "(3 x 10: ৳ 210.00)",
+        "price_text": "Unit Price: ৳ 7.00 (3 x 10: ৳ 210.00)"
+      },
+      {
+        "brand_name": "Pantolam",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "20 mg",
+        "company": "Avarox Pharmaceuticals Ltd.",
+        "brand_url": "https://medex.com.bd/brands/23347/pantolam-20-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "7.00",
+        "pack_size_info": "(5 x 10: ৳ 350.00)",
+        "price_text": "Unit Price: ৳ 7.00 (5 x 10: ৳ 350.00)"
+      },
+      {
+        "brand_name": "Pantolam",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "40 mg",
+        "company": "Avarox Pharmaceuticals Ltd.",
+        "brand_url": "https://medex.com.bd/brands/38166/pantolam-40-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "10.00",
+        "pack_size_info": "(5 x 10: ৳ 500.00)",
+        "price_text": "Unit Price: ৳ 10.00 (5 x 10: ৳ 500.00)"
+      },
+      {
+        "brand_name": "Pantolok",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "20 mg",
+        "company": "Ibn Sina Pharmaceuticals Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2194/pantolok-20-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "5.00",
+        "pack_size_info": "(10 x 10: ৳ 500.00)",
+        "price_text": "Unit Price: ৳ 5.00 (10 x 10: ৳ 500.00)"
+      },
+      {
+        "brand_name": "Pantolok",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "40 mg",
+        "company": "Ibn Sina Pharmaceuticals Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2195/pantolok-40-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "7.00",
+        "pack_size_info": "(5 x 10: ৳ 350.00)",
+        "price_text": "Unit Price: ৳ 7.00 (5 x 10: ৳ 350.00)"
+      },
+      {
+        "brand_name": "Pantolok",
+        "dosage_form": "IV Injection",
+        "strength": "40 mg/vial",
+        "company": "Ibn Sina Pharmaceuticals Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2196/pantolok-40-mg-injection",
+        "price_label": "40 mg vial",
+        "unit_price_bdt": "80.00",
+        "pack_size_info": null,
+        "price_text": "40 mg vial: ৳ 80.00"
+      },
+      {
+        "brand_name": "Pantomak",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "20 mg",
+        "company": "Maks Drug Limited",
+        "brand_url": "https://medex.com.bd/brands/36342/pantomak-20-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "6.00",
+        "pack_size_info": "(5 x 10: ৳ 300.00)",
+        "price_text": "Unit Price: ৳ 6.00 (5 x 10: ৳ 300.00)"
+      },
+      {
+        "brand_name": "Pantomak",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "40 mg",
+        "company": "Maks Drug Limited",
+        "brand_url": "https://medex.com.bd/brands/36343/pantomak-40-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "8.00",
+        "pack_size_info": "(3 x 10: ৳ 240.00)",
+        "price_text": "Unit Price: ৳ 8.00 (3 x 10: ৳ 240.00)"
+      },
+      {
+        "brand_name": "Panton-AX",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "20 mg",
+        "company": "Bristol Pharmaceuticals Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2197/panton-ax-20-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "4.00",
+        "pack_size_info": "(50's pack: ৳ 200.00)",
+        "price_text": "Unit Price: ৳ 4.00 (50's pack: ৳ 200.00)"
+      },
+      {
+        "brand_name": "Panton-AX",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "40 mg",
+        "company": "Bristol Pharmaceuticals Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2198/panton-ax-40-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "9.00",
+        "pack_size_info": "(50's pack: ৳ 450.00)",
+        "price_text": "Unit Price: ৳ 9.00 (50's pack: ৳ 450.00)"
+      },
+      {
+        "brand_name": "Pantonix",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "20 mg",
+        "company": "Incepta Pharmaceuticals Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2199/pantonix-20-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "7.00",
+        "pack_size_info": "(7 x 14: ৳ 686.00)",
+        "price_text": "Unit Price: ৳ 7.00 (7 x 14: ৳ 686.00)"
+      },
+      {
+        "brand_name": "Pantonix",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "40 mg",
+        "company": "Incepta Pharmaceuticals Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2200/pantonix-40-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "10.00",
+        "pack_size_info": "(7 x 14: ৳ 980.00)",
+        "price_text": "Unit Price: ৳ 10.00 (7 x 14: ৳ 980.00)"
+      },
+      {
+        "brand_name": "Pantonix",
+        "dosage_form": "IV Injection",
+        "strength": "40 mg/vial",
+        "company": "Incepta Pharmaceuticals Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2201/pantonix-40-mg-injection",
+        "price_label": "40 mg vial",
+        "unit_price_bdt": "100.00",
+        "pack_size_info": null,
+        "price_text": "40 mg vial: ৳ 100.00"
+      },
+      {
+        "brand_name": "Pantopan",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "20 mg",
+        "company": "United Pharmaceuticals Ltd.",
+        "brand_url": "https://medex.com.bd/brands/27394/pantopan-20-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "5.00",
+        "pack_size_info": "(5 x 10: ৳ 250.00)",
+        "price_text": "Unit Price: ৳ 5.00 (5 x 10: ৳ 250.00)"
+      },
+      {
+        "brand_name": "Pantopra",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "20 mg",
+        "company": "Alco Pharma Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2202/pantopra-20-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "4.50",
+        "pack_size_info": "(3 x 14: ৳ 189.00)",
+        "price_text": "Unit Price: ৳ 4.50 (3 x 14: ৳ 189.00)"
+      },
+      {
+        "brand_name": "Pantopra",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "40 mg",
+        "company": "Alco Pharma Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2203/pantopra-40-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "6.50",
+        "pack_size_info": "(3 x 14: ৳ 273.00)",
+        "price_text": "Unit Price: ৳ 6.50 (3 x 14: ৳ 273.00)"
+      },
+      {
+        "brand_name": "Pantoprazole",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "20 mg",
+        "company": "Pristine Pharmaceuticals Ltd",
+        "brand_url": "https://medex.com.bd/brands/35680/pantoprazole-20-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "5.00",
+        "pack_size_info": "(5 x 10: ৳ 250.00)",
+        "price_text": "Unit Price: ৳ 5.00 (5 x 10: ৳ 250.00)"
+      },
+      {
+        "brand_name": "Pantoprazole",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "40 mg",
+        "company": "Pristine Pharmaceuticals Ltd",
+        "brand_url": "https://medex.com.bd/brands/35681/pantoprazole-40-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "7.00",
+        "pack_size_info": "(5 x 10: ৳ 350.00)",
+        "price_text": "Unit Price: ৳ 7.00 (5 x 10: ৳ 350.00)"
+      },
+      {
+        "brand_name": "Pantoprox",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "20 mg",
+        "company": "SMC Enterprise Ltd (Mfg. by: Jenphar Bangladesh Ltd.)",
+        "brand_url": "https://medex.com.bd/brands/28112/pantoprox-20-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "4.50",
+        "pack_size_info": "(6 x 10: ৳ 270.00)",
+        "price_text": "Unit Price: ৳ 4.50 (6 x 10: ৳ 270.00)"
+      },
+      {
+        "brand_name": "Pantoraz",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "20 mg",
+        "company": "Premier Pharmaceuticals Ltd.",
+        "brand_url": "https://medex.com.bd/brands/23356/pantoraz-20-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "3.00",
+        "pack_size_info": "(50's pack: ৳ 150.00)",
+        "price_text": "Unit Price: ৳ 3.00 (50's pack: ৳ 150.00)"
+      },
+      {
+        "brand_name": "Pantoraz",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "40 mg",
+        "company": "Premier Pharmaceuticals Ltd.",
+        "brand_url": "https://medex.com.bd/brands/23357/pantoraz-40-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "5.00",
+        "pack_size_info": "(50's pack: ৳ 250.00)",
+        "price_text": "Unit Price: ৳ 5.00 (50's pack: ৳ 250.00)"
+      },
+      {
+        "brand_name": "Pantosec",
+        "dosage_form": "IV Injection",
+        "strength": "40 mg/vial",
+        "company": "Techno Drugs Ltd.",
+        "brand_url": "https://medex.com.bd/brands/23366/pantosec-40-mg-injection",
+        "price_label": "40 mg vial",
+        "unit_price_bdt": "80.00",
+        "pack_size_info": null,
+        "price_text": "40 mg vial: ৳ 80.00"
+      },
+      {
+        "brand_name": "Pantosil",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "20 mg",
+        "company": "Silva Pharmaceuticals Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2205/pantosil-20-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "4.50",
+        "pack_size_info": "(5 x 10: ৳ 225.00)",
+        "price_text": "Unit Price: ৳ 4.50 (5 x 10: ৳ 225.00)"
+      },
+      {
+        "brand_name": "Pantosil",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "40 mg",
+        "company": "Silva Pharmaceuticals Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2206/pantosil-40-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "5.02",
+        "pack_size_info": "(5 x 10: ৳ 251.00)",
+        "price_text": "Unit Price: ৳ 5.02 (5 x 10: ৳ 251.00)"
+      },
+      {
+        "brand_name": "Pantotop",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "20 mg",
+        "company": "Benham Pharmaceuticals Ltd.",
+        "brand_url": "https://medex.com.bd/brands/23313/pantotop-20-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "6.00",
+        "pack_size_info": "(7 x 10: ৳ 420.00)",
+        "price_text": "Unit Price: ৳ 6.00 (7 x 10: ৳ 420.00)"
+      },
+      {
+        "brand_name": "Pantotop",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "40 mg",
+        "company": "Benham Pharmaceuticals Ltd.",
+        "brand_url": "https://medex.com.bd/brands/23314/pantotop-40-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "8.00",
+        "pack_size_info": "(7 x 10: ৳ 560.00)",
+        "price_text": "Unit Price: ৳ 8.00 (7 x 10: ৳ 560.00)"
+      },
+      {
+        "brand_name": "Pantover",
+        "dosage_form": "IV Injection",
+        "strength": "40 mg/vial",
+        "company": "Veritas Pharmaceuticals Ltd.",
+        "brand_url": "https://medex.com.bd/brands/23367/pantover-40-mg-injection",
+        "price_label": "40 mg vial",
+        "unit_price_bdt": "85.00",
+        "pack_size_info": null,
+        "price_text": "40 mg vial: ৳ 85.00"
+      },
+      {
+        "brand_name": "Pantover",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "20 mg",
+        "company": "Veritas Pharmaceuticals Ltd.",
+        "brand_url": "https://medex.com.bd/brands/23368/pantover-20-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "5.00",
+        "pack_size_info": "(6 x 10: ৳ 300.00)",
+        "price_text": "Unit Price: ৳ 5.00 (6 x 10: ৳ 300.00)"
+      },
+      {
+        "brand_name": "Pantrol",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "20 mg",
+        "company": "Credence Pharmaceuticals Ltd. (Mfg. by: Apex Pharma Ltd.)",
+        "brand_url": "https://medex.com.bd/brands/2209/pantrol-20-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "4.50",
+        "pack_size_info": "(6 x 10: ৳ 270.00)",
+        "price_text": "Unit Price: ৳ 4.50 (6 x 10: ৳ 270.00)"
+      },
+      {
+        "brand_name": "Pantrol",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "40 mg",
+        "company": "Credence Pharmaceuticals Ltd. (Mfg. by: Apex Pharma Ltd.)",
+        "brand_url": "https://medex.com.bd/brands/28157/pantrol-40-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "7.00",
+        "pack_size_info": "(3 x 10: ৳ 210.00)",
+        "price_text": "Unit Price: ৳ 7.00 (3 x 10: ৳ 210.00)"
+      },
+      {
+        "brand_name": "Panzer",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "20 mg",
+        "company": "Sun Pharmaceutical (Bangladesh) Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2210/panzer-20-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "4.02",
+        "pack_size_info": "(5 x 10: ৳ 201.00)",
+        "price_text": "Unit Price: ৳ 4.02 (5 x 10: ৳ 201.00)"
+      },
+      {
+        "brand_name": "Panzer",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "40 mg",
+        "company": "Sun Pharmaceutical (Bangladesh) Ltd.",
+        "brand_url": "https://medex.com.bd/brands/26698/panzer-40-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "6.02",
+        "pack_size_info": "(5 x 10: ৳ 301.00)",
+        "price_text": "Unit Price: ৳ 6.02 (5 x 10: ৳ 301.00)"
+      },
+      {
+        "brand_name": "Panzol",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "20 mg",
+        "company": "Amico Laboratories Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2212/panzol-20-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "3.50",
+        "pack_size_info": "(30's pack: ৳ 105.00)",
+        "price_text": "Unit Price: ৳ 3.50 (30's pack: ৳ 105.00)"
+      },
+      {
+        "brand_name": "Panzol",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "40 mg",
+        "company": "Amico Laboratories Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2213/panzol-40-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "5.50",
+        "pack_size_info": "(30's pack: ৳ 165.00)",
+        "price_text": "Unit Price: ৳ 5.50 (30's pack: ৳ 165.00)"
+      },
+      {
+        "brand_name": "Patanix",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "20 mg",
+        "company": "Nipa Pharmaceuticals Ltd.",
+        "brand_url": "https://medex.com.bd/brands/27532/patanix-20-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "4.60",
+        "pack_size_info": "(6 x 10: ৳ 276.00)",
+        "price_text": "Unit Price: ৳ 4.60 (6 x 10: ৳ 276.00)"
+      },
+      {
+        "brand_name": "PC-20",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "20 mg",
+        "company": "Central Pharmaceuticals Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2216/pc-20-20-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "4.00",
+        "pack_size_info": "(50's pack: ৳ 200.00)",
+        "price_text": "Unit Price: ৳ 4.00 (50's pack: ৳ 200.00)"
+      },
+      {
+        "brand_name": "Pelican",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "20 mg",
+        "company": "Delta Pharma Ltd.",
+        "brand_url": "https://medex.com.bd/brands/23316/pelican-20-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "3.00",
+        "pack_size_info": "(5 x 10: ৳ 150.00)",
+        "price_text": "Unit Price: ৳ 3.00 (5 x 10: ৳ 150.00)"
+      },
+      {
+        "brand_name": "Pramax",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "20 mg",
+        "company": "Concord Pharmaceuticals Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2219/pramax-20-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "5.50",
+        "pack_size_info": "(5 x 10: ৳ 275.00)",
+        "price_text": "Unit Price: ৳ 5.50 (5 x 10: ৳ 275.00)"
+      },
+      {
+        "brand_name": "Pramax",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "40 mg",
+        "company": "Concord Pharmaceuticals Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2220/pramax-40-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "6.02",
+        "pack_size_info": "(3 x 10: ৳ 180.60)",
+        "price_text": "Unit Price: ৳ 6.02 (3 x 10: ৳ 180.60)"
+      },
+      {
+        "brand_name": "Prazolin",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "20 mg",
+        "company": "Rephco Pharmaceuticals Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2221/prazolin-20-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "4.00",
+        "pack_size_info": "(50's pack: ৳ 200.00)",
+        "price_text": "Unit Price: ৳ 4.00 (50's pack: ৳ 200.00)"
+      },
+      {
+        "brand_name": "Prazolin",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "40 mg",
+        "company": "Rephco Pharmaceuticals Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2222/prazolin-40-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "6.00",
+        "pack_size_info": "(50's pack: ৳ 300.00)",
+        "price_text": "Unit Price: ৳ 6.00 (50's pack: ৳ 300.00)"
+      },
+      {
+        "brand_name": "Pregel",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "20 mg",
+        "company": "Healthcare Pharmaceuticals Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2223/pregel-20-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "5.00",
+        "pack_size_info": "(5 x 10: ৳ 250.00)",
+        "price_text": "Unit Price: ৳ 5.00 (5 x 10: ৳ 250.00)"
+      },
+      {
+        "brand_name": "Pregel",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "40 mg",
+        "company": "Healthcare Pharmaceuticals Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2224/pregel-40-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "7.00",
+        "pack_size_info": "(3 x 10: ৳ 210.00)",
+        "price_text": "Unit Price: ৳ 7.00 (3 x 10: ৳ 210.00)"
+      },
+      {
+        "brand_name": "Pregel",
+        "dosage_form": "IV Injection",
+        "strength": "40 mg/vial",
+        "company": "Healthcare Pharmaceuticals Ltd.",
+        "brand_url": "https://medex.com.bd/brands/23327/pregel-40-mg-injection",
+        "price_label": "40 mg vial",
+        "unit_price_bdt": "90.00",
+        "pack_size_info": null,
+        "price_text": "40 mg vial: ৳ 90.00"
+      },
+      {
+        "brand_name": "Pretonix",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "20 mg",
+        "company": "Pharmadesh Laboratories Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2225/pretonix-20-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "3.50",
+        "pack_size_info": "(50's pack: ৳ 175.00)",
+        "price_text": "Unit Price: ৳ 3.50 (50's pack: ৳ 175.00)"
+      },
+      {
+        "brand_name": "Pretonix",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "40 mg",
+        "company": "Pharmadesh Laboratories Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2226/pretonix-40-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "5.75",
+        "pack_size_info": "(30's pack: ৳ 172.50)",
+        "price_text": "Unit Price: ৳ 5.75 (30's pack: ৳ 172.50)"
+      },
+      {
+        "brand_name": "Prilosec",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "20 mg",
+        "company": "Al-Madina Pharmaceuticals Ltd.",
+        "brand_url": "https://medex.com.bd/brands/29257/prilosec-20-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "4.50",
+        "pack_size_info": "(5 x 10: ৳ 225.00)",
+        "price_text": "Unit Price: ৳ 4.50 (5 x 10: ৳ 225.00)"
+      },
+      {
+        "brand_name": "Prilosec",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "40 mg",
+        "company": "Al-Madina Pharmaceuticals Ltd.",
+        "brand_url": "https://medex.com.bd/brands/29258/prilosec-40-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "7.00",
+        "pack_size_info": "(3 x 10: ৳ 210.00)",
+        "price_text": "Unit Price: ৳ 7.00 (3 x 10: ৳ 210.00)"
+      },
+      {
+        "brand_name": "Propenta",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "20 mg",
+        "company": "Marker Pharma Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2227/propenta-20-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "3.00",
+        "pack_size_info": "(50's pack: ৳ 150.00)",
+        "price_text": "Unit Price: ৳ 3.00 (50's pack: ৳ 150.00)"
+      },
+      {
+        "brand_name": "Protium",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "20 mg",
+        "company": "UniMed UniHealth Pharmaceuticals Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2228/protium-20-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "5.00",
+        "pack_size_info": "(3 x 10: ৳ 150.00)",
+        "price_text": "Unit Price: ৳ 5.00 (3 x 10: ৳ 150.00)"
+      },
+      {
+        "brand_name": "Protocid",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "20 mg",
+        "company": "ACME Laboratories Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2230/protocid-20-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "5.00",
+        "pack_size_info": "(10 x 14: ৳ 700.00)",
+        "price_text": "Unit Price: ৳ 5.00 (10 x 14: ৳ 700.00)"
+      },
+      {
+        "brand_name": "Protocid",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "40 mg",
+        "company": "ACME Laboratories Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2231/protocid-40-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "7.00",
+        "pack_size_info": "(5 x 10: ৳ 350.00)",
+        "price_text": "Unit Price: ৳ 7.00 (5 x 10: ৳ 350.00)"
+      },
+      {
+        "brand_name": "Protocid",
+        "dosage_form": "IV Injection",
+        "strength": "40 mg/vial",
+        "company": "ACME Laboratories Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2232/protocid-40-mg-injection",
+        "price_label": "40 mg vial",
+        "unit_price_bdt": "90.00",
+        "pack_size_info": null,
+        "price_text": "40 mg vial: ৳ 90.00"
+      },
+      {
+        "brand_name": "Protoloc",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "20 mg",
+        "company": "Beacon Pharmaceuticals PLC",
+        "brand_url": "https://medex.com.bd/brands/2233/protoloc-20-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "5.00",
+        "pack_size_info": "(5 x 10: ৳ 250.00)",
+        "price_text": "Unit Price: ৳ 5.00 (5 x 10: ৳ 250.00)"
+      },
+      {
+        "brand_name": "Proton-P",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "20 mg",
+        "company": "Aristopharma Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2237/proton-p-20-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "5.00",
+        "pack_size_info": "(6 x 10: ৳ 300.00)",
+        "price_text": "Unit Price: ৳ 5.00 (6 x 10: ৳ 300.00)"
+      },
+      {
+        "brand_name": "Proton-P",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "40 mg",
+        "company": "Aristopharma Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2238/proton-p-40-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "7.00",
+        "pack_size_info": "(6 x 10: ৳ 420.00)",
+        "price_text": "Unit Price: ৳ 7.00 (6 x 10: ৳ 420.00)"
+      },
+      {
+        "brand_name": "Proton-P",
+        "dosage_form": "IV Injection",
+        "strength": "40 mg/vial",
+        "company": "Aristopharma Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2239/proton-p-40-mg-injection",
+        "price_label": "40 mg vial",
+        "unit_price_bdt": "80.00",
+        "pack_size_info": null,
+        "price_text": "40 mg vial: ৳ 80.00"
+      },
+      {
+        "brand_name": "Protonil",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "20 mg",
+        "company": "Renata PLC",
+        "brand_url": "https://medex.com.bd/brands/2235/protonil-20-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "6.00",
+        "pack_size_info": "(5 x 10: ৳ 300.00)",
+        "price_text": "Unit Price: ৳ 6.00 (5 x 10: ৳ 300.00)"
+      },
+      {
+        "brand_name": "Protonil",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "40 mg",
+        "company": "Renata PLC",
+        "brand_url": "https://medex.com.bd/brands/2236/protonil-40-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "9.00",
+        "pack_size_info": "(3 x 10: ৳ 270.00)",
+        "price_text": "Unit Price: ৳ 9.00 (3 x 10: ৳ 270.00)"
+      },
+      {
+        "brand_name": "Protopa",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "20 mg",
+        "company": "Apollo Pharmaceutical Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2240/protopa-20-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "4.00",
+        "pack_size_info": "(30's pack: ৳ 120.00)",
+        "price_text": "Unit Price: ৳ 4.00 (30's pack: ৳ 120.00)"
+      },
+      {
+        "brand_name": "Protozin",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "20 mg",
+        "company": "Euro Pharma Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2241/protozin-20-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "6.00",
+        "pack_size_info": "(5 x 10: ৳ 300.00)",
+        "price_text": "Unit Price: ৳ 6.00 (5 x 10: ৳ 300.00)"
+      },
+      {
+        "brand_name": "Protozin",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "40 mg",
+        "company": "Euro Pharma Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2242/protozin-40-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "9.00",
+        "pack_size_info": "(5 x 10: ৳ 450.00)",
+        "price_text": "Unit Price: ৳ 9.00 (5 x 10: ৳ 450.00)"
+      },
+      {
+        "brand_name": "PZ-20",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "20 mg",
+        "company": "Modern Pharmaceuticals Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2248/pz-20-20-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "4.00",
+        "pack_size_info": "(50's pack: ৳ 200.00)",
+        "price_text": "Unit Price: ৳ 4.00 (50's pack: ৳ 200.00)"
+      },
+      {
+        "brand_name": "PZ-40",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "40 mg",
+        "company": "Modern Pharmaceuticals Ltd.",
+        "brand_url": "https://medex.com.bd/brands/23337/pz-40-40-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "6.00",
+        "pack_size_info": "(50's pack: ৳ 300.00)",
+        "price_text": "Unit Price: ৳ 6.00 (50's pack: ৳ 300.00)"
+      },
+      {
+        "brand_name": "Topra",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "20 mg",
+        "company": "Jayson Pharmaceutical Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2249/topra-20-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "4.00",
+        "pack_size_info": "(3 x 10: ৳ 120.00)",
+        "price_text": "Unit Price: ৳ 4.00 (3 x 10: ৳ 120.00)"
+      },
+      {
+        "brand_name": "Topra",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "40 mg",
+        "company": "Jayson Pharmaceutical Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2250/topra-40-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "5.03",
+        "pack_size_info": "(3 x 10: ৳ 150.88)",
+        "price_text": "Unit Price: ৳ 5.03 (3 x 10: ৳ 150.88)"
+      },
+      {
+        "brand_name": "Trupan",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "20 mg",
+        "company": "Square Pharmaceuticals PLC",
+        "brand_url": "https://medex.com.bd/brands/2251/trupan-20-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "7.00",
+        "pack_size_info": "(6 x 10: ৳ 420.00)",
+        "price_text": "Unit Price: ৳ 7.00 (6 x 10: ৳ 420.00)"
+      },
+      {
+        "brand_name": "Trupan",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "40 mg",
+        "company": "Square Pharmaceuticals PLC",
+        "brand_url": "https://medex.com.bd/brands/2252/trupan-40-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "10.00",
+        "pack_size_info": "(6 x 10: ৳ 600.00)",
+        "price_text": "Unit Price: ৳ 10.00 (6 x 10: ৳ 600.00)"
+      },
+      {
+        "brand_name": "Trupan",
+        "dosage_form": "IV Injection",
+        "strength": "40 mg/vial",
+        "company": "Square Pharmaceuticals PLC",
+        "brand_url": "https://medex.com.bd/brands/2253/trupan-40-mg-injection",
+        "price_label": "40 mg vial",
+        "unit_price_bdt": "90.00",
+        "pack_size_info": null,
+        "price_text": "40 mg vial: ৳ 90.00"
+      },
+      {
+        "brand_name": "U-Pepton",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "20 mg",
+        "company": "Union Pharmaceuticals Ltd",
+        "brand_url": "https://medex.com.bd/brands/34991/u-pepton-20-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "4.00",
+        "pack_size_info": "(5 x 10: ৳ 200.00)",
+        "price_text": "Unit Price: ৳ 4.00 (5 x 10: ৳ 200.00)"
+      },
+      {
+        "brand_name": "Zenopan",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "20 mg",
+        "company": "Zenith Pharmaceuticals Ltd.",
+        "brand_url": "https://medex.com.bd/brands/23371/zenopan-20-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "5.00",
+        "pack_size_info": "(5 x 15: ৳ 375.00)",
+        "price_text": "Unit Price: ৳ 5.00 (5 x 15: ৳ 375.00)"
+      },
+      {
+        "brand_name": "Zopan",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "20 mg",
+        "company": "Kemiko Pharmaceuticals Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2254/zopan-20-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "5.00",
+        "pack_size_info": "(50's pack: ৳ 250.00)",
+        "price_text": "Unit Price: ৳ 5.00 (50's pack: ৳ 250.00)"
+      },
+      {
+        "brand_name": "Zopan",
+        "dosage_form": "Tablet (Enteric Coated)",
+        "strength": "40 mg",
+        "company": "Kemiko Pharmaceuticals Ltd.",
+        "brand_url": "https://medex.com.bd/brands/2255/zopan-40-mg-tablet",
+        "price_label": "Unit Price",
+        "unit_price_bdt": "6.02",
+        "pack_size_info": "(50's pack: ৳ 301.00)",
+        "price_text": "Unit Price: ৳ 6.02 (50's pack: ৳ 301.00)"
+      }
+    ],
+    "grouped_by_company": [
+      {
+        "company": "Decent Pharma Laboratories Ltd.",
+        "dosage_forms": [
+          {
+            "dosage_form": "Tablet (Enteric Coated)",
+            "brands": [
+              {
+                "brand_name": "AUP",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "20 mg",
+                "company": "Decent Pharma Laboratories Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2139/aup-20-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "3.00",
+                "pack_size_info": "(30's pack: ৳ 90.00)",
+                "price_text": "Unit Price: ৳ 3.00 (30's pack: ৳ 90.00)"
+              },
+              {
+                "brand_name": "AUP",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "40 mg",
+                "company": "Decent Pharma Laboratories Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2140/aup-40-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "5.00",
+                "pack_size_info": "(30's pack: ৳ 150.00)",
+                "price_text": "Unit Price: ৳ 5.00 (30's pack: ৳ 150.00)"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "company": "Cosmo Pharma Laboratories Ltd.",
+        "dosage_forms": [
+          {
+            "dosage_form": "Tablet (Enteric Coated)",
+            "brands": [
+              {
+                "brand_name": "Cospra",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "20 mg",
+                "company": "Cosmo Pharma Laboratories Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2141/cospra-20-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "4.00",
+                "pack_size_info": "(10 x 10: ৳ 400.00)",
+                "price_text": "Unit Price: ৳ 4.00 (10 x 10: ৳ 400.00)"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "company": "Desh Pharmaceuticals Ltd.",
+        "dosage_forms": [
+          {
+            "dosage_form": "Tablet (Enteric Coated)",
+            "brands": [
+              {
+                "brand_name": "Detonix",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "20 mg",
+                "company": "Desh Pharmaceuticals Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2143/detonix-20-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "4.00",
+                "pack_size_info": "(10 x 15: ৳ 600.00)",
+                "price_text": "Unit Price: ৳ 4.00 (10 x 15: ৳ 600.00)"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "company": "Leon Pharmaceuticals Ltd.",
+        "dosage_forms": [
+          {
+            "dosage_form": "Tablet (Enteric Coated)",
+            "brands": [
+              {
+                "brand_name": "Exipro",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "20 mg",
+                "company": "Leon Pharmaceuticals Ltd.",
+                "brand_url": "https://medex.com.bd/brands/23333/exipro-20-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "5.00",
+                "pack_size_info": "(50's pack: ৳ 250.00)",
+                "price_text": "Unit Price: ৳ 5.00 (50's pack: ৳ 250.00)"
+              },
+              {
+                "brand_name": "Exipro",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "40 mg",
+                "company": "Leon Pharmaceuticals Ltd.",
+                "brand_url": "https://medex.com.bd/brands/23334/exipro-40-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "6.00",
+                "pack_size_info": "(30's pack: ৳ 180.00)",
+                "price_text": "Unit Price: ৳ 6.00 (30's pack: ৳ 180.00)"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "company": "Edruc Limited",
+        "dosage_forms": [
+          {
+            "dosage_form": "Tablet (Enteric Coated)",
+            "brands": [
+              {
+                "brand_name": "Exopan",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "20 mg",
+                "company": "Edruc Limited",
+                "brand_url": "https://medex.com.bd/brands/2147/exopan-20-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "3.00",
+                "pack_size_info": "(50's pack: ৳ 150.00)",
+                "price_text": "Unit Price: ৳ 3.00 (50's pack: ৳ 150.00)"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "company": "The White Horse Pharmaceuticals Ltd.",
+        "dosage_forms": [
+          {
+            "dosage_form": "Tablet (Enteric Coated)",
+            "brands": [
+              {
+                "brand_name": "Gaslev",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "20 mg",
+                "company": "The White Horse Pharmaceuticals Ltd.",
+                "brand_url": "https://medex.com.bd/brands/27922/gaslev-20-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "5.00",
+                "pack_size_info": "(6 x 10: ৳ 300.00)",
+                "price_text": "Unit Price: ৳ 5.00 (6 x 10: ৳ 300.00)"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "company": "Ethical Drugs Limited",
+        "dosage_forms": [
+          {
+            "dosage_form": "Tablet (Enteric Coated)",
+            "brands": [
+              {
+                "brand_name": "Gaspain",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "20 mg",
+                "company": "Ethical Drugs Limited",
+                "brand_url": "https://medex.com.bd/brands/23325/gaspain-20-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "4.00",
+                "pack_size_info": "(5 x 10: ৳ 200.00)",
+                "price_text": "Unit Price: ৳ 4.00 (5 x 10: ৳ 200.00)"
+              },
+              {
+                "brand_name": "Gaspain",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "40 mg",
+                "company": "Ethical Drugs Limited",
+                "brand_url": "https://medex.com.bd/brands/23326/gaspain-40-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "6.00",
+                "pack_size_info": "(5 x 10: ৳ 300.00)",
+                "price_text": "Unit Price: ৳ 6.00 (5 x 10: ৳ 300.00)"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "company": "Hudson Pharmaceuticals Ltd.",
+        "dosage_forms": [
+          {
+            "dosage_form": "Tablet (Enteric Coated)",
+            "brands": [
+              {
+                "brand_name": "Hiprazole",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "20 mg",
+                "company": "Hudson Pharmaceuticals Ltd.",
+                "brand_url": "https://medex.com.bd/brands/23328/hiprazole-20-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "5.00",
+                "pack_size_info": null,
+                "price_text": "Unit Price: ৳ 5.00"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "company": "Labaid Pharma Ltd.",
+        "dosage_forms": [
+          {
+            "dosage_form": "Tablet (Enteric Coated)",
+            "brands": [
+              {
+                "brand_name": "Labpan",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "20 mg",
+                "company": "Labaid Pharma Ltd.",
+                "brand_url": "https://medex.com.bd/brands/23332/labpan-20-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "7.00",
+                "pack_size_info": "(6 x 10: ৳ 420.00)",
+                "price_text": "Unit Price: ৳ 7.00 (6 x 10: ৳ 420.00)"
+              },
+              {
+                "brand_name": "Labpan",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "40 mg",
+                "company": "Labaid Pharma Ltd.",
+                "brand_url": "https://medex.com.bd/brands/28689/labpan-40-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "7.00",
+                "pack_size_info": "(6 x 10: ৳ 420.00)",
+                "price_text": "Unit Price: ৳ 7.00 (6 x 10: ৳ 420.00)"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "company": "Supreme Pharmaceutical Ltd.",
+        "dosage_forms": [
+          {
+            "dosage_form": "Tablet (Enteric Coated)",
+            "brands": [
+              {
+                "brand_name": "Neopanta",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "20 mg",
+                "company": "Supreme Pharmaceutical Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2148/neopanta-20-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "4.00",
+                "pack_size_info": "(30's pack: ৳ 120.00)",
+                "price_text": "Unit Price: ৳ 4.00 (30's pack: ৳ 120.00)"
+              },
+              {
+                "brand_name": "Neopanta",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "40 mg",
+                "company": "Supreme Pharmaceutical Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2149/neopanta-40-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "6.00",
+                "pack_size_info": "(50's pack: ৳ 300.00)",
+                "price_text": "Unit Price: ৳ 6.00 (50's pack: ৳ 300.00)"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "company": "Ad-din Pharmaceuticals Ltd.",
+        "dosage_forms": [
+          {
+            "dosage_form": "Tablet (Enteric Coated)",
+            "brands": [
+              {
+                "brand_name": "Nixpan",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "20 mg",
+                "company": "Ad-din Pharmaceuticals Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2150/nixpan-20-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "5.00",
+                "pack_size_info": "(4 x 15: ৳ 300.00)",
+                "price_text": "Unit Price: ৳ 5.00 (4 x 15: ৳ 300.00)"
+              },
+              {
+                "brand_name": "Nixpan",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "40 mg",
+                "company": "Ad-din Pharmaceuticals Ltd.",
+                "brand_url": "https://medex.com.bd/brands/23306/nixpan-40-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "7.50",
+                "pack_size_info": "(3 x 10: ৳ 225.00)",
+                "price_text": "Unit Price: ৳ 7.50 (3 x 10: ৳ 225.00)"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "company": "Novus Pharmaceuticals Ltd.",
+        "dosage_forms": [
+          {
+            "dosage_form": "Tablet (Enteric Coated)",
+            "brands": [
+              {
+                "brand_name": "Novapan",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "40 mg",
+                "company": "Novus Pharmaceuticals Ltd.",
+                "brand_url": "https://medex.com.bd/brands/23344/novapan-40-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "3.00",
+                "pack_size_info": "(30's pack: ৳ 90.00)",
+                "price_text": "Unit Price: ৳ 3.00 (30's pack: ৳ 90.00)"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "company": "Peoples Pharma Ltd.",
+        "dosage_forms": [
+          {
+            "dosage_form": "Tablet (Enteric Coated)",
+            "brands": [
+              {
+                "brand_name": "Otonix",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "20 mg",
+                "company": "Peoples Pharma Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2151/otonix-20-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "3.00",
+                "pack_size_info": "(50's pack: ৳ 150.00)",
+                "price_text": "Unit Price: ৳ 3.00 (50's pack: ৳ 150.00)"
+              },
+              {
+                "brand_name": "Otonix",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "40 mg",
+                "company": "Peoples Pharma Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2152/otonix-40-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "5.00",
+                "pack_size_info": "(50's pack: ৳ 250.00)",
+                "price_text": "Unit Price: ৳ 5.00 (50's pack: ৳ 250.00)"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "company": "Asiatic Laboratories Ltd.",
+        "dosage_forms": [
+          {
+            "dosage_form": "Tablet (Enteric Coated)",
+            "brands": [
+              {
+                "brand_name": "P-20",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "20 mg",
+                "company": "Asiatic Laboratories Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2153/p-20-20-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "4.00",
+                "pack_size_info": "(10 x 10: ৳ 400.00)",
+                "price_text": "Unit Price: ৳ 4.00 (10 x 10: ৳ 400.00)"
+              },
+              {
+                "brand_name": "P-40",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "40 mg",
+                "company": "Asiatic Laboratories Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2154/p-40-40-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "6.00",
+                "pack_size_info": "(5 x 10: ৳ 300.00)",
+                "price_text": "Unit Price: ৳ 6.00 (5 x 10: ৳ 300.00)"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "company": "Globe Pharmaceuticals Ltd.",
+        "dosage_forms": [
+          {
+            "dosage_form": "Tablet (Enteric Coated)",
+            "brands": [
+              {
+                "brand_name": "P-Gut",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "20 mg",
+                "company": "Globe Pharmaceuticals Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2144/p-gut-20-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "4.40",
+                "pack_size_info": "(7 x 10: ৳ 308.00)",
+                "price_text": "Unit Price: ৳ 4.40 (7 x 10: ৳ 308.00)"
+              },
+              {
+                "brand_name": "P-Gut",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "40 mg",
+                "company": "Globe Pharmaceuticals Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2145/p-gut-40-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "6.00",
+                "pack_size_info": "(3 x 10: ৳ 180.00)",
+                "price_text": "Unit Price: ৳ 6.00 (3 x 10: ৳ 180.00)"
+              }
+            ]
+          },
+          {
+            "dosage_form": "IV Injection",
+            "brands": [
+              {
+                "brand_name": "P-Gut",
+                "dosage_form": "IV Injection",
+                "strength": "40 mg/vial",
+                "company": "Globe Pharmaceuticals Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2146/p-gut-40-mg-injection",
+                "price_label": "40 mg vial",
+                "unit_price_bdt": "70.00",
+                "pack_size_info": null,
+                "price_text": "40 mg vial: ৳ 70.00"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "company": "One Pharma Ltd.",
+        "dosage_forms": [
+          {
+            "dosage_form": "Tablet (Enteric Coated)",
+            "brands": [
+              {
+                "brand_name": "P-Lock",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "40 mg",
+                "company": "One Pharma Ltd.",
+                "brand_url": "https://medex.com.bd/brands/23345/p-lock-40-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "7.00",
+                "pack_size_info": "(3 x 10: ৳ 210.00)",
+                "price_text": "Unit Price: ৳ 7.00 (3 x 10: ৳ 210.00)"
+              },
+              {
+                "brand_name": "P-Lock",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "20 mg",
+                "company": "One Pharma Ltd.",
+                "brand_url": "https://medex.com.bd/brands/23346/p-lock-20-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "5.00",
+                "pack_size_info": "(6 x 10: ৳ 300.00)",
+                "price_text": "Unit Price: ৳ 5.00 (6 x 10: ৳ 300.00)"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "company": "Doctor TIMS Pharmaceuticals Ltd.",
+        "dosage_forms": [
+          {
+            "dosage_form": "Tablet (Enteric Coated)",
+            "brands": [
+              {
+                "brand_name": "P-Proton",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "20 mg",
+                "company": "Doctor TIMS Pharmaceuticals Ltd.",
+                "brand_url": "https://medex.com.bd/brands/32550/p-proton-20-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "5.02",
+                "pack_size_info": "(3 x 10: ৳ 150.50)",
+                "price_text": "Unit Price: ৳ 5.02 (3 x 10: ৳ 150.50)"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "company": "Novatek Pharmaceuticals Ltd.",
+        "dosage_forms": [
+          {
+            "dosage_form": "Tablet (Enteric Coated)",
+            "brands": [
+              {
+                "brand_name": "Pagerd",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "20 mg",
+                "company": "Novatek Pharmaceuticals Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2155/pagerd-20-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "4.02",
+                "pack_size_info": "(5 x 10: ৳ 201.00)",
+                "price_text": "Unit Price: ৳ 4.02 (5 x 10: ৳ 201.00)"
+              },
+              {
+                "brand_name": "Pagerd",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "40 mg",
+                "company": "Novatek Pharmaceuticals Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2156/pagerd-40-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "6.02",
+                "pack_size_info": "(5 x 10: ৳ 301.00)",
+                "price_text": "Unit Price: ৳ 6.02 (5 x 10: ৳ 301.00)"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "company": "Medicon Pharmaceuticals Ltd.",
+        "dosage_forms": [
+          {
+            "dosage_form": "Tablet (Enteric Coated)",
+            "brands": [
+              {
+                "brand_name": "Pamel",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "20 mg",
+                "company": "Medicon Pharmaceuticals Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2157/pamel-20-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "4.00",
+                "pack_size_info": "(5 x 10: ৳ 200.00)",
+                "price_text": "Unit Price: ৳ 4.00 (5 x 10: ৳ 200.00)"
+              },
+              {
+                "brand_name": "Pamel",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "40 mg",
+                "company": "Medicon Pharmaceuticals Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2158/pamel-40-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "6.00",
+                "pack_size_info": "(5 x 10: ৳ 300.00)",
+                "price_text": "Unit Price: ৳ 6.00 (5 x 10: ৳ 300.00)"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "company": "Monicopharma Ltd.",
+        "dosage_forms": [
+          {
+            "dosage_form": "IV Injection",
+            "brands": [
+              {
+                "brand_name": "Panfast",
+                "dosage_form": "IV Injection",
+                "strength": "40 mg/vial",
+                "company": "Monicopharma Ltd.",
+                "brand_url": "https://medex.com.bd/brands/23338/panfast-40-mg-injection",
+                "price_label": "40 mg vial",
+                "unit_price_bdt": "90.00",
+                "pack_size_info": null,
+                "price_text": "40 mg vial: ৳ 90.00"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "company": "Kumudini Pharma Ltd.",
+        "dosage_forms": [
+          {
+            "dosage_form": "Tablet (Enteric Coated)",
+            "brands": [
+              {
+                "brand_name": "Panloc",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "20 mg",
+                "company": "Kumudini Pharma Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2159/panloc-20-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "4.50",
+                "pack_size_info": "(5 x 10: ৳ 225.00)",
+                "price_text": "Unit Price: ৳ 4.50 (5 x 10: ৳ 225.00)"
+              },
+              {
+                "brand_name": "Panloc",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "40 mg",
+                "company": "Kumudini Pharma Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2160/panloc-40-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "6.00",
+                "pack_size_info": "(3 x 10: ৳ 180.00)",
+                "price_text": "Unit Price: ৳ 6.00 (3 x 10: ৳ 180.00)"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "company": "Eskayef Pharmaceuticals Ltd.",
+        "dosage_forms": [
+          {
+            "dosage_form": "Tablet (Enteric Coated)",
+            "brands": [
+              {
+                "brand_name": "Panoral",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "20 mg",
+                "company": "Eskayef Pharmaceuticals Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2161/panoral-20-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "5.00",
+                "pack_size_info": "(4 x 10: ৳ 200.00)",
+                "price_text": "Unit Price: ৳ 5.00 (4 x 10: ৳ 200.00)"
+              },
+              {
+                "brand_name": "Panoral",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "40 mg",
+                "company": "Eskayef Pharmaceuticals Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2162/panoral-40-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "7.00",
+                "pack_size_info": "(4 x 10: ৳ 280.00)",
+                "price_text": "Unit Price: ৳ 7.00 (4 x 10: ৳ 280.00)"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "company": "Silco Pharmaceutical Ltd.",
+        "dosage_forms": [
+          {
+            "dosage_form": "Tablet (Enteric Coated)",
+            "brands": [
+              {
+                "brand_name": "Panosa",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "20 mg",
+                "company": "Silco Pharmaceutical Ltd.",
+                "brand_url": "https://medex.com.bd/brands/31494/panosa-20-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "5.00",
+                "pack_size_info": "(10 x 10: ৳ 500.00)",
+                "price_text": "Unit Price: ৳ 5.00 (10 x 10: ৳ 500.00)"
+              },
+              {
+                "brand_name": "Panosa",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "40 mg",
+                "company": "Silco Pharmaceutical Ltd.",
+                "brand_url": "https://medex.com.bd/brands/31495/panosa-40-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "7.00",
+                "pack_size_info": "(5 x 10: ৳ 350.00)",
+                "price_text": "Unit Price: ৳ 7.00 (5 x 10: ৳ 350.00)"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "company": "Team Pharmaceuticals Ltd.",
+        "dosage_forms": [
+          {
+            "dosage_form": "Tablet (Enteric Coated)",
+            "brands": [
+              {
+                "brand_name": "Panotem",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "20 mg",
+                "company": "Team Pharmaceuticals Ltd.",
+                "brand_url": "https://medex.com.bd/brands/23364/panotem-20-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "4.50",
+                "pack_size_info": "(5 x 10: ৳ 225.00)",
+                "price_text": "Unit Price: ৳ 4.50 (5 x 10: ৳ 225.00)"
+              },
+              {
+                "brand_name": "Panotem",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "40 mg",
+                "company": "Team Pharmaceuticals Ltd.",
+                "brand_url": "https://medex.com.bd/brands/23365/panotem-40-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "6.50",
+                "pack_size_info": "(5 x 10: ৳ 325.00)",
+                "price_text": "Unit Price: ৳ 6.50 (5 x 10: ৳ 325.00)"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "company": "Astra Biopharmaceuticals Ltd.",
+        "dosage_forms": [
+          {
+            "dosage_form": "Tablet (Enteric Coated)",
+            "brands": [
+              {
+                "brand_name": "Panoz",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "20 mg",
+                "company": "Astra Biopharmaceuticals Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2163/panoz-20-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "5.00",
+                "pack_size_info": "(6 x 10: ৳ 300.00)",
+                "price_text": "Unit Price: ৳ 5.00 (6 x 10: ৳ 300.00)"
+              },
+              {
+                "brand_name": "Panoz",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "40 mg",
+                "company": "Astra Biopharmaceuticals Ltd.",
+                "brand_url": "https://medex.com.bd/brands/35477/panoz-40-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "7.00",
+                "pack_size_info": "(5 x 10: ৳ 350.00)",
+                "price_text": "Unit Price: ৳ 7.00 (5 x 10: ৳ 350.00)"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "company": "Pacific Pharmaceuticals Ltd.",
+        "dosage_forms": [
+          {
+            "dosage_form": "Tablet (Enteric Coated)",
+            "brands": [
+              {
+                "brand_name": "Panprazo",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "20 mg",
+                "company": "Pacific Pharmaceuticals Ltd.",
+                "brand_url": "https://medex.com.bd/brands/23351/panprazo-20-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "4.50",
+                "pack_size_info": "(5 x 10: ৳ 225.00)",
+                "price_text": "Unit Price: ৳ 4.50 (5 x 10: ৳ 225.00)"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "company": "Doctor’s Chemical Works Ltd.",
+        "dosage_forms": [
+          {
+            "dosage_form": "Tablet (Enteric Coated)",
+            "brands": [
+              {
+                "brand_name": "Panprin",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "20 mg",
+                "company": "Doctor’s Chemical Works Ltd.",
+                "brand_url": "https://medex.com.bd/brands/23319/panprin-20-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "4.00",
+                "pack_size_info": "(5 x 14: ৳ 280.00)",
+                "price_text": "Unit Price: ৳ 4.00 (5 x 14: ৳ 280.00)"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "company": "Biopharma Limited",
+        "dosage_forms": [
+          {
+            "dosage_form": "Tablet (Enteric Coated)",
+            "brands": [
+              {
+                "brand_name": "Panpro",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "20 mg",
+                "company": "Biopharma Limited",
+                "brand_url": "https://medex.com.bd/brands/2164/panpro-20-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "5.50",
+                "pack_size_info": "(10 x 10: ৳ 550.00)",
+                "price_text": "Unit Price: ৳ 5.50 (10 x 10: ৳ 550.00)"
+              },
+              {
+                "brand_name": "Panpro",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "40 mg",
+                "company": "Biopharma Limited",
+                "brand_url": "https://medex.com.bd/brands/2165/panpro-40-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "7.00",
+                "pack_size_info": "(5 x 10: ৳ 350.00)",
+                "price_text": "Unit Price: ৳ 7.00 (5 x 10: ৳ 350.00)"
+              }
+            ]
+          },
+          {
+            "dosage_form": "IV Injection",
+            "brands": [
+              {
+                "brand_name": "Panpro",
+                "dosage_form": "IV Injection",
+                "strength": "40 mg/vial",
+                "company": "Biopharma Limited",
+                "brand_url": "https://medex.com.bd/brands/2166/panpro-40-mg-injection",
+                "price_label": "40 mg vial",
+                "unit_price_bdt": "70.00",
+                "pack_size_info": null,
+                "price_text": "40 mg vial: ৳ 70.00"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "company": "Drug International Ltd.",
+        "dosage_forms": [
+          {
+            "dosage_form": "Tablet (Enteric Coated)",
+            "brands": [
+              {
+                "brand_name": "Pansec",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "20 mg",
+                "company": "Drug International Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2167/pansec-20-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "6.00",
+                "pack_size_info": "(4 x 14: ৳ 336.00)",
+                "price_text": "Unit Price: ৳ 6.00 (4 x 14: ৳ 336.00)"
+              },
+              {
+                "brand_name": "Pansec",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "40 mg",
+                "company": "Drug International Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2168/pansec-40-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "8.00",
+                "pack_size_info": "(4 x 14: ৳ 448.00)",
+                "price_text": "Unit Price: ৳ 8.00 (4 x 14: ৳ 448.00)"
+              }
+            ]
+          },
+          {
+            "dosage_form": "IV Injection",
+            "brands": [
+              {
+                "brand_name": "Pansec",
+                "dosage_form": "IV Injection",
+                "strength": "40 mg/vial",
+                "company": "Drug International Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2169/pansec-40-mg-injection",
+                "price_label": "40 mg vial",
+                "unit_price_bdt": "90.30",
+                "pack_size_info": null,
+                "price_text": "40 mg vial: ৳ 90.30"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "company": "Army Pharma Limited",
+        "dosage_forms": [
+          {
+            "dosage_form": "Tablet (Enteric Coated)",
+            "brands": [
+              {
+                "brand_name": "Pansol",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "20 mg",
+                "company": "Army Pharma Limited",
+                "brand_url": "https://medex.com.bd/brands/38978/pansol-20-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "6.00",
+                "pack_size_info": "(5 x 10: ৳ 300.00)",
+                "price_text": "Unit Price: ৳ 6.00 (5 x 10: ৳ 300.00)"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "company": "NIPRO JMI Pharma Ltd.",
+        "dosage_forms": [
+          {
+            "dosage_form": "Tablet (Enteric Coated)",
+            "brands": [
+              {
+                "brand_name": "Pansos",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "20 mg",
+                "company": "NIPRO JMI Pharma Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2170/pansos-20-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "7.00",
+                "pack_size_info": "(5 x 10: ৳ 350.00)",
+                "price_text": "Unit Price: ৳ 7.00 (5 x 10: ৳ 350.00)"
+              },
+              {
+                "brand_name": "Pansos",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "40 mg",
+                "company": "NIPRO JMI Pharma Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2171/pansos-40-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "10.00",
+                "pack_size_info": "(5 x 10: ৳ 500.00)",
+                "price_text": "Unit Price: ৳ 10.00 (5 x 10: ৳ 500.00)"
+              }
+            ]
+          },
+          {
+            "dosage_form": "IV Injection",
+            "brands": [
+              {
+                "brand_name": "Pansos",
+                "dosage_form": "IV Injection",
+                "strength": "40 mg/vial",
+                "company": "NIPRO JMI Pharma Ltd.",
+                "brand_url": "https://medex.com.bd/brands/39372/pansos-40-mg-injection",
+                "price_label": "40 mg vial",
+                "unit_price_bdt": "90.00",
+                "pack_size_info": null,
+                "price_text": "40 mg vial: ৳ 90.00"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "company": "Navana Pharmaceuticals Ltd.",
+        "dosage_forms": [
+          {
+            "dosage_form": "Tablet (Enteric Coated)",
+            "brands": [
+              {
+                "brand_name": "Pantac",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "20 mg",
+                "company": "Navana Pharmaceuticals Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2172/pantac-20-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "4.00",
+                "pack_size_info": "(6 x 10: ৳ 240.00)",
+                "price_text": "Unit Price: ৳ 4.00 (6 x 10: ৳ 240.00)"
+              },
+              {
+                "brand_name": "Pantac",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "40 mg",
+                "company": "Navana Pharmaceuticals Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2173/pantac-40-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "6.00",
+                "pack_size_info": "(3 x 10: ৳ 180.00)",
+                "price_text": "Unit Price: ৳ 6.00 (3 x 10: ৳ 180.00)"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "company": "Aexim Pharmaceuticals Ltd.",
+        "dosage_forms": [
+          {
+            "dosage_form": "Tablet (Enteric Coated)",
+            "brands": [
+              {
+                "brand_name": "Pantaloc",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "40 mg",
+                "company": "Aexim Pharmaceuticals Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2174/pantaloc-40-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "3.50",
+                "pack_size_info": "(3 x 10: ৳ 105.00)",
+                "price_text": "Unit Price: ৳ 3.50 (3 x 10: ৳ 105.00)"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "company": "ACI Limited",
+        "dosage_forms": [
+          {
+            "dosage_form": "Tablet (Enteric Coated)",
+            "brands": [
+              {
+                "brand_name": "Pantex",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "40 mg",
+                "company": "ACI Limited",
+                "brand_url": "https://medex.com.bd/brands/2175/pantex-40-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "8.00",
+                "pack_size_info": "(3 x 10: ৳ 240.00)",
+                "price_text": "Unit Price: ৳ 8.00 (3 x 10: ৳ 240.00)"
+              },
+              {
+                "brand_name": "Pantex",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "20 mg",
+                "company": "ACI Limited",
+                "brand_url": "https://medex.com.bd/brands/23304/pantex-20-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "7.00",
+                "pack_size_info": "(5 x 10: ৳ 350.00)",
+                "price_text": "Unit Price: ৳ 7.00 (5 x 10: ৳ 350.00)"
+              }
+            ]
+          },
+          {
+            "dosage_form": "IV Injection",
+            "brands": [
+              {
+                "brand_name": "Pantex",
+                "dosage_form": "IV Injection",
+                "strength": "40 mg/vial",
+                "company": "ACI Limited",
+                "brand_url": "https://medex.com.bd/brands/23305/pantex-40-mg-injection",
+                "price_label": "40 mg vial",
+                "unit_price_bdt": "70.47",
+                "pack_size_info": null,
+                "price_text": "40 mg vial: ৳ 70.47"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "company": "Opsonin Pharma Ltd.",
+        "dosage_forms": [
+          {
+            "dosage_form": "Tablet (Enteric Coated)",
+            "brands": [
+              {
+                "brand_name": "Pantid",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "20 mg",
+                "company": "Opsonin Pharma Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2176/pantid-20-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "6.00",
+                "pack_size_info": "(7 x 14: ৳ 588.00)",
+                "price_text": "Unit Price: ৳ 6.00 (7 x 14: ৳ 588.00)"
+              },
+              {
+                "brand_name": "Pantid",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "40 mg",
+                "company": "Opsonin Pharma Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2177/pantid-40-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "9.00",
+                "pack_size_info": "(4 x 14: ৳ 504.00)",
+                "price_text": "Unit Price: ৳ 9.00 (4 x 14: ৳ 504.00)"
+              }
+            ]
+          },
+          {
+            "dosage_form": "IV Injection",
+            "brands": [
+              {
+                "brand_name": "Pantid",
+                "dosage_form": "IV Injection",
+                "strength": "40 mg/vial",
+                "company": "Opsonin Pharma Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2178/pantid-40-mg-injection",
+                "price_label": "40 mg vial",
+                "unit_price_bdt": "100.00",
+                "pack_size_info": null,
+                "price_text": "40 mg vial: ৳ 100.00"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "company": "Jenphar Bangladesh Ltd.",
+        "dosage_forms": [
+          {
+            "dosage_form": "Tablet (Enteric Coated)",
+            "brands": [
+              {
+                "brand_name": "Pantium",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "20 mg",
+                "company": "Jenphar Bangladesh Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2179/pantium-20-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "7.02",
+                "pack_size_info": "(6 x 10: ৳ 421.20)",
+                "price_text": "Unit Price: ৳ 7.02 (6 x 10: ৳ 421.20)"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "company": "Somatec Pharmaceuticals Ltd.",
+        "dosage_forms": [
+          {
+            "dosage_form": "Tablet (Enteric Coated)",
+            "brands": [
+              {
+                "brand_name": "Panto",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "20 mg",
+                "company": "Somatec Pharmaceuticals Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2180/panto-20-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "4.00",
+                "pack_size_info": "(5 x 10: ৳ 200.00)",
+                "price_text": "Unit Price: ৳ 4.00 (5 x 10: ৳ 200.00)"
+              },
+              {
+                "brand_name": "Panto",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "40 mg",
+                "company": "Somatec Pharmaceuticals Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2181/panto-40-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "6.00",
+                "pack_size_info": "(3 x 10: ৳ 180.00)",
+                "price_text": "Unit Price: ৳ 6.00 (3 x 10: ৳ 180.00)"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "company": "Seema Pharmaceuticals Ltd.",
+        "dosage_forms": [
+          {
+            "dosage_form": "Tablet (Enteric Coated)",
+            "brands": [
+              {
+                "brand_name": "Panto SP",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "20 mg",
+                "company": "Seema Pharmaceuticals Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2204/panto-sp-20-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "3.00",
+                "pack_size_info": "(50's pack: ৳ 150.00)",
+                "price_text": "Unit Price: ৳ 3.00 (50's pack: ৳ 150.00)"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "company": "Beximco Pharmaceuticals Ltd.",
+        "dosage_forms": [
+          {
+            "dosage_form": "Tablet (Enteric Coated)",
+            "brands": [
+              {
+                "brand_name": "Pantobex",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "20 mg",
+                "company": "Beximco Pharmaceuticals Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2182/pantobex-20-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "5.00",
+                "pack_size_info": "(10 x 10: ৳ 500.00)",
+                "price_text": "Unit Price: ৳ 5.00 (10 x 10: ৳ 500.00)"
+              },
+              {
+                "brand_name": "Pantobex",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "40 mg",
+                "company": "Beximco Pharmaceuticals Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2183/pantobex-40-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "7.00",
+                "pack_size_info": "(10 x 10: ৳ 700.00)",
+                "price_text": "Unit Price: ৳ 7.00 (10 x 10: ৳ 700.00)"
+              }
+            ]
+          },
+          {
+            "dosage_form": "IV Injection",
+            "brands": [
+              {
+                "brand_name": "Pantobex",
+                "dosage_form": "IV Injection",
+                "strength": "40 mg/vial",
+                "company": "Beximco Pharmaceuticals Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2184/pantobex-40-mg-injection",
+                "price_label": "40 mg vial",
+                "unit_price_bdt": "110.00",
+                "pack_size_info": null,
+                "price_text": "40 mg vial: ৳ 110.00"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "company": "Biogen Pharmaceuticals Ltd.",
+        "dosage_forms": [
+          {
+            "dosage_form": "Tablet (Enteric Coated)",
+            "brands": [
+              {
+                "brand_name": "Pantobio",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "20 mg",
+                "company": "Biogen Pharmaceuticals Ltd.",
+                "brand_url": "https://medex.com.bd/brands/23315/pantobio-20-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "4.75",
+                "pack_size_info": "(5 x 14: ৳ 332.50)",
+                "price_text": "Unit Price: ৳ 4.75 (5 x 14: ৳ 332.50)"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "company": "Chemist Laboratories Ltd.",
+        "dosage_forms": [
+          {
+            "dosage_form": "Tablet (Enteric Coated)",
+            "brands": [
+              {
+                "brand_name": "Pantochem",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "20 mg",
+                "company": "Chemist Laboratories Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2185/pantochem-20-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "5.00",
+                "pack_size_info": "(5 x 10: ৳ 250.00)",
+                "price_text": "Unit Price: ৳ 5.00 (5 x 10: ৳ 250.00)"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "company": "Rangs Pharmaceuticals Ltd.",
+        "dosage_forms": [
+          {
+            "dosage_form": "Tablet (Enteric Coated)",
+            "brands": [
+              {
+                "brand_name": "Pantocure",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "20 mg",
+                "company": "Rangs Pharmaceuticals Ltd.",
+                "brand_url": "https://medex.com.bd/brands/23359/pantocure-20-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "5.00",
+                "pack_size_info": "(10 x 10: ৳ 500.00)",
+                "price_text": "Unit Price: ৳ 5.00 (10 x 10: ৳ 500.00)"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "company": "Ziska Pharmaceuticals Ltd.",
+        "dosage_forms": [
+          {
+            "dosage_form": "Tablet (Enteric Coated)",
+            "brands": [
+              {
+                "brand_name": "Pantodac",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "20 mg",
+                "company": "Ziska Pharmaceuticals Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2187/pantodac-20-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "4.00",
+                "pack_size_info": "(6 x 10: ৳ 240.00)",
+                "price_text": "Unit Price: ৳ 4.00 (6 x 10: ৳ 240.00)"
+              },
+              {
+                "brand_name": "Pantodac",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "40 mg",
+                "company": "Ziska Pharmaceuticals Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2188/pantodac-40-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "6.00",
+                "pack_size_info": "(3 x 10: ৳ 180.00)",
+                "price_text": "Unit Price: ৳ 6.00 (3 x 10: ৳ 180.00)"
+              }
+            ]
+          },
+          {
+            "dosage_form": "IV Injection",
+            "brands": [
+              {
+                "brand_name": "Pantodac",
+                "dosage_form": "IV Injection",
+                "strength": "40 mg/vial",
+                "company": "Ziska Pharmaceuticals Ltd.",
+                "brand_url": "https://medex.com.bd/brands/36772/pantodac-40-mg-injection",
+                "price_label": "40 mg vial",
+                "unit_price_bdt": "100.00",
+                "pack_size_info": null,
+                "price_text": "40 mg vial: ৳ 100.00"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "company": "S.N. Pharmaceutical Ltd.",
+        "dosage_forms": [
+          {
+            "dosage_form": "Tablet (Enteric Coated)",
+            "brands": [
+              {
+                "brand_name": "Pantofast",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "20 mg",
+                "company": "S.N. Pharmaceutical Ltd.",
+                "brand_url": "https://medex.com.bd/brands/23360/pantofast-20-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "3.00",
+                "pack_size_info": "(30's pack: ৳ 90.00)",
+                "price_text": "Unit Price: ৳ 3.00 (30's pack: ৳ 90.00)"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "company": "General Pharmaceuticals Ltd.",
+        "dosage_forms": [
+          {
+            "dosage_form": "Tablet (Enteric Coated)",
+            "brands": [
+              {
+                "brand_name": "Pantogen",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "20 mg",
+                "company": "General Pharmaceuticals Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2189/pantogen-20-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "7.00",
+                "pack_size_info": "(5 x 10: ৳ 350.00)",
+                "price_text": "Unit Price: ৳ 7.00 (5 x 10: ৳ 350.00)"
+              },
+              {
+                "brand_name": "Pantogen",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "40 mg",
+                "company": "General Pharmaceuticals Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2190/pantogen-40-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "7.03",
+                "pack_size_info": "(5 x 10: ৳ 351.50)",
+                "price_text": "Unit Price: ৳ 7.03 (5 x 10: ৳ 351.50)"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "company": "Popular Pharmaceuticals Ltd.",
+        "dosage_forms": [
+          {
+            "dosage_form": "Tablet (Enteric Coated)",
+            "brands": [
+              {
+                "brand_name": "Pantogut",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "20 mg",
+                "company": "Popular Pharmaceuticals Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2191/pantogut-20-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "5.00",
+                "pack_size_info": "(10 x 10: ৳ 500.00)",
+                "price_text": "Unit Price: ৳ 5.00 (10 x 10: ৳ 500.00)"
+              },
+              {
+                "brand_name": "Pantogut",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "40 mg",
+                "company": "Popular Pharmaceuticals Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2192/pantogut-40-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "7.00",
+                "pack_size_info": "(5 x 10: ৳ 350.00)",
+                "price_text": "Unit Price: ৳ 7.00 (5 x 10: ৳ 350.00)"
+              }
+            ]
+          },
+          {
+            "dosage_form": "IV Injection",
+            "brands": [
+              {
+                "brand_name": "Pantogut",
+                "dosage_form": "IV Injection",
+                "strength": "40 mg/vial",
+                "company": "Popular Pharmaceuticals Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2193/pantogut-40-mg-injection",
+                "price_label": "40 mg vial",
+                "unit_price_bdt": "70.26",
+                "pack_size_info": null,
+                "price_text": "40 mg vial: ৳ 70.26"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "company": "Goodman Pharmaceuticals Ltd.",
+        "dosage_forms": [
+          {
+            "dosage_form": "Tablet (Enteric Coated)",
+            "brands": [
+              {
+                "brand_name": "Pantohil",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "20 mg",
+                "company": "Goodman Pharmaceuticals Ltd.",
+                "brand_url": "https://medex.com.bd/brands/33617/pantohil-20-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "5.00",
+                "pack_size_info": "(6 x 10: ৳ 300.00)",
+                "price_text": "Unit Price: ৳ 5.00 (6 x 10: ৳ 300.00)"
+              },
+              {
+                "brand_name": "Pantohil",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "40 mg",
+                "company": "Goodman Pharmaceuticals Ltd.",
+                "brand_url": "https://medex.com.bd/brands/33618/pantohil-40-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "7.00",
+                "pack_size_info": "(3 x 10: ৳ 210.00)",
+                "price_text": "Unit Price: ৳ 7.00 (3 x 10: ৳ 210.00)"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "company": "Avarox Pharmaceuticals Ltd.",
+        "dosage_forms": [
+          {
+            "dosage_form": "Tablet (Enteric Coated)",
+            "brands": [
+              {
+                "brand_name": "Pantolam",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "20 mg",
+                "company": "Avarox Pharmaceuticals Ltd.",
+                "brand_url": "https://medex.com.bd/brands/23347/pantolam-20-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "7.00",
+                "pack_size_info": "(5 x 10: ৳ 350.00)",
+                "price_text": "Unit Price: ৳ 7.00 (5 x 10: ৳ 350.00)"
+              },
+              {
+                "brand_name": "Pantolam",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "40 mg",
+                "company": "Avarox Pharmaceuticals Ltd.",
+                "brand_url": "https://medex.com.bd/brands/38166/pantolam-40-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "10.00",
+                "pack_size_info": "(5 x 10: ৳ 500.00)",
+                "price_text": "Unit Price: ৳ 10.00 (5 x 10: ৳ 500.00)"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "company": "Ibn Sina Pharmaceuticals Ltd.",
+        "dosage_forms": [
+          {
+            "dosage_form": "Tablet (Enteric Coated)",
+            "brands": [
+              {
+                "brand_name": "Pantolok",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "20 mg",
+                "company": "Ibn Sina Pharmaceuticals Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2194/pantolok-20-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "5.00",
+                "pack_size_info": "(10 x 10: ৳ 500.00)",
+                "price_text": "Unit Price: ৳ 5.00 (10 x 10: ৳ 500.00)"
+              },
+              {
+                "brand_name": "Pantolok",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "40 mg",
+                "company": "Ibn Sina Pharmaceuticals Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2195/pantolok-40-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "7.00",
+                "pack_size_info": "(5 x 10: ৳ 350.00)",
+                "price_text": "Unit Price: ৳ 7.00 (5 x 10: ৳ 350.00)"
+              }
+            ]
+          },
+          {
+            "dosage_form": "IV Injection",
+            "brands": [
+              {
+                "brand_name": "Pantolok",
+                "dosage_form": "IV Injection",
+                "strength": "40 mg/vial",
+                "company": "Ibn Sina Pharmaceuticals Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2196/pantolok-40-mg-injection",
+                "price_label": "40 mg vial",
+                "unit_price_bdt": "80.00",
+                "pack_size_info": null,
+                "price_text": "40 mg vial: ৳ 80.00"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "company": "Maks Drug Limited",
+        "dosage_forms": [
+          {
+            "dosage_form": "Tablet (Enteric Coated)",
+            "brands": [
+              {
+                "brand_name": "Pantomak",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "20 mg",
+                "company": "Maks Drug Limited",
+                "brand_url": "https://medex.com.bd/brands/36342/pantomak-20-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "6.00",
+                "pack_size_info": "(5 x 10: ৳ 300.00)",
+                "price_text": "Unit Price: ৳ 6.00 (5 x 10: ৳ 300.00)"
+              },
+              {
+                "brand_name": "Pantomak",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "40 mg",
+                "company": "Maks Drug Limited",
+                "brand_url": "https://medex.com.bd/brands/36343/pantomak-40-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "8.00",
+                "pack_size_info": "(3 x 10: ৳ 240.00)",
+                "price_text": "Unit Price: ৳ 8.00 (3 x 10: ৳ 240.00)"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "company": "Bristol Pharmaceuticals Ltd.",
+        "dosage_forms": [
+          {
+            "dosage_form": "Tablet (Enteric Coated)",
+            "brands": [
+              {
+                "brand_name": "Panton-AX",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "20 mg",
+                "company": "Bristol Pharmaceuticals Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2197/panton-ax-20-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "4.00",
+                "pack_size_info": "(50's pack: ৳ 200.00)",
+                "price_text": "Unit Price: ৳ 4.00 (50's pack: ৳ 200.00)"
+              },
+              {
+                "brand_name": "Panton-AX",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "40 mg",
+                "company": "Bristol Pharmaceuticals Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2198/panton-ax-40-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "9.00",
+                "pack_size_info": "(50's pack: ৳ 450.00)",
+                "price_text": "Unit Price: ৳ 9.00 (50's pack: ৳ 450.00)"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "company": "Incepta Pharmaceuticals Ltd.",
+        "dosage_forms": [
+          {
+            "dosage_form": "Tablet (Enteric Coated)",
+            "brands": [
+              {
+                "brand_name": "Pantonix",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "20 mg",
+                "company": "Incepta Pharmaceuticals Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2199/pantonix-20-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "7.00",
+                "pack_size_info": "(7 x 14: ৳ 686.00)",
+                "price_text": "Unit Price: ৳ 7.00 (7 x 14: ৳ 686.00)"
+              },
+              {
+                "brand_name": "Pantonix",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "40 mg",
+                "company": "Incepta Pharmaceuticals Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2200/pantonix-40-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "10.00",
+                "pack_size_info": "(7 x 14: ৳ 980.00)",
+                "price_text": "Unit Price: ৳ 10.00 (7 x 14: ৳ 980.00)"
+              }
+            ]
+          },
+          {
+            "dosage_form": "IV Injection",
+            "brands": [
+              {
+                "brand_name": "Pantonix",
+                "dosage_form": "IV Injection",
+                "strength": "40 mg/vial",
+                "company": "Incepta Pharmaceuticals Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2201/pantonix-40-mg-injection",
+                "price_label": "40 mg vial",
+                "unit_price_bdt": "100.00",
+                "pack_size_info": null,
+                "price_text": "40 mg vial: ৳ 100.00"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "company": "United Pharmaceuticals Ltd.",
+        "dosage_forms": [
+          {
+            "dosage_form": "Tablet (Enteric Coated)",
+            "brands": [
+              {
+                "brand_name": "Pantopan",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "20 mg",
+                "company": "United Pharmaceuticals Ltd.",
+                "brand_url": "https://medex.com.bd/brands/27394/pantopan-20-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "5.00",
+                "pack_size_info": "(5 x 10: ৳ 250.00)",
+                "price_text": "Unit Price: ৳ 5.00 (5 x 10: ৳ 250.00)"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "company": "Alco Pharma Ltd.",
+        "dosage_forms": [
+          {
+            "dosage_form": "Tablet (Enteric Coated)",
+            "brands": [
+              {
+                "brand_name": "Pantopra",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "20 mg",
+                "company": "Alco Pharma Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2202/pantopra-20-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "4.50",
+                "pack_size_info": "(3 x 14: ৳ 189.00)",
+                "price_text": "Unit Price: ৳ 4.50 (3 x 14: ৳ 189.00)"
+              },
+              {
+                "brand_name": "Pantopra",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "40 mg",
+                "company": "Alco Pharma Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2203/pantopra-40-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "6.50",
+                "pack_size_info": "(3 x 14: ৳ 273.00)",
+                "price_text": "Unit Price: ৳ 6.50 (3 x 14: ৳ 273.00)"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "company": "Pristine Pharmaceuticals Ltd",
+        "dosage_forms": [
+          {
+            "dosage_form": "Tablet (Enteric Coated)",
+            "brands": [
+              {
+                "brand_name": "Pantoprazole",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "20 mg",
+                "company": "Pristine Pharmaceuticals Ltd",
+                "brand_url": "https://medex.com.bd/brands/35680/pantoprazole-20-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "5.00",
+                "pack_size_info": "(5 x 10: ৳ 250.00)",
+                "price_text": "Unit Price: ৳ 5.00 (5 x 10: ৳ 250.00)"
+              },
+              {
+                "brand_name": "Pantoprazole",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "40 mg",
+                "company": "Pristine Pharmaceuticals Ltd",
+                "brand_url": "https://medex.com.bd/brands/35681/pantoprazole-40-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "7.00",
+                "pack_size_info": "(5 x 10: ৳ 350.00)",
+                "price_text": "Unit Price: ৳ 7.00 (5 x 10: ৳ 350.00)"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "company": "SMC Enterprise Ltd (Mfg. by: Jenphar Bangladesh Ltd.)",
+        "dosage_forms": [
+          {
+            "dosage_form": "Tablet (Enteric Coated)",
+            "brands": [
+              {
+                "brand_name": "Pantoprox",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "20 mg",
+                "company": "SMC Enterprise Ltd (Mfg. by: Jenphar Bangladesh Ltd.)",
+                "brand_url": "https://medex.com.bd/brands/28112/pantoprox-20-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "4.50",
+                "pack_size_info": "(6 x 10: ৳ 270.00)",
+                "price_text": "Unit Price: ৳ 4.50 (6 x 10: ৳ 270.00)"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "company": "Premier Pharmaceuticals Ltd.",
+        "dosage_forms": [
+          {
+            "dosage_form": "Tablet (Enteric Coated)",
+            "brands": [
+              {
+                "brand_name": "Pantoraz",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "20 mg",
+                "company": "Premier Pharmaceuticals Ltd.",
+                "brand_url": "https://medex.com.bd/brands/23356/pantoraz-20-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "3.00",
+                "pack_size_info": "(50's pack: ৳ 150.00)",
+                "price_text": "Unit Price: ৳ 3.00 (50's pack: ৳ 150.00)"
+              },
+              {
+                "brand_name": "Pantoraz",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "40 mg",
+                "company": "Premier Pharmaceuticals Ltd.",
+                "brand_url": "https://medex.com.bd/brands/23357/pantoraz-40-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "5.00",
+                "pack_size_info": "(50's pack: ৳ 250.00)",
+                "price_text": "Unit Price: ৳ 5.00 (50's pack: ৳ 250.00)"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "company": "Techno Drugs Ltd.",
+        "dosage_forms": [
+          {
+            "dosage_form": "IV Injection",
+            "brands": [
+              {
+                "brand_name": "Pantosec",
+                "dosage_form": "IV Injection",
+                "strength": "40 mg/vial",
+                "company": "Techno Drugs Ltd.",
+                "brand_url": "https://medex.com.bd/brands/23366/pantosec-40-mg-injection",
+                "price_label": "40 mg vial",
+                "unit_price_bdt": "80.00",
+                "pack_size_info": null,
+                "price_text": "40 mg vial: ৳ 80.00"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "company": "Silva Pharmaceuticals Ltd.",
+        "dosage_forms": [
+          {
+            "dosage_form": "Tablet (Enteric Coated)",
+            "brands": [
+              {
+                "brand_name": "Pantosil",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "20 mg",
+                "company": "Silva Pharmaceuticals Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2205/pantosil-20-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "4.50",
+                "pack_size_info": "(5 x 10: ৳ 225.00)",
+                "price_text": "Unit Price: ৳ 4.50 (5 x 10: ৳ 225.00)"
+              },
+              {
+                "brand_name": "Pantosil",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "40 mg",
+                "company": "Silva Pharmaceuticals Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2206/pantosil-40-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "5.02",
+                "pack_size_info": "(5 x 10: ৳ 251.00)",
+                "price_text": "Unit Price: ৳ 5.02 (5 x 10: ৳ 251.00)"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "company": "Benham Pharmaceuticals Ltd.",
+        "dosage_forms": [
+          {
+            "dosage_form": "Tablet (Enteric Coated)",
+            "brands": [
+              {
+                "brand_name": "Pantotop",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "20 mg",
+                "company": "Benham Pharmaceuticals Ltd.",
+                "brand_url": "https://medex.com.bd/brands/23313/pantotop-20-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "6.00",
+                "pack_size_info": "(7 x 10: ৳ 420.00)",
+                "price_text": "Unit Price: ৳ 6.00 (7 x 10: ৳ 420.00)"
+              },
+              {
+                "brand_name": "Pantotop",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "40 mg",
+                "company": "Benham Pharmaceuticals Ltd.",
+                "brand_url": "https://medex.com.bd/brands/23314/pantotop-40-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "8.00",
+                "pack_size_info": "(7 x 10: ৳ 560.00)",
+                "price_text": "Unit Price: ৳ 8.00 (7 x 10: ৳ 560.00)"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "company": "Veritas Pharmaceuticals Ltd.",
+        "dosage_forms": [
+          {
+            "dosage_form": "IV Injection",
+            "brands": [
+              {
+                "brand_name": "Pantover",
+                "dosage_form": "IV Injection",
+                "strength": "40 mg/vial",
+                "company": "Veritas Pharmaceuticals Ltd.",
+                "brand_url": "https://medex.com.bd/brands/23367/pantover-40-mg-injection",
+                "price_label": "40 mg vial",
+                "unit_price_bdt": "85.00",
+                "pack_size_info": null,
+                "price_text": "40 mg vial: ৳ 85.00"
+              }
+            ]
+          },
+          {
+            "dosage_form": "Tablet (Enteric Coated)",
+            "brands": [
+              {
+                "brand_name": "Pantover",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "20 mg",
+                "company": "Veritas Pharmaceuticals Ltd.",
+                "brand_url": "https://medex.com.bd/brands/23368/pantover-20-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "5.00",
+                "pack_size_info": "(6 x 10: ৳ 300.00)",
+                "price_text": "Unit Price: ৳ 5.00 (6 x 10: ৳ 300.00)"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "company": "Credence Pharmaceuticals Ltd. (Mfg. by: Apex Pharma Ltd.)",
+        "dosage_forms": [
+          {
+            "dosage_form": "Tablet (Enteric Coated)",
+            "brands": [
+              {
+                "brand_name": "Pantrol",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "20 mg",
+                "company": "Credence Pharmaceuticals Ltd. (Mfg. by: Apex Pharma Ltd.)",
+                "brand_url": "https://medex.com.bd/brands/2209/pantrol-20-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "4.50",
+                "pack_size_info": "(6 x 10: ৳ 270.00)",
+                "price_text": "Unit Price: ৳ 4.50 (6 x 10: ৳ 270.00)"
+              },
+              {
+                "brand_name": "Pantrol",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "40 mg",
+                "company": "Credence Pharmaceuticals Ltd. (Mfg. by: Apex Pharma Ltd.)",
+                "brand_url": "https://medex.com.bd/brands/28157/pantrol-40-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "7.00",
+                "pack_size_info": "(3 x 10: ৳ 210.00)",
+                "price_text": "Unit Price: ৳ 7.00 (3 x 10: ৳ 210.00)"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "company": "Sun Pharmaceutical (Bangladesh) Ltd.",
+        "dosage_forms": [
+          {
+            "dosage_form": "Tablet (Enteric Coated)",
+            "brands": [
+              {
+                "brand_name": "Panzer",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "20 mg",
+                "company": "Sun Pharmaceutical (Bangladesh) Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2210/panzer-20-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "4.02",
+                "pack_size_info": "(5 x 10: ৳ 201.00)",
+                "price_text": "Unit Price: ৳ 4.02 (5 x 10: ৳ 201.00)"
+              },
+              {
+                "brand_name": "Panzer",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "40 mg",
+                "company": "Sun Pharmaceutical (Bangladesh) Ltd.",
+                "brand_url": "https://medex.com.bd/brands/26698/panzer-40-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "6.02",
+                "pack_size_info": "(5 x 10: ৳ 301.00)",
+                "price_text": "Unit Price: ৳ 6.02 (5 x 10: ৳ 301.00)"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "company": "Amico Laboratories Ltd.",
+        "dosage_forms": [
+          {
+            "dosage_form": "Tablet (Enteric Coated)",
+            "brands": [
+              {
+                "brand_name": "Panzol",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "20 mg",
+                "company": "Amico Laboratories Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2212/panzol-20-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "3.50",
+                "pack_size_info": "(30's pack: ৳ 105.00)",
+                "price_text": "Unit Price: ৳ 3.50 (30's pack: ৳ 105.00)"
+              },
+              {
+                "brand_name": "Panzol",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "40 mg",
+                "company": "Amico Laboratories Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2213/panzol-40-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "5.50",
+                "pack_size_info": "(30's pack: ৳ 165.00)",
+                "price_text": "Unit Price: ৳ 5.50 (30's pack: ৳ 165.00)"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "company": "Nipa Pharmaceuticals Ltd.",
+        "dosage_forms": [
+          {
+            "dosage_form": "Tablet (Enteric Coated)",
+            "brands": [
+              {
+                "brand_name": "Patanix",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "20 mg",
+                "company": "Nipa Pharmaceuticals Ltd.",
+                "brand_url": "https://medex.com.bd/brands/27532/patanix-20-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "4.60",
+                "pack_size_info": "(6 x 10: ৳ 276.00)",
+                "price_text": "Unit Price: ৳ 4.60 (6 x 10: ৳ 276.00)"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "company": "Central Pharmaceuticals Ltd.",
+        "dosage_forms": [
+          {
+            "dosage_form": "Tablet (Enteric Coated)",
+            "brands": [
+              {
+                "brand_name": "PC-20",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "20 mg",
+                "company": "Central Pharmaceuticals Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2216/pc-20-20-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "4.00",
+                "pack_size_info": "(50's pack: ৳ 200.00)",
+                "price_text": "Unit Price: ৳ 4.00 (50's pack: ৳ 200.00)"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "company": "Delta Pharma Ltd.",
+        "dosage_forms": [
+          {
+            "dosage_form": "Tablet (Enteric Coated)",
+            "brands": [
+              {
+                "brand_name": "Pelican",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "20 mg",
+                "company": "Delta Pharma Ltd.",
+                "brand_url": "https://medex.com.bd/brands/23316/pelican-20-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "3.00",
+                "pack_size_info": "(5 x 10: ৳ 150.00)",
+                "price_text": "Unit Price: ৳ 3.00 (5 x 10: ৳ 150.00)"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "company": "Concord Pharmaceuticals Ltd.",
+        "dosage_forms": [
+          {
+            "dosage_form": "Tablet (Enteric Coated)",
+            "brands": [
+              {
+                "brand_name": "Pramax",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "20 mg",
+                "company": "Concord Pharmaceuticals Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2219/pramax-20-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "5.50",
+                "pack_size_info": "(5 x 10: ৳ 275.00)",
+                "price_text": "Unit Price: ৳ 5.50 (5 x 10: ৳ 275.00)"
+              },
+              {
+                "brand_name": "Pramax",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "40 mg",
+                "company": "Concord Pharmaceuticals Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2220/pramax-40-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "6.02",
+                "pack_size_info": "(3 x 10: ৳ 180.60)",
+                "price_text": "Unit Price: ৳ 6.02 (3 x 10: ৳ 180.60)"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "company": "Rephco Pharmaceuticals Ltd.",
+        "dosage_forms": [
+          {
+            "dosage_form": "Tablet (Enteric Coated)",
+            "brands": [
+              {
+                "brand_name": "Prazolin",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "20 mg",
+                "company": "Rephco Pharmaceuticals Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2221/prazolin-20-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "4.00",
+                "pack_size_info": "(50's pack: ৳ 200.00)",
+                "price_text": "Unit Price: ৳ 4.00 (50's pack: ৳ 200.00)"
+              },
+              {
+                "brand_name": "Prazolin",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "40 mg",
+                "company": "Rephco Pharmaceuticals Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2222/prazolin-40-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "6.00",
+                "pack_size_info": "(50's pack: ৳ 300.00)",
+                "price_text": "Unit Price: ৳ 6.00 (50's pack: ৳ 300.00)"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "company": "Healthcare Pharmaceuticals Ltd.",
+        "dosage_forms": [
+          {
+            "dosage_form": "Tablet (Enteric Coated)",
+            "brands": [
+              {
+                "brand_name": "Pregel",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "20 mg",
+                "company": "Healthcare Pharmaceuticals Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2223/pregel-20-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "5.00",
+                "pack_size_info": "(5 x 10: ৳ 250.00)",
+                "price_text": "Unit Price: ৳ 5.00 (5 x 10: ৳ 250.00)"
+              },
+              {
+                "brand_name": "Pregel",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "40 mg",
+                "company": "Healthcare Pharmaceuticals Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2224/pregel-40-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "7.00",
+                "pack_size_info": "(3 x 10: ৳ 210.00)",
+                "price_text": "Unit Price: ৳ 7.00 (3 x 10: ৳ 210.00)"
+              }
+            ]
+          },
+          {
+            "dosage_form": "IV Injection",
+            "brands": [
+              {
+                "brand_name": "Pregel",
+                "dosage_form": "IV Injection",
+                "strength": "40 mg/vial",
+                "company": "Healthcare Pharmaceuticals Ltd.",
+                "brand_url": "https://medex.com.bd/brands/23327/pregel-40-mg-injection",
+                "price_label": "40 mg vial",
+                "unit_price_bdt": "90.00",
+                "pack_size_info": null,
+                "price_text": "40 mg vial: ৳ 90.00"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "company": "Pharmadesh Laboratories Ltd.",
+        "dosage_forms": [
+          {
+            "dosage_form": "Tablet (Enteric Coated)",
+            "brands": [
+              {
+                "brand_name": "Pretonix",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "20 mg",
+                "company": "Pharmadesh Laboratories Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2225/pretonix-20-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "3.50",
+                "pack_size_info": "(50's pack: ৳ 175.00)",
+                "price_text": "Unit Price: ৳ 3.50 (50's pack: ৳ 175.00)"
+              },
+              {
+                "brand_name": "Pretonix",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "40 mg",
+                "company": "Pharmadesh Laboratories Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2226/pretonix-40-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "5.75",
+                "pack_size_info": "(30's pack: ৳ 172.50)",
+                "price_text": "Unit Price: ৳ 5.75 (30's pack: ৳ 172.50)"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "company": "Al-Madina Pharmaceuticals Ltd.",
+        "dosage_forms": [
+          {
+            "dosage_form": "Tablet (Enteric Coated)",
+            "brands": [
+              {
+                "brand_name": "Prilosec",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "20 mg",
+                "company": "Al-Madina Pharmaceuticals Ltd.",
+                "brand_url": "https://medex.com.bd/brands/29257/prilosec-20-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "4.50",
+                "pack_size_info": "(5 x 10: ৳ 225.00)",
+                "price_text": "Unit Price: ৳ 4.50 (5 x 10: ৳ 225.00)"
+              },
+              {
+                "brand_name": "Prilosec",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "40 mg",
+                "company": "Al-Madina Pharmaceuticals Ltd.",
+                "brand_url": "https://medex.com.bd/brands/29258/prilosec-40-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "7.00",
+                "pack_size_info": "(3 x 10: ৳ 210.00)",
+                "price_text": "Unit Price: ৳ 7.00 (3 x 10: ৳ 210.00)"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "company": "Marker Pharma Ltd.",
+        "dosage_forms": [
+          {
+            "dosage_form": "Tablet (Enteric Coated)",
+            "brands": [
+              {
+                "brand_name": "Propenta",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "20 mg",
+                "company": "Marker Pharma Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2227/propenta-20-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "3.00",
+                "pack_size_info": "(50's pack: ৳ 150.00)",
+                "price_text": "Unit Price: ৳ 3.00 (50's pack: ৳ 150.00)"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "company": "UniMed UniHealth Pharmaceuticals Ltd.",
+        "dosage_forms": [
+          {
+            "dosage_form": "Tablet (Enteric Coated)",
+            "brands": [
+              {
+                "brand_name": "Protium",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "20 mg",
+                "company": "UniMed UniHealth Pharmaceuticals Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2228/protium-20-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "5.00",
+                "pack_size_info": "(3 x 10: ৳ 150.00)",
+                "price_text": "Unit Price: ৳ 5.00 (3 x 10: ৳ 150.00)"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "company": "ACME Laboratories Ltd.",
+        "dosage_forms": [
+          {
+            "dosage_form": "Tablet (Enteric Coated)",
+            "brands": [
+              {
+                "brand_name": "Protocid",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "20 mg",
+                "company": "ACME Laboratories Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2230/protocid-20-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "5.00",
+                "pack_size_info": "(10 x 14: ৳ 700.00)",
+                "price_text": "Unit Price: ৳ 5.00 (10 x 14: ৳ 700.00)"
+              },
+              {
+                "brand_name": "Protocid",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "40 mg",
+                "company": "ACME Laboratories Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2231/protocid-40-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "7.00",
+                "pack_size_info": "(5 x 10: ৳ 350.00)",
+                "price_text": "Unit Price: ৳ 7.00 (5 x 10: ৳ 350.00)"
+              }
+            ]
+          },
+          {
+            "dosage_form": "IV Injection",
+            "brands": [
+              {
+                "brand_name": "Protocid",
+                "dosage_form": "IV Injection",
+                "strength": "40 mg/vial",
+                "company": "ACME Laboratories Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2232/protocid-40-mg-injection",
+                "price_label": "40 mg vial",
+                "unit_price_bdt": "90.00",
+                "pack_size_info": null,
+                "price_text": "40 mg vial: ৳ 90.00"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "company": "Beacon Pharmaceuticals PLC",
+        "dosage_forms": [
+          {
+            "dosage_form": "Tablet (Enteric Coated)",
+            "brands": [
+              {
+                "brand_name": "Protoloc",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "20 mg",
+                "company": "Beacon Pharmaceuticals PLC",
+                "brand_url": "https://medex.com.bd/brands/2233/protoloc-20-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "5.00",
+                "pack_size_info": "(5 x 10: ৳ 250.00)",
+                "price_text": "Unit Price: ৳ 5.00 (5 x 10: ৳ 250.00)"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "company": "Aristopharma Ltd.",
+        "dosage_forms": [
+          {
+            "dosage_form": "Tablet (Enteric Coated)",
+            "brands": [
+              {
+                "brand_name": "Proton-P",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "20 mg",
+                "company": "Aristopharma Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2237/proton-p-20-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "5.00",
+                "pack_size_info": "(6 x 10: ৳ 300.00)",
+                "price_text": "Unit Price: ৳ 5.00 (6 x 10: ৳ 300.00)"
+              },
+              {
+                "brand_name": "Proton-P",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "40 mg",
+                "company": "Aristopharma Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2238/proton-p-40-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "7.00",
+                "pack_size_info": "(6 x 10: ৳ 420.00)",
+                "price_text": "Unit Price: ৳ 7.00 (6 x 10: ৳ 420.00)"
+              }
+            ]
+          },
+          {
+            "dosage_form": "IV Injection",
+            "brands": [
+              {
+                "brand_name": "Proton-P",
+                "dosage_form": "IV Injection",
+                "strength": "40 mg/vial",
+                "company": "Aristopharma Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2239/proton-p-40-mg-injection",
+                "price_label": "40 mg vial",
+                "unit_price_bdt": "80.00",
+                "pack_size_info": null,
+                "price_text": "40 mg vial: ৳ 80.00"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "company": "Renata PLC",
+        "dosage_forms": [
+          {
+            "dosage_form": "Tablet (Enteric Coated)",
+            "brands": [
+              {
+                "brand_name": "Protonil",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "20 mg",
+                "company": "Renata PLC",
+                "brand_url": "https://medex.com.bd/brands/2235/protonil-20-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "6.00",
+                "pack_size_info": "(5 x 10: ৳ 300.00)",
+                "price_text": "Unit Price: ৳ 6.00 (5 x 10: ৳ 300.00)"
+              },
+              {
+                "brand_name": "Protonil",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "40 mg",
+                "company": "Renata PLC",
+                "brand_url": "https://medex.com.bd/brands/2236/protonil-40-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "9.00",
+                "pack_size_info": "(3 x 10: ৳ 270.00)",
+                "price_text": "Unit Price: ৳ 9.00 (3 x 10: ৳ 270.00)"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "company": "Apollo Pharmaceutical Ltd.",
+        "dosage_forms": [
+          {
+            "dosage_form": "Tablet (Enteric Coated)",
+            "brands": [
+              {
+                "brand_name": "Protopa",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "20 mg",
+                "company": "Apollo Pharmaceutical Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2240/protopa-20-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "4.00",
+                "pack_size_info": "(30's pack: ৳ 120.00)",
+                "price_text": "Unit Price: ৳ 4.00 (30's pack: ৳ 120.00)"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "company": "Euro Pharma Ltd.",
+        "dosage_forms": [
+          {
+            "dosage_form": "Tablet (Enteric Coated)",
+            "brands": [
+              {
+                "brand_name": "Protozin",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "20 mg",
+                "company": "Euro Pharma Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2241/protozin-20-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "6.00",
+                "pack_size_info": "(5 x 10: ৳ 300.00)",
+                "price_text": "Unit Price: ৳ 6.00 (5 x 10: ৳ 300.00)"
+              },
+              {
+                "brand_name": "Protozin",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "40 mg",
+                "company": "Euro Pharma Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2242/protozin-40-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "9.00",
+                "pack_size_info": "(5 x 10: ৳ 450.00)",
+                "price_text": "Unit Price: ৳ 9.00 (5 x 10: ৳ 450.00)"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "company": "Modern Pharmaceuticals Ltd.",
+        "dosage_forms": [
+          {
+            "dosage_form": "Tablet (Enteric Coated)",
+            "brands": [
+              {
+                "brand_name": "PZ-20",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "20 mg",
+                "company": "Modern Pharmaceuticals Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2248/pz-20-20-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "4.00",
+                "pack_size_info": "(50's pack: ৳ 200.00)",
+                "price_text": "Unit Price: ৳ 4.00 (50's pack: ৳ 200.00)"
+              },
+              {
+                "brand_name": "PZ-40",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "40 mg",
+                "company": "Modern Pharmaceuticals Ltd.",
+                "brand_url": "https://medex.com.bd/brands/23337/pz-40-40-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "6.00",
+                "pack_size_info": "(50's pack: ৳ 300.00)",
+                "price_text": "Unit Price: ৳ 6.00 (50's pack: ৳ 300.00)"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "company": "Jayson Pharmaceutical Ltd.",
+        "dosage_forms": [
+          {
+            "dosage_form": "Tablet (Enteric Coated)",
+            "brands": [
+              {
+                "brand_name": "Topra",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "20 mg",
+                "company": "Jayson Pharmaceutical Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2249/topra-20-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "4.00",
+                "pack_size_info": "(3 x 10: ৳ 120.00)",
+                "price_text": "Unit Price: ৳ 4.00 (3 x 10: ৳ 120.00)"
+              },
+              {
+                "brand_name": "Topra",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "40 mg",
+                "company": "Jayson Pharmaceutical Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2250/topra-40-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "5.03",
+                "pack_size_info": "(3 x 10: ৳ 150.88)",
+                "price_text": "Unit Price: ৳ 5.03 (3 x 10: ৳ 150.88)"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "company": "Square Pharmaceuticals PLC",
+        "dosage_forms": [
+          {
+            "dosage_form": "Tablet (Enteric Coated)",
+            "brands": [
+              {
+                "brand_name": "Trupan",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "20 mg",
+                "company": "Square Pharmaceuticals PLC",
+                "brand_url": "https://medex.com.bd/brands/2251/trupan-20-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "7.00",
+                "pack_size_info": "(6 x 10: ৳ 420.00)",
+                "price_text": "Unit Price: ৳ 7.00 (6 x 10: ৳ 420.00)"
+              },
+              {
+                "brand_name": "Trupan",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "40 mg",
+                "company": "Square Pharmaceuticals PLC",
+                "brand_url": "https://medex.com.bd/brands/2252/trupan-40-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "10.00",
+                "pack_size_info": "(6 x 10: ৳ 600.00)",
+                "price_text": "Unit Price: ৳ 10.00 (6 x 10: ৳ 600.00)"
+              }
+            ]
+          },
+          {
+            "dosage_form": "IV Injection",
+            "brands": [
+              {
+                "brand_name": "Trupan",
+                "dosage_form": "IV Injection",
+                "strength": "40 mg/vial",
+                "company": "Square Pharmaceuticals PLC",
+                "brand_url": "https://medex.com.bd/brands/2253/trupan-40-mg-injection",
+                "price_label": "40 mg vial",
+                "unit_price_bdt": "90.00",
+                "pack_size_info": null,
+                "price_text": "40 mg vial: ৳ 90.00"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "company": "Union Pharmaceuticals Ltd",
+        "dosage_forms": [
+          {
+            "dosage_form": "Tablet (Enteric Coated)",
+            "brands": [
+              {
+                "brand_name": "U-Pepton",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "20 mg",
+                "company": "Union Pharmaceuticals Ltd",
+                "brand_url": "https://medex.com.bd/brands/34991/u-pepton-20-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "4.00",
+                "pack_size_info": "(5 x 10: ৳ 200.00)",
+                "price_text": "Unit Price: ৳ 4.00 (5 x 10: ৳ 200.00)"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "company": "Zenith Pharmaceuticals Ltd.",
+        "dosage_forms": [
+          {
+            "dosage_form": "Tablet (Enteric Coated)",
+            "brands": [
+              {
+                "brand_name": "Zenopan",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "20 mg",
+                "company": "Zenith Pharmaceuticals Ltd.",
+                "brand_url": "https://medex.com.bd/brands/23371/zenopan-20-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "5.00",
+                "pack_size_info": "(5 x 15: ৳ 375.00)",
+                "price_text": "Unit Price: ৳ 5.00 (5 x 15: ৳ 375.00)"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "company": "Kemiko Pharmaceuticals Ltd.",
+        "dosage_forms": [
+          {
+            "dosage_form": "Tablet (Enteric Coated)",
+            "brands": [
+              {
+                "brand_name": "Zopan",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "20 mg",
+                "company": "Kemiko Pharmaceuticals Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2254/zopan-20-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "5.00",
+                "pack_size_info": "(50's pack: ৳ 250.00)",
+                "price_text": "Unit Price: ৳ 5.00 (50's pack: ৳ 250.00)"
+              },
+              {
+                "brand_name": "Zopan",
+                "dosage_form": "Tablet (Enteric Coated)",
+                "strength": "40 mg",
+                "company": "Kemiko Pharmaceuticals Ltd.",
+                "brand_url": "https://medex.com.bd/brands/2255/zopan-40-mg-tablet",
+                "price_label": "Unit Price",
+                "unit_price_bdt": "6.02",
+                "pack_size_info": "(50's pack: ৳ 301.00)",
+                "price_text": "Unit Price: ৳ 6.02 (50's pack: ৳ 301.00)"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

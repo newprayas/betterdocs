@@ -3,6 +3,8 @@ import { getIndexedDBServices } from '@/services/indexedDB';
 import { libraryService } from '@/services/libraryService';
 import { drugModeService } from './drugModeService';
 import { decorateIndicationLinks, shouldDecorateIndicationLinksForQuery } from './drugActionLinks';
+import { isMedexHelperUnavailableError, medexBridgeService } from './medexBridgeService';
+import { formatMedexSectionAnswer } from './medexFormatService';
 import type {
   AskDrugBroadMatch,
   AskDrugCatalog,
@@ -2457,9 +2459,6 @@ ${JSON.stringify(promptContext, null, 2)}`;
     });
 
     try {
-      onStreamEvent?.({ type: 'status', message: 'Drug Dataset' });
-      const catalog = await this.ensureDatasetReady();
-
       onStreamEvent?.({ type: 'status', message: 'Ask Drug Query Parsing' });
       const parsed = await this.parseQuery(content);
       const requestedSections = expandRequestedSections(parsed.sections);
@@ -2477,6 +2476,45 @@ ${JSON.stringify(promptContext, null, 2)}`;
         await drugModeService.sendMessage(sessionId, content, onStreamEvent);
         return;
       }
+
+      if (parsed.drug_name.trim()) {
+        try {
+          onStreamEvent?.({ type: 'status', message: 'Ask Drug Search' });
+          const medexPayload = await medexBridgeService.queryDrug(parsed.drug_name);
+          const medexSections = parsed.sections.includes('all_details')
+            ? ([
+                'indications_and_dose',
+                'contra_indications',
+                'side_effects',
+                'pregnancy',
+                'breast_feeding',
+                'cautions',
+                'interactions',
+              ] satisfies AskDrugRequestedSection[])
+            : requestedSections;
+          const medexAnswer = formatMedexSectionAnswer(
+            medexPayload,
+            medexSections,
+            parsed.drug_name,
+          );
+          await this.saveAssistantMessage(sessionId, medexAnswer);
+          onStreamEvent?.({ type: 'done', content: medexAnswer });
+          return;
+        } catch (error) {
+          if (!isMedexHelperUnavailableError(error)) {
+            throw error;
+          }
+
+          console.warn('[ASK DRUG MODE][MEDEX FALLBACK]', 'Local helper unavailable, falling back to bundled dataset', {
+            query: content,
+            parsedDrugName: parsed.drug_name,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+
+      onStreamEvent?.({ type: 'status', message: 'Drug Dataset' });
+      const catalog = await this.ensureDatasetReady();
 
       if (parsed.drug_name.trim()) {
         onStreamEvent?.({ type: 'status', message: 'Ask Drug Search' });

@@ -10,7 +10,8 @@
     "lint": "next lint",
     "type-check": "tsc --noEmit",
     "format": "prettier --write .",
-    "test-modal": "node test-modal-terminal.js"
+    "test-modal": "node test-modal-terminal.js",
+    "medex-helper": "python3 scraping-scripts/medex_local_helper.py"
   },
   "dependencies": {
     "@capacitor/android": "^8.2.0",

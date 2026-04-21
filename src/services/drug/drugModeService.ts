@@ -7,6 +7,8 @@ import {
   buildDrugAudienceLinkLabel,
   decorateIndicationLinks,
 } from './drugActionLinks';
+import { isMedexHelperUnavailableError, medexBridgeService } from './medexBridgeService';
+import { formatMedexBrandsAnswer, formatMedexDoseAnswer } from './medexFormatService';
 import type {
   AskDrugIndicationsAndDoseStructured,
   DrugCatalog,
@@ -4015,16 +4017,67 @@ Rules:
     try {
       onStreamEvent?.({
         type: 'status',
-        message: 'Drug Dataset',
-      });
-      const catalog = await this.ensureDatasetReady();
-
-      onStreamEvent?.({
-        type: 'status',
         message: 'Drug Query Parsing',
       });
       const parsed = await this.parseDrugQuery(content);
       const intent = await this.resolveDrugQueryIntent(content);
+
+      if (parsed.drug_name.trim()) {
+        onStreamEvent?.({
+          type: 'status',
+          message: 'Drug Search',
+        });
+
+        try {
+          const shouldRenderBrandNamesOnly =
+            intent.answerKind === 'brands' &&
+            /\b(other\s+brands?|brands?|brand\s+names?|trade\s+names?|companies|prices?|costs?)\b/i.test(
+              content,
+            );
+          const medexPayload = await medexBridgeService.queryDrug(
+            parsed.drug_name,
+            true,
+          );
+
+          onStreamEvent?.({
+            type: 'status',
+            message: 'Drug Answer Generation',
+          });
+
+          const medexAnswer = shouldRenderBrandNamesOnly
+            ? formatMedexBrandsAnswer(medexPayload, parsed.drug_name)
+            : formatMedexDoseAnswer(medexPayload, {
+                audience:
+                  intent.answerKind === 'dose_with_brands' || isBareDrugNameQuery(content)
+                    ? this.resolveRequestedDoseAudience(content)
+                    : undefined,
+                originalQuery: parsed.drug_name,
+              });
+
+          await this.saveAssistantMessage(sessionId, medexAnswer);
+          onStreamEvent?.({
+            type: 'done',
+            content: medexAnswer,
+          });
+          return;
+        } catch (error) {
+          if (!isMedexHelperUnavailableError(error)) {
+            throw error;
+          }
+
+          console.warn('[DRUG MODE][MEDEX FALLBACK]', 'Local helper unavailable, falling back to bundled dataset', {
+            query: content,
+            parsedDrugName: parsed.drug_name,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+
+      onStreamEvent?.({
+        type: 'status',
+        message: 'Drug Dataset',
+      });
+      const catalog = await this.ensureDatasetReady();
 
       onStreamEvent?.({
         type: 'status',

@@ -98,10 +98,10 @@ export const buildDrugAudienceFollowUpQuery = (
 
 export const parseDrugActionHref = (
   href: string,
-): { drugName: string; indication?: string; audience?: 'adult' | 'child' } | null => {
+): { drugName: string; indication?: string; audience?: 'adult' | 'child'; action?: 'dose' | 'brands' } | null => {
   try {
     const normalized = href.trim();
-    const legacyMatch = normalized.match(/^drug-action:(?:\/\/)?dose(?:\?(.*))?$/i);
+    const legacyMatch = normalized.match(/^drug-action:(?:\/\/)?([a-z-]+)(?:\?(.*))?$/i);
     if (!legacyMatch) {
       const url = new URL(href);
       if (url.protocol !== DRUG_ACTION_LINK_PROTOCOL || url.hostname !== DRUG_ACTION_LINK_HOST) {
@@ -111,25 +111,30 @@ export const parseDrugActionHref = (
       const drugName = compactField(url.searchParams.get('drug') || '');
       const indication = compactField(url.searchParams.get('indication') || '');
       const audience = compactField(url.searchParams.get('audience') || '') as 'adult' | 'child' | undefined;
-      if (!drugName || (!indication && !audience)) return null;
+      const action = compactField(url.searchParams.get('action') || '') as 'dose' | 'brands' | undefined;
+      if (!drugName || (!indication && !audience && action !== 'brands')) return null;
 
       return {
         drugName,
         indication: indication || undefined,
         audience,
+        action: action || 'dose',
       };
     }
 
-    const params = new URLSearchParams(legacyMatch[1] || '');
+    const params = new URLSearchParams(legacyMatch[2] || '');
     const drugName = compactField(params.get('drug') || '');
     const indication = compactField(params.get('indication') || '');
     const audience = compactField(params.get('audience') || '') as 'adult' | 'child' | undefined;
-    if (!drugName || (!indication && !audience)) return null;
+    const action = compactField(params.get('action') || '') as 'dose' | 'brands' | undefined;
+    const pathAction = compactField(legacyMatch[1] || '') as 'dose' | 'brands' | undefined;
+    if (!drugName || (!indication && !audience && action !== 'brands' && pathAction !== 'brands')) return null;
 
     return {
       drugName,
       indication: indication || undefined,
       audience,
+      action: action || pathAction || 'dose',
     };
   } catch {
     return null;
@@ -138,7 +143,7 @@ export const parseDrugActionHref = (
 
 export const isDrugActionHref = (href?: string | null): boolean => {
   if (!href) return false;
-  return /^drug-action:(?:\/\/)?dose(?:\?|$)/i.test(href.trim());
+  return /^drug-action:(?:\/\/)?[a-z-]+(?:\?|$)/i.test(href.trim());
 };
 
 const linkifyIndicationLine = (

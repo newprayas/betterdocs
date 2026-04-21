@@ -164,11 +164,14 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
         return;
       }
 
-      const query = buildDrugIndicationFollowUpQuery(
-        parsed.drugName,
-        parsed.indication || '',
-        parsed.audience,
-      );
+      const query =
+        parsed.action === 'brands'
+          ? `brands of ${parsed.drugName}`
+          : buildDrugIndicationFollowUpQuery(
+              parsed.drugName,
+              parsed.indication || '',
+              parsed.audience,
+            );
       logDrugAction("click capture dispatch", {
         messageId: message.id,
         query,
@@ -300,21 +303,24 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
                             parsed,
                           });
                           if (!parsed || !onDrugActionClick) return;
-                          const query = parsed.audience
-                            ? parsed.indication
-                              ? buildDrugIndicationFollowUpQuery(
-                                  parsed.drugName,
-                                  parsed.indication,
-                                  parsed.audience,
-                                )
-                              : buildDrugAudienceFollowUpQuery(
-                                  parsed.drugName,
-                                  parsed.audience,
-                                )
-                            : buildDrugIndicationFollowUpQuery(
-                                parsed.drugName,
-                                parsed.indication || '',
-                              );
+                          const query =
+                            parsed.action === 'brands'
+                              ? `brands of ${parsed.drugName}`
+                              : parsed.audience
+                                ? parsed.indication
+                                  ? buildDrugIndicationFollowUpQuery(
+                                      parsed.drugName,
+                                      parsed.indication,
+                                      parsed.audience,
+                                    )
+                                  : buildDrugAudienceFollowUpQuery(
+                                      parsed.drugName,
+                                      parsed.audience,
+                                    )
+                                : buildDrugIndicationFollowUpQuery(
+                                    parsed.drugName,
+                                    parsed.indication || '',
+                                  );
                           logDrugAction("button dispatch", {
                             messageId: message.id,
                             query,
