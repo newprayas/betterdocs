@@ -46,6 +46,11 @@ class MedexBridgeService {
       this.cache.delete(key);
       return null;
     }
+    console.log('[MEDEX CACHE] Memory hit', {
+      query,
+      includeAlternate,
+      ageMs: Date.now() - cached.cachedAt,
+    });
     return cached.payload;
   }
 
@@ -76,6 +81,12 @@ class MedexBridgeService {
       return null;
     }
 
+    console.log('[MEDEX CACHE] IndexedDB hit', {
+      query,
+      includeAlternate,
+      cachedAt: record.cachedAt,
+      reusedAlternatePayload: !directRecord && !!fallbackRecord,
+    });
     this.setCached(query, includeAlternate || record.includeAlternate, record.payload);
     return record.payload;
   }
@@ -144,6 +155,11 @@ class MedexBridgeService {
     const persistentCached = await this.getPersistentCached(trimmedQuery, includeAlternate);
     if (persistentCached) return persistentCached;
 
+    console.log('[MEDEX CACHE] Miss -> live fetch', {
+      query: trimmedQuery,
+      includeAlternate,
+    });
+
     const baseUrl = await this.discoverBaseUrl();
     const url = new URL(`${baseUrl}/query`);
     url.searchParams.set('q', trimmedQuery);
@@ -167,6 +183,10 @@ class MedexBridgeService {
     const payload = raw as MedexResolvedPayload;
     this.setCached(trimmedQuery, includeAlternate, payload);
     await this.setPersistentCached(trimmedQuery, includeAlternate, payload);
+    console.log('[MEDEX CACHE] Saved', {
+      query: trimmedQuery,
+      includeAlternate,
+    });
     return payload;
   }
 }

@@ -394,7 +394,7 @@ const formatDoseSections = (
     }
 
     for (const entry of section.entries) {
-      lines.push(`${capitalizeFirst(entry.label)}:`);
+      lines.push(`**${capitalizeFirst(entry.label)}:**`);
       lines.push(capitalizeFirst(entry.text));
       lines.push('');
     }
