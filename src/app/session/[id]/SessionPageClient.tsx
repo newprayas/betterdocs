@@ -28,8 +28,6 @@ import { askDrugModeService, drugModeService } from "../../../services/drug";
 import type { Document, SessionChatMode } from "../../../types";
 import { useAuthGuard } from "@/hooks/useAuthGuard";
 import { isDrugOnlySession } from "@/utils/sessionType";
-import { checkSubscriptionStatus, clearSubscriptionCache } from "@/services/subscriptionCheckService";
-import { notifySubscriptionRefresh } from "@/services/subscriptionActionService";
 
 const getDocumentDisplayName = (document: Document): string => {
   if (document.originalPath?.startsWith("library:")) {
@@ -298,17 +296,6 @@ export default function SessionPage() {
     const loadSessionData = () => {
       if (typeof window !== "undefined" && sessionId) {
         setIsInitialLoad(true);
-
-        clearSubscriptionCache();
-        checkSubscriptionStatus(true)
-          .then((status) => {
-            if (status && !status.hasAccess) {
-              notifySubscriptionRefresh();
-            }
-          })
-          .catch((error) => {
-            console.warn("Failed to refresh subscription status on session open:", error);
-          });
 
         // Set the current session ID immediately (this will now be optimistic if cached)
         // We don't await this because we want to render immediately with the cached data
