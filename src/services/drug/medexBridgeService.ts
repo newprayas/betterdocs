@@ -1,10 +1,12 @@
+import { getIndexedDBServices } from '@/services/indexedDB';
 import type { MedexResolvedPayload } from '@/types';
 
 const MEDEX_HELPER_PORT = 8765;
 const MEDEX_HELPER_HOSTS = ['127.0.0.1', 'localhost'];
 const HEALTH_TIMEOUT_MS = 1200;
 const QUERY_TIMEOUT_MS = 30000;
-const CACHE_TTL_MS = 5 * 60 * 1000;
+const MEMORY_CACHE_TTL_MS = 5 * 60 * 1000;
+const PERSISTENT_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 type CacheEntry = {
   payload: MedexResolvedPayload;
@@ -40,7 +42,7 @@ class MedexBridgeService {
     const key = this.getQueryKey(query, includeAlternate);
     const cached = this.cache.get(key);
     if (!cached) return null;
-    if (Date.now() - cached.cachedAt > CACHE_TTL_MS) {
+    if (Date.now() - cached.cachedAt > MEMORY_CACHE_TTL_MS) {
       this.cache.delete(key);
       return null;
     }
@@ -51,6 +53,47 @@ class MedexBridgeService {
     this.cache.set(this.getQueryKey(query, includeAlternate), {
       payload,
       cachedAt: Date.now(),
+    });
+  }
+
+  private async getPersistentCached(
+    query: string,
+    includeAlternate: boolean,
+  ): Promise<MedexResolvedPayload | null> {
+    if (typeof window === 'undefined') return null;
+
+    const cacheService = getIndexedDBServices().medexCacheService;
+    const directKey = this.getQueryKey(query, includeAlternate);
+    const fallbackKey = includeAlternate ? null : this.getQueryKey(query, true);
+
+    const directRecord = await cacheService.getCache(directKey);
+    const fallbackRecord = fallbackKey ? await cacheService.getCache(fallbackKey) : undefined;
+    const record = directRecord || fallbackRecord;
+
+    if (!record) return null;
+    if (Date.now() - new Date(record.cachedAt).getTime() > PERSISTENT_CACHE_TTL_MS) {
+      await cacheService.deleteCache(record.id);
+      return null;
+    }
+
+    this.setCached(query, includeAlternate || record.includeAlternate, record.payload);
+    return record.payload;
+  }
+
+  private async setPersistentCached(
+    query: string,
+    includeAlternate: boolean,
+    payload: MedexResolvedPayload,
+  ): Promise<void> {
+    if (typeof window === 'undefined') return;
+
+    await getIndexedDBServices().medexCacheService.saveCache({
+      id: this.getQueryKey(query, includeAlternate),
+      query: query.trim(),
+      normalizedQuery: query.trim().toLowerCase(),
+      includeAlternate,
+      cachedAt: new Date().toISOString(),
+      payload,
     });
   }
 
@@ -98,6 +141,9 @@ class MedexBridgeService {
     const cached = this.getCached(trimmedQuery, includeAlternate);
     if (cached) return cached;
 
+    const persistentCached = await this.getPersistentCached(trimmedQuery, includeAlternate);
+    if (persistentCached) return persistentCached;
+
     const baseUrl = await this.discoverBaseUrl();
     const url = new URL(`${baseUrl}/query`);
     url.searchParams.set('q', trimmedQuery);
@@ -120,6 +166,7 @@ class MedexBridgeService {
 
     const payload = raw as MedexResolvedPayload;
     this.setCached(trimmedQuery, includeAlternate, payload);
+    await this.setPersistentCached(trimmedQuery, includeAlternate, payload);
     return payload;
   }
 }

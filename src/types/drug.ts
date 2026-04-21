@@ -254,6 +254,15 @@ export interface MedexResolvedPayload {
   };
 }
 
+export interface MedexCacheRecord {
+  id: string;
+  query: string;
+  normalizedQuery: string;
+  includeAlternate: boolean;
+  cachedAt: string;
+  payload: MedexResolvedPayload;
+}
+
 export interface AskDrugQueryParseResult {
   drug_name: string;
   sections: AskDrugRequestedSection[];

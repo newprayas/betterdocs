@@ -9,9 +9,10 @@ import { AnnIndexService } from './annIndexService';
 import { RouteIndexService } from './routeIndexService';
 import { DrugDatasetService } from './drugDatasetService';
 import { SavedAnswerService } from './savedAnswerService';
+import { MedexCacheService } from './medexCacheService';
 
 // Re-export services
-export { RAGDatabase, SessionService, MessageService, DocumentService, EmbeddingService, SettingsService, AnnIndexService, RouteIndexService, DrugDatasetService, SavedAnswerService };
+export { RAGDatabase, SessionService, MessageService, DocumentService, EmbeddingService, SettingsService, AnnIndexService, RouteIndexService, DrugDatasetService, SavedAnswerService, MedexCacheService };
 
 // Service factory for easy dependency injection
 export class IndexedDBServices {
@@ -26,6 +27,7 @@ export class IndexedDBServices {
   public routeIndexService: RouteIndexService;
   public drugDatasetService: DrugDatasetService;
   public savedAnswerService: SavedAnswerService;
+  public medexCacheService: MedexCacheService;
 
   constructor() {
     this.db = new RAGDatabase();
@@ -39,6 +41,7 @@ export class IndexedDBServices {
     this.routeIndexService = new RouteIndexService();
     this.drugDatasetService = new DrugDatasetService();
     this.savedAnswerService = new SavedAnswerService();
+    this.medexCacheService = new MedexCacheService();
   }
 
   /**

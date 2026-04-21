@@ -2480,7 +2480,7 @@ ${JSON.stringify(promptContext, null, 2)}`;
       if (parsed.drug_name.trim()) {
         try {
           onStreamEvent?.({ type: 'status', message: 'Ask Drug Search' });
-          const medexPayload = await medexBridgeService.queryDrug(parsed.drug_name);
+          const medexPayload = await medexBridgeService.queryDrug(parsed.drug_name, true);
           const medexSections = parsed.sections.includes('all_details')
             ? ([
                 'indications_and_dose',

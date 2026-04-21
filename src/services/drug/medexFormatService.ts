@@ -53,6 +53,12 @@ const titleCase = (value: string): string =>
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ');
 
+const capitalizeFirst = (value?: string | null): string => {
+  const trimmed = compact(value);
+  if (!trimmed) return '';
+  return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
+};
+
 const buildDrugActionLink = (
   drugName: string,
   action: 'brands',
@@ -128,7 +134,8 @@ const simplifyPriceText = (value?: string | null): string => {
   const text = compact(value);
   if (!text) return '';
   if (/^Unit Price:/i.test(text)) {
-    return text.replace(/\s*\([^)]*\)\s*$/g, '').trim();
+    const match = text.match(/Unit Price:\s*৳\s*[\d.]+/i);
+    return compact(match?.[0] || text.replace(/\s*\([^)]*\)\s*$/g, ''));
   }
   return text;
 };
@@ -170,9 +177,15 @@ const extractIndicationLines = (payload: MedexResolvedPayload): string[] => {
   return uniqueLines(cleaned);
 };
 
+type DoseEntry = {
+  label: string;
+  text: string;
+};
+
 type DoseSection = {
   heading: string;
-  lines: string[];
+  intro: string[];
+  entries: DoseEntry[];
 };
 
 const FORMULATION_HEADING_PATTERN =
@@ -193,38 +206,26 @@ const isFormulationHeading = (line: string): boolean => {
 };
 
 const parseDoseSections = (payload: MedexResolvedPayload): DoseSection[] => {
-  const rawText = (payload.sections.dosage_and_administration || '')
+  const rawLines = (payload.sections.dosage_and_administration || '')
     .replace(/\r\n/g, '\n')
     .replace(/\u00a0/g, ' ')
-    .replace(
-      /(Tablet:|Extended Release Tablet:|Syrup\/Suspension:|Suppository:|Paediatric Drop:|Pediatric Drop:|IV Infusion:|Injection:|Tablet with actizorb technology:)\s*/g,
-      '$1\n',
-    )
-    .replace(
-      /\.\s+(Extended Release Tablet:|Syrup\/Suspension:|Suppository:|Paediatric Drop:|Pediatric Drop:|IV Infusion:|Injection:|Tablet with actizorb technology:)/g,
-      '.\n$1',
-    )
-    .replace(
-      /(Extended Release Tablet:|Syrup\/Suspension:|Suppository:|Paediatric Drop:|Pediatric Drop:|IV Infusion:|Injection:|Tablet with actizorb technology:)\s+(Adult|Adults|Children|Child)/g,
-      '$1\n$2',
-    )
-    .replace(
-      /\.\s+(Adult|Adults|Children|Child|Adults & Children over|Adults and children over|Adults and adolescents)/g,
-      '.\n$1',
-    );
-  const rawLines = splitLines(rawText);
+    .split('\n')
+    .map((line) => compact(line))
+    .filter(Boolean);
   if (rawLines.length === 0) {
     return [];
   }
 
   const sections: DoseSection[] = [];
-  let current: DoseSection = { heading: 'General', lines: [] };
+  let current: DoseSection | null = null;
 
   const pushCurrent = () => {
-    if (current.lines.length === 0) return;
+    if (!current) return;
+    if (current.intro.length === 0 && current.entries.length === 0) return;
     sections.push({
       heading: current.heading,
-      lines: [...current.lines],
+      intro: [...current.intro],
+      entries: [...current.entries],
     });
   };
 
@@ -232,16 +233,45 @@ const parseDoseSections = (payload: MedexResolvedPayload): DoseSection[] => {
     const line = compact(rawLine);
     if (!line) continue;
 
-    if (isFormulationHeading(line)) {
+    const headingMatch = line.match(/^([^:\n]{2,120}?):\s*(.*)$/);
+    if (headingMatch && isFormulationHeading(headingMatch[1])) {
       pushCurrent();
       current = {
-        heading: line.replace(/:$/, ''),
-        lines: [],
+        heading: compact(headingMatch[1]),
+        intro: [],
+        entries: [],
       };
+      const remainder = capitalizeFirst(headingMatch[2]);
+      if (remainder) {
+        current.intro.push(remainder);
+      }
       continue;
     }
 
-    current.lines.push(line);
+    if (!current) {
+      current = {
+        heading: 'General',
+        intro: [],
+        entries: [],
+      };
+    }
+
+    const entryMatch = line.match(/^([^:\n]{1,140}?):\s*(.+)$/);
+    if (entryMatch) {
+      current.entries.push({
+        label: capitalizeFirst(entryMatch[1]),
+        text: capitalizeFirst(entryMatch[2]),
+      });
+      continue;
+    }
+
+    if (current.entries.length > 0) {
+      const lastEntry = current.entries[current.entries.length - 1];
+      lastEntry.text = `${lastEntry.text} ${capitalizeFirst(line)}`.trim();
+      continue;
+    }
+
+    current.intro.push(capitalizeFirst(line));
   }
 
   pushCurrent();
@@ -272,15 +302,70 @@ const filterDoseSectionsByAudience = (
 
   return sections
     .map((section) => {
-      const kept = section.lines.filter((line) =>
-        audience === 'adult' ? isAdultRelevantLine(line) : isChildRelevantLine(line),
+      const keptEntries = section.entries.filter((entry) =>
+        audience === 'adult' ? isAdultRelevantLine(entry.label) : isChildRelevantLine(entry.label),
       );
       return {
         heading: section.heading,
-        lines: kept,
+        intro: keptEntries.length > 0 ? [...section.intro] : [],
+        entries: keptEntries,
       };
     })
-    .filter((section) => section.lines.length > 0);
+    .filter((section) => section.intro.length > 0 || section.entries.length > 0);
+};
+
+const normalizeDoseFormBucket = (value?: string | null): string => {
+  const normalized = normalizeText(value);
+  if (!normalized) return 'other';
+  if (normalized.includes('actizorb')) return 'actizorb';
+  if (normalized.includes('extended release')) return 'extended_release_tablet';
+  if (normalized.includes('iv infusion')) return 'iv_infusion';
+  if (normalized.includes('suppository')) return 'suppository';
+  if (normalized.includes('pediatric drop') || normalized.includes('paediatric drop')) return 'pediatric_drop';
+  if (normalized.includes('syrup') || normalized.includes('oral suspension') || normalized.includes('suspension')) {
+    return 'syrup_suspension';
+  }
+  if (normalized.includes('tablet')) return 'tablet';
+  if (normalized.includes('capsule')) return 'capsule';
+  if (normalized.includes('injection')) return 'injection';
+  return normalized;
+};
+
+const buildSameCompanyAlternateRows = (payload: MedexResolvedPayload): MedexAlternateBrandRow[] => {
+  const manufacturer = normalizeText(payload.summary_above_indications?.manufacturer);
+  if (!manufacturer) return [];
+
+  return [...(payload.alternate_brands?.rows || [])]
+    .filter((row) => normalizeText(row.company) === manufacturer)
+    .sort((left, right) => {
+      const formDelta = formulationPriority(left.dosage_form) - formulationPriority(right.dosage_form);
+      if (formDelta !== 0) return formDelta;
+      return compact(left.brand_name).localeCompare(compact(right.brand_name));
+    });
+};
+
+const buildFormulationLinesForHeading = (
+  payload: MedexResolvedPayload,
+  heading: string,
+): string[] => {
+  if (payload.selected_kind !== 'brand') return [];
+
+  const headingBucket = normalizeDoseFormBucket(heading);
+  if (headingBucket === 'actizorb') return [];
+
+  const rows = buildSameCompanyAlternateRows(payload).filter((row) => {
+    const rowBucket = normalizeDoseFormBucket(row.dosage_form);
+    if (headingBucket === 'tablet') {
+      return rowBucket === 'tablet';
+    }
+    return rowBucket === headingBucket;
+  });
+
+  return rows.map((row) => {
+    const label = [compact(row.brand_name), compact(row.strength)].filter(Boolean).join(' ');
+    const price = simplifyPriceText(row.price_text);
+    return `- ${label}${price ? ` [${price}]` : ''}`;
+  });
 };
 
 const formatDoseSections = (
@@ -294,19 +379,26 @@ const formatDoseSections = (
 
   const lines: string[] = [];
   for (const section of sections) {
-    lines.push(`🎉 ${section.heading}`);
+    lines.push(`🎉 *${section.heading.toUpperCase()}*`);
     lines.push('');
-    for (const line of section.lines) {
-      const audienceMatch = line.match(/^(Adult[^:]*|Adults[^:]*|Elderly[^:]*|Children[^:]*|Child[^:]*|Neonates?[^:]*|Infants?[^:]*):\s*(.+)$/i);
-      if (audienceMatch) {
-        lines.push(`**${audienceMatch[1]}:**`);
-        lines.push('');
-        lines.push(audienceMatch[2].trim());
-        lines.push('');
-        continue;
-      }
-      lines.push(`- ${line}`);
+
+    const formulationLines = buildFormulationLinesForHeading(payload, section.heading);
+    if (formulationLines.length > 0) {
+      lines.push(...formulationLines);
+      lines.push('');
     }
+
+    for (const introLine of section.intro) {
+      lines.push(capitalizeFirst(introLine));
+      lines.push('');
+    }
+
+    for (const entry of section.entries) {
+      lines.push(`${capitalizeFirst(entry.label)}:`);
+      lines.push(capitalizeFirst(entry.text));
+      lines.push('');
+    }
+
     lines.push('');
   }
 
@@ -346,14 +438,7 @@ const buildBrandSummaryLines = (
     );
     const company = compact(summary?.manufacturer);
     const lines = [`- ${brandLabel}${company ? ` - ${company}` : ''}`];
-
-    const sameCompanyRows = (payload.alternate_brands?.rows || [])
-      .filter((row) => normalizeText(row.company) === normalizeText(summary?.manufacturer))
-      .sort((left, right) => {
-        const formDelta = formulationPriority(left.dosage_form) - formulationPriority(right.dosage_form);
-        if (formDelta !== 0) return formDelta;
-        return compact(left.brand_name).localeCompare(compact(right.brand_name));
-      });
+    const sameCompanyRows = buildSameCompanyAlternateRows(payload);
 
     if (sameCompanyRows.length > 0) {
       lines.push('- Dosage Formulations:');
@@ -496,12 +581,13 @@ export const formatMedexDoseAnswer = (
   }
 
   lines.push('', block(sectionHeading('Indications'), formatBulletList(extractIndicationLines(payload))));
-  lines.push('', block(sectionHeading('Indications and dose'), formatDoseSections(payload, options?.audience)));
 
   const contraindications = splitLines(payload.sections.contraindications);
   if (contraindications.length > 0) {
     lines.push('', block('❌ Contraindications', formatBulletList(contraindications)));
   }
+
+  lines.push('', block(sectionHeading('Indications and dose'), formatDoseSections(payload, options?.audience)));
 
   const actionDrug = resolveGenericName(payload);
   if (actionDrug) {

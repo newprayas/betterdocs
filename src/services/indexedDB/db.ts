@@ -12,6 +12,7 @@ import type {
   RouteIndexRecord,
   DrugDatasetRecord,
   SavedAnswer,
+  MedexCacheRecord,
 } from '@/types';
 
 export class RAGDatabase extends Dexie {
@@ -25,6 +26,7 @@ export class RAGDatabase extends Dexie {
   routeIndexes!: EntityTable<RouteIndexRecord>;
   drugDatasets!: EntityTable<DrugDatasetRecord>;
   savedAnswers!: EntityTable<SavedAnswer>;
+  medexCache!: EntityTable<MedexCacheRecord>;
 
   constructor() {
     super('RAGDatabase');
@@ -154,6 +156,19 @@ export class RAGDatabase extends Dexie {
       routeIndexes: '&id, documentId, updatedAt',
       drugDatasets: '&id, filename, downloadedAt',
       savedAnswers: '&id, sourceMessageId, userId, sessionId, savedAt, [userId+savedAt]'
+    });
+
+    this.version(85).stores({
+      sessions: '&id, userId, name, description, systemPrompt, createdAt, updatedAt, documentCount',
+      messages: '&id, sessionId, role, content, timestamp, citationsJson, [sessionId+timestamp]',
+      documents: '&id, userId, sessionId, filename, fileSize, status, pageCount, processedAt, createdAt, enabled, originalPath, storedPath, mimeType, checksum, title, author, language, ingestError',
+      embeddings: '&id, documentId, sessionId, chunkIndex, content, source, page, embedding, tokenCount, embeddingNorm, createdAt',
+      settings: '&id, userId, geminiApiKey, model, temperature, maxTokens, similarityThreshold, chunkSize, chunkOverlap, theme, fontSize, showSources, autoSave, dataRetention, enableAnalytics, crashReporting, debugMode, logLevel',
+      annIndexes: '&id, documentId, algorithm, embeddingDimensions, state, updatedAt, [documentId+algorithm]',
+      routeIndexes: '&id, documentId, updatedAt',
+      drugDatasets: '&id, filename, downloadedAt',
+      savedAnswers: '&id, sourceMessageId, userId, sessionId, savedAt, [userId+savedAt]',
+      medexCache: '&id, normalizedQuery, includeAlternate, cachedAt'
     });
   }
 }
