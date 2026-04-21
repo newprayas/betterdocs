@@ -427,6 +427,45 @@ const pickExampleBrand = (payload: MedexResolvedPayload): MedexBrandCard | null 
   return ranked[0] || null;
 };
 
+type GenericExampleBrand = {
+  brandName: string;
+  company: string;
+};
+
+const pickExampleBrands = (payload: MedexResolvedPayload, limit = 4): GenericExampleBrand[] => {
+  const sourceRows =
+    payload.alternate_brands?.rows && payload.alternate_brands.rows.length > 0
+      ? payload.alternate_brands.rows.map((row) => ({
+          brand_name: row.brand_name || '',
+          company: row.company || '',
+        }))
+      : payload.available_brand_names.map((item) => ({
+          brand_name: item.brand_name || '',
+          company: item.company || '',
+        }));
+
+  const seen = new Set<string>();
+  const ranked = [...sourceRows]
+    .map((item) => ({
+      brandName: compact(item.brand_name),
+      company: compact(item.company),
+    }))
+    .filter((item) => item.brandName && item.company)
+    .filter((item) => {
+      const key = `${normalizeText(item.brandName)}|${normalizeText(item.company)}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .sort((left, right) => {
+      const companyDelta = companyPriority(left.company) - companyPriority(right.company);
+      if (companyDelta !== 0) return companyDelta;
+      return left.brandName.localeCompare(right.brandName);
+    });
+
+  return ranked.slice(0, limit);
+};
+
 const buildBrandSummaryLines = (
   payload: MedexResolvedPayload,
   options?: { originalQuery?: string },
@@ -469,17 +508,14 @@ const buildBrandSummaryLines = (
     return lines;
   }
 
+  const exampleBrands = pickExampleBrands(payload);
+  if (exampleBrands.length > 0) {
+    return exampleBrands.map((item) => `- ${item.brandName} - ${item.company}`);
+  }
+
   const exampleBrand = pickExampleBrand(payload);
   if (!exampleBrand) return [];
-
-  const price = compact(exampleBrand.price_text) || (compact(exampleBrand.price_bdt) ? `৳ ${compact(exampleBrand.price_bdt)}` : '');
-  const lines = [
-    `- ${compact(exampleBrand.brand_name)} ${compact(exampleBrand.strength)} - ${compact(exampleBrand.company)}`.trim(),
-  ];
-  if (price) {
-    lines.push(`- Price: ${price}`);
-  }
-  return lines;
+  return [`- ${compact(exampleBrand.brand_name)} - ${compact(exampleBrand.company)}`.trim()];
 };
 
 const resolveGenericName = (payload: MedexResolvedPayload): string =>
@@ -561,14 +597,14 @@ export const formatMedexDoseAnswer = (
     payload.selected_kind === 'brand'
       ? stripTrailingFormulation(compact(options?.originalQuery || payload.query || payload.selected_result_title)).toUpperCase()
       : genericName.toUpperCase();
-  const lines: string[] = [`${headerLead} - Generic : ${genericName.toUpperCase()}`];
+  const lines: string[] = [`**${headerLead}** - Generic : **${genericName.toUpperCase()}**`];
 
   if (options?.audience === 'adult') {
     const childHref = buildDrugAudienceActionLink(resolveGenericName(payload), 'child');
     const childLabel = buildDrugAudienceLinkLabel('child');
     lines.push(
       '',
-      `⚠️ Only ADULT dose given, search child dose separately (${childHref ? `[${childLabel}](${childHref})` : childLabel})`,
+      `⚠️ Only ADULT dose and indications given, search child dose and indications separately (${childHref ? `[${childLabel}](${childHref})` : childLabel})`,
     );
   }
 
@@ -576,7 +612,7 @@ export const formatMedexDoseAnswer = (
   if (brandSummaryLines.length > 0) {
     lines.push(
       '',
-      block(sectionHeading(payload.selected_kind === 'brand' ? 'Selected brand' : 'Example brand'), brandSummaryLines),
+      block(sectionHeading(payload.selected_kind === 'brand' ? 'Selected brand' : 'Example brands'), brandSummaryLines),
     );
   }
 

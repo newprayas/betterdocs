@@ -141,6 +141,15 @@ def resolve_selected_result(results: list[dict[str, Any]], query: str) -> tuple[
     query_brand = normalize_brand(query)
     query_choice = normalize_choice_text(query)
 
+    exact_generic_matches = [
+        item
+        for item in generic_results
+        if normalize_choice_text(item.get("title")) == query_choice
+        or normalize_brand(item.get("title")) == query_brand
+    ]
+    if exact_generic_matches:
+        return exact_generic_matches[0], "generic"
+
     exact_brand_matches = [
         item
         for item in brand_results
@@ -157,15 +166,6 @@ def resolve_selected_result(results: list[dict[str, Any]], query: str) -> tuple[
             ),
         )[0]
         return selected, "brand"
-
-    exact_generic_matches = [
-        item
-        for item in generic_results
-        if normalize_choice_text(item.get("title")) == query_choice
-        or normalize_brand(item.get("title")) == query_brand
-    ]
-    if exact_generic_matches:
-        return exact_generic_matches[0], "generic"
 
     suggestions = build_result_suggestions(results)
     raise MedexSuggestionLookupError(query, suggestions)
