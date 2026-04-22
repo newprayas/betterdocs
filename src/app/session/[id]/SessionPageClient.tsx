@@ -1146,143 +1146,151 @@ export default function SessionPage() {
               </div>
             ) : messages.length === 0 ? (
               // This wrapper controls the layout to ensure input stays at bottom
-              <div className="flex flex-col flex-1 min-h-0">
-                {/* This wrapper grows to fill all available space */}
-                <div className="flex-1 flex items-center justify-center">
-                  {documentsLoading ? (
-                    <EmptyState
-                      title="Loading books..."
-                      description="Please wait while sources are being prepared."
-                      icon={<div className="text-4xl mb-2">📚</div>}
-                    />
-                  ) : !isDatasetModeEnabled && !hasDocuments ? (
-                    <EmptyState
-                      title="No books added, Add books to chat 🥳"
-                      description=""
-                      icon={<div className="text-4xl mb-2">📚</div>}
-                      action={
-                        <Button
-                          onClick={() => setActiveTab("documents")}
-                          variant="primary"
-                          size="lg"
-                        >
-                          ADD BOOKS
-                        </Button>
-                      }
-                    />
-                  ) : isPreparingDrugDataset ? (
-                    <EmptyState
-                      title="Preparing drug dataset..."
-                      description={`Please wait while ${modeLabel} loads the drug catalog.`}
-                      icon={<div className="text-4xl mb-2">💊</div>}
-                    />
-                  ) : isDatasetModeEnabled ? (
-                    <EmptyState
-                      title={readyTitle}
-                      description={readyDescription}
-                      icon={<div className="text-4xl mb-2">💊</div>}
-                    />
-                  ) : (
-                    <EmptyState
-                      title={readyTitle}
-                      description={readyDescription}
-                      icon={
-                        <svg
-                          className="w-12 h-12 text-gray-400"
-                          fill="none"
-                          viewBox="0 0 24 24"
-                          stroke="currentColor"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
-                          />
-                        </svg>
-                      }
-                    />
-                  )}
+              <div className="flex flex-col flex-1 min-h-0 overflow-y-auto overscroll-contain">
+                {/* Empty-state hero collapses while keyboard is open so the composer can stay visible */}
+                <div className={isKeyboardOpen ? "flex-1 min-h-0" : "flex-1 flex items-center justify-center"}>
+                  {!isKeyboardOpen &&
+                    (documentsLoading ? (
+                      <EmptyState
+                        title="Loading books..."
+                        description="Please wait while sources are being prepared."
+                        icon={<div className="text-4xl mb-2">📚</div>}
+                      />
+                    ) : !isDatasetModeEnabled && !hasDocuments ? (
+                      <EmptyState
+                        title="No books added, Add books to chat 🥳"
+                        description=""
+                        icon={<div className="text-4xl mb-2">📚</div>}
+                        action={
+                          <Button
+                            onClick={() => setActiveTab("documents")}
+                            variant="primary"
+                            size="lg"
+                          >
+                            ADD BOOKS
+                          </Button>
+                        }
+                      />
+                    ) : isPreparingDrugDataset ? (
+                      <EmptyState
+                        title="Preparing drug dataset..."
+                        description={`Please wait while ${modeLabel} loads the drug catalog.`}
+                        icon={<div className="text-4xl mb-2">💊</div>}
+                      />
+                    ) : isDatasetModeEnabled ? (
+                      <EmptyState
+                        title={readyTitle}
+                        description={readyDescription}
+                        icon={<div className="text-4xl mb-2">💊</div>}
+                      />
+                    ) : (
+                      <EmptyState
+                        title={readyTitle}
+                        description={readyDescription}
+                        icon={
+                          <svg
+                            className="w-12 h-12 text-gray-400"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            stroke="currentColor"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
+                            />
+                          </svg>
+                        }
+                      />
+                    ))}
                 </div>
 
-                {/* Phrase Pills */}
                 <div
                   ref={emptyComposerRef}
-                  className="relative flex-shrink-0 mt-4 max-w-4xl mx-auto w-full"
+                  className="flex-shrink-0 mt-4 max-w-4xl mx-auto w-full"
+                  style={
+                    isKeyboardOpen
+                      ? { paddingBottom: "max(env(safe-area-inset-bottom, 0px), 12px)" }
+                      : undefined
+                  }
                 >
-                  {!isReadingSources && (
-                    <div className="absolute bottom-full right-2 mb-2 z-20 flex items-center gap-2">
-                      <div className="inline-flex items-center gap-2 rounded-full border border-gray-300 bg-white px-3 py-2 text-xs font-medium text-gray-700 shadow-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 sm:text-sm">
-                        <span>{isPreparingDrugDataset ? "Preparing..." : "Drugs"}</span>
-                        <Switch
-                          checked={isDrugModeEnabled}
-                          onCheckedChange={() => {
-                            void handleDrugModeToggle();
-                          }}
-                          disabled={isPreparingDrugDataset}
-                          size="sm"
-                          aria-label="Toggle drugs mode"
-                        />
+                  {/* Phrase Pills */}
+                  <div className="relative w-full">
+                    {!isReadingSources && (
+                      <div className="absolute bottom-full right-2 mb-2 z-20 flex items-center gap-2">
+                        <div className="inline-flex items-center gap-2 rounded-full border border-gray-300 bg-white px-3 py-2 text-xs font-medium text-gray-700 shadow-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 sm:text-sm">
+                          <span>{isPreparingDrugDataset ? "Preparing..." : "Drugs"}</span>
+                          <Switch
+                            checked={isDrugModeEnabled}
+                            onCheckedChange={() => {
+                              void handleDrugModeToggle();
+                            }}
+                            disabled={isPreparingDrugDataset}
+                            size="sm"
+                            aria-label="Toggle drugs mode"
+                          />
+                        </div>
+                        {!isDatasetModeEnabled && !isDrugOnlySessionMode && (
+                          <button
+                            type="button"
+                            onClick={handleSourcesPanelOpen}
+                            onMouseUp={(event) => {
+                              event.currentTarget.blur();
+                            }}
+                            onTouchEnd={(event) => {
+                              event.currentTarget.blur();
+                            }}
+                            className="
+                              sources-scroll-button
+                              inline-flex items-center justify-center
+                              px-3 py-2 sm:px-4 sm:py-2
+                              text-xs sm:text-sm font-medium rounded-full
+                              bg-blue-600 text-white shadow-sm
+                              hover:bg-blue-700 active:bg-blue-700
+                              transition-none
+                              focus:outline-none focus:ring-0 focus:ring-offset-0
+                            "
+                            style={{ WebkitTapHighlightColor: "transparent" }}
+                            aria-label="Manage active sources"
+                            title="Sources"
+                          >
+                            Sources {documentsLoading ? "..." : activeDocumentCount}
+                          </button>
+                        )}
                       </div>
-                      {!isDatasetModeEnabled && !isDrugOnlySessionMode && (
-                        <button
-                          type="button"
-                          onClick={handleSourcesPanelOpen}
-                          onMouseUp={(event) => {
-                            event.currentTarget.blur();
-                          }}
-                          onTouchEnd={(event) => {
-                            event.currentTarget.blur();
-                          }}
-                          className="
-                            sources-scroll-button
-                            inline-flex items-center justify-center
-                            px-3 py-2 sm:px-4 sm:py-2
-                            text-xs sm:text-sm font-medium rounded-full
-                            bg-blue-600 text-white shadow-sm
-                            hover:bg-blue-700 active:bg-blue-700
-                            transition-none
-                            focus:outline-none focus:ring-0 focus:ring-offset-0
-                          "
-                          style={{ WebkitTapHighlightColor: "transparent" }}
-                          aria-label="Manage active sources"
-                          title="Sources"
-                        >
-                          Sources {documentsLoading ? "..." : activeDocumentCount}
-                        </button>
-                      )}
-                    </div>
-                  )}
-                  {shouldShowPhrasePills && (
-                    <PhrasePills
-                      phrases={visiblePhrasePhrases}
-                      onPhraseSelect={handlePhraseSelect}
-                      className="bg-gray-100 dark:bg-gray-800 rounded-lg"
-                      ariaLabel={
-                        isDatasetModeEnabled
-                          ? "Drug suggestion chips"
-                          : "Quick phrase suggestions"
-                      }
-                    />
-                  )}
-                </div>
+                    )}
+                    {shouldShowPhrasePills && (
+                      <PhrasePills
+                        phrases={visiblePhrasePhrases}
+                        onPhraseSelect={handlePhraseSelect}
+                        className="bg-gray-100 dark:bg-gray-800 rounded-lg"
+                        ariaLabel={
+                          isDatasetModeEnabled
+                            ? "Drug suggestion chips"
+                            : "Quick phrase suggestions"
+                        }
+                      />
+                    )}
+                  </div>
 
-                <div className="flex-shrink-0 mt-4 max-w-4xl mx-auto w-full">
-                  <MessageInput
-                    sessionId={sessionId}
-                    disabled={
-                      isStreaming ||
-                      isPreparingDrugDataset ||
-                      (!isDatasetModeEnabled &&
-                        (!hasDocuments || !hasDocumentDataForSession))
-                    }
-                    placeholder={messagePlaceholder}
-                    inputRef={messageInputRef}
-                    controllerRef={messageInputControllerRef}
-                    autoCorrect="off"
-                    autoCapitalize="none"
-                    spellCheck={false}
-                  />
+                  <div className="mt-4 w-full">
+                    <MessageInput
+                      sessionId={sessionId}
+                      disabled={
+                        isStreaming ||
+                        isPreparingDrugDataset ||
+                        (!isDatasetModeEnabled &&
+                          (!hasDocuments || !hasDocumentDataForSession))
+                      }
+                      placeholder={messagePlaceholder}
+                      inputRef={messageInputRef}
+                      controllerRef={messageInputControllerRef}
+                      autoCorrect="off"
+                      autoCapitalize="none"
+                      spellCheck={false}
+                    />
+                  </div>
                 </div>
               </div>
             ) : (
