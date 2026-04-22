@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 
 
 import { useSessionStore, useDocumentStore, useChatStore } from '../store';
@@ -26,6 +26,8 @@ export default function HomePage() {
   const [isOpeningDrugChat, setIsOpeningDrugChat] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
   const [isAppReady, setIsAppReady] = useState(false);
+  const hasPrefetchedDrugExperienceRef = useRef(false);
+  const drugDatasetWarmupPromiseRef = useRef<Promise<void> | null>(null);
 
   // Prevent hydration mismatch
   useEffect(() => {
@@ -54,9 +56,6 @@ export default function HomePage() {
     initApp();
   }, [loadSessions, preloadMessages, isMounted, userId, router]);
 
-  if (!isMounted || isCheckingAuth) return <LoadingScreen />;
-  if (!isAuthenticated) return null;
-
   const handleCreateSession = async (data: { name: string; description?: string; systemPrompt?: string }) => {
     try {
       await createSession(data);
@@ -71,6 +70,79 @@ export default function HomePage() {
     setCurrentSession(session);
     router.push(getSessionRoute(session.id));
   };
+
+  const prefetchDrugExperience = useCallback(async () => {
+    if (hasPrefetchedDrugExperienceRef.current) return;
+    hasPrefetchedDrugExperienceRef.current = true;
+
+    const existingDrugSession = sessions.find((session) => isDrugOnlySession(session));
+
+    try {
+      await Promise.all([
+        import('./session/[id]/SessionPageClient'),
+        import('../services/drug/drugModeService'),
+        import('../services/drug/askDrugModeService'),
+      ]);
+
+      if (existingDrugSession) {
+        router.prefetch(getSessionRoute(existingDrugSession.id));
+      }
+    } catch (error) {
+      console.warn('[HOME] Failed to prefetch drug experience', error);
+      hasPrefetchedDrugExperienceRef.current = false;
+    }
+  }, [router, sessions]);
+
+  const warmDrugDatasets = useCallback(async () => {
+    if (drugDatasetWarmupPromiseRef.current) {
+      return drugDatasetWarmupPromiseRef.current;
+    }
+
+    drugDatasetWarmupPromiseRef.current = (async () => {
+      const [{ drugModeService }, { askDrugModeService }] = await Promise.all([
+        import('../services/drug/drugModeService'),
+        import('../services/drug/askDrugModeService'),
+      ]);
+
+      await Promise.all([drugModeService.warmup(), askDrugModeService.warmup()]);
+    })().catch((error) => {
+      console.warn('[HOME] Drug dataset warmup failed', error);
+      drugDatasetWarmupPromiseRef.current = null;
+    });
+
+    return drugDatasetWarmupPromiseRef.current;
+  }, []);
+
+  const handleDrugButtonIntent = useCallback(() => {
+    void prefetchDrugExperience();
+    void warmDrugDatasets();
+  }, [prefetchDrugExperience, warmDrugDatasets]);
+
+  useEffect(() => {
+    if (!isMounted || !isAppReady || typeof window === 'undefined') return;
+
+    const warm = () => {
+      void prefetchDrugExperience();
+    };
+
+    if ('requestIdleCallback' in window) {
+      const idleId = window.requestIdleCallback(() => {
+        warm();
+      }, { timeout: 1500 });
+
+      return () => {
+        window.cancelIdleCallback(idleId);
+      };
+    }
+
+    const timeoutId = setTimeout(warm, 600);
+    return () => {
+      clearTimeout(timeoutId);
+    };
+  }, [isAppReady, isMounted, prefetchDrugExperience]);
+
+  if (!isMounted || isCheckingAuth) return <LoadingScreen />;
+  if (!isAuthenticated) return null;
 
   const handleOpenDrugChat = async () => {
     if (!userId || isOpeningDrugChat) return;
@@ -200,6 +272,9 @@ export default function HomePage() {
       <div className="fixed bottom-4 right-4 z-40">
         <Button
           onClick={() => void handleOpenDrugChat()}
+          onMouseEnter={handleDrugButtonIntent}
+          onTouchStart={handleDrugButtonIntent}
+          onFocus={handleDrugButtonIntent}
           disabled={!isAppReady || isSessionLoading || isOpeningDrugChat}
           className="!rounded-full shadow-xl px-5 py-3 !bg-emerald-800 hover:!bg-emerald-900 !text-white border border-emerald-950/20"
         >

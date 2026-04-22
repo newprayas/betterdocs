@@ -24,7 +24,6 @@ import { EmptyState } from "../../../components/common";
 import { Header } from "../../../components/layout";
 import { useRouteErrorHandler } from "../../../components/common/RouteErrorBoundary";
 import { getLibraryBookNameById } from "../../../services/libraryService";
-import { askDrugModeService, drugModeService } from "../../../services/drug";
 import type { Document, SessionChatMode } from "../../../types";
 import { useAuthGuard } from "@/hooks/useAuthGuard";
 import { isDrugOnlySession } from "@/utils/sessionType";
@@ -540,6 +539,10 @@ export default function SessionPage() {
 
     setIsPreparingDrugDataset(true);
     try {
+      const [{ drugModeService }, { askDrugModeService }] = await Promise.all([
+        import("../../../services/drug/drugModeService"),
+        import("../../../services/drug/askDrugModeService"),
+      ]);
       await Promise.all([drugModeService.warmup(), askDrugModeService.warmup()]);
       console.log("[SESSION MODE]", "Dataset warmup completed", {
         sessionId,
@@ -760,6 +763,47 @@ export default function SessionPage() {
     await handleSessionModeChange(sessionMode === "drug" ? "chat" : "drug");
   };
 
+  const sessionActions = (
+    <div className="flex items-center gap-3">
+      <DropdownMenu
+        trigger={
+          <Button
+            variant="ghost"
+            size="sm"
+            className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800"
+          >
+            <svg
+              className="h-5 w-5 text-gray-500 dark:text-gray-400"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"
+              />
+            </svg>
+          </Button>
+        }
+      >
+        <DropdownMenuItem
+          onClick={handleClearHistory}
+          disabled={messages.length === 0}
+        >
+          Clear History
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onClick={() => setIsDeleteDialogOpen(true)}
+          variant="danger"
+        >
+          Delete Session
+        </DropdownMenuItem>
+      </DropdownMenu>
+    </div>
+  );
+
   if (isCheckingAuth) {
     return <Loading overlay text="Checking session..." />;
   }
@@ -819,62 +863,24 @@ export default function SessionPage() {
       <div className="sticky top-0 z-40 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
         <Header
           title={currentSession.name}
-          actions={null} // Remove actions from header, moving to tab bar
+          actions={isDrugOnlySessionMode ? sessionActions : null}
         />
       </div>
 
-      {/* Sticky Tab Navigation */}
-      <div className="sticky top-14 sm:top-16 z-30 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 py-3">
-        <div className="container mx-auto px-4 sm:px-6 max-w-4xl flex justify-center">
-          <TabBar
-            tabs={isDrugOnlySessionMode ? ChatTabs.DrugOnly : ChatTabs.ChatDocuments}
-            activeTab={activeTab}
-            onTabChange={setActiveTab}
-            variant="pills"
-            className="w-full sm:w-auto min-w-[300px]"
-            actions={
-              <div className="flex items-center gap-3">
-                <DropdownMenu
-                  trigger={
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800"
-                    >
-                      <svg
-                        className="h-5 w-5 text-gray-500 dark:text-gray-400"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"
-                        />
-                      </svg>
-                    </Button>
-                  }
-                >
-                  <DropdownMenuItem
-                    onClick={handleClearHistory}
-                    disabled={messages.length === 0}
-                  >
-                    Clear History
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={() => setIsDeleteDialogOpen(true)}
-                    variant="danger"
-                  >
-                    Delete Session
-                  </DropdownMenuItem>
-                </DropdownMenu>
-              </div>
-            }
-          />
+      {!isDrugOnlySessionMode && (
+        <div className="sticky top-14 sm:top-16 z-30 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 py-3">
+          <div className="container mx-auto px-4 sm:px-6 max-w-4xl flex justify-center">
+            <TabBar
+              tabs={ChatTabs.ChatDocuments}
+              activeTab={activeTab}
+              onTabChange={setActiveTab}
+              variant="pills"
+              className="w-full sm:w-auto min-w-[300px]"
+              actions={sessionActions}
+            />
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Tab Content with Swipe Support */}
       <div className="flex-1 container mx-auto px-4 pt-4 pb-0 overflow-hidden flex flex-col">

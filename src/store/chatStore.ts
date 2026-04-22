@@ -3,10 +3,8 @@ import { devtools, persist } from 'zustand/middleware';
 import type { ChatStore } from './types';
 import { Message, MessageSender } from '@/types/message';
 import { getIndexedDBServices } from '../services/indexedDB';
+import type { ChatStreamEvent } from '../services/rag';
 import { chatPipeline } from '../services/rag/chatPipeline';
-import { drugModeService } from '../services/drug';
-import { askDrugModeService } from '../services/drug/askDrugModeService';
-import { brandExtractionService } from '../services/drug';
 import { groqService } from '../services/groq/groqService';
 import { useSessionStore } from './sessionStore';
 import { userIdLogger } from '../utils/userIdDebugLogger';
@@ -251,6 +249,15 @@ const withTimeout = async <T>(
     if (timer) clearTimeout(timer);
   }
 };
+
+const loadDrugModeService = async () =>
+  (await import('../services/drug/drugModeService')).drugModeService;
+
+const loadAskDrugModeService = async () =>
+  (await import('../services/drug/askDrugModeService')).askDrugModeService;
+
+const loadBrandExtractionService = async () =>
+  (await import('../services/drug/brandExtractionService')).brandExtractionService;
 
 export const useChatStore = create<ChatStore>()(
   devtools(
@@ -519,14 +526,18 @@ export const useChatStore = create<ChatStore>()(
             timestamp: new Date(),
             sessionId,
           };
-          const pipelineRunner =
+          const pipelineRunner: (onEvent: (event: ChatStreamEvent) => void) => Promise<void> =
             sessionMode === 'drug'
               ? shouldRouteToDrugMode
-                ? (onEvent: Parameters<typeof drugModeService.sendMessage>[2]) =>
-                    drugModeService.sendMessage(sessionId, effectiveContent, onEvent)
-                : (onEvent: Parameters<typeof askDrugModeService.sendMessage>[2]) =>
-                    askDrugModeService.sendMessage(sessionId, effectiveContent, onEvent)
-              : (onEvent: Parameters<typeof chatPipeline.sendMessage>[2]) =>
+                ? async (onEvent) => {
+                    const drugModeService = await loadDrugModeService();
+                    await drugModeService.sendMessage(sessionId, effectiveContent, onEvent);
+                  }
+                : async (onEvent) => {
+                    const askDrugModeService = await loadAskDrugModeService();
+                    await askDrugModeService.sendMessage(sessionId, effectiveContent, onEvent);
+                  }
+              : (onEvent) =>
                   chatPipeline.sendMessage(sessionId, effectiveContent, onEvent, userMessage);
 
           const explicitDrugName = extractExplicitDrugNameFromQuery(effectiveContent);
@@ -871,7 +882,8 @@ export const useChatStore = create<ChatStore>()(
             }
 
             await withTimeout(
-              brandExtractionService.extractBrandsFromAnswer(
+              loadBrandExtractionService().then((brandExtractionService) =>
+                brandExtractionService.extractBrandsFromAnswer(
                 sessionId,
                 {
                   sourceMode: sessionMode,
@@ -1007,7 +1019,7 @@ export const useChatStore = create<ChatStore>()(
                     });
                   }
                 },
-              ),
+              )),
               PIPELINE_TIMEOUT_MS,
               'Brand extraction request timed out. Please try again.',
             );
