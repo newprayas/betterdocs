@@ -34,64 +34,86 @@ const ChatListComponent: React.FC<ChatListProps> = ({
   const isLoading = false; // Loading is now handled at the parent level
   const containerRef = useRef<HTMLDivElement>(null);
   const bottomAnchorRef = useRef<HTMLDivElement>(null);
+  const isSessionOpeningRef = useRef(true);
+  const previousMessageCountRef = useRef(messages.length);
+  const previousIsStreamingRef = useRef(isStreaming);
 
   useEffect(() => {
     void loadSavedAnswers(userId);
   }, [loadSavedAnswers, userId]);
 
-  // Auto-scroll to bottom when new messages arrive or streaming updates
-  useLayoutEffect(() => {
+  useEffect(() => {
+    isSessionOpeningRef.current = true;
+    previousMessageCountRef.current = messages.length;
+    previousIsStreamingRef.current = isStreaming;
+
+    const timeoutId = window.setTimeout(() => {
+      isSessionOpeningRef.current = false;
+    }, 400);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [sessionId]);
+
+  const scrollToBottom = (behavior: ScrollBehavior) => {
     const container = containerRef.current;
     if (!container) return;
 
-    container.scrollTo({ top: container.scrollHeight, behavior: 'auto' });
+    container.scrollTo({ top: container.scrollHeight, behavior });
     bottomAnchorRef.current?.scrollIntoView({
-      behavior: 'auto',
+      behavior,
       block: 'end',
       inline: 'nearest',
     });
-  }, [messages, sessionId, streamingContent]);
+  };
 
+  // Initial session open should land at the bottom instantly.
+  useLayoutEffect(() => {
+    scrollToBottom('auto');
+  }, [sessionId]);
+
+  // New answer start or a newly appended message should scroll smoothly.
   useEffect(() => {
-    if (typeof window === 'undefined') return;
+    const messageCountChanged = messages.length !== previousMessageCountRef.current;
+    const streamingStarted = isStreaming && !previousIsStreamingRef.current;
 
-    const attempts = [
-      { label: 'effect:raf-1', delay: 0 },
-      { label: 'effect:timeout-50', delay: 50 },
-      { label: 'effect:timeout-150', delay: 150 },
-      { label: 'effect:timeout-300', delay: 300 },
-    ];
+    if (!isSessionOpeningRef.current && (messageCountChanged || streamingStarted)) {
+      scrollToBottom('smooth');
+    }
+
+    previousMessageCountRef.current = messages.length;
+    previousIsStreamingRef.current = isStreaming;
+  }, [isStreaming, messages.length]);
+
+  // While streaming grows token-by-token, keep following without restarting smooth animation.
+  useEffect(() => {
+    if (!isStreaming || !streamingContent) return;
 
     const frameId = window.requestAnimationFrame(() => {
-      const container = containerRef.current;
-      if (!container) return;
-      container.scrollTo({ top: container.scrollHeight, behavior: 'auto' });
-      bottomAnchorRef.current?.scrollIntoView({
-        behavior: 'auto',
-        block: 'end',
-        inline: 'nearest',
-      });
+      scrollToBottom('auto');
     });
 
-    const timeoutIds = attempts.slice(1).map(({ delay }) =>
-      window.setTimeout(() => {
-        const container = containerRef.current;
-        if (!container) return;
+    return () => {
+      window.cancelAnimationFrame(frameId);
+    };
+  }, [isStreaming, streamingContent]);
 
-        container.scrollTo({ top: container.scrollHeight, behavior: 'auto' });
-        bottomAnchorRef.current?.scrollIntoView({
-          behavior: 'auto',
-          block: 'end',
-          inline: 'nearest',
-        });
+  // On initial open, retry a few instant snaps as dynamic message content finishes rendering.
+  useEffect(() => {
+    if (typeof window === 'undefined' || !isSessionOpeningRef.current) return;
+
+    const delays = [0, 50, 150, 300];
+    const timeoutIds = delays.map((delay) =>
+      window.setTimeout(() => {
+        scrollToBottom('auto');
       }, delay),
     );
 
     return () => {
-      window.cancelAnimationFrame(frameId);
       timeoutIds.forEach((timeoutId) => window.clearTimeout(timeoutId));
     };
-  }, [messages, sessionId, streamingContent]);
+  }, [messages.length, sessionId]);
 
   if (isLoading && messages.length === 0) {
     return (
@@ -223,18 +245,26 @@ export const StreamingChatList: React.FC<{
 }> = ({ messages, streamingContent, streamingCitations, className, onDrugActionClick }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const bottomAnchorRef = useRef<HTMLDivElement>(null);
+  const hasCompletedInitialScrollRef = useRef(false);
 
-  // Auto-scroll to bottom when new messages arrive or streaming updates
-  useLayoutEffect(() => {
+  const scrollToBottom = (behavior: ScrollBehavior) => {
     const container = containerRef.current;
     if (!container) return;
 
-    container.scrollTo({ top: container.scrollHeight, behavior: 'auto' });
+    container.scrollTo({ top: container.scrollHeight, behavior });
     bottomAnchorRef.current?.scrollIntoView({
-      behavior: 'auto',
+      behavior,
       block: 'end',
       inline: 'nearest',
     });
+  };
+
+  // Auto-scroll to bottom when new messages arrive or streaming updates
+  useLayoutEffect(() => {
+    const behavior = hasCompletedInitialScrollRef.current ? 'smooth' : 'auto';
+    scrollToBottom(behavior);
+
+    hasCompletedInitialScrollRef.current = true;
   }, [messages, streamingContent]);
 
   return (

@@ -250,12 +250,12 @@ export default function SessionPage() {
     isPreparingDrugDataset
       ? "Preparing drug dataset..."
       : isDrugOnlySessionMode || isDrugModeEnabled
-        ? "Ask about drugs, doses, brands, indications, side effects..."
+        ? "Ask questions"
         : documentsLoading
             ? "Loading books..."
             : !hasDocuments
               ? "Please add a book FIRST to chat"
-              : "Ask a question about your documents...";
+              : "Ask questions";
 
   const sortedDocuments = useMemo(
     () =>
@@ -824,7 +824,7 @@ export default function SessionPage() {
     <>
       <div className="mt-8">
         {!isReadingSources && (
-          <div className="mb-4 flex justify-end pr-2">
+          <div className="mb-2 flex justify-end pr-2">
             <div className="flex flex-wrap items-center justify-end gap-2">
             <div className="inline-flex items-center gap-2 rounded-full border border-gray-300 bg-white px-3 py-2 text-xs font-medium text-gray-700 shadow-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 sm:text-sm">
               <span>{isPreparingDrugDataset ? "Preparing..." : "Drugs"}</span>
