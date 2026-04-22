@@ -28,6 +28,7 @@ export default function HomePage() {
   const [isAppReady, setIsAppReady] = useState(false);
   const hasPrefetchedDrugExperienceRef = useRef(false);
   const drugDatasetWarmupPromiseRef = useRef<Promise<void> | null>(null);
+  const drugSessionPromiseRef = useRef<Promise<Session> | null>(null);
 
   // Prevent hydration mismatch
   useEffect(() => {
@@ -113,10 +114,35 @@ export default function HomePage() {
     return drugDatasetWarmupPromiseRef.current;
   }, []);
 
+  const ensureDrugSession = useCallback(async (): Promise<Session> => {
+    const existingDrugSession = sessions.find((session) => isDrugOnlySession(session));
+    if (existingDrugSession) {
+      return existingDrugSession;
+    }
+
+    if (drugSessionPromiseRef.current) {
+      return drugSessionPromiseRef.current;
+    }
+
+    drugSessionPromiseRef.current = createSession({
+      name: DRUG_CHAT_SESSION_NAME,
+      description: DRUG_CHAT_SESSION_DESCRIPTION,
+      isDrugSession: true,
+    }).then((session) => {
+      router.prefetch(getSessionRoute(session.id));
+      return session;
+    }).finally(() => {
+      drugSessionPromiseRef.current = null;
+    });
+
+    return drugSessionPromiseRef.current;
+  }, [createSession, router, sessions]);
+
   const handleDrugButtonIntent = useCallback(() => {
     void prefetchDrugExperience();
     void warmDrugDatasets();
-  }, [prefetchDrugExperience, warmDrugDatasets]);
+    void ensureDrugSession();
+  }, [ensureDrugSession, prefetchDrugExperience, warmDrugDatasets]);
 
   useEffect(() => {
     if (!isMounted || !isAppReady || typeof window === 'undefined') return;
@@ -149,12 +175,7 @@ export default function HomePage() {
 
     setIsOpeningDrugChat(true);
     try {
-      const existingDrugSession = sessions.find((session) => isDrugOnlySession(session));
-      const drugSession = existingDrugSession || await createSession({
-        name: DRUG_CHAT_SESSION_NAME,
-        description: DRUG_CHAT_SESSION_DESCRIPTION,
-        isDrugSession: true,
-      });
+      const drugSession = await ensureDrugSession();
 
       setSessionModeForSession(drugSession.id, 'drug');
       router.push(getSessionRoute(drugSession.id));

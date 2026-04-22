@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 
 
 
@@ -13,11 +14,6 @@ import {
 import { TabBar, ChatTabs } from "../../../components/layout";
 import { ChatList, MessageInput, PhrasePills } from "../../../components/chat";
 import type { MessageInputHandle } from "../../../components/chat";
-import {
-  DocumentList,
-  JsonUpload,
-  DocumentLibrary,
-} from "../../../components/document";
 import { Button, DropdownMenu, DropdownMenuItem, Switch } from "../../../components/ui";
 import { Loading } from "../../../components/ui";
 import { EmptyState } from "../../../components/common";
@@ -27,6 +23,26 @@ import { getLibraryBookNameById } from "../../../services/libraryService";
 import type { Document, SessionChatMode } from "../../../types";
 import { useAuthGuard } from "@/hooks/useAuthGuard";
 import { isDrugOnlySession } from "@/utils/sessionType";
+
+const DocumentList = dynamic(
+  () =>
+    import("../../../components/document").then((mod) => mod.DocumentList),
+  {
+    loading: () => (
+      <div className="flex justify-center py-8">
+        <Loading size="md" text="Loading documents..." />
+      </div>
+    ),
+  },
+);
+
+const DocumentLibrary = dynamic(
+  () =>
+    import("../../../components/document").then((mod) => mod.DocumentLibrary),
+  {
+    loading: () => <Loading overlay text="Opening library..." />,
+  },
+);
 
 const DRUG_ACTION_PILLS = [
   "Dose",
