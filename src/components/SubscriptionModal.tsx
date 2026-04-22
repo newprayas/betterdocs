@@ -142,7 +142,7 @@ export default function SubscriptionModal() {
                       ref={titleRef}
                       tabIndex={-1}
                     >
-                      Hey there!
+                      Hey there !
                     </Dialog.Title>
 
                     <div className="mt-4 space-y-4 text-left">
