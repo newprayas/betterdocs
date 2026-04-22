@@ -211,6 +211,7 @@ export default function SessionPage() {
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [isPreparingDrugDataset, setIsPreparingDrugDataset] = useState(false);
   const [viewportHeight, setViewportHeight] = useState<number | null>(null);
+  const [keyboardInset, setKeyboardInset] = useState(0);
   const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
   const [togglingDocumentIds, setTogglingDocumentIds] = useState<Set<string>>(
     new Set(),
@@ -260,6 +261,11 @@ export default function SessionPage() {
             : !hasDocuments
               ? "Please add a book FIRST to chat"
               : "Ask questions";
+  const keyboardSafeBottomInset = Math.max(24, keyboardInset + 24);
+  const keyboardSafeBottomStyle = {
+    paddingBottom: `calc(env(safe-area-inset-bottom, 0px) + ${keyboardSafeBottomInset}px)`,
+    scrollPaddingBottom: `calc(env(safe-area-inset-bottom, 0px) + ${keyboardSafeBottomInset}px)`,
+  } as const;
 
   const sortedDocuments = useMemo(
     () =>
@@ -521,9 +527,16 @@ export default function SessionPage() {
         0,
         window.innerHeight - visualViewport.height - visualViewport.offsetTop,
       );
+      const roundedViewportHeight = Math.round(visualViewport.height);
+      const roundedKeyboardHeight = Math.round(keyboardHeight);
 
-      setViewportHeight(Math.round(visualViewport.height));
+      setViewportHeight(roundedViewportHeight);
+      setKeyboardInset(roundedKeyboardHeight);
       setIsKeyboardOpen(keyboardHeight > 120);
+
+      const rootStyle = document.documentElement.style;
+      rootStyle.setProperty("--mobile-viewport-height", `${roundedViewportHeight}px`);
+      rootStyle.setProperty("--mobile-keyboard-inset", `${roundedKeyboardHeight}px`);
     };
 
     const scheduleViewportUpdate = () => {
@@ -541,6 +554,9 @@ export default function SessionPage() {
       visualViewport.removeEventListener("resize", scheduleViewportUpdate);
       visualViewport.removeEventListener("scroll", scheduleViewportUpdate);
       window.removeEventListener("orientationchange", scheduleViewportUpdate);
+      const rootStyle = document.documentElement.style;
+      rootStyle.setProperty("--mobile-viewport-height", "");
+      rootStyle.setProperty("--mobile-keyboard-inset", "0px");
     };
   }, []);
 
@@ -1146,7 +1162,10 @@ export default function SessionPage() {
               </div>
             ) : messages.length === 0 ? (
               // This wrapper controls the layout to ensure input stays at bottom
-              <div className="flex flex-col flex-1 min-h-0 overflow-y-auto overscroll-contain">
+              <div
+                className="flex flex-col flex-1 min-h-0 overflow-y-auto overscroll-contain"
+                style={keyboardSafeBottomStyle}
+              >
                 {/* Empty-state hero collapses while keyboard is open so the composer can stay visible */}
                 <div className={isKeyboardOpen ? "flex-1 min-h-0" : "flex-1 flex items-center justify-center"}>
                   {!isKeyboardOpen &&
@@ -1209,11 +1228,6 @@ export default function SessionPage() {
                 <div
                   ref={emptyComposerRef}
                   className="flex-shrink-0 mt-4 max-w-4xl mx-auto w-full"
-                  style={
-                    isKeyboardOpen
-                      ? { paddingBottom: "max(env(safe-area-inset-bottom, 0px), 12px)" }
-                      : undefined
-                  }
                 >
                   {/* Phrase Pills */}
                   <div className="relative w-full">
@@ -1304,6 +1318,7 @@ export default function SessionPage() {
                     className="max-w-4xl mx-auto"
                     onDrugActionClick={handleDrugActionClick}
                     footer={chatFooter}
+                    bottomInsetPx={keyboardSafeBottomInset}
                   />
                 </div>
               </>

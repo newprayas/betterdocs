@@ -20,6 +20,7 @@ interface ChatListProps {
   className?: string;
   onDrugActionClick?: (query: string) => void;
   footer?: React.ReactNode;
+  bottomInsetPx?: number;
 }
 
 const ChatListComponent: React.FC<ChatListProps> = ({
@@ -27,6 +28,7 @@ const ChatListComponent: React.FC<ChatListProps> = ({
   className,
   onDrugActionClick,
   footer,
+  bottomInsetPx = 0,
 }) => {
   const { messages, isStreaming, streamingContent, streamingCitations, isReadingSources, progressPercentage, currentProgressStep } = useChatStore();
   const userId = useSessionStore((state) => state.userId);
@@ -142,7 +144,11 @@ const ChatListComponent: React.FC<ChatListProps> = ({
         bg-gray-50 dark:bg-gray-900
         touch-pan-y
       `}
-      style={{ scrollBehavior: 'auto' }}
+      style={{
+        scrollBehavior: 'auto',
+        paddingBottom: `calc(env(safe-area-inset-bottom, 0px) + ${bottomInsetPx}px)`,
+        scrollPaddingBottom: `calc(env(safe-area-inset-bottom, 0px) + ${bottomInsetPx}px)`,
+      }}
     >
       <div className={`max-w-4xl mx-auto space-y-1 w-full ${className ?? ''}`}>
         {/* Group messages by date */}
@@ -242,7 +248,15 @@ export const StreamingChatList: React.FC<{
   streamingCitations?: any[];
   className?: string;
   onDrugActionClick?: (query: string) => void;
-}> = ({ messages, streamingContent, streamingCitations, className, onDrugActionClick }) => {
+  bottomInsetPx?: number;
+}> = ({
+  messages,
+  streamingContent,
+  streamingCitations,
+  className,
+  onDrugActionClick,
+  bottomInsetPx = 0,
+}) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const bottomAnchorRef = useRef<HTMLDivElement>(null);
   const hasCompletedInitialScrollRef = useRef(false);
@@ -277,7 +291,11 @@ export const StreamingChatList: React.FC<{
         bg-gray-50 dark:bg-gray-900
         touch-pan-y
       `}
-      style={{ scrollBehavior: 'auto' }}
+      style={{
+        scrollBehavior: 'auto',
+        paddingBottom: `calc(env(safe-area-inset-bottom, 0px) + ${bottomInsetPx}px)`,
+        scrollPaddingBottom: `calc(env(safe-area-inset-bottom, 0px) + ${bottomInsetPx}px)`,
+      }}
     >
       <div className={`max-w-4xl mx-auto space-y-1 w-full ${className ?? ''}`}>
         {/* Render existing messages */}
