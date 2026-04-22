@@ -177,19 +177,33 @@ const extractIndicationLines = (payload: MedexResolvedPayload): string[] => {
   return uniqueLines(cleaned);
 };
 
-type DoseEntry = {
-  label: string;
-  text: string;
-};
+type DoseAudience = 'adult' | 'child' | 'mixed' | 'general';
+
+type DoseItem =
+  | {
+      kind: 'subheading';
+      text: string;
+      audience: DoseAudience;
+    }
+  | {
+      kind: 'text';
+      text: string;
+      audience: DoseAudience;
+    }
+  | {
+      kind: 'entry';
+      label: string;
+      text: string;
+      audience: DoseAudience;
+    };
 
 type DoseSection = {
   heading: string;
-  intro: string[];
-  entries: DoseEntry[];
+  items: DoseItem[];
 };
 
 const FORMULATION_HEADING_PATTERN =
-  /(?:tablet|capsule|syrup|suspension|suppository|drop|drops|infusion|injection|oral|iv|extended release|pediatric|paediatric)/i;
+  /(?:\btablet\b|\bcapsule\b|\bsyrup\b|\bsuspension\b|\bsuppository\b|\bdrop\b|\bdrops\b|\binfusion\b|\binjection\b|\boral\b|\biv\b|\bim\b|extended release|\bpediatric\b|\bpaediatric\b|\bgel\b|\bparenteral\b)/i;
 
 const ADULT_LINE_PATTERN =
   /^(adult|adults|elderly|adults?\s*&\s*children over|adults?\s+and\s+children over|adults?\s+and\s+adolescents|adolescents?\s+weighing|adults?\s+and\s+adolescents|life-threatening infections|urinary tract infections|impaired renal function)/i;
@@ -197,10 +211,39 @@ const ADULT_LINE_PATTERN =
 const CHILD_LINE_PATTERN =
   /^(child|children|neonate|neonates|premature children|infant|infants|paediatric|pediatric|children under|[0-9].*(month|months|year|years)|upto [0-9]|up to [0-9])/i;
 
+const stripDoseHeadingSuffix = (value: string): string => compact(value).replace(/\s*[:\-–]+\s*$/g, '').trim();
+
+const classifyDoseAudience = (value: string): DoseAudience => {
+  const trimmed = stripDoseHeadingSuffix(value);
+  if (!trimmed) return 'general';
+
+  const hasAdult =
+    ADULT_LINE_PATTERN.test(trimmed) || /\badults?\b|\badolescents?\b|\belderly\b/i.test(trimmed);
+  const hasChild =
+    CHILD_LINE_PATTERN.test(trimmed) ||
+    /\bchildren?\b|\bchild\b|\bpaediatric\b|\bpediatric\b|\bneonate\b|\bneonates\b|\binfants?\b/i.test(trimmed);
+
+  if (hasAdult && hasChild) return 'mixed';
+  if (hasChild) return 'child';
+  if (hasAdult) return 'adult';
+  return 'general';
+};
+
+const mergeDoseAudiences = (...audiences: DoseAudience[]): DoseAudience => {
+  const filtered = audiences.filter((audience) => audience !== 'general');
+  if (filtered.length === 0) return 'general';
+  if (filtered.includes('mixed')) return 'mixed';
+  const unique = new Set(filtered);
+  if (unique.has('adult') && unique.has('child')) return 'mixed';
+  return filtered[0];
+};
+
+const isStandaloneDoseHeading = (line: string): boolean => /[:\-–]\s*$/.test(compact(line));
+
 const isFormulationHeading = (line: string): boolean => {
-  const trimmed = compact(line).replace(/:$/, '');
+  const trimmed = stripDoseHeadingSuffix(line);
   if (!trimmed) return false;
-  if (ADULT_LINE_PATTERN.test(trimmed) || CHILD_LINE_PATTERN.test(trimmed)) return false;
+  if (classifyDoseAudience(trimmed) !== 'general') return false;
   if (!FORMULATION_HEADING_PATTERN.test(trimmed)) return false;
   return trimmed.length <= 70;
 };
@@ -218,80 +261,153 @@ const parseDoseSections = (payload: MedexResolvedPayload): DoseSection[] => {
 
   const sections: DoseSection[] = [];
   let current: DoseSection | null = null;
+  let currentContext: { text: string; audience: DoseAudience } | null = null;
 
   const pushCurrent = () => {
     if (!current) return;
-    if (current.intro.length === 0 && current.entries.length === 0) return;
+    if (current.items.length === 0) return;
     sections.push({
       heading: current.heading,
-      intro: [...current.intro],
-      entries: [...current.entries],
+      items: [...current.items],
     });
+  };
+
+  const ensureCurrent = (): DoseSection => {
+    if (!current) {
+      current = {
+        heading: 'General',
+        items: [],
+      };
+    }
+    return current;
   };
 
   for (const rawLine of rawLines) {
     const line = compact(rawLine);
     if (!line) continue;
 
-    const headingMatch = line.match(/^([^:\n]{2,120}?):\s*(.*)$/);
-    if (headingMatch && isFormulationHeading(headingMatch[1])) {
+    const standaloneHeading = isStandaloneDoseHeading(line) ? stripDoseHeadingSuffix(line) : '';
+    if (standaloneHeading && isFormulationHeading(standaloneHeading)) {
       pushCurrent();
       current = {
-        heading: compact(headingMatch[1]),
-        intro: [],
-        entries: [],
+        heading: capitalizeFirst(standaloneHeading),
+        items: [],
       };
-      const remainder = capitalizeFirst(headingMatch[2]);
-      if (remainder) {
-        current.intro.push(remainder);
-      }
+      currentContext = null;
       continue;
     }
 
-    if (!current) {
-      current = {
-        heading: 'General',
-        intro: [],
-        entries: [],
+    if (standaloneHeading) {
+      const target = ensureCurrent();
+      const text = capitalizeFirst(standaloneHeading);
+      currentContext = {
+        text,
+        audience: classifyDoseAudience(standaloneHeading),
       };
-    }
-
-    const entryMatch = line.match(/^([^:\n]{1,140}?):\s*(.+)$/);
-    if (entryMatch) {
-      current.entries.push({
-        label: capitalizeFirst(entryMatch[1]),
-        text: capitalizeFirst(entryMatch[2]),
+      target.items.push({
+        kind: 'subheading',
+        text,
+        audience: currentContext.audience,
       });
       continue;
     }
 
-    if (current.entries.length > 0) {
-      const lastEntry = current.entries[current.entries.length - 1];
-      lastEntry.text = `${lastEntry.text} ${capitalizeFirst(line)}`.trim();
+    const target = ensureCurrent();
+    const entryMatch = line.match(/^([^:\n]{1,140}?):\s*(.*)$/);
+    if (entryMatch) {
+      const label = capitalizeFirst(entryMatch[1]);
+      const trimmedLabel = stripDoseHeadingSuffix(label);
+      const remainder = capitalizeFirst(entryMatch[2]);
+
+      if (isFormulationHeading(trimmedLabel)) {
+        pushCurrent();
+        current = {
+          heading: capitalizeFirst(trimmedLabel),
+          items: remainder
+            ? [
+                {
+                  kind: 'text',
+                  text: remainder,
+                  audience: classifyDoseAudience(remainder),
+                },
+              ]
+            : [],
+        };
+        currentContext = null;
+        continue;
+      }
+
+      if (!remainder) {
+        currentContext = {
+          text: capitalizeFirst(trimmedLabel),
+          audience: classifyDoseAudience(trimmedLabel),
+        };
+        target.items.push({
+          kind: 'subheading',
+          text: currentContext.text,
+          audience: currentContext.audience,
+        });
+        continue;
+      }
+
+      const nestedMatch = remainder.match(/^([^:\n]{1,100}?):\s*(.+)$/);
+      if (classifyDoseAudience(trimmedLabel) === 'general' && nestedMatch) {
+        const nestedLabel = capitalizeFirst(nestedMatch[1]);
+        const nestedText = capitalizeFirst(nestedMatch[2]);
+        const nestedAudience = classifyDoseAudience(nestedLabel);
+        if (nestedAudience !== 'general') {
+          currentContext = {
+            text: capitalizeFirst(trimmedLabel),
+            audience: 'general',
+          };
+          target.items.push({
+            kind: 'subheading',
+            text: currentContext.text,
+            audience: currentContext.audience,
+          });
+          target.items.push({
+            kind: 'entry',
+            label: nestedLabel,
+            text: nestedText,
+            audience: nestedAudience,
+          });
+          continue;
+        }
+      }
+
+      target.items.push({
+        kind: 'entry',
+        label,
+        text: remainder,
+        audience: mergeDoseAudiences(
+          classifyDoseAudience(label),
+          currentContext?.audience || 'general',
+        ),
+      });
       continue;
     }
 
-    current.intro.push(capitalizeFirst(line));
+    const text = capitalizeFirst(line);
+    const audience = mergeDoseAudiences(
+      classifyDoseAudience(text),
+      currentContext?.audience || 'general',
+    );
+    const lastItem = target.items[target.items.length - 1];
+
+    if (lastItem?.kind === 'entry') {
+      lastItem.text = `${lastItem.text} ${text}`.trim();
+      continue;
+    }
+
+    target.items.push({
+      kind: 'text',
+      text,
+      audience,
+    });
   }
 
   pushCurrent();
   return sections;
-};
-
-const isAdultRelevantLine = (line: string): boolean => {
-  const trimmed = compact(line);
-  if (!trimmed) return false;
-  if (ADULT_LINE_PATTERN.test(trimmed)) return true;
-  if (CHILD_LINE_PATTERN.test(trimmed)) return false;
-  return !/children|child|months?|years?|paediatric|pediatric/i.test(trimmed);
-};
-
-const isChildRelevantLine = (line: string): boolean => {
-  const trimmed = compact(line);
-  if (!trimmed) return false;
-  if (CHILD_LINE_PATTERN.test(trimmed)) return true;
-  if (ADULT_LINE_PATTERN.test(trimmed)) return false;
-  return /children|child|months?|years?|paediatric|pediatric/i.test(trimmed);
 };
 
 const filterDoseSectionsByAudience = (
@@ -302,24 +418,32 @@ const filterDoseSectionsByAudience = (
 
   return sections
     .map((section) => {
-      const keptEntries = section.entries.filter((entry) =>
-        audience === 'adult' ? isAdultRelevantLine(entry.label) : isChildRelevantLine(entry.label),
-      );
+      const keptItems = section.items.filter((item) => {
+        if (item.audience === 'general' || item.audience === 'mixed') return true;
+        return item.audience === audience;
+      });
+
+      const compactedItems = keptItems.filter((item, index) => {
+        if (item.kind !== 'subheading') return true;
+        return keptItems.slice(index + 1).some((nextItem) => nextItem.kind !== 'subheading');
+      });
+
       return {
         heading: section.heading,
-        intro: keptEntries.length > 0 ? [...section.intro] : [],
-        entries: keptEntries,
+        items: compactedItems,
       };
     })
-    .filter((section) => section.intro.length > 0 || section.entries.length > 0);
+    .filter((section) => section.items.length > 0);
 };
 
 const normalizeDoseFormBucket = (value?: string | null): string => {
   const normalized = normalizeText(value);
   if (!normalized) return 'other';
+  if (normalized.includes('tablet') && normalized.includes('suspension')) return 'tablet_and_suspension';
   if (normalized.includes('actizorb')) return 'actizorb';
   if (normalized.includes('extended release')) return 'extended_release_tablet';
   if (normalized.includes('iv infusion')) return 'iv_infusion';
+  if (normalized.includes('parenteral')) return 'injection';
   if (normalized.includes('suppository')) return 'suppository';
   if (normalized.includes('pediatric drop') || normalized.includes('paediatric drop')) return 'pediatric_drop';
   if (normalized.includes('syrup') || normalized.includes('oral suspension') || normalized.includes('suspension')) {
@@ -355,6 +479,9 @@ const buildFormulationLinesForHeading = (
 
   const rows = buildSameCompanyAlternateRows(payload).filter((row) => {
     const rowBucket = normalizeDoseFormBucket(row.dosage_form);
+    if (headingBucket === 'tablet_and_suspension') {
+      return rowBucket === 'tablet' || rowBucket === 'syrup_suspension';
+    }
     if (headingBucket === 'tablet') {
       return rowBucket === 'tablet';
     }
@@ -388,14 +515,21 @@ const formatDoseSections = (
       lines.push('');
     }
 
-    for (const introLine of section.intro) {
-      lines.push(capitalizeFirst(introLine));
-      lines.push('');
-    }
+    for (const item of section.items) {
+      if (item.kind === 'subheading') {
+        lines.push(`**${capitalizeFirst(item.text)}**`);
+        lines.push('');
+        continue;
+      }
 
-    for (const entry of section.entries) {
-      lines.push(`**${capitalizeFirst(entry.label)}:**`);
-      lines.push(capitalizeFirst(entry.text));
+      if (item.kind === 'entry') {
+        lines.push(`**${capitalizeFirst(item.label)}:**`);
+        lines.push(capitalizeFirst(item.text));
+        lines.push('');
+        continue;
+      }
+
+      lines.push(capitalizeFirst(item.text));
       lines.push('');
     }
 
