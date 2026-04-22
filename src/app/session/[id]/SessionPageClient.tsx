@@ -239,15 +239,11 @@ export default function SessionPage() {
   const [isSourcesPanelOpen, setIsSourcesPanelOpen] = useState(false);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [isPreparingDrugDataset, setIsPreparingDrugDataset] = useState(false);
-  const [viewportHeight, setViewportHeight] = useState<number | null>(null);
-  const [keyboardInset, setKeyboardInset] = useState(0);
-  const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
   const [togglingDocumentIds, setTogglingDocumentIds] = useState<Set<string>>(
     new Set(),
   );
   const messageInputRef = useRef<HTMLTextAreaElement>(null);
   const messageInputControllerRef = useRef<MessageInputHandle | null>(null);
-  const chatFooterRef = useRef<HTMLDivElement>(null);
   const rawSessionMode = sessionModeBySession[sessionId] || "chat";
   const sessionMode: SessionChatMode =
     rawSessionMode === "ask-drug" ? "drug" : rawSessionMode;
@@ -293,11 +289,6 @@ export default function SessionPage() {
         : !hasDocuments
           ? "Please add a book FIRST to chat"
           : "Ask questions";
-  const keyboardSafeBottomInset = Math.max(24, keyboardInset + 24);
-  const keyboardSafeBottomStyle = {
-    paddingBottom: `calc(env(safe-area-inset-bottom, 0px) + ${keyboardSafeBottomInset}px)`,
-    scrollPaddingBottom: `calc(env(safe-area-inset-bottom, 0px) + ${keyboardSafeBottomInset}px)`,
-  } as const;
 
   const sortedDocuments = useMemo(
     () =>
@@ -551,117 +542,6 @@ export default function SessionPage() {
       window.removeEventListener("keydown", handleKeyDown);
     };
   }, [isSourcesPanelOpen]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-
-    const visualViewport = window.visualViewport;
-    if (!visualViewport) return;
-
-    let frameId = 0;
-
-    const updateViewportMetrics = () => {
-      const keyboardHeight = Math.max(
-        0,
-        window.innerHeight - visualViewport.height - visualViewport.offsetTop,
-      );
-      const roundedViewportHeight = Math.round(visualViewport.height);
-      const roundedKeyboardHeight = Math.round(keyboardHeight);
-
-      setViewportHeight(roundedViewportHeight);
-      setKeyboardInset(roundedKeyboardHeight);
-      setIsKeyboardOpen(keyboardHeight > 120);
-
-      const rootStyle = document.documentElement.style;
-      rootStyle.setProperty(
-        "--mobile-viewport-height",
-        `${roundedViewportHeight}px`,
-      );
-      rootStyle.setProperty(
-        "--mobile-keyboard-inset",
-        `${roundedKeyboardHeight}px`,
-      );
-    };
-
-    const scheduleViewportUpdate = () => {
-      window.cancelAnimationFrame(frameId);
-      frameId = window.requestAnimationFrame(updateViewportMetrics);
-    };
-
-    scheduleViewportUpdate();
-    visualViewport.addEventListener("resize", scheduleViewportUpdate);
-    visualViewport.addEventListener("scroll", scheduleViewportUpdate);
-    window.addEventListener("orientationchange", scheduleViewportUpdate);
-
-    return () => {
-      window.cancelAnimationFrame(frameId);
-      visualViewport.removeEventListener("resize", scheduleViewportUpdate);
-      visualViewport.removeEventListener("scroll", scheduleViewportUpdate);
-      window.removeEventListener("orientationchange", scheduleViewportUpdate);
-      const rootStyle = document.documentElement.style;
-      rootStyle.setProperty("--mobile-viewport-height", "");
-      rootStyle.setProperty("--mobile-keyboard-inset", "0px");
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!isKeyboardOpen) return;
-    if (typeof window === "undefined") return;
-
-    const activeElement = document.activeElement;
-    if (!(activeElement instanceof HTMLElement)) return;
-    if (activeElement !== messageInputRef.current) return;
-
-    const target = chatFooterRef.current;
-
-    if (!target) return;
-
-    const timeoutId = window.setTimeout(() => {
-      target.scrollIntoView({
-        behavior: "auto",
-        block: "end",
-        inline: "nearest",
-      });
-    }, 50);
-
-    return () => {
-      window.clearTimeout(timeoutId);
-    };
-  }, [isKeyboardOpen, messages.length]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-
-    const scrollComposerIntoView = () => {
-      const target = chatFooterRef.current;
-
-      target?.scrollIntoView({
-        behavior: "auto",
-        block: "end",
-        inline: "nearest",
-      });
-    };
-
-    const handleFocusIn = (event: FocusEvent) => {
-      if (event.target !== messageInputRef.current) return;
-
-      const frameId = window.requestAnimationFrame(scrollComposerIntoView);
-      const timeoutId = window.setTimeout(scrollComposerIntoView, 200);
-
-      const cleanup = () => {
-        window.cancelAnimationFrame(frameId);
-        window.clearTimeout(timeoutId);
-        window.removeEventListener("focusout", cleanup);
-      };
-
-      window.addEventListener("focusout", cleanup, { once: true });
-    };
-
-    window.addEventListener("focusin", handleFocusIn);
-    return () => {
-      window.removeEventListener("focusin", handleFocusIn);
-    };
-  }, [messages.length]);
 
   const handleSendMessage = async (content: string) => {
     if (!sessionId) return;
@@ -1003,7 +883,10 @@ export default function SessionPage() {
   );
 
   const chatFooter = (
-    <div ref={chatFooterRef}>
+    <div
+      className="shrink-0 bg-gray-50 dark:bg-gray-900"
+      style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
+    >
       <div className="mt-8">
         {!isReadingSources && (
           <div className="mb-2 flex justify-end pr-2">
@@ -1248,10 +1131,7 @@ export default function SessionPage() {
   }
 
   return (
-    <div
-      className="h-[100dvh] overflow-hidden bg-gray-50 dark:bg-gray-900 flex flex-col"
-      style={viewportHeight ? { height: `${viewportHeight}px` } : undefined}
-    >
+    <div className="h-[100dvh] overflow-hidden bg-gray-50 dark:bg-gray-900 flex flex-col">
       {/* Sticky Header */}
       <div className="sticky top-0 z-40 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
         <Header
@@ -1284,20 +1164,20 @@ export default function SessionPage() {
                 <Loading size="lg" text="Loading history..." />
               </div>
             ) : (
-              <div
-                className="flex-1 min-h-0 overflow-hidden"
-                data-chat-viewport="session-shell"
-                style={keyboardSafeBottomStyle}
-              >
-                <ChatList
-                  sessionId={sessionId}
-                  className="max-w-4xl mx-auto"
-                  onDrugActionClick={handleDrugActionClick}
-                  footer={chatFooter}
-                  bottomInsetPx={keyboardSafeBottomInset}
-                  emptyState={!isKeyboardOpen ? emptyChatState : null}
-                />
-              </div>
+              <>
+                <div
+                  className="flex-1 min-h-0 overflow-hidden"
+                  data-chat-viewport="session-shell"
+                >
+                  <ChatList
+                    sessionId={sessionId}
+                    className="max-w-4xl mx-auto"
+                    onDrugActionClick={handleDrugActionClick}
+                    emptyState={emptyChatState}
+                  />
+                </div>
+                {chatFooter}
+              </>
             )}
           </div>
         )}

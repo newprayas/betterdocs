@@ -25,8 +25,6 @@ interface ChatListProps {
   sessionId: string;
   className?: string;
   onDrugActionClick?: (query: string) => void;
-  footer?: React.ReactNode;
-  bottomInsetPx?: number;
   emptyState?: React.ReactNode;
 }
 
@@ -34,8 +32,6 @@ const ChatListComponent: React.FC<ChatListProps> = ({
   sessionId,
   className,
   onDrugActionClick,
-  footer,
-  bottomInsetPx = 0,
   emptyState,
 }) => {
   const {
@@ -160,8 +156,8 @@ const ChatListComponent: React.FC<ChatListProps> = ({
       `}
       style={{
         scrollBehavior: "auto",
-        paddingBottom: `calc(env(safe-area-inset-bottom, 0px) + ${bottomInsetPx}px)`,
-        scrollPaddingBottom: `calc(env(safe-area-inset-bottom, 0px) + ${bottomInsetPx}px)`,
+        paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 16px)",
+        scrollPaddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 16px)",
       }}
     >
       <div
@@ -232,8 +228,6 @@ const ChatListComponent: React.FC<ChatListProps> = ({
             </>
           )}
         </div>
-        {footer}
-
         <div ref={bottomAnchorRef} aria-hidden="true" />
       </div>
     </div>

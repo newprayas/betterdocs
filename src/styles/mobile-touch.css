@@ -124,7 +124,7 @@ select:focus {
 .sidebar {
   -webkit-overflow-scrolling: touch;
   overflow-y: auto;
-  height: 100vh;
+  height: 100dvh;
 }
 
 /* Better mobile tab navigation */
@@ -216,7 +216,7 @@ select:focus {
 
   /* Better mobile viewport handling */
   .mobile-keyboard-active {
-    height: 100vh;
+    height: 100dvh;
     overflow: hidden;
   }
 }

@@ -49,9 +49,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className="dark" suppressHydrationWarning>
-      <body
-        className="bg-gray-50 text-gray-900 dark:bg-slate-950 dark:text-slate-200 antialiased"
-      >
+      <body className="bg-gray-50 text-gray-900 dark:bg-slate-950 dark:text-slate-200 antialiased">
         <Script
           id="theme-init"
           strategy="beforeInteractive"
@@ -63,7 +61,7 @@ export default function RootLayout({
         />
         <ThemeProvider>
           <RouteErrorBoundary>
-            <div id="root" className="min-h-screen flex flex-col">
+            <div id="root" className="min-h-[100dvh] flex flex-col">
               <AppInitializer />
               <GlobalLoadingScreen minDisplayTime={1000} />
               <ServiceWorkerRegister />

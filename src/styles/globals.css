@@ -6,12 +6,23 @@
 @layer base {
   html {
     @apply scroll-smooth;
+    height: 100%;
   }
 
   body {
     @apply bg-gray-50 text-gray-900 antialiased;
     @apply dark:bg-slate-950 dark:text-slate-200;
-    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    min-height: 100dvh;
+  }
+
+  body,
+  #root {
+    min-height: 100%;
+  }
+
+  #root {
+    min-height: 100dvh;
   }
 
   html.native-capacitor #root {
@@ -25,7 +36,6 @@
 
 /* Custom component styles */
 @layer components {
-
   /* Scrollbar styling - Light theme default */
   .scrollbar-thin {
     scrollbar-width: thin;
@@ -160,7 +170,11 @@
   }
 
   .bg-gradient-radial {
-    background: radial-gradient(circle at center, rgb(15 23 42) 0%, rgb(2 6 23) 100%);
+    background: radial-gradient(
+      circle at center,
+      rgb(15 23 42) 0%,
+      rgb(2 6 23) 100%
+    );
   }
 
   .shadow-glow {
@@ -204,11 +218,11 @@
   @apply leading-relaxed text-gray-800;
 }
 
-.prose-gray ul>li {
+.prose-gray ul > li {
   @apply mb-2 text-gray-800;
 }
 
-.prose-gray ul>li:last-child {
+.prose-gray ul > li:last-child {
   @apply mb-0;
 }
 
@@ -302,11 +316,11 @@
   @apply leading-relaxed;
 }
 
-.prose ul>li {
+.prose ul > li {
   @apply mb-2;
 }
 
-.prose ul>li:last-child {
+.prose ul > li:last-child {
   @apply mb-0;
 }
 
@@ -398,7 +412,6 @@
 
 /* Accessibility */
 @media (prefers-reduced-motion: reduce) {
-
   *,
   *::before,
   *::after {
@@ -425,7 +438,7 @@
 }
 
 /* Ensure nested lists have deep indentation */
-.prose ul>li>ul {
+.prose ul > li > ul {
   padding-left: 1.5em;
   margin-top: 0.25em;
   margin-bottom: 0.25em;
@@ -446,17 +459,17 @@
 
 /* FIX: Distinct bullet styles for nesting levels */
 /* Level 1: Disc (Default) */
-.prose ul>li {
+.prose ul > li {
   list-style-type: disc;
 }
 
 /* Level 2: Hollow Circle */
-.prose ul>li>ul>li {
+.prose ul > li > ul > li {
   list-style-type: circle !important;
 }
 
 /* Level 3: Square */
-.prose ul>li>ul>li>ul>li {
+.prose ul > li > ul > li > ul > li {
   list-style-type: square !important;
 }
 
