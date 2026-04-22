@@ -71,14 +71,22 @@ export const MessageInput: React.FC<MessageInputProps> = ({
 
   const focusTextarea = useCallback(() => {
     if (textareaRef.current && !disabled) {
-      textareaRef.current.focus();
+      try {
+        textareaRef.current.focus({ preventScroll: true });
+      } catch {
+        textareaRef.current.focus();
+      }
     }
   }, [disabled, textareaRef]);
 
   const focusTextareaToEnd = useCallback(() => {
     if (!textareaRef.current || disabled) return;
 
-    textareaRef.current.focus();
+    try {
+      textareaRef.current.focus({ preventScroll: true });
+    } catch {
+      textareaRef.current.focus();
+    }
     const length = textareaRef.current.value.length;
     textareaRef.current.setSelectionRange(length, length);
   }, [disabled, textareaRef]);

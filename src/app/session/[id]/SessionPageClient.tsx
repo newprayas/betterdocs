@@ -820,6 +820,138 @@ export default function SessionPage() {
     </div>
   );
 
+  const chatFooter = (
+    <>
+      <div className="mt-8">
+        {!isReadingSources && (
+          <div className="mb-4 flex justify-end pr-2">
+            <div className="flex flex-wrap items-center justify-end gap-2">
+            <div className="inline-flex items-center gap-2 rounded-full border border-gray-300 bg-white px-3 py-2 text-xs font-medium text-gray-700 shadow-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 sm:text-sm">
+              <span>{isPreparingDrugDataset ? "Preparing..." : "Drugs"}</span>
+              <Switch
+                checked={isDrugModeEnabled}
+                onCheckedChange={() => {
+                  void handleDrugModeToggle();
+                }}
+                disabled={isPreparingDrugDataset}
+                size="sm"
+                aria-label="Toggle drugs mode"
+              />
+            </div>
+            {!isDatasetModeEnabled && !isDrugOnlySessionMode && (
+              <button
+                type="button"
+                onClick={handleSourcesPanelOpen}
+                onMouseUp={(event) => {
+                  event.currentTarget.blur();
+                }}
+                onTouchEnd={(event) => {
+                  event.currentTarget.blur();
+                }}
+                className="
+                  sources-scroll-button
+                  inline-flex items-center justify-center
+                  px-3 py-2 sm:px-4 sm:py-2
+                  text-xs sm:text-sm font-medium rounded-full
+                  bg-blue-600 text-white shadow-sm
+                  hover:bg-blue-700 active:bg-blue-700
+                  transition-none
+                  focus:outline-none focus:ring-0 focus:ring-offset-0
+                "
+                style={{ WebkitTapHighlightColor: "transparent" }}
+                aria-label="Manage active sources"
+                title="Sources"
+              >
+                Sources {documentsLoading ? "..." : activeDocumentCount}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={handleScrollToLatestQuestion}
+              onMouseUp={(event) => {
+                event.currentTarget.blur();
+              }}
+              onTouchEnd={(event) => {
+                event.currentTarget.blur();
+              }}
+              className="
+                answer-scroll-button
+                inline-flex items-center justify-center
+                px-3 py-2 sm:px-4 sm:py-2
+                text-xs sm:text-sm font-medium rounded-full
+                bg-gray-600 text-white border border-white
+                hover:bg-gray-600 active:bg-gray-600
+                transition-none
+                focus:outline-none focus:ring-0 focus:ring-offset-0
+              "
+              style={{ WebkitTapHighlightColor: "transparent" }}
+              aria-label="Scroll to latest answer"
+              title="Answer"
+            >
+              <svg
+                className="w-3 h-3 mr-1.5"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M7 14l5-5 5 5"
+                />
+              </svg>
+              Answer
+            </button>
+            </div>
+          </div>
+        )}
+        {shouldShowPhrasePills && (
+          <PhrasePills
+            phrases={visiblePhrasePhrases}
+            onPhraseSelect={handlePhraseSelect}
+            className="bg-gray-100 dark:bg-gray-800 rounded-lg"
+            ariaLabel={
+              isDatasetModeEnabled
+                ? "Drug suggestion chips"
+                : "Quick phrase suggestions"
+            }
+          />
+        )}
+      </div>
+
+      <div className="mt-4">
+        {!isDatasetModeEnabled && !documentsLoading && !hasDocuments && (
+          <div className="mb-4 flex justify-center">
+            <Button
+              onClick={() => setActiveTab("documents")}
+              variant="primary"
+              size="md"
+              className="shadow-lg"
+            >
+              📚 Add Books to Chat
+            </Button>
+          </div>
+        )}
+        <MessageInput
+          sessionId={sessionId}
+          disabled={
+            isStreaming ||
+            isPreparingDrugDataset ||
+            (!isDatasetModeEnabled &&
+              (!hasDocuments || !hasDocumentDataForSession))
+          }
+          placeholder={messagePlaceholder}
+          inputRef={messageInputRef}
+          controllerRef={messageInputControllerRef}
+          autoCorrect="off"
+          autoCapitalize="none"
+          spellCheck={false}
+        />
+      </div>
+    </>
+  );
+
   if (isCheckingAuth) {
     return <Loading overlay text="Checking session..." />;
   }
@@ -874,7 +1006,7 @@ export default function SessionPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col">
+    <div className="h-[100dvh] overflow-hidden bg-gray-50 dark:bg-gray-900 flex flex-col">
       {/* Sticky Header */}
       <div className="sticky top-0 z-40 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
         <Header
@@ -1046,138 +1178,15 @@ export default function SessionPage() {
               </div>
             ) : (
               <>
-                <div className="flex-1 overflow-y-auto min-h-0">
+                <div
+                  className="flex-1 min-h-0 overflow-hidden"
+                  data-chat-viewport="session-shell"
+                >
                   <ChatList
                     sessionId={sessionId}
                     className="max-w-4xl mx-auto"
                     onDrugActionClick={handleDrugActionClick}
-                  />
-                </div>
-
-                {/* Phrase Pills */}
-                <div className="relative flex-shrink-0 mt-4 max-w-4xl mx-auto w-full">
-                  {!isReadingSources && (
-                    <div className="absolute bottom-full right-2 mb-2 z-20 flex items-center gap-2">
-                      <div className="inline-flex items-center gap-2 rounded-full border border-gray-300 bg-white px-3 py-2 text-xs font-medium text-gray-700 shadow-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 sm:text-sm">
-                        <span>{isPreparingDrugDataset ? "Preparing..." : "Drugs"}</span>
-                        <Switch
-                          checked={isDrugModeEnabled}
-                          onCheckedChange={() => {
-                            void handleDrugModeToggle();
-                          }}
-                          disabled={isPreparingDrugDataset}
-                          size="sm"
-                          aria-label="Toggle drugs mode"
-                        />
-                      </div>
-                      {!isDatasetModeEnabled && !isDrugOnlySessionMode && (
-                        <button
-                          type="button"
-                          onClick={handleSourcesPanelOpen}
-                          onMouseUp={(event) => {
-                            event.currentTarget.blur();
-                          }}
-                          onTouchEnd={(event) => {
-                            event.currentTarget.blur();
-                          }}
-                          className="
-                            sources-scroll-button
-                            inline-flex items-center justify-center
-                            px-3 py-2 sm:px-4 sm:py-2
-                            text-xs sm:text-sm font-medium rounded-full
-                            bg-blue-600 text-white shadow-sm
-                            hover:bg-blue-700 active:bg-blue-700
-                            transition-none
-                            focus:outline-none focus:ring-0 focus:ring-offset-0
-                          "
-                          style={{ WebkitTapHighlightColor: "transparent" }}
-                          aria-label="Manage active sources"
-                          title="Sources"
-                        >
-                          Sources {documentsLoading ? "..." : activeDocumentCount}
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        onClick={handleScrollToLatestQuestion}
-                        onMouseUp={(event) => {
-                          event.currentTarget.blur();
-                        }}
-                        onTouchEnd={(event) => {
-                          event.currentTarget.blur();
-                        }}
-                        className="
-                          answer-scroll-button
-                          inline-flex items-center justify-center
-                          px-3 py-2 sm:px-4 sm:py-2
-                          text-xs sm:text-sm font-medium rounded-full
-                          bg-gray-600 text-white border border-white
-                          hover:bg-gray-600 active:bg-gray-600
-                          transition-none
-                          focus:outline-none focus:ring-0 focus:ring-offset-0
-                        "
-                        style={{ WebkitTapHighlightColor: "transparent" }}
-                        aria-label="Scroll to latest answer"
-                        title="Answer"
-                      >
-                        <svg
-                          className="w-3 h-3 mr-1.5"
-                          fill="none"
-                          viewBox="0 0 24 24"
-                          stroke="currentColor"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M7 14l5-5 5 5"
-                          />
-                        </svg>
-                        Answer
-                      </button>
-                    </div>
-                  )}
-                  {shouldShowPhrasePills && (
-                    <PhrasePills
-                      phrases={visiblePhrasePhrases}
-                      onPhraseSelect={handlePhraseSelect}
-                      className="bg-gray-100 dark:bg-gray-800 rounded-lg"
-                      ariaLabel={
-                        isDatasetModeEnabled
-                          ? "Drug suggestion chips"
-                          : "Quick phrase suggestions"
-                      }
-                    />
-                  )}
-                </div>
-
-                <div className="flex-shrink-0 mt-4 max-w-4xl mx-auto w-full">
-                  {!isDatasetModeEnabled && !documentsLoading && !hasDocuments && (
-                    <div className="mb-4 flex justify-center">
-                      <Button
-                        onClick={() => setActiveTab("documents")}
-                        variant="primary"
-                        size="md"
-                        className="shadow-lg"
-                      >
-                        📚 Add Books to Chat
-                      </Button>
-                    </div>
-                  )}
-                  <MessageInput
-                    sessionId={sessionId}
-                    disabled={
-                      isStreaming ||
-                      isPreparingDrugDataset ||
-                      (!isDatasetModeEnabled &&
-                        (!hasDocuments || !hasDocumentDataForSession))
-                    }
-                    placeholder={messagePlaceholder}
-                    inputRef={messageInputRef}
-                    controllerRef={messageInputControllerRef}
-                    autoCorrect="off"
-                    autoCapitalize="none"
-                    spellCheck={false}
+                    footer={chatFooter}
                   />
                 </div>
               </>

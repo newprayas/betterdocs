@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useLayoutEffect, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import { Loading } from '../ui/Loading';
 import { ResponseProgressBar } from '../ui/ResponseProgressBar';
@@ -19,44 +19,79 @@ interface ChatListProps {
   sessionId: string;
   className?: string;
   onDrugActionClick?: (query: string) => void;
+  footer?: React.ReactNode;
 }
 
 const ChatListComponent: React.FC<ChatListProps> = ({
   sessionId,
   className,
   onDrugActionClick,
+  footer,
 }) => {
   const { messages, isStreaming, streamingContent, streamingCitations, isReadingSources, progressPercentage, currentProgressStep } = useChatStore();
   const userId = useSessionStore((state) => state.userId);
   const loadSavedAnswers = useSavedAnswersStore((state) => state.loadSavedAnswers);
   const isLoading = false; // Loading is now handled at the parent level
-  const messagesEndRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const bottomAnchorRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     void loadSavedAnswers(userId);
   }, [loadSavedAnswers, userId]);
 
   // Auto-scroll to bottom when new messages arrive or streaming updates
-  useEffect(() => {
-    const scrollToBottom = () => {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    };
-
-    // Small delay to ensure content is rendered
-    const timeoutId = setTimeout(scrollToBottom, 100);
-    return () => clearTimeout(timeoutId);
-  }, [messages, streamingContent]);
-
-  // Handle scroll events for loading more messages (pagination)
-  const handleScroll = () => {
+  useLayoutEffect(() => {
     const container = containerRef.current;
-    if (container && container.scrollTop === 0) {
-      // At the top, could load more messages here
-      // Future: Implement pagination for older messages
-      console.log('Reached top - could load more messages');
-    }
-  };
+    if (!container) return;
+
+    container.scrollTo({ top: container.scrollHeight, behavior: 'auto' });
+    bottomAnchorRef.current?.scrollIntoView({
+      behavior: 'auto',
+      block: 'end',
+      inline: 'nearest',
+    });
+  }, [messages, sessionId, streamingContent]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const attempts = [
+      { label: 'effect:raf-1', delay: 0 },
+      { label: 'effect:timeout-50', delay: 50 },
+      { label: 'effect:timeout-150', delay: 150 },
+      { label: 'effect:timeout-300', delay: 300 },
+    ];
+
+    const frameId = window.requestAnimationFrame(() => {
+      const container = containerRef.current;
+      if (!container) return;
+      container.scrollTo({ top: container.scrollHeight, behavior: 'auto' });
+      bottomAnchorRef.current?.scrollIntoView({
+        behavior: 'auto',
+        block: 'end',
+        inline: 'nearest',
+      });
+    });
+
+    const timeoutIds = attempts.slice(1).map(({ delay }) =>
+      window.setTimeout(() => {
+        const container = containerRef.current;
+        if (!container) return;
+
+        container.scrollTo({ top: container.scrollHeight, behavior: 'auto' });
+        bottomAnchorRef.current?.scrollIntoView({
+          behavior: 'auto',
+          block: 'end',
+          inline: 'nearest',
+        });
+      }, delay),
+    );
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+      timeoutIds.forEach((timeoutId) => window.clearTimeout(timeoutId));
+    };
+  }, [messages, sessionId, streamingContent]);
 
   if (isLoading && messages.length === 0) {
     return (
@@ -77,18 +112,17 @@ const ChatListComponent: React.FC<ChatListProps> = ({
   return (
     <div
       ref={containerRef}
-      onScroll={handleScroll}
       data-chat-scroll-container="true"
       className={`
-        flex-1 overflow-y-auto px-3 sm:px-4 py-4 sm:py-6
-        bg-gray-50 dark:bg-gray-900
+        h-full min-h-0 overflow-y-auto px-3 sm:px-4 py-4 sm:py-6
         scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-600
         scrollbar-track-transparent
+        bg-gray-50 dark:bg-gray-900
         touch-pan-y
-        ${className}
       `}
+      style={{ scrollBehavior: 'auto' }}
     >
-      <div className="max-w-4xl mx-auto space-y-1">
+      <div className={`max-w-4xl mx-auto space-y-1 w-full ${className ?? ''}`}>
         {/* Group messages by date */}
         {messages.map((message, index) => {
           const prevMessage = messages[index - 1];
@@ -134,9 +168,10 @@ const ChatListComponent: React.FC<ChatListProps> = ({
             onDrugActionClick={onDrugActionClick}
           />
         )}
-        
-        {/* Invisible element for scroll targeting */}
-        <div ref={messagesEndRef} />
+
+        {footer}
+
+        <div ref={bottomAnchorRef} aria-hidden="true" />
       </div>
     </div>
   );
@@ -186,30 +221,35 @@ export const StreamingChatList: React.FC<{
   className?: string;
   onDrugActionClick?: (query: string) => void;
 }> = ({ messages, streamingContent, streamingCitations, className, onDrugActionClick }) => {
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const bottomAnchorRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll to bottom when new messages arrive or streaming updates
-  useEffect(() => {
-    const scrollToBottom = () => {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    };
+  useLayoutEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
 
-    const timeoutId = setTimeout(scrollToBottom, 100);
-    return () => clearTimeout(timeoutId);
+    container.scrollTo({ top: container.scrollHeight, behavior: 'auto' });
+    bottomAnchorRef.current?.scrollIntoView({
+      behavior: 'auto',
+      block: 'end',
+      inline: 'nearest',
+    });
   }, [messages, streamingContent]);
 
   return (
     <div
+      ref={containerRef}
       className={`
-        flex-1 overflow-y-auto px-3 sm:px-4 py-4 sm:py-6
-        bg-gray-50 dark:bg-gray-900
+        h-full min-h-0 overflow-y-auto px-3 sm:px-4 py-4 sm:py-6
         scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-600
         scrollbar-track-transparent
+        bg-gray-50 dark:bg-gray-900
         touch-pan-y
-        ${className}
       `}
+      style={{ scrollBehavior: 'auto' }}
     >
-      <div className="max-w-4xl mx-auto space-y-1">
+      <div className={`max-w-4xl mx-auto space-y-1 w-full ${className ?? ''}`}>
         {/* Render existing messages */}
         {messages.map((message, index) => {
           const prevMessage = messages[index - 1];
@@ -240,9 +280,8 @@ export const StreamingChatList: React.FC<{
             onDrugActionClick={onDrugActionClick}
           />
         )}
-        
-        {/* Invisible element for scroll targeting */}
-        <div ref={messagesEndRef} />
+
+        <div ref={bottomAnchorRef} aria-hidden="true" />
       </div>
     </div>
   );
