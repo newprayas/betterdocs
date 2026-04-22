@@ -1,9 +1,13 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import dynamic from "next/dynamic";
-
-
 
 import { useParams, useRouter } from "next/navigation";
 import {
@@ -14,7 +18,12 @@ import {
 import { TabBar, ChatTabs } from "../../../components/layout";
 import { ChatList, MessageInput, PhrasePills } from "../../../components/chat";
 import type { MessageInputHandle } from "../../../components/chat";
-import { Button, DropdownMenu, DropdownMenuItem, Switch } from "../../../components/ui";
+import {
+  Button,
+  DropdownMenu,
+  DropdownMenuItem,
+  Switch,
+} from "../../../components/ui";
 import { Loading } from "../../../components/ui";
 import { EmptyState } from "../../../components/common";
 import { Header } from "../../../components/layout";
@@ -25,8 +34,7 @@ import { useAuthGuard } from "@/hooks/useAuthGuard";
 import { isDrugOnlySession } from "@/utils/sessionType";
 
 const DocumentList = dynamic(
-  () =>
-    import("../../../components/document").then((mod) => mod.DocumentList),
+  () => import("../../../components/document").then((mod) => mod.DocumentList),
   {
     loading: () => (
       <div className="flex justify-center py-8">
@@ -52,15 +60,24 @@ const DRUG_ACTION_PILLS = [
   "Breastfeeding",
 ] as const;
 
-const normalizePhraseValue = (value: string): string => value.trim().toLowerCase();
+const normalizePhraseValue = (value: string): string =>
+  value.trim().toLowerCase();
 
-const buildDrugActionPillQuery = (pillLabel: string, drugName: string): string => {
+const buildDrugActionPillQuery = (
+  pillLabel: string,
+  drugName: string,
+): string => {
   const normalized = normalizePhraseValue(pillLabel);
-  if (normalized === "dose") return drugName ? `dose of ${drugName}` : "dose of ";
-  if (normalized === "brands") return drugName ? `brands of ${drugName}` : "brands of ";
-  if (normalized === "adr") return drugName ? `side effects of ${drugName}` : "side effects of ";
+  if (normalized === "dose")
+    return drugName ? `dose of ${drugName}` : "dose of ";
+  if (normalized === "brands")
+    return drugName ? `brands of ${drugName}` : "brands of ";
+  if (normalized === "adr")
+    return drugName ? `side effects of ${drugName}` : "side effects of ";
   if (normalized === "contraindication") {
-    return drugName ? `contraindication of ${drugName}` : "contraindication of ";
+    return drugName
+      ? `contraindication of ${drugName}`
+      : "contraindication of ";
   }
   if (normalized === "breastfeeding") {
     return drugName ? `breastfeeding for ${drugName}` : "breastfeeding for ";
@@ -76,15 +93,25 @@ const buildDrugSuggestionFollowUpQuery = (
   if (!normalized) return suggestedDrugName;
 
   if (/\bbrands?\b/.test(normalized)) return `brands of ${suggestedDrugName}`;
-  if (/\b(adr|side[\s-]?effects?|adverse\s+effects?|adverse\s+reactions?)\b/.test(normalized)) {
+  if (
+    /\b(adr|side[\s-]?effects?|adverse\s+effects?|adverse\s+reactions?)\b/.test(
+      normalized,
+    )
+  ) {
     return `side effects of ${suggestedDrugName}`;
   }
-  if (/\bcontra[\w-]*\b/.test(normalized)) return `contraindication of ${suggestedDrugName}`;
-  if (/\bbreast[\s-]?feeding\b/.test(normalized)) return `breastfeeding for ${suggestedDrugName}`;
-  if (/\bpregnan\w*\b/.test(normalized)) return `pregnancy for ${suggestedDrugName}`;
-  if (/\binteractions?\b/.test(normalized)) return `interactions of ${suggestedDrugName}`;
-  if (/\bindications?\b/.test(normalized)) return `indications of ${suggestedDrugName}`;
-  if (/\b(dose|dosage|schedule|regimen|how much)\b/.test(normalized)) return `dose of ${suggestedDrugName}`;
+  if (/\bcontra[\w-]*\b/.test(normalized))
+    return `contraindication of ${suggestedDrugName}`;
+  if (/\bbreast[\s-]?feeding\b/.test(normalized))
+    return `breastfeeding for ${suggestedDrugName}`;
+  if (/\bpregnan\w*\b/.test(normalized))
+    return `pregnancy for ${suggestedDrugName}`;
+  if (/\binteractions?\b/.test(normalized))
+    return `interactions of ${suggestedDrugName}`;
+  if (/\bindications?\b/.test(normalized))
+    return `indications of ${suggestedDrugName}`;
+  if (/\b(dose|dosage|schedule|regimen|how much)\b/.test(normalized))
+    return `dose of ${suggestedDrugName}`;
 
   return suggestedDrugName;
 };
@@ -109,7 +136,9 @@ const isTextEntryElement = (target: EventTarget | null): boolean => {
 export default function SessionPage() {
   const params = useParams();
   const router = useRouter();
-  const { isCheckingAuth, isAuthenticated } = useAuthGuard({ requireAuth: true });
+  const { isCheckingAuth, isAuthenticated } = useAuthGuard({
+    requireAuth: true,
+  });
   const { handleRouteError } = useRouteErrorHandler();
   const [hasInvalidSessionId, setHasInvalidSessionId] = useState(false);
   const [querySessionId, setQuerySessionId] = useState("");
@@ -218,7 +247,6 @@ export default function SessionPage() {
   );
   const messageInputRef = useRef<HTMLTextAreaElement>(null);
   const messageInputControllerRef = useRef<MessageInputHandle | null>(null);
-  const emptyComposerRef = useRef<HTMLDivElement>(null);
   const chatFooterRef = useRef<HTMLDivElement>(null);
   const rawSessionMode = sessionModeBySession[sessionId] || "chat";
   const sessionMode: SessionChatMode =
@@ -226,13 +254,16 @@ export default function SessionPage() {
   const isDrugModeEnabled = sessionMode === "drug";
   const isDatasetModeEnabled = sessionMode !== "chat";
   const drugSuggestionPhrases = drugSuggestionsBySession[sessionId] || [];
-  const lastDrugContextName = drugContextBySession[sessionId]?.lastDrugName || "";
+  const lastDrugContextName =
+    drugContextBySession[sessionId]?.lastDrugName || "";
   const latestUserMessageForSession = useMemo(
     () =>
       [...messages]
         .reverse()
-        .find((message) => message.sessionId === sessionId && message.role === "user")
-        ?.content || "",
+        .find(
+          (message) =>
+            message.sessionId === sessionId && message.role === "user",
+        )?.content || "",
     [messages, sessionId],
   );
   const visiblePhrasePhrases = isDatasetModeEnabled
@@ -243,24 +274,25 @@ export default function SessionPage() {
   const shouldShowPhrasePills =
     !isDatasetModeEnabled || (visiblePhrasePhrases?.length ?? 0) > 0;
   const modeLabel = sessionMode === "drug" ? "Drugs" : "Chat Mode";
-  const readyTitle =
-    isDrugOnlySessionMode ? "Drug mode is ready" : sessionMode === "drug" ? "Drugs mode is ready" : "Start a conversation";
-  const readyDescription =
-    isDrugOnlySessionMode
-      ? "Ask about doses, brands, indications, side-effects, cautions, pregnancy, renal dose, and more."
-      : sessionMode === "drug"
+  const readyTitle = isDrugOnlySessionMode
+    ? "Drug mode is ready"
+    : sessionMode === "drug"
+      ? "Drugs mode is ready"
+      : "Start a conversation";
+  const readyDescription = isDrugOnlySessionMode
+    ? "Ask about doses, brands, indications, side-effects, cautions, pregnancy, renal dose, and more."
+    : sessionMode === "drug"
       ? "Ask about doses, brands, indications, side-effects, cautions, pregnancy, renal dose, and more."
       : "Ask a question about your documents to get started";
-  const messagePlaceholder =
-    isPreparingDrugDataset
-      ? "Preparing drug dataset..."
-      : isDrugOnlySessionMode || isDrugModeEnabled
-        ? "Ask questions"
-        : documentsLoading
-            ? "Loading books..."
-            : !hasDocuments
-              ? "Please add a book FIRST to chat"
-              : "Ask questions";
+  const messagePlaceholder = isPreparingDrugDataset
+    ? "Preparing drug dataset..."
+    : isDrugOnlySessionMode || isDrugModeEnabled
+      ? "Ask questions"
+      : documentsLoading
+        ? "Loading books..."
+        : !hasDocuments
+          ? "Please add a book FIRST to chat"
+          : "Ask questions";
   const keyboardSafeBottomInset = Math.max(24, keyboardInset + 24);
   const keyboardSafeBottomStyle = {
     paddingBottom: `calc(env(safe-area-inset-bottom, 0px) + ${keyboardSafeBottomInset}px)`,
@@ -490,7 +522,13 @@ export default function SessionPage() {
     if (activeTab !== "chat") {
       setActiveTab("chat");
     }
-  }, [activeTab, isDrugOnlySessionMode, sessionId, sessionMode, setSessionModeForSession]);
+  }, [
+    activeTab,
+    isDrugOnlySessionMode,
+    sessionId,
+    sessionMode,
+    setSessionModeForSession,
+  ]);
 
   useEffect(() => {
     if (!isSourcesPanelOpen) return;
@@ -535,8 +573,14 @@ export default function SessionPage() {
       setIsKeyboardOpen(keyboardHeight > 120);
 
       const rootStyle = document.documentElement.style;
-      rootStyle.setProperty("--mobile-viewport-height", `${roundedViewportHeight}px`);
-      rootStyle.setProperty("--mobile-keyboard-inset", `${roundedKeyboardHeight}px`);
+      rootStyle.setProperty(
+        "--mobile-viewport-height",
+        `${roundedViewportHeight}px`,
+      );
+      rootStyle.setProperty(
+        "--mobile-keyboard-inset",
+        `${roundedKeyboardHeight}px`,
+      );
     };
 
     const scheduleViewportUpdate = () => {
@@ -568,9 +612,7 @@ export default function SessionPage() {
     if (!(activeElement instanceof HTMLElement)) return;
     if (activeElement !== messageInputRef.current) return;
 
-    const target = messages.length === 0
-      ? emptyComposerRef.current
-      : chatFooterRef.current;
+    const target = chatFooterRef.current;
 
     if (!target) return;
 
@@ -591,9 +633,7 @@ export default function SessionPage() {
     if (typeof window === "undefined") return;
 
     const scrollComposerIntoView = () => {
-      const target = messages.length === 0
-        ? emptyComposerRef.current
-        : chatFooterRef.current;
+      const target = chatFooterRef.current;
 
       target?.scrollIntoView({
         behavior: "auto",
@@ -634,29 +674,37 @@ export default function SessionPage() {
     }
   };
 
-  const handleDrugActionClick = useCallback(async (query: string) => {
-    if (!sessionId) return;
+  const handleDrugActionClick = useCallback(
+    async (query: string) => {
+      if (!sessionId) return;
 
-    try {
-      console.log("[DRUG ACTION][SESSION PAGE] dispatch", {
-        sessionId,
-        query,
-      });
-      useChatStore.getState().markSkipNextDrugFollowUpRewriteForSession(sessionId);
-      messageInputControllerRef.current?.clear();
-      await sendMessage(sessionId, query);
-      console.log("[DRUG ACTION][SESSION PAGE] sent", {
-        sessionId,
-        query,
-      });
-    } catch (error) {
-      console.error("[DRUG ACTION][SESSION PAGE] failed to send drug action query:", {
-        sessionId,
-        query,
-        error,
-      });
-    }
-  }, [sessionId, sendMessage]);
+      try {
+        console.log("[DRUG ACTION][SESSION PAGE] dispatch", {
+          sessionId,
+          query,
+        });
+        useChatStore
+          .getState()
+          .markSkipNextDrugFollowUpRewriteForSession(sessionId);
+        messageInputControllerRef.current?.clear();
+        await sendMessage(sessionId, query);
+        console.log("[DRUG ACTION][SESSION PAGE] sent", {
+          sessionId,
+          query,
+        });
+      } catch (error) {
+        console.error(
+          "[DRUG ACTION][SESSION PAGE] failed to send drug action query:",
+          {
+            sessionId,
+            query,
+            error,
+          },
+        );
+      }
+    },
+    [sessionId, sendMessage],
+  );
 
   const handleSessionModeChange = async (mode: SessionChatMode) => {
     if (isDrugOnlySessionMode && mode !== "drug") {
@@ -678,7 +726,10 @@ export default function SessionPage() {
         import("../../../services/drug/drugModeService"),
         import("../../../services/drug/askDrugModeService"),
       ]);
-      await Promise.all([drugModeService.warmup(), askDrugModeService.warmup()]);
+      await Promise.all([
+        drugModeService.warmup(),
+        askDrugModeService.warmup(),
+      ]);
       console.log("[SESSION MODE]", "Dataset warmup completed", {
         sessionId,
         mode,
@@ -690,28 +741,40 @@ export default function SessionPage() {
     }
   };
 
-  const handlePhraseSelect = useCallback((phrase: string) => {
-    if (isDatasetModeEnabled) {
-      const nextValue = drugSuggestionPhrases.includes(phrase)
-        ? buildDrugSuggestionFollowUpQuery(latestUserMessageForSession, phrase)
-        : buildDrugActionPillQuery(phrase, lastDrugContextName);
-      messageInputControllerRef.current?.setValue(nextValue);
+  const handlePhraseSelect = useCallback(
+    (phrase: string) => {
+      if (isDatasetModeEnabled) {
+        const nextValue = drugSuggestionPhrases.includes(phrase)
+          ? buildDrugSuggestionFollowUpQuery(
+              latestUserMessageForSession,
+              phrase,
+            )
+          : buildDrugActionPillQuery(phrase, lastDrugContextName);
+        messageInputControllerRef.current?.setValue(nextValue);
+        requestAnimationFrame(() => {
+          messageInputControllerRef.current?.focusToEnd();
+        });
+        return;
+      }
+
+      // Focus the input field and position cursor at the end
       requestAnimationFrame(() => {
+        const currentValue =
+          messageInputControllerRef.current?.getValue() || "";
+        const nextValue = currentValue
+          ? `${currentValue} ${phrase} `
+          : `${phrase} `;
+        messageInputControllerRef.current?.setValue(nextValue);
         messageInputControllerRef.current?.focusToEnd();
       });
-      return;
-    }
-
-    // Focus the input field and position cursor at the end
-    requestAnimationFrame(() => {
-      const currentValue = messageInputControllerRef.current?.getValue() || "";
-      const nextValue = currentValue
-        ? `${currentValue} ${phrase} `
-        : `${phrase} `;
-      messageInputControllerRef.current?.setValue(nextValue);
-      messageInputControllerRef.current?.focusToEnd();
-    });
-  }, [drugSuggestionPhrases, isDatasetModeEnabled, lastDrugContextName, latestUserMessageForSession]);
+    },
+    [
+      drugSuggestionPhrases,
+      isDatasetModeEnabled,
+      lastDrugContextName,
+      latestUserMessageForSession,
+    ],
+  );
 
   useEffect(() => {
     messageInputControllerRef.current?.clear();
@@ -945,29 +1008,29 @@ export default function SessionPage() {
         {!isReadingSources && (
           <div className="mb-2 flex justify-end pr-2">
             <div className="flex flex-wrap items-center justify-end gap-2">
-            <div className="inline-flex items-center gap-2 rounded-full border border-gray-300 bg-white px-3 py-2 text-xs font-medium text-gray-700 shadow-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 sm:text-sm">
-              <span>{isPreparingDrugDataset ? "Preparing..." : "Drugs"}</span>
-              <Switch
-                checked={isDrugModeEnabled}
-                onCheckedChange={() => {
-                  void handleDrugModeToggle();
-                }}
-                disabled={isPreparingDrugDataset}
-                size="sm"
-                aria-label="Toggle drugs mode"
-              />
-            </div>
-            {!isDatasetModeEnabled && !isDrugOnlySessionMode && (
-              <button
-                type="button"
-                onClick={handleSourcesPanelOpen}
-                onMouseUp={(event) => {
-                  event.currentTarget.blur();
-                }}
-                onTouchEnd={(event) => {
-                  event.currentTarget.blur();
-                }}
-                className="
+              <div className="inline-flex items-center gap-2 rounded-full border border-gray-300 bg-white px-3 py-2 text-xs font-medium text-gray-700 shadow-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 sm:text-sm">
+                <span>{isPreparingDrugDataset ? "Preparing..." : "Drugs"}</span>
+                <Switch
+                  checked={isDrugModeEnabled}
+                  onCheckedChange={() => {
+                    void handleDrugModeToggle();
+                  }}
+                  disabled={isPreparingDrugDataset}
+                  size="sm"
+                  aria-label="Toggle drugs mode"
+                />
+              </div>
+              {!isDatasetModeEnabled && !isDrugOnlySessionMode && (
+                <button
+                  type="button"
+                  onClick={handleSourcesPanelOpen}
+                  onMouseUp={(event) => {
+                    event.currentTarget.blur();
+                  }}
+                  onTouchEnd={(event) => {
+                    event.currentTarget.blur();
+                  }}
+                  className="
                   sources-scroll-button
                   inline-flex items-center justify-center
                   px-3 py-2 sm:px-4 sm:py-2
@@ -977,51 +1040,53 @@ export default function SessionPage() {
                   transition-none
                   focus:outline-none focus:ring-0 focus:ring-offset-0
                 "
-                style={{ WebkitTapHighlightColor: "transparent" }}
-                aria-label="Manage active sources"
-                title="Sources"
-              >
-                Sources {documentsLoading ? "..." : activeDocumentCount}
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={handleScrollToLatestQuestion}
-              onMouseUp={(event) => {
-                event.currentTarget.blur();
-              }}
-              onTouchEnd={(event) => {
-                event.currentTarget.blur();
-              }}
-              className="
-                answer-scroll-button
-                inline-flex items-center justify-center
-                px-3 py-2 sm:px-4 sm:py-2
-                text-xs sm:text-sm font-medium rounded-full
-                bg-gray-600 text-white border border-white
-                hover:bg-gray-600 active:bg-gray-600
-                transition-none
-                focus:outline-none focus:ring-0 focus:ring-offset-0
-              "
-              style={{ WebkitTapHighlightColor: "transparent" }}
-              aria-label="Scroll to latest answer"
-              title="Answer"
-            >
-              <svg
-                className="w-3 h-3 mr-1.5"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M7 14l5-5 5 5"
-                />
-              </svg>
-              Answer
-            </button>
+                  style={{ WebkitTapHighlightColor: "transparent" }}
+                  aria-label="Manage active sources"
+                  title="Sources"
+                >
+                  Sources {documentsLoading ? "..." : activeDocumentCount}
+                </button>
+              )}
+              {messages.length > 0 && (
+                <button
+                  type="button"
+                  onClick={handleScrollToLatestQuestion}
+                  onMouseUp={(event) => {
+                    event.currentTarget.blur();
+                  }}
+                  onTouchEnd={(event) => {
+                    event.currentTarget.blur();
+                  }}
+                  className="
+                  answer-scroll-button
+                  inline-flex items-center justify-center
+                  px-3 py-2 sm:px-4 sm:py-2
+                  text-xs sm:text-sm font-medium rounded-full
+                  bg-gray-600 text-white border border-white
+                  hover:bg-gray-600 active:bg-gray-600
+                  transition-none
+                  focus:outline-none focus:ring-0 focus:ring-offset-0
+                "
+                  style={{ WebkitTapHighlightColor: "transparent" }}
+                  aria-label="Scroll to latest answer"
+                  title="Answer"
+                >
+                  <svg
+                    className="w-3 h-3 mr-1.5"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M7 14l5-5 5 5"
+                    />
+                  </svg>
+                  Answer
+                </button>
+              )}
             </div>
           </div>
         )}
@@ -1040,18 +1105,21 @@ export default function SessionPage() {
       </div>
 
       <div className="mt-4">
-        {!isDatasetModeEnabled && !documentsLoading && !hasDocuments && (
-          <div className="mb-4 flex justify-center">
-            <Button
-              onClick={() => setActiveTab("documents")}
-              variant="primary"
-              size="md"
-              className="shadow-lg"
-            >
-              📚 Add Books to Chat
-            </Button>
-          </div>
-        )}
+        {messages.length > 0 &&
+          !isDatasetModeEnabled &&
+          !documentsLoading &&
+          !hasDocuments && (
+            <div className="mb-4 flex justify-center">
+              <Button
+                onClick={() => setActiveTab("documents")}
+                variant="primary"
+                size="md"
+                className="shadow-lg"
+              >
+                📚 Add Books to Chat
+              </Button>
+            </div>
+          )}
         <MessageInput
           sessionId={sessionId}
           disabled={
@@ -1069,6 +1137,61 @@ export default function SessionPage() {
         />
       </div>
     </div>
+  );
+
+  const emptyChatState = documentsLoading ? (
+    <EmptyState
+      title="Loading books..."
+      description="Please wait while sources are being prepared."
+      icon={<div className="text-4xl mb-2">📚</div>}
+    />
+  ) : !isDatasetModeEnabled && !hasDocuments ? (
+    <EmptyState
+      title="No books added, Add books to chat 🥳"
+      description=""
+      icon={<div className="text-4xl mb-2">📚</div>}
+      action={
+        <Button
+          onClick={() => setActiveTab("documents")}
+          variant="primary"
+          size="lg"
+        >
+          ADD BOOKS
+        </Button>
+      }
+    />
+  ) : isPreparingDrugDataset ? (
+    <EmptyState
+      title="Preparing drug dataset..."
+      description={`Please wait while ${modeLabel} loads the drug catalog.`}
+      icon={<div className="text-4xl mb-2">💊</div>}
+    />
+  ) : isDatasetModeEnabled ? (
+    <EmptyState
+      title={readyTitle}
+      description={readyDescription}
+      icon={<div className="text-4xl mb-2">💊</div>}
+    />
+  ) : (
+    <EmptyState
+      title={readyTitle}
+      description={readyDescription}
+      icon={
+        <svg
+          className="w-12 h-12 text-gray-400"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+            d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
+          />
+        </svg>
+      }
+    />
   );
 
   if (isCheckingAuth) {
@@ -1160,168 +1283,21 @@ export default function SessionPage() {
               <div className="flex-1 flex items-center justify-center">
                 <Loading size="lg" text="Loading history..." />
               </div>
-            ) : messages.length === 0 ? (
-              // This wrapper controls the layout to ensure input stays at bottom
+            ) : (
               <div
-                className="flex flex-col flex-1 min-h-0 overflow-y-auto overscroll-contain"
+                className="flex-1 min-h-0 overflow-hidden"
+                data-chat-viewport="session-shell"
                 style={keyboardSafeBottomStyle}
               >
-                {/* Empty-state hero collapses while keyboard is open so the composer can stay visible */}
-                <div className={isKeyboardOpen ? "flex-1 min-h-0" : "flex-1 flex items-center justify-center"}>
-                  {!isKeyboardOpen &&
-                    (documentsLoading ? (
-                      <EmptyState
-                        title="Loading books..."
-                        description="Please wait while sources are being prepared."
-                        icon={<div className="text-4xl mb-2">📚</div>}
-                      />
-                    ) : !isDatasetModeEnabled && !hasDocuments ? (
-                      <EmptyState
-                        title="No books added, Add books to chat 🥳"
-                        description=""
-                        icon={<div className="text-4xl mb-2">📚</div>}
-                        action={
-                          <Button
-                            onClick={() => setActiveTab("documents")}
-                            variant="primary"
-                            size="lg"
-                          >
-                            ADD BOOKS
-                          </Button>
-                        }
-                      />
-                    ) : isPreparingDrugDataset ? (
-                      <EmptyState
-                        title="Preparing drug dataset..."
-                        description={`Please wait while ${modeLabel} loads the drug catalog.`}
-                        icon={<div className="text-4xl mb-2">💊</div>}
-                      />
-                    ) : isDatasetModeEnabled ? (
-                      <EmptyState
-                        title={readyTitle}
-                        description={readyDescription}
-                        icon={<div className="text-4xl mb-2">💊</div>}
-                      />
-                    ) : (
-                      <EmptyState
-                        title={readyTitle}
-                        description={readyDescription}
-                        icon={
-                          <svg
-                            className="w-12 h-12 text-gray-400"
-                            fill="none"
-                            viewBox="0 0 24 24"
-                            stroke="currentColor"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
-                            />
-                          </svg>
-                        }
-                      />
-                    ))}
-                </div>
-
-                <div
-                  ref={emptyComposerRef}
-                  className="flex-shrink-0 mt-4 max-w-4xl mx-auto w-full"
-                >
-                  {/* Phrase Pills */}
-                  <div className="relative w-full">
-                    {!isReadingSources && (
-                      <div className="absolute bottom-full right-2 mb-2 z-20 flex items-center gap-2">
-                        <div className="inline-flex items-center gap-2 rounded-full border border-gray-300 bg-white px-3 py-2 text-xs font-medium text-gray-700 shadow-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 sm:text-sm">
-                          <span>{isPreparingDrugDataset ? "Preparing..." : "Drugs"}</span>
-                          <Switch
-                            checked={isDrugModeEnabled}
-                            onCheckedChange={() => {
-                              void handleDrugModeToggle();
-                            }}
-                            disabled={isPreparingDrugDataset}
-                            size="sm"
-                            aria-label="Toggle drugs mode"
-                          />
-                        </div>
-                        {!isDatasetModeEnabled && !isDrugOnlySessionMode && (
-                          <button
-                            type="button"
-                            onClick={handleSourcesPanelOpen}
-                            onMouseUp={(event) => {
-                              event.currentTarget.blur();
-                            }}
-                            onTouchEnd={(event) => {
-                              event.currentTarget.blur();
-                            }}
-                            className="
-                              sources-scroll-button
-                              inline-flex items-center justify-center
-                              px-3 py-2 sm:px-4 sm:py-2
-                              text-xs sm:text-sm font-medium rounded-full
-                              bg-blue-600 text-white shadow-sm
-                              hover:bg-blue-700 active:bg-blue-700
-                              transition-none
-                              focus:outline-none focus:ring-0 focus:ring-offset-0
-                            "
-                            style={{ WebkitTapHighlightColor: "transparent" }}
-                            aria-label="Manage active sources"
-                            title="Sources"
-                          >
-                            Sources {documentsLoading ? "..." : activeDocumentCount}
-                          </button>
-                        )}
-                      </div>
-                    )}
-                    {shouldShowPhrasePills && (
-                      <PhrasePills
-                        phrases={visiblePhrasePhrases}
-                        onPhraseSelect={handlePhraseSelect}
-                        className="bg-gray-100 dark:bg-gray-800 rounded-lg"
-                        ariaLabel={
-                          isDatasetModeEnabled
-                            ? "Drug suggestion chips"
-                            : "Quick phrase suggestions"
-                        }
-                      />
-                    )}
-                  </div>
-
-                  <div className="mt-4 w-full">
-                    <MessageInput
-                      sessionId={sessionId}
-                      disabled={
-                        isStreaming ||
-                        isPreparingDrugDataset ||
-                        (!isDatasetModeEnabled &&
-                          (!hasDocuments || !hasDocumentDataForSession))
-                      }
-                      placeholder={messagePlaceholder}
-                      inputRef={messageInputRef}
-                      controllerRef={messageInputControllerRef}
-                      autoCorrect="off"
-                      autoCapitalize="none"
-                      spellCheck={false}
-                    />
-                  </div>
-                </div>
+                <ChatList
+                  sessionId={sessionId}
+                  className="max-w-4xl mx-auto"
+                  onDrugActionClick={handleDrugActionClick}
+                  footer={chatFooter}
+                  bottomInsetPx={keyboardSafeBottomInset}
+                  emptyState={!isKeyboardOpen ? emptyChatState : null}
+                />
               </div>
-            ) : (
-              <>
-                <div
-                  className="flex-1 min-h-0 overflow-hidden"
-                  data-chat-viewport="session-shell"
-                >
-                  <ChatList
-                    sessionId={sessionId}
-                    className="max-w-4xl mx-auto"
-                    onDrugActionClick={handleDrugActionClick}
-                    footer={chatFooter}
-                    bottomInsetPx={keyboardSafeBottomInset}
-                  />
-                </div>
-              </>
             )}
           </div>
         )}
@@ -1462,10 +1438,12 @@ export default function SessionPage() {
                 <div className="rounded-lg border border-dashed border-gray-300 dark:border-gray-700 p-4 text-sm text-gray-500 dark:text-gray-400">
                   Loading books...
                 </div>
-              ) : sortedDocuments.length === 0 && (
-                <div className="rounded-lg border border-dashed border-gray-300 dark:border-gray-700 p-4 text-sm text-gray-500 dark:text-gray-400">
-                  No books added yet. Add books to enable sources.
-                </div>
+              ) : (
+                sortedDocuments.length === 0 && (
+                  <div className="rounded-lg border border-dashed border-gray-300 dark:border-gray-700 p-4 text-sm text-gray-500 dark:text-gray-400">
+                    No books added yet. Add books to enable sources.
+                  </div>
+                )
               )}
 
               {activeDocuments.length > 0 && (
