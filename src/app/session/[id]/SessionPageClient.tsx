@@ -210,11 +210,15 @@ export default function SessionPage() {
   const [isSourcesPanelOpen, setIsSourcesPanelOpen] = useState(false);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [isPreparingDrugDataset, setIsPreparingDrugDataset] = useState(false);
+  const [viewportHeight, setViewportHeight] = useState<number | null>(null);
+  const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
   const [togglingDocumentIds, setTogglingDocumentIds] = useState<Set<string>>(
     new Set(),
   );
   const messageInputRef = useRef<HTMLTextAreaElement>(null);
   const messageInputControllerRef = useRef<MessageInputHandle | null>(null);
+  const emptyComposerRef = useRef<HTMLDivElement>(null);
+  const chatFooterRef = useRef<HTMLDivElement>(null);
   const rawSessionMode = sessionModeBySession[sessionId] || "chat";
   const sessionMode: SessionChatMode =
     rawSessionMode === "ask-drug" ? "drug" : rawSessionMode;
@@ -503,6 +507,105 @@ export default function SessionPage() {
       window.removeEventListener("keydown", handleKeyDown);
     };
   }, [isSourcesPanelOpen]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const visualViewport = window.visualViewport;
+    if (!visualViewport) return;
+
+    let frameId = 0;
+
+    const updateViewportMetrics = () => {
+      const keyboardHeight = Math.max(
+        0,
+        window.innerHeight - visualViewport.height - visualViewport.offsetTop,
+      );
+
+      setViewportHeight(Math.round(visualViewport.height));
+      setIsKeyboardOpen(keyboardHeight > 120);
+    };
+
+    const scheduleViewportUpdate = () => {
+      window.cancelAnimationFrame(frameId);
+      frameId = window.requestAnimationFrame(updateViewportMetrics);
+    };
+
+    scheduleViewportUpdate();
+    visualViewport.addEventListener("resize", scheduleViewportUpdate);
+    visualViewport.addEventListener("scroll", scheduleViewportUpdate);
+    window.addEventListener("orientationchange", scheduleViewportUpdate);
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+      visualViewport.removeEventListener("resize", scheduleViewportUpdate);
+      visualViewport.removeEventListener("scroll", scheduleViewportUpdate);
+      window.removeEventListener("orientationchange", scheduleViewportUpdate);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isKeyboardOpen) return;
+    if (typeof window === "undefined") return;
+
+    const activeElement = document.activeElement;
+    if (!(activeElement instanceof HTMLElement)) return;
+    if (activeElement !== messageInputRef.current) return;
+
+    const target = messages.length === 0
+      ? emptyComposerRef.current
+      : chatFooterRef.current;
+
+    if (!target) return;
+
+    const timeoutId = window.setTimeout(() => {
+      target.scrollIntoView({
+        behavior: "auto",
+        block: "end",
+        inline: "nearest",
+      });
+    }, 50);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [isKeyboardOpen, messages.length]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const scrollComposerIntoView = () => {
+      const target = messages.length === 0
+        ? emptyComposerRef.current
+        : chatFooterRef.current;
+
+      target?.scrollIntoView({
+        behavior: "auto",
+        block: "end",
+        inline: "nearest",
+      });
+    };
+
+    const handleFocusIn = (event: FocusEvent) => {
+      if (event.target !== messageInputRef.current) return;
+
+      const frameId = window.requestAnimationFrame(scrollComposerIntoView);
+      const timeoutId = window.setTimeout(scrollComposerIntoView, 200);
+
+      const cleanup = () => {
+        window.cancelAnimationFrame(frameId);
+        window.clearTimeout(timeoutId);
+        window.removeEventListener("focusout", cleanup);
+      };
+
+      window.addEventListener("focusout", cleanup, { once: true });
+    };
+
+    window.addEventListener("focusin", handleFocusIn);
+    return () => {
+      window.removeEventListener("focusin", handleFocusIn);
+    };
+  }, [messages.length]);
 
   const handleSendMessage = async (content: string) => {
     if (!sessionId) return;
@@ -821,7 +924,7 @@ export default function SessionPage() {
   );
 
   const chatFooter = (
-    <>
+    <div ref={chatFooterRef}>
       <div className="mt-8">
         {!isReadingSources && (
           <div className="mb-2 flex justify-end pr-2">
@@ -949,7 +1052,7 @@ export default function SessionPage() {
           spellCheck={false}
         />
       </div>
-    </>
+    </div>
   );
 
   if (isCheckingAuth) {
@@ -1006,7 +1109,10 @@ export default function SessionPage() {
   }
 
   return (
-    <div className="h-[100dvh] overflow-hidden bg-gray-50 dark:bg-gray-900 flex flex-col">
+    <div
+      className="h-[100dvh] overflow-hidden bg-gray-50 dark:bg-gray-900 flex flex-col"
+      style={viewportHeight ? { height: `${viewportHeight}px` } : undefined}
+    >
       {/* Sticky Header */}
       <div className="sticky top-0 z-40 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
         <Header
@@ -1100,7 +1206,10 @@ export default function SessionPage() {
                 </div>
 
                 {/* Phrase Pills */}
-                <div className="relative flex-shrink-0 mt-4 max-w-4xl mx-auto w-full">
+                <div
+                  ref={emptyComposerRef}
+                  className="relative flex-shrink-0 mt-4 max-w-4xl mx-auto w-full"
+                >
                   {!isReadingSources && (
                     <div className="absolute bottom-full right-2 mb-2 z-20 flex items-center gap-2">
                       <div className="inline-flex items-center gap-2 rounded-full border border-gray-300 bg-white px-3 py-2 text-xs font-medium text-gray-700 shadow-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 sm:text-sm">
