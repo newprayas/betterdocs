@@ -4058,7 +4058,7 @@ Rules:
 
           const medexAnswer = shouldRenderBrandNamesOnly
             ? formatMedexBrandsAnswer(medexPayload, parsed.drug_name)
-            : formatMedexDoseAnswer(medexPayload, {
+            : await formatMedexDoseAnswer(medexPayload, {
                 audience:
                   intent.answerKind === 'dose_with_brands' || isBareDrugNameQuery(content)
                     ? this.resolveRequestedDoseAudience(content)
@@ -4255,7 +4255,7 @@ ${stringifyEntryForPrompt(promptContextForModel)}`;
             promptContext as Record<string, unknown>,
           );
           const prelude = buildDoseResponsePrelude(
-            resolvedDrugName,
+            requestedBrandQuery || parsed.drug_name || resolvedDrugName,
             promptContext as Record<string, unknown>,
             requestedDoseAudience,
             requestedIndicationQuery || null,
@@ -4331,7 +4331,7 @@ ${stringifyEntryForPrompt(promptContextForModel)}`;
             promptContext as Record<string, unknown>,
           );
           const prelude = buildDoseResponsePrelude(
-            resolvedDrugName,
+            requestedBrandQuery || parsed.drug_name || resolvedDrugName,
             promptContext as Record<string, unknown>,
             requestedDoseAudience,
             requestedIndicationQuery || null,

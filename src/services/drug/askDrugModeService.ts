@@ -2496,7 +2496,7 @@ ${JSON.stringify(promptContext, null, 2)}`;
                 'interactions',
               ] satisfies AskDrugRequestedSection[])
             : requestedSections;
-          const medexAnswer = formatMedexSectionAnswer(
+          const medexAnswer = await formatMedexSectionAnswer(
             medexPayload,
             medexSections,
             parsed.drug_name,

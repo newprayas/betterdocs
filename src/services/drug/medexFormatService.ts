@@ -7,6 +7,7 @@ import type {
   MedexSummaryBlock,
 } from '@/types';
 import { buildDrugAudienceActionLink, buildDrugAudienceLinkLabel } from './drugActionLinks';
+import { groqService } from '@/services/groq/groqService';
 
 const PREFERRED_BRAND_COMPANIES = [
   'square',
@@ -65,6 +66,95 @@ const buildDrugActionLink = (
 ): string => `drug-action://dose?drug=${encodeURIComponent(drugName)}&action=${encodeURIComponent(action)}`;
 
 const sectionHeading = (label: string): string => `✅ ${label}`;
+
+const MEDEX_DOSE_LLM_MODEL = 'openai/gpt-oss-120b';
+const MEDEX_DOSE_LLM_CACHE_PREFIX = 'medex-dose-format-v1';
+
+const MEDEX_DOSE_LLM_SYSTEM_PROMPT = `You format MedEx dosage and administration text into clean markdown.
+
+Rules:
+- Use only the source text provided.
+- Do not invent or add any drug information.
+- Preserve all dosage, route, duration, age-group, and administration details.
+- Treat a line as a header only when it is truly standalone and has no real dose text after it on the same line.
+- If a route or formulation name appears again later inside the same block, keep it as body text unless the source clearly starts a new section.
+- Do not repeat the same route header multiple times in one block.
+- Keep adult and child dosing separate when both appear.
+- Output only markdown for the dosage body.
+- Do not add explanations or summaries.`;
+
+const stripMarkdownFences = (value: string): string =>
+  value
+    .replace(/^\s*```(?:markdown|md)?\s*/i, '')
+    .replace(/\s*```\s*$/i, '')
+    .trim();
+
+const preserveSectionText = (value?: string | null): string =>
+  (value || '')
+    .replace(/\r\n/g, '\n')
+    .replace(/\u00a0/g, ' ')
+    .trim();
+
+const buildDoseFormattingPrompt = (payload: MedexResolvedPayload, audience?: 'adult' | 'child'): string => {
+  const genericName = titleCase(
+    compact(payload.summary_above_indications?.generic_name) ||
+      compact(payload.selected_result_title) ||
+      compact(payload.query),
+  );
+  const audienceLine =
+    audience === 'adult'
+      ? 'Keep only adult dosing and adult administration notes.'
+      : audience === 'child'
+        ? 'Keep only child dosing and child administration notes.'
+        : 'Keep all dosing and administration notes.';
+
+  return [
+    `Drug: ${genericName}`,
+    `Selected title: ${compact(payload.selected_result_title) || genericName}`,
+    audienceLine,
+    '',
+    'Source dosage and administration text:',
+    preserveSectionText(payload.sections.dosage_and_administration) || 'Not found in provided source.',
+  ].join('\n');
+};
+
+const formatDoseSectionsWithLlm = async (
+  payload: MedexResolvedPayload,
+  audience?: 'adult' | 'child',
+): Promise<string[]> => {
+  const sourceText = preserveSectionText(payload.sections.dosage_and_administration);
+  if (!sourceText) {
+    return formatDoseSections(payload, audience);
+  }
+
+  try {
+    const response = await groqService.generateResponse(
+      buildDoseFormattingPrompt(payload, audience),
+      MEDEX_DOSE_LLM_SYSTEM_PROMPT,
+      MEDEX_DOSE_LLM_MODEL,
+      {
+        temperature: 0.1,
+        maxTokens: 3000,
+        cacheKeyPrefix: MEDEX_DOSE_LLM_CACHE_PREFIX,
+      },
+    );
+
+    const cleaned = stripMarkdownFences(response);
+    if (!cleaned) {
+      return formatDoseSections(payload, audience);
+    }
+
+    return cleaned
+      .replace(/\r\n/g, '\n')
+      .split('\n')
+      .map((line) => line.replace(/\s+$/g, ''));
+  } catch (error) {
+    console.warn('[MEDEX DOSE FORMAT] LLM formatting failed, falling back to deterministic parser', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return formatDoseSections(payload, audience);
+  }
+};
 
 const block = (title: string, lines: string[]): string => {
   const cleanLines = lines.map((line) => line.replace(/\s+$/g, ''));
@@ -737,19 +827,22 @@ const buildAlternateBrandRows = (rows: MedexAlternateBrandRow[]): AlternateBrand
   return result;
 };
 
-export const formatMedexDoseAnswer = (
+export const formatMedexDoseAnswer = async (
   payload: MedexResolvedPayload,
   options?: { audience?: 'adult' | 'child'; originalQuery?: string },
-): string => {
+): Promise<string> => {
   const genericName = titleCase(resolveGenericName(payload));
+  const doseLinkDrug = stripTrailingFormulation(
+    compact(options?.originalQuery || payload.query || payload.selected_result_title),
+  );
   const headerLead =
     payload.selected_kind === 'brand'
-      ? stripTrailingFormulation(compact(options?.originalQuery || payload.query || payload.selected_result_title)).toUpperCase()
+      ? doseLinkDrug.toUpperCase()
       : genericName.toUpperCase();
   const lines: string[] = [`**${headerLead}** - Generic : **${genericName.toUpperCase()}**`];
 
   if (options?.audience === 'adult') {
-    const childHref = buildDrugAudienceActionLink(resolveGenericName(payload), 'child');
+    const childHref = buildDrugAudienceActionLink(doseLinkDrug || resolveGenericName(payload), 'child');
     const childLabel = buildDrugAudienceLinkLabel('child');
     lines.push(
       '',
@@ -772,7 +865,7 @@ export const formatMedexDoseAnswer = (
     lines.push('', block('❌ Contraindications', formatBulletList(contraindications)));
   }
 
-  lines.push('', block(sectionHeading('Indications and dose'), formatDoseSections(payload, options?.audience)));
+  lines.push('', block(sectionHeading('Indications and dose'), await formatDoseSectionsWithLlm(payload, options?.audience)));
 
   const actionDrug = resolveGenericName(payload);
   if (actionDrug) {
@@ -805,7 +898,10 @@ const mapSectionLabel = (section: AskDrugRequestedSection): string => {
   }
 };
 
-const getSectionBody = (payload: MedexResolvedPayload, section: AskDrugRequestedSection): string[] => {
+const getSectionBody = async (
+  payload: MedexResolvedPayload,
+  section: AskDrugRequestedSection,
+): Promise<string[]> => {
   switch (section) {
     case 'indications_and_dose':
       return [
@@ -815,7 +911,7 @@ const getSectionBody = (payload: MedexResolvedPayload, section: AskDrugRequested
         '',
         sectionHeading('Indications and dose'),
         '',
-        ...formatDoseSections(payload),
+        ...(await formatDoseSectionsWithLlm(payload)),
       ];
     case 'contra_indications':
       return formatBulletList(splitLines(payload.sections.contraindications));
@@ -835,16 +931,16 @@ const getSectionBody = (payload: MedexResolvedPayload, section: AskDrugRequested
   }
 };
 
-export const formatMedexSectionAnswer = (
+export const formatMedexSectionAnswer = async (
   payload: MedexResolvedPayload,
   sections: AskDrugRequestedSection[],
   originalQuery?: string,
-): string => {
+): Promise<string> => {
   const displayTitle = resolveDisplayTitle(payload, originalQuery);
   const blocks = [`## ${displayTitle}`];
 
   for (const section of sections) {
-    const body = getSectionBody(payload, section);
+    const body = await getSectionBody(payload, section);
     if (body.length === 0) continue;
     blocks.push(`### ${mapSectionLabel(section)}`, ...body, '');
   }

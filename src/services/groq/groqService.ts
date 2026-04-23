@@ -32,6 +32,7 @@ type GroqProxyRequest = {
   temperature?: number;
   maxTokens?: number;
   stream?: boolean;
+  cacheKeyPrefix?: string;
 };
 
 export class GroqService {
@@ -175,7 +176,7 @@ export class GroqService {
     prompt: string,
     systemPrompt?: string,
     model?: string,
-    options?: { temperature?: number; maxTokens?: number; timeoutMs?: number }
+    options?: { temperature?: number; maxTokens?: number; timeoutMs?: number; cacheKeyPrefix?: string }
   ): Promise<GroqChatResponse> {
     const response = await this.postToGroqProxy(
       {
@@ -185,6 +186,7 @@ export class GroqService {
         temperature: options?.temperature ?? 0.7,
         maxTokens: options?.maxTokens ?? 4096,
         stream: false,
+        cacheKeyPrefix: options?.cacheKeyPrefix,
       },
       options?.timeoutMs ?? REQUEST_TIMEOUT_MS
     );
@@ -208,7 +210,7 @@ export class GroqService {
     prompt: string,
     systemPrompt?: string,
     model?: string,
-    options?: { temperature?: number; maxTokens?: number; timeoutMs?: number }
+    options?: { temperature?: number; maxTokens?: number; timeoutMs?: number; cacheKeyPrefix?: string }
   ): Promise<string> {
     const completion = await this.requestCompletion(prompt, systemPrompt, model, options);
     return completion.choices?.[0]?.message?.content || '';
@@ -218,7 +220,7 @@ export class GroqService {
     prompt: string,
     systemPrompt?: string,
     model?: string,
-    options?: { temperature?: number; maxTokens?: number; timeoutMs?: number }
+    options?: { temperature?: number; maxTokens?: number; timeoutMs?: number; cacheKeyPrefix?: string }
   ): Promise<string> {
     const completion = await this.requestCompletion(prompt, systemPrompt, model, options);
     return completion.choices?.[0]?.message?.content || '';

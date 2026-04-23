@@ -1,3 +1,5 @@
+import { createHash } from 'crypto';
+import { kv } from '@vercel/kv';
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
 
@@ -18,6 +20,44 @@ type ProxyRequest = {
   temperature?: number;
   maxTokens?: number;
   stream?: boolean;
+  cacheKeyPrefix?: string;
+};
+
+type CachedGroqResponse = {
+  status: number;
+  contentType: string;
+  body: string;
+  cachedAt: string;
+};
+
+const isKvConfigured = (): boolean =>
+  Boolean(
+    (process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN) ||
+      (process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN),
+  );
+
+const buildCacheKey = (prefix: string, body: ProxyRequest): string => {
+  const hash = createHash('sha256');
+  hash.update(prefix);
+  hash.update('\n');
+  hash.update(String(body.prompt || ''));
+  hash.update('\n');
+  hash.update(String(body.systemPrompt || ''));
+  hash.update('\n');
+  hash.update(String(body.model || ''));
+  hash.update('\n');
+  hash.update(String(body.temperature ?? ''));
+  hash.update('\n');
+  hash.update(String(body.maxTokens ?? ''));
+  return `groq:${prefix}:${hash.digest('hex')}`;
+};
+
+const tryParseJson = (text: string): unknown | null => {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
 };
 
 let groqRotationIndex = 0;
@@ -92,6 +132,8 @@ export async function POST(req: NextRequest) {
     const prompt = String(body.prompt || '').trim();
     const stream = Boolean(body.stream);
     const model = (body.model && body.model.trim()) || DEFAULT_MODEL;
+    const cacheKeyPrefix = String(body.cacheKeyPrefix || '').trim();
+    const cacheKey = !stream && cacheKeyPrefix ? buildCacheKey(cacheKeyPrefix, { ...body, prompt, model }) : null;
 
     if (!prompt) {
       return NextResponse.json({ error: 'Prompt is required' }, { status: 400 });
@@ -103,6 +145,31 @@ export async function POST(req: NextRequest) {
         { error: 'Missing Groq API key. Set GROQ_API_1 through GROQ_API_7 in server environment variables.' },
         { status: 500 },
       );
+    }
+
+    if (cacheKey && isKvConfigured()) {
+      const cached = await kv.get<CachedGroqResponse>(cacheKey);
+      if (cached) {
+        const parsed = tryParseJson(cached.body);
+        console.log('[API PROXY] Groq cache hit', {
+          cacheKey,
+          status: cached.status,
+        });
+        if (parsed !== null) {
+          return NextResponse.json(parsed, {
+            status: cached.status,
+            headers: {
+              'content-type': cached.contentType || 'application/json; charset=utf-8',
+            },
+          });
+        }
+        return new NextResponse(cached.body, {
+          status: cached.status,
+          headers: {
+            'content-type': cached.contentType || 'text/plain; charset=utf-8',
+          },
+        });
+      }
     }
 
     const groqApiKey = getNextKey(groqKeys);
@@ -153,6 +220,20 @@ export async function POST(req: NextRequest) {
     const responseText = await groqResponse.text();
     if (!responseText) {
       return NextResponse.json({}, { status: 200 });
+    }
+
+    if (cacheKey && groqResponse.ok && isKvConfigured()) {
+      const cachedResponse: CachedGroqResponse = {
+        status: groqResponse.status,
+        contentType: groqResponse.headers.get('content-type') || 'application/json; charset=utf-8',
+        body: responseText,
+        cachedAt: new Date().toISOString(),
+      };
+      await kv.set(cacheKey, cachedResponse);
+      console.log('[API PROXY] Groq cache stored', {
+        cacheKey,
+        status: cachedResponse.status,
+      });
     }
 
     try {
