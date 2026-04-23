@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { devtools, persist } from 'zustand/middleware';
 import type { ChatStore } from './types';
-import { Message, MessageSender } from '@/types/message';
+import { Message, MessageSender, DrugSuggestionOption } from '@/types/message';
 import { getIndexedDBServices } from '../services/indexedDB';
 import type { ChatStreamEvent } from '../services/rag';
 import { chatPipeline } from '../services/rag/chatPipeline';
@@ -278,6 +278,23 @@ const loadAskDrugModeService = async () =>
 const loadBrandExtractionService = async () =>
   (await import('../services/drug/brandExtractionService')).brandExtractionService;
 
+const normalizeDrugSuggestions = (
+  suggestions?: Array<string | DrugSuggestionOption>,
+): DrugSuggestionOption[] =>
+  (suggestions || []).map((suggestion) =>
+    typeof suggestion === 'string'
+      ? {
+          label: suggestion,
+          query: suggestion,
+          kind: 'search_term',
+        }
+      : {
+          label: suggestion.label,
+          query: suggestion.query,
+          kind: suggestion.kind || 'search_term',
+        },
+  );
+
 export const useChatStore = create<ChatStore>()(
   devtools(
     persist(
@@ -303,6 +320,7 @@ export const useChatStore = create<ChatStore>()(
         rateLimitWaitSeconds: 0,
         sessionModeBySession: {},
         drugSuggestionsBySession: {},
+        pendingExactDrugQueryBySession: {},
         skipNextDrugFollowUpRewriteBySession: {},
         drugContextBySession: {},
 
@@ -446,6 +464,11 @@ export const useChatStore = create<ChatStore>()(
           const rawSessionMode = get().sessionModeBySession[sessionId] || 'chat';
           const sessionMode: SessionChatMode =
             rawSessionMode === 'ask-drug' ? 'drug' : rawSessionMode;
+          const pendingExactDrugQuery = get().pendingExactDrugQueryBySession[sessionId] || null;
+          const forcedDrugName =
+            pendingExactDrugQuery && pendingExactDrugQuery.display === content
+              ? pendingExactDrugQuery.query
+              : '';
 
           try {
             await incrementLocalTrialUsage();
@@ -540,7 +563,7 @@ export const useChatStore = create<ChatStore>()(
 
           const userMessage: Message = {
             id: crypto.randomUUID(),
-            content: effectiveContent,
+            content,
             role: MessageSender.USER,
             timestamp: new Date(),
             sessionId,
@@ -550,11 +573,21 @@ export const useChatStore = create<ChatStore>()(
               ? shouldRouteToDrugMode
                 ? async (onEvent) => {
                     const drugModeService = await loadDrugModeService();
-                    await drugModeService.sendMessage(sessionId, effectiveContent, onEvent);
+                    await drugModeService.sendMessage(
+                      sessionId,
+                      effectiveContent,
+                      onEvent,
+                      forcedDrugName || undefined,
+                    );
                   }
                 : async (onEvent) => {
                     const askDrugModeService = await loadAskDrugModeService();
-                    await askDrugModeService.sendMessage(sessionId, effectiveContent, onEvent);
+                    await askDrugModeService.sendMessage(
+                      sessionId,
+                      effectiveContent,
+                      onEvent,
+                      forcedDrugName || undefined,
+                    );
                   }
               : (onEvent) =>
                   chatPipeline.sendMessage(sessionId, effectiveContent, onEvent, userMessage);
@@ -576,6 +609,8 @@ export const useChatStore = create<ChatStore>()(
               ? null
               : shouldClearDrugContext
                 ? null
+                : forcedDrugName
+                  ? content
                 : reusedPriorDrugForConditionDose && priorDrugContext?.lastDrugName
                   ? priorDrugContext.lastDrugName
                   : explicitDrugContextName;
@@ -599,6 +634,9 @@ export const useChatStore = create<ChatStore>()(
                 ...state.drugSuggestionsBySession,
                 [sessionId]: [],
               },
+              pendingExactDrugQueryBySession: Object.fromEntries(
+                Object.entries(state.pendingExactDrugQueryBySession).filter(([key]) => key !== sessionId),
+              ),
               drugContextBySession:
                 sessionMode === 'drug'
                   ? shouldClearDrugContext
@@ -806,10 +844,11 @@ export const useChatStore = create<ChatStore>()(
                     }
                   })();
                   } else if (event.type === 'suggestions') {
+                    const normalizedSuggestions = normalizeDrugSuggestions(event.suggestions);
                     set((state) => ({
                       drugSuggestionsBySession: {
                         ...state.drugSuggestionsBySession,
-                        [sessionId]: event.suggestions || [],
+                        [sessionId]: normalizedSuggestions,
                       },
                     }));
                   } else if (event.type === 'error') {
@@ -843,6 +882,24 @@ export const useChatStore = create<ChatStore>()(
             userIdLogger.logError('ChatStore.sendMessage', error instanceof Error ? error : String(error), currentUserId);
             failPipeline(error instanceof Error ? error.message : 'Failed to send message');
           }
+        },
+
+        sendDrugSuggestion: async (sessionId: string, suggestion: DrugSuggestionOption) => {
+          if (suggestion.kind === 'exact_title') {
+            set((state) => ({
+              pendingExactDrugQueryBySession: {
+                ...state.pendingExactDrugQueryBySession,
+                [sessionId]: {
+                  display: suggestion.label,
+                  query: suggestion.query,
+                },
+              },
+            }));
+            await get().sendMessage(sessionId, suggestion.label);
+            return;
+          }
+
+          await get().sendMessage(sessionId, suggestion.query);
         },
 
         extractBrandsFromLatestAnswer: async (sessionId: string) => {
@@ -1199,7 +1256,7 @@ export const useChatStore = create<ChatStore>()(
           }));
         },
 
-        setDrugSuggestionsForSession: (sessionId: string, suggestions: string[]) => {
+        setDrugSuggestionsForSession: (sessionId: string, suggestions: DrugSuggestionOption[]) => {
           set((state) => ({
             drugSuggestionsBySession: {
               ...state.drugSuggestionsBySession,

@@ -1,5 +1,5 @@
 import { getIndexedDBServices } from '@/services/indexedDB';
-import type { MedexResolvedPayload } from '@/types';
+import type { DrugSuggestionOption, MedexResolvedPayload } from '@/types';
 
 const MEDEX_HELPER_PORT = 8765;
 const MEDEX_HELPER_HOSTS = ['127.0.0.1', 'localhost'];
@@ -24,6 +24,30 @@ export class MedexNoExactMatchError extends Error {
     this.name = 'MedexNoExactMatchError';
     this.queryName = queryName;
     this.suggestions = suggestions;
+  }
+}
+
+export class MedexFormulationChoiceError extends Error {
+  queryName: string;
+
+  drugName: string;
+
+  suggestions: DrugSuggestionOption[];
+
+  prompt: string;
+
+  constructor(
+    queryName: string,
+    drugName: string,
+    suggestions: DrugSuggestionOption[],
+    prompt: string,
+  ) {
+    super(prompt);
+    this.name = 'MedexFormulationChoiceError';
+    this.queryName = queryName;
+    this.drugName = drugName;
+    this.suggestions = suggestions;
+    this.prompt = prompt;
   }
 }
 
@@ -176,13 +200,26 @@ class MedexBridgeService {
         error?: string;
         code?: string;
         query?: string;
-        suggestions?: string[];
+        drug?: string;
+        suggestions?: unknown[];
+        prompt?: string;
       };
       if (errorPayload.code === 'no_exact_match') {
         throw new MedexNoExactMatchError(
           errorPayload.query || query,
-          Array.isArray(errorPayload.suggestions) ? errorPayload.suggestions : [],
+          Array.isArray(errorPayload.suggestions) ? (errorPayload.suggestions as string[]) : [],
           errorPayload.error || 'No exact MedEx match found',
+        );
+      }
+      if (errorPayload.code === 'formulation_choice_required') {
+        throw new MedexFormulationChoiceError(
+          errorPayload.query || query,
+          errorPayload.drug || errorPayload.query || query,
+          Array.isArray(errorPayload.suggestions)
+            ? (errorPayload.suggestions as DrugSuggestionOption[])
+            : [],
+          errorPayload.prompt ||
+            `There are many formulations for drug **${errorPayload.drug || errorPayload.query || query}**.\n\nWhich one do you want info for?`,
         );
       }
       throw new Error(errorPayload.error || 'MedEx query failed');
@@ -242,13 +279,26 @@ class MedexBridgeService {
             error?: string;
             code?: string;
             query?: string;
-            suggestions?: string[];
+            drug?: string;
+            suggestions?: unknown[];
+            prompt?: string;
           };
           if (errorPayload.code === 'no_exact_match') {
             throw new MedexNoExactMatchError(
               errorPayload.query || trimmedQuery,
-              Array.isArray(errorPayload.suggestions) ? errorPayload.suggestions : [],
+              Array.isArray(errorPayload.suggestions) ? (errorPayload.suggestions as string[]) : [],
               errorPayload.error || 'No exact MedEx match found',
+            );
+          }
+          if (errorPayload.code === 'formulation_choice_required') {
+            throw new MedexFormulationChoiceError(
+              errorPayload.query || trimmedQuery,
+              errorPayload.drug || errorPayload.query || trimmedQuery,
+              Array.isArray(errorPayload.suggestions)
+                ? (errorPayload.suggestions as DrugSuggestionOption[])
+                : [],
+              errorPayload.prompt ||
+                `There are many formulations for drug **${errorPayload.drug || errorPayload.query || trimmedQuery}**.\n\nWhich one do you want info for?`,
             );
           }
           throw new Error(errorPayload.error || 'MedEx query failed');
@@ -287,3 +337,6 @@ export const isMedexHelperUnavailableError = (error: unknown): boolean =>
 
 export const isMedexNoExactMatchError = (error: unknown): error is MedexNoExactMatchError =>
   error instanceof MedexNoExactMatchError;
+
+export const isMedexFormulationChoiceError = (error: unknown): error is MedexFormulationChoiceError =>
+  error instanceof MedexFormulationChoiceError;

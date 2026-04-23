@@ -8,6 +8,7 @@ import {
   decorateIndicationLinks,
 } from './drugActionLinks';
 import {
+  isMedexFormulationChoiceError,
   isMedexHelperUnavailableError,
   isMedexNoExactMatchError,
   medexBridgeService,
@@ -393,6 +394,56 @@ const QUERY_DRUG_NAME_PREFIX_PATTERNS = [
 const QUERY_DRUG_NAME_SUFFIX_PATTERNS = [
   /\s+(?:dose|doses|dosage|dosing|regimen|schedule|brands?|brand\s*names?|trade\s*names?|price|prices|cost|costs|indications?|uses?|side[\s-]?effects?|contra[\s-]?indications?|cautions?|pregnancy|breast[\s-]?feeding|renal(?:\s+dose|\s+impairment)?|hepatic(?:\s+dose|\s+impairment)?|safety(?:\s+information)?|details?|full details?|all about|everything)\s*$/i,
 ];
+
+const DRUG_QUERY_FORMULATION_SUFFIXES = [
+  'respiratory inhaler',
+  'eye drops',
+  'eye drop',
+  'ear drops',
+  'ear drop',
+  'nasal drops',
+  'nasal drop',
+  'powder for suspension',
+  'oral suspension',
+  'suppository',
+  'suspension',
+  'inhalation',
+  'inhaler',
+  'injection',
+  'infusion',
+  'capsule',
+  'tablet',
+  'ointment',
+  'lotion',
+  'cream',
+  'spray',
+  'drops',
+  'drop',
+  'syrup',
+  'gel',
+] as const;
+
+const extractDrugQueryFormulationSuffix = (value: string): string => {
+  const normalized = compactField(value)?.toLowerCase() || '';
+  if (!normalized) return '';
+
+  for (const suffix of DRUG_QUERY_FORMULATION_SUFFIXES) {
+    if (normalized.endsWith(suffix)) return suffix;
+  }
+
+  return '';
+};
+
+const extractExplicitFormulationDrugName = (content: string): string => {
+  const cleaned = sanitizeParsedDrugName(normalizeDrugQueryText(content));
+  const formulationSuffix = extractDrugQueryFormulationSuffix(cleaned);
+  if (!formulationSuffix) return '';
+
+  const baseDrugName = cleaned.slice(0, cleaned.length - formulationSuffix.length).trim();
+  if (!isPlausibleDrugName(baseDrugName)) return '';
+
+  return canonicalizeDrugQueryCase(cleaned);
+};
 
 const normalizeDrugIntentTypos = (value: string): string =>
   value
@@ -2674,9 +2725,11 @@ Rules:
     const parserDrugName = sanitizeParsedDrugName(
       String(parsed.drug_name || recovered.drug_name || ''),
     );
+    const explicitFormulationDrugName = extractExplicitFormulationDrugName(content);
     const inferredDrugName = inferDrugNameFromRawQuery(content);
     const bareQueryDrugName = isBareDrugNameQuery(content) ? canonicalizeDrugQueryCase(content) : '';
-    const resolvedDrugName = parserDrugName || inferredDrugName || bareQueryDrugName;
+    const resolvedDrugName =
+      explicitFormulationDrugName || parserDrugName || inferredDrugName || bareQueryDrugName;
     const parserRequestedIndication = stripTrailingRequestedDoseAudience(
       sanitizeRequestedIndication(
         String(parsed.requested_indication || recovered.requested_indication || ''),
@@ -4035,6 +4088,7 @@ Rules:
     sessionId: string,
     content: string,
     onStreamEvent?: (event: ChatStreamEvent) => void,
+    forcedDrugName?: string,
   ): Promise<void> {
     console.log('[DRUG MODE]', 'Starting drug mode pipeline', {
       sessionId,
@@ -4047,6 +4101,9 @@ Rules:
         message: 'Drug Query Parsing',
       });
       const parsed = await this.parseDrugQuery(content);
+      if (forcedDrugName?.trim()) {
+        parsed.drug_name = forcedDrugName.trim();
+      }
       const intent = await this.resolveDrugQueryIntent(content);
 
       if (parsed.drug_name.trim()) {
@@ -4098,6 +4155,21 @@ Rules:
           });
           return;
         } catch (error) {
+          if (isMedexFormulationChoiceError(error)) {
+            if (error.suggestions.length > 0) {
+              onStreamEvent?.({
+                type: 'suggestions',
+                suggestions: error.suggestions,
+              });
+            }
+            await this.saveAssistantMessage(sessionId, error.prompt);
+            onStreamEvent?.({
+              type: 'done',
+              content: error.prompt,
+            });
+            return;
+          }
+
           if (isMedexNoExactMatchError(error)) {
             const noMatchMessage = this.buildNoMatchMessage(
               content,

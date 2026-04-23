@@ -1,6 +1,10 @@
 import { kv } from '@vercel/kv';
 import { NextRequest, NextResponse } from 'next/server';
-import { buildMedexPayload, MedexServerNoExactMatchError } from '@/services/drug/medexServerService';
+import {
+  buildMedexPayload,
+  MedexServerFormulationChoiceError,
+  MedexServerNoExactMatchError,
+} from '@/services/drug/medexServerService';
 import type { MedexResolvedPayload } from '@/types';
 
 export const runtime = 'nodejs';
@@ -90,6 +94,20 @@ export async function GET(req: NextRequest) {
           suggestions: error.suggestions,
         },
         { status: 404 },
+      );
+    }
+
+    if (error instanceof MedexServerFormulationChoiceError) {
+      return NextResponse.json(
+        {
+          error: error.message,
+          code: 'formulation_choice_required',
+          query: error.queryName,
+          drug: error.drugName,
+          suggestions: error.suggestions,
+          prompt: error.prompt,
+        },
+        { status: 409 },
       );
     }
 

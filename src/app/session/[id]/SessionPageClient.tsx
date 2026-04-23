@@ -207,6 +207,7 @@ export default function SessionPage() {
     messages,
     isLoading: messagesLoading,
     sendMessage,
+    sendDrugSuggestion,
     clearHistory,
     isStreaming,
     isReadingSources,
@@ -252,7 +253,10 @@ export default function SessionPage() {
     rawSessionMode === "ask-drug" ? "drug" : rawSessionMode;
   const isDrugModeEnabled = sessionMode === "drug";
   const isDatasetModeEnabled = sessionMode !== "chat";
-  const drugSuggestionPhrases = drugSuggestionsBySession[sessionId] || [];
+  const drugSuggestionOptions = drugSuggestionsBySession[sessionId] || [];
+  const drugSuggestionPhrases = drugSuggestionOptions.map(
+    (suggestion) => suggestion.label,
+  );
   const lastDrugContextName =
     drugContextBySession[sessionId]?.lastDrugName || "";
   const latestUserMessageForSession = useMemo(
@@ -627,12 +631,27 @@ export default function SessionPage() {
   const handlePhraseSelect = useCallback(
     (phrase: string) => {
       if (isDatasetModeEnabled) {
-        const nextValue = drugSuggestionPhrases.includes(phrase)
-          ? buildDrugSuggestionFollowUpQuery(
-              latestUserMessageForSession,
-              phrase,
-            )
-          : buildDrugActionPillQuery(phrase, lastDrugContextName);
+        const selectedSuggestion = drugSuggestionOptions.find(
+          (suggestion) => suggestion.label === phrase,
+        );
+        if (selectedSuggestion) {
+          if (selectedSuggestion.kind === "exact_title") {
+            void sendDrugSuggestion(sessionId, selectedSuggestion);
+            return;
+          }
+
+          const nextValue = buildDrugSuggestionFollowUpQuery(
+            latestUserMessageForSession,
+            selectedSuggestion.query,
+          );
+          messageInputControllerRef.current?.setValue(nextValue);
+          requestAnimationFrame(() => {
+            messageInputControllerRef.current?.focusToEnd();
+          });
+          return;
+        }
+
+        const nextValue = buildDrugActionPillQuery(phrase, lastDrugContextName);
         messageInputControllerRef.current?.setValue(nextValue);
         requestAnimationFrame(() => {
           messageInputControllerRef.current?.focusToEnd();
@@ -652,10 +671,13 @@ export default function SessionPage() {
       });
     },
     [
+      drugSuggestionOptions,
       drugSuggestionPhrases,
       isDatasetModeEnabled,
       lastDrugContextName,
       latestUserMessageForSession,
+      sendDrugSuggestion,
+      sessionId,
     ],
   );
 

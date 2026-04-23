@@ -1,5 +1,6 @@
 import * as cheerio from 'cheerio';
 import type {
+  DrugSuggestionOption,
   MedexAlternateBrandGroup,
   MedexAlternateBrandRow,
   MedexBrandCard,
@@ -87,11 +88,45 @@ export class MedexServerNoExactMatchError extends Error {
   }
 }
 
+export class MedexServerFormulationChoiceError extends Error {
+  queryName: string;
+
+  drugName: string;
+
+  suggestions: DrugSuggestionOption[];
+
+  prompt: string;
+
+  constructor(
+    queryName: string,
+    drugName: string,
+    suggestions: DrugSuggestionOption[],
+    prompt?: string,
+  ) {
+    super(prompt || `Multiple formulations found for '${drugName}'`);
+    this.name = 'MedexServerFormulationChoiceError';
+    this.queryName = queryName;
+    this.drugName = drugName;
+    this.suggestions = suggestions;
+    this.prompt =
+      prompt ||
+      `There are many formulations for drug **${drugName}**.\n\nWhich one do you want info for?`;
+  }
+}
+
 const clean = (text?: string | null): string | null => {
   if (text == null) return null;
   const value = text.replace(/\s+/g, ' ').trim();
   return value || null;
 };
+
+const titleCase = (value: string): string =>
+  value
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
 
 const normalizeBrand = (text?: string | null): string =>
   (clean(text) || '')
@@ -137,6 +172,146 @@ const scoreDosageForm = (title?: string | null): [number, string] => {
     }
   }
   return [PREFERRED_DOSAGE_FORMS.length, dosageForm];
+};
+
+type FormulationChoiceRule = {
+  key: string;
+  display: string;
+  aliases: string[];
+  autoSelect: boolean;
+};
+
+const FORMULATION_CHOICE_RULES: FormulationChoiceRule[] = [
+  { key: 'tablet', display: 'Tablet', aliases: ['tablet', 'tab'], autoSelect: true },
+  { key: 'capsule', display: 'Capsule', aliases: ['capsule', 'cap'], autoSelect: true },
+  {
+    key: 'suspension',
+    display: 'Suspension',
+    aliases: ['powder for suspension', 'oral suspension', 'suspension', 'suspn'],
+    autoSelect: true,
+  },
+  { key: 'syrup', display: 'Syrup', aliases: ['syrup'], autoSelect: true },
+  {
+    key: 'injection',
+    display: 'Injection',
+    aliases: ['im/iv injection', 'iv injection', 'intravenous injection', 'intramuscular injection', 'injection', 'inj', 'ampoule', 'amp'],
+    autoSelect: true,
+  },
+  { key: 'infusion', display: 'Infusion', aliases: ['infusion'], autoSelect: true },
+  { key: 'suppository', display: 'Suppository', aliases: ['suppository', 'supp'], autoSelect: true },
+  { key: 'eye_drop', display: 'Eye Drop', aliases: ['eye drop', 'eye drops', 'ophthalmic'], autoSelect: false },
+  { key: 'ear_drop', display: 'Ear Drop', aliases: ['ear drop', 'ear drops', 'otic'], autoSelect: false },
+  { key: 'nasal_drop', display: 'Nasal Drop', aliases: ['nasal drop', 'nasal drops'], autoSelect: false },
+  { key: 'drops', display: 'Drops', aliases: ['pediatric drop', 'paediatric drop', 'drops', 'drop'], autoSelect: false },
+  { key: 'inhaler', display: 'Inhaler', aliases: ['respiratory inhaler', 'inhaler', 'inhalation'], autoSelect: false },
+  { key: 'gel', display: 'Gel', aliases: ['gel'], autoSelect: false },
+  { key: 'cream', display: 'Cream', aliases: ['cream'], autoSelect: false },
+  { key: 'ointment', display: 'Ointment', aliases: ['ointment'], autoSelect: false },
+  { key: 'lotion', display: 'Lotion', aliases: ['lotion'], autoSelect: false },
+  { key: 'spray', display: 'Spray', aliases: ['spray'], autoSelect: false },
+];
+
+const sortAliasesByLength = (aliases: string[]): string[] =>
+  [...aliases].sort((left, right) => right.length - left.length);
+
+const detectFormulationRule = (value?: string | null): FormulationChoiceRule | null => {
+  const normalized = normalizeChoiceText(value);
+  if (!normalized) return null;
+
+  for (const rule of FORMULATION_CHOICE_RULES) {
+    if (rule.aliases.some((alias) => normalized.includes(alias))) {
+      return rule;
+    }
+  }
+
+  return null;
+};
+
+const resolveFormulationChoice = (
+  value?: string | null,
+): { key: string; display: string; autoSelect: boolean } => {
+  const cleaned = clean(value) || '';
+  const rule = detectFormulationRule(cleaned);
+  if (rule) {
+    return {
+      key: rule.key,
+      display: rule.display,
+      autoSelect: rule.autoSelect,
+    };
+  }
+
+  return {
+    key: normalizeChoiceText(cleaned) || 'unknown',
+    display: titleCase(cleaned || 'Unknown Formulation'),
+    autoSelect: false,
+  };
+};
+
+const extractQueryBrandAndFormulation = (
+  query: string,
+): { baseBrandQuery: string; hintedFormulationKey?: string } => {
+  const compactQuery = clean(query)?.replace(/\(([^()]*)\)\s*$/g, ' $1') || '';
+  const normalizedQuery = normalizeChoiceText(compactQuery);
+  if (!normalizedQuery) {
+    return { baseBrandQuery: '' };
+  }
+
+  for (const rule of FORMULATION_CHOICE_RULES) {
+    for (const alias of sortAliasesByLength(rule.aliases)) {
+      if (!normalizedQuery.endsWith(alias)) continue;
+      const baseCandidate = compactQuery.slice(0, compactQuery.length - alias.length).trim();
+      const normalizedBaseCandidate = normalizeBrand(baseCandidate.replace(/[(),]+$/g, '').trim());
+      if (normalizedBaseCandidate) {
+        return {
+          baseBrandQuery: normalizedBaseCandidate,
+          hintedFormulationKey: rule.key,
+        };
+      }
+    }
+  }
+
+  return {
+    baseBrandQuery: normalizeBrand(compactQuery),
+  };
+};
+
+const pickPreferredBrandResult = (items: SearchResult[]): SearchResult => {
+  return [...items].sort((left, right) => {
+    const companyDelta = scoreCompany(left.manufacturer)[0] - scoreCompany(right.manufacturer)[0];
+    if (companyDelta !== 0) return companyDelta;
+    const dosageDelta = scoreDosageForm(left.title)[0] - scoreDosageForm(right.title)[0];
+    if (dosageDelta !== 0) return dosageDelta;
+    return items.indexOf(left) - items.indexOf(right);
+  })[0];
+};
+
+const buildFormulationSuggestions = (
+  brandName: string,
+  matches: SearchResult[],
+): DrugSuggestionOption[] => {
+  const grouped = new Map<string, { display: string; items: SearchResult[] }>();
+
+  for (const item of matches) {
+    const formulation = resolveFormulationChoice(extractDosageFormFromTitle(item.title));
+    const bucket = grouped.get(formulation.key) || { display: formulation.display, items: [] };
+    bucket.items.push(item);
+    grouped.set(formulation.key, bucket);
+  }
+
+  return [...grouped.values()]
+    .sort((left, right) => {
+      const leftPreferred = pickPreferredBrandResult(left.items);
+      const rightPreferred = pickPreferredBrandResult(right.items);
+      return scoreDosageForm(leftPreferred.title)[0] - scoreDosageForm(rightPreferred.title)[0];
+    })
+    .map((group) => {
+      const selected = pickPreferredBrandResult(group.items);
+      return {
+        label: `${brandName} ${group.display}`,
+        query: selected.title,
+        kind: 'exact_title' as const,
+      };
+    });
 };
 
 const toAbsoluteUrl = (href?: string | null): string | null => {
@@ -230,12 +405,23 @@ const resolveSelectedResult = (
 
   const genericResults = results.filter((item) => item.kind === 'generic');
   const brandResults = results.filter((item) => item.kind === 'brand');
-  const queryBrand = normalizeBrand(query);
   const queryChoice = normalizeChoiceText(query);
+  const exactTitleMatches = results.filter((item) => normalizeChoiceText(item.title) === queryChoice);
+  if (exactTitleMatches.length > 0) {
+    const selected = pickPreferredBrandResult(exactTitleMatches);
+    return {
+      selected,
+      kind: selected.kind,
+    };
+  }
+
+  const { baseBrandQuery, hintedFormulationKey } = extractQueryBrandAndFormulation(query);
+  const queryBrand = baseBrandQuery || normalizeBrand(query);
 
   const exactGenericMatches = genericResults.filter(
     (item) =>
-      normalizeChoiceText(item.title) === queryChoice || normalizeBrand(item.title) === queryBrand,
+      !hintedFormulationKey &&
+      (normalizeChoiceText(item.title) === queryChoice || normalizeBrand(item.title) === queryBrand),
   );
   if (exactGenericMatches.length > 0) {
     return { selected: exactGenericMatches[0], kind: 'generic' };
@@ -247,13 +433,44 @@ const resolveSelectedResult = (
       normalizeChoiceText(displayBrandName(item.title)) === queryChoice,
   );
   if (exactBrandMatches.length > 0) {
-    const selected = [...exactBrandMatches].sort((left, right) => {
-      const companyDelta = scoreCompany(left.manufacturer)[0] - scoreCompany(right.manufacturer)[0];
-      if (companyDelta !== 0) return companyDelta;
-      const dosageDelta = scoreDosageForm(left.title)[0] - scoreDosageForm(right.title)[0];
-      if (dosageDelta !== 0) return dosageDelta;
-      return exactBrandMatches.indexOf(left) - exactBrandMatches.indexOf(right);
-    })[0];
+    if (hintedFormulationKey) {
+      const hintedMatches = exactBrandMatches.filter(
+        (item) => resolveFormulationChoice(extractDosageFormFromTitle(item.title)).key === hintedFormulationKey,
+      );
+      if (hintedMatches.length > 0) {
+        return { selected: pickPreferredBrandResult(hintedMatches), kind: 'brand' };
+      }
+    }
+
+    const uniqueFormulations = new Map<
+      string,
+      { display: string; autoSelect: boolean; items: SearchResult[] }
+    >();
+    for (const item of exactBrandMatches) {
+      const formulation = resolveFormulationChoice(extractDosageFormFromTitle(item.title));
+      const bucket = uniqueFormulations.get(formulation.key) || {
+        display: formulation.display,
+        autoSelect: formulation.autoSelect,
+        items: [],
+      };
+      bucket.items.push(item);
+      uniqueFormulations.set(formulation.key, bucket);
+    }
+
+    if (uniqueFormulations.size > 1) {
+      const formulations = [...uniqueFormulations.values()];
+      const shouldPromptForFormulation = formulations.some((item) => !item.autoSelect);
+      if (shouldPromptForFormulation) {
+        const drugName = displayBrandName(exactBrandMatches[0]?.title) || clean(query) || query;
+        throw new MedexServerFormulationChoiceError(
+          query,
+          drugName,
+          buildFormulationSuggestions(drugName, exactBrandMatches),
+        );
+      }
+    }
+
+    const selected = pickPreferredBrandResult(exactBrandMatches);
     return { selected, kind: 'brand' };
   }
 

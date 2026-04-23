@@ -1,5 +1,5 @@
 import type { Session, SessionCreate, SessionUpdate, SessionChatMode } from '@/types';
-import type { Message, ChatStreamEvent } from '@/types';
+import type { Message, ChatStreamEvent, DrugSuggestionOption } from '@/types';
 import type { Document, DocumentUpdate, DocumentProgress } from '@/types';
 import type { AppSettings, SettingsUpdate } from '@/types';
 import type { SavedAnswer } from '@/types';
@@ -46,7 +46,14 @@ export interface ChatStore {
   isRateLimited: boolean;
   rateLimitWaitSeconds: number;
   sessionModeBySession: Record<string, SessionChatMode>;
-  drugSuggestionsBySession: Record<string, string[]>;
+  drugSuggestionsBySession: Record<string, DrugSuggestionOption[]>;
+  pendingExactDrugQueryBySession: Record<
+    string,
+    {
+      display: string;
+      query: string;
+    }
+  >;
   skipNextDrugFollowUpRewriteBySession: Record<string, boolean>;
   drugContextBySession: Record<
     string,
@@ -60,6 +67,7 @@ export interface ChatStore {
   loadMessages: (sessionId: string) => Promise<void>;
   preloadMessages: (sessionIds: string[]) => Promise<void>;
   sendMessage: (sessionId: string, content: string) => Promise<void>;
+  sendDrugSuggestion: (sessionId: string, suggestion: DrugSuggestionOption) => Promise<void>;
   extractBrandsFromLatestAnswer: (sessionId: string) => Promise<void>;
   clearHistory: (sessionId: string) => Promise<void>;
   setStreamingState: (isStreaming: boolean, content?: string, citations?: any[]) => void;
@@ -74,7 +82,7 @@ export interface ChatStore {
   setRateLimitState: (isLimited: boolean, waitSeconds: number) => void;
   recordQuestion: () => void;
   setSessionModeForSession: (sessionId: string, mode: SessionChatMode) => void;
-  setDrugSuggestionsForSession: (sessionId: string, suggestions: string[]) => void;
+  setDrugSuggestionsForSession: (sessionId: string, suggestions: DrugSuggestionOption[]) => void;
   clearDrugSuggestionsForSession: (sessionId: string) => void;
   markSkipNextDrugFollowUpRewriteForSession: (sessionId: string) => void;
   getSessionMode: (sessionId: string) => SessionChatMode;

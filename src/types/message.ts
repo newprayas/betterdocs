@@ -36,10 +36,16 @@ export interface ChatRequest {
   message: string;
 }
 
+export interface DrugSuggestionOption {
+  label: string;
+  query: string;
+  kind?: 'search_term' | 'exact_title';
+}
+
 export interface ChatStreamEvent {
   type: 'userMessage' | 'status' | 'citations' | 'textChunk' | 'done' | 'error' | 'suggestions';
   message?: string;
   citations?: Citation[];
-  suggestions?: string[];
+  suggestions?: Array<string | DrugSuggestionOption>;
   content?: string;
 }

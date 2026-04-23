@@ -57,12 +57,73 @@ PREFERRED_DOSAGE_FORMS = [
     "drops",
 ]
 
+FORMULATION_CHOICE_RULES: list[dict[str, Any]] = [
+    {"key": "tablet", "display": "Tablet", "aliases": ["tablet", "tab"], "auto_select": True},
+    {"key": "capsule", "display": "Capsule", "aliases": ["capsule", "cap"], "auto_select": True},
+    {
+        "key": "suspension",
+        "display": "Suspension",
+        "aliases": ["powder for suspension", "oral suspension", "suspension", "suspn"],
+        "auto_select": True,
+    },
+    {"key": "syrup", "display": "Syrup", "aliases": ["syrup"], "auto_select": True},
+    {
+        "key": "injection",
+        "display": "Injection",
+        "aliases": [
+            "im/iv injection",
+            "iv injection",
+            "intravenous injection",
+            "intramuscular injection",
+            "injection",
+            "inj",
+            "ampoule",
+            "amp",
+        ],
+        "auto_select": True,
+    },
+    {"key": "infusion", "display": "Infusion", "aliases": ["infusion"], "auto_select": True},
+    {"key": "suppository", "display": "Suppository", "aliases": ["suppository", "supp"], "auto_select": True},
+    {"key": "eye_drop", "display": "Eye Drop", "aliases": ["eye drop", "eye drops", "ophthalmic"], "auto_select": False},
+    {"key": "ear_drop", "display": "Ear Drop", "aliases": ["ear drop", "ear drops", "otic"], "auto_select": False},
+    {"key": "nasal_drop", "display": "Nasal Drop", "aliases": ["nasal drop", "nasal drops"], "auto_select": False},
+    {
+        "key": "drops",
+        "display": "Drops",
+        "aliases": ["pediatric drop", "paediatric drop", "drops", "drop"],
+        "auto_select": False,
+    },
+    {
+        "key": "inhaler",
+        "display": "Inhaler",
+        "aliases": ["respiratory inhaler", "inhaler", "inhalation"],
+        "auto_select": False,
+    },
+    {"key": "gel", "display": "Gel", "aliases": ["gel"], "auto_select": False},
+    {"key": "cream", "display": "Cream", "aliases": ["cream"], "auto_select": False},
+    {"key": "ointment", "display": "Ointment", "aliases": ["ointment"], "auto_select": False},
+    {"key": "lotion", "display": "Lotion", "aliases": ["lotion"], "auto_select": False},
+    {"key": "spray", "display": "Spray", "aliases": ["spray"], "auto_select": False},
+]
+
 
 class MedexSuggestionLookupError(LookupError):
     def __init__(self, query: str, suggestions: list[str]) -> None:
         self.query = query
         self.suggestions = suggestions
         super().__init__(f"No exact MedEx result found for '{query}'")
+
+
+class MedexFormulationChoiceError(LookupError):
+    def __init__(self, query: str, drug: str, suggestions: list[dict[str, str]], prompt: str | None = None) -> None:
+        self.query = query
+        self.drug = drug
+        self.suggestions = suggestions
+        self.prompt = (
+            prompt
+            or f'There are many formulations for drug **{drug}**.\n\nWhich one do you want info for?'
+        )
+        super().__init__(self.prompt)
 
 
 def normalize_company(text: str | None) -> str:
@@ -114,6 +175,84 @@ def pick_preferred(items: list[dict[str, Any]]) -> dict[str, Any] | None:
     return ranked[0]
 
 
+def title_case(value: str) -> str:
+    return " ".join(part[:1].upper() + part[1:] for part in value.strip().split() if part)
+
+
+def detect_formulation_rule(value: str | None) -> dict[str, Any] | None:
+    normalized = normalize_choice_text(value or "")
+    if not normalized:
+        return None
+
+    for rule in FORMULATION_CHOICE_RULES:
+        if any(alias in normalized for alias in rule["aliases"]):
+            return rule
+
+    return None
+
+
+def resolve_formulation_choice(value: str | None) -> dict[str, Any]:
+    cleaned = clean(value or "") or ""
+    matched = detect_formulation_rule(cleaned)
+    if matched:
+        return {
+            "key": matched["key"],
+            "display": matched["display"],
+            "auto_select": matched["auto_select"],
+        }
+
+    normalized = normalize_choice_text(cleaned) or "unknown"
+    return {
+        "key": normalized,
+        "display": title_case(cleaned or "Unknown Formulation"),
+        "auto_select": False,
+    }
+
+
+def extract_query_brand_and_formulation(query: str) -> tuple[str, str | None]:
+    compact_query = (clean(query) or "").replace("(", " ").replace(")", " ").strip()
+    normalized_query = normalize_choice_text(compact_query)
+    if not normalized_query:
+        return "", None
+
+    for rule in FORMULATION_CHOICE_RULES:
+        for alias in sorted(rule["aliases"], key=len, reverse=True):
+            if not normalized_query.endswith(alias):
+                continue
+            base_candidate = compact_query[: len(compact_query) - len(alias)].strip().rstrip(",() ")
+            normalized_base = normalize_brand(base_candidate)
+            if normalized_base:
+                return normalized_base, rule["key"]
+
+    return normalize_brand(compact_query), None
+
+
+def build_formulation_suggestions(brand_name: str, matches: list[dict[str, Any]]) -> list[dict[str, str]]:
+    grouped: dict[str, dict[str, Any]] = {}
+
+    for item in matches:
+        formulation = resolve_formulation_choice(extract_dosage_form_from_title(item.get("title")))
+        bucket = grouped.get(formulation["key"]) or {
+            "display": formulation["display"],
+            "items": [],
+        }
+        bucket["items"].append(item)
+        grouped[formulation["key"]] = bucket
+
+    ranked_groups = sorted(
+        grouped.values(),
+        key=lambda bucket: score_dosage_form(pick_preferred(bucket["items"]).get("title"))[0],
+    )
+    return [
+        {
+            "label": f'{brand_name} {bucket["display"]}',
+            "query": pick_preferred(bucket["items"]).get("title") or f'{brand_name} {bucket["display"]}',
+            "kind": "exact_title",
+        }
+        for bucket in ranked_groups
+    ]
+
+
 def build_result_suggestions(results: list[dict[str, Any]], limit: int = 8) -> list[str]:
     suggestions: list[str] = []
     seen: set[str] = set()
@@ -138,14 +277,26 @@ def resolve_selected_result(results: list[dict[str, Any]], query: str) -> tuple[
 
     generic_results = [item for item in results if item.get("kind") == "generic"]
     brand_results = [item for item in results if item.get("kind") == "brand"]
-    query_brand = normalize_brand(query)
     query_choice = normalize_choice_text(query)
+    exact_title_matches = [
+        item for item in results if normalize_choice_text(item.get("title")) == query_choice
+    ]
+    if exact_title_matches:
+        selected = pick_preferred(exact_title_matches)
+        if not selected:
+            raise LookupError("No MedEx results found")
+        return selected, selected.get("kind") or "brand"
+
+    query_brand, hinted_formulation_key = extract_query_brand_and_formulation(query)
 
     exact_generic_matches = [
         item
         for item in generic_results
-        if normalize_choice_text(item.get("title")) == query_choice
-        or normalize_brand(item.get("title")) == query_brand
+        if not hinted_formulation_key
+        and (
+            normalize_choice_text(item.get("title")) == query_choice
+            or normalize_brand(item.get("title")) == query_brand
+        )
     ]
     if exact_generic_matches:
         return exact_generic_matches[0], "generic"
@@ -157,14 +308,43 @@ def resolve_selected_result(results: list[dict[str, Any]], query: str) -> tuple[
         or normalize_choice_text(display_brand_name(item.get("title"))) == query_choice
     ]
     if exact_brand_matches:
-        selected = sorted(
-            exact_brand_matches,
-            key=lambda item: (
-                score_company(item.get("manufacturer"))[0],
-                score_dosage_form(item.get("title"))[0],
-                exact_brand_matches.index(item),
-            ),
-        )[0]
+        if hinted_formulation_key:
+            hinted_matches = [
+                item
+                for item in exact_brand_matches
+                if resolve_formulation_choice(extract_dosage_form_from_title(item.get("title")))["key"]
+                == hinted_formulation_key
+            ]
+            if hinted_matches:
+                selected = pick_preferred(hinted_matches)
+                if not selected:
+                    raise LookupError("No MedEx results found")
+                return selected, "brand"
+
+        grouped_formulations: dict[str, dict[str, Any]] = {}
+        for item in exact_brand_matches:
+            formulation = resolve_formulation_choice(extract_dosage_form_from_title(item.get("title")))
+            bucket = grouped_formulations.get(formulation["key"]) or {
+                "display": formulation["display"],
+                "auto_select": formulation["auto_select"],
+                "items": [],
+            }
+            bucket["items"].append(item)
+            grouped_formulations[formulation["key"]] = bucket
+
+        if len(grouped_formulations) > 1:
+            should_prompt = any(not bucket["auto_select"] for bucket in grouped_formulations.values())
+            if should_prompt:
+                drug_name = display_brand_name(exact_brand_matches[0].get("title") or "") or clean(query) or query
+                raise MedexFormulationChoiceError(
+                    query,
+                    drug_name,
+                    build_formulation_suggestions(drug_name, exact_brand_matches),
+                )
+
+        selected = pick_preferred(exact_brand_matches)
+        if not selected:
+            raise LookupError("No MedEx results found")
         return selected, "brand"
 
     suggestions = build_result_suggestions(results)
@@ -297,6 +477,20 @@ class MedexLocalHandler(BaseHTTPRequestHandler):
                         "code": "no_exact_match",
                         "query": error.query,
                         "suggestions": error.suggestions,
+                    }
+                ).encode("utf-8")
+            )
+        except MedexFormulationChoiceError as error:
+            self._set_headers(409)
+            self.wfile.write(
+                json.dumps(
+                    {
+                        "error": str(error),
+                        "code": "formulation_choice_required",
+                        "query": error.query,
+                        "drug": error.drug,
+                        "suggestions": error.suggestions,
+                        "prompt": error.prompt,
                     }
                 ).encode("utf-8")
             )

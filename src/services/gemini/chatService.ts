@@ -2,6 +2,7 @@ import { geminiService } from './geminiService';
 import type { Message } from '@/types/message';
 import type { VectorSearchResult } from '@/types/embedding';
 import type { AppSettings } from '@/types/settings';
+import type { DrugSuggestionOption } from '@/types/message';
 
 export interface ChatStreamEvent {
   type: 'start' | 'chunk' | 'citation' | 'progress' | 'thinking' | 'end' | 'error' | 'status' | 'textChunk' | 'citations' | 'done' | 'suggestions' | 'userMessage';
@@ -10,7 +11,7 @@ export interface ChatStreamEvent {
   error?: string;
   message?: string;
   citations?: any[];
-  suggestions?: string[];
+  suggestions?: Array<string | DrugSuggestionOption>;
   progress?: {
     stage: 'embedding' | 'searching' | 'generating' | 'processing';
     percentage: number;

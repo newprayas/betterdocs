@@ -4,6 +4,7 @@ import { libraryService } from '@/services/libraryService';
 import { drugModeService } from './drugModeService';
 import { decorateIndicationLinks, shouldDecorateIndicationLinksForQuery } from './drugActionLinks';
 import {
+  isMedexFormulationChoiceError,
   isMedexHelperUnavailableError,
   isMedexNoExactMatchError,
   medexBridgeService,
@@ -422,6 +423,34 @@ const ASK_DRUG_NAME_PREFIX_PATTERNS = [
   /^(?:tell\s+me\s+about)\s+/i,
 ];
 
+const ASK_DRUG_QUERY_FORMULATION_SUFFIXES = [
+  'respiratory inhaler',
+  'eye drops',
+  'eye drop',
+  'ear drops',
+  'ear drop',
+  'nasal drops',
+  'nasal drop',
+  'powder for suspension',
+  'oral suspension',
+  'suppository',
+  'suspension',
+  'inhalation',
+  'inhaler',
+  'injection',
+  'infusion',
+  'capsule',
+  'tablet',
+  'ointment',
+  'lotion',
+  'cream',
+  'spray',
+  'drops',
+  'drop',
+  'syrup',
+  'gel',
+] as const;
+
 const sanitizeParsedDrugName = (value: string): string => {
   let cleaned = compactField(value) || '';
   if (!cleaned) return '';
@@ -433,6 +462,28 @@ const sanitizeParsedDrugName = (value: string): string => {
   cleaned = cleaned.replace(/[?!.,;:]+$/g, '').trim();
 
   return cleaned;
+};
+
+const extractAskDrugFormulationSuffix = (value: string): string => {
+  const normalized = compactField(value)?.toLowerCase() || '';
+  if (!normalized) return '';
+
+  for (const suffix of ASK_DRUG_QUERY_FORMULATION_SUFFIXES) {
+    if (normalized.endsWith(suffix)) return suffix;
+  }
+
+  return '';
+};
+
+const extractExplicitFormulationDrugName = (content: string): string => {
+  const cleaned = sanitizeParsedDrugName(normalizeDrugQueryText(content));
+  const formulationSuffix = extractAskDrugFormulationSuffix(cleaned);
+  if (!formulationSuffix) return '';
+
+  const baseDrugName = cleaned.slice(0, cleaned.length - formulationSuffix.length).trim();
+  if (!/[A-Za-z]/.test(baseDrugName)) return '';
+
+  return canonicalizeTitleCase(cleaned);
 };
 
 const inferDrugNameFromRawQuery = (content: string): string => {
@@ -1465,8 +1516,9 @@ Rules:
     );
 
     const parserDrugName = sanitizeParsedDrugName(String(parsed.drug_name || '').trim());
+    const explicitFormulationDrugName = extractExplicitFormulationDrugName(content);
     const inferredDrugName = inferDrugNameFromRawQuery(content);
-    const resolvedDrugName = parserDrugName || inferredDrugName;
+    const resolvedDrugName = explicitFormulationDrugName || parserDrugName || inferredDrugName;
     const normalizedContent = normalizeText(content);
     const wantsAllDetails =
       /(?:^|\b)(details|detail|everything|full details|full detail|full information|complete details)\b/.test(normalizedContent) &&
@@ -2497,6 +2549,7 @@ ${JSON.stringify(promptContext, null, 2)}`;
     sessionId: string,
     content: string,
     onStreamEvent?: (event: ChatStreamEvent) => void,
+    forcedDrugName?: string,
   ): Promise<void> {
     console.log('[ASK DRUG MODE]', 'Starting ask-drug pipeline', {
       sessionId,
@@ -2506,6 +2559,9 @@ ${JSON.stringify(promptContext, null, 2)}`;
     try {
       onStreamEvent?.({ type: 'status', message: 'Ask Drug Query Parsing' });
       const parsed = await this.parseQuery(content);
+      if (forcedDrugName?.trim()) {
+        parsed.drug_name = forcedDrugName.trim();
+      }
       const requestedSections = expandRequestedSections(parsed.sections);
       const requestedSectionSummary = parsed.sections.includes('all_details')
         ? 'All available sections'
@@ -2518,7 +2574,7 @@ ${JSON.stringify(promptContext, null, 2)}`;
           originalQuery: content,
           parsedDrugName: parsed.drug_name,
         });
-        await drugModeService.sendMessage(sessionId, content, onStreamEvent);
+        await drugModeService.sendMessage(sessionId, content, onStreamEvent, forcedDrugName);
         return;
       }
 
@@ -2548,6 +2604,15 @@ ${JSON.stringify(promptContext, null, 2)}`;
           onStreamEvent?.({ type: 'done', content: medexAnswer });
           return;
         } catch (error) {
+          if (isMedexFormulationChoiceError(error)) {
+            if (error.suggestions.length > 0) {
+              onStreamEvent?.({ type: 'suggestions', suggestions: error.suggestions });
+            }
+            await this.saveAssistantMessage(sessionId, error.prompt);
+            onStreamEvent?.({ type: 'done', content: error.prompt });
+            return;
+          }
+
           if (isMedexNoExactMatchError(error)) {
             const noMatchMessage = this.buildNoMatchMessage(
               {
