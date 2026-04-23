@@ -1768,7 +1768,7 @@ Rules:
       const indications = this.extractIndicationsOnly(entry);
       if (indications.length === 0) return null;
       return {
-        title: '✅ Indications',
+        title: '',
         body: indications.map((indication) => `- ${indication}`).join('\n'),
       };
     }
@@ -1871,7 +1871,11 @@ ${JSON.stringify(promptContext, null, 2)}`;
     }
 
     for (const section of deterministicSections) {
-      lines.push('', `### ${section.title}`, '', section.body);
+      if (section.title) {
+        lines.push('', `### ${section.title}`, '', section.body);
+      } else {
+        lines.push('', section.body);
+      }
     }
 
     if (supplementalSections) {
@@ -2195,8 +2199,7 @@ ${JSON.stringify(promptContext, null, 2)}`;
     parsed: AskDrugQueryParseResult,
     requestedSections: AskDrugSectionKey[],
   ): boolean {
-    if (parsed.sections.includes('all_details')) return false;
-    return requestedSections.length === 1 && requestedSections[0] === 'indications_and_dose';
+    return false;
   }
 
   private cleanMatchedIndicationLabel(value: string): string | null {

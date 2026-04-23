@@ -310,7 +310,10 @@ type DoseSection = {
 };
 
 const FORMULATION_HEADING_PATTERN =
-  /(?:\btablet\b|\bcapsule\b|\bsyrup\b|\bsuspension\b|\bsuppository\b|\bdrop\b|\bdrops\b|\binfusion\b|\binjection\b|\boral\b|\biv\b|\bim\b|extended release|\bpediatric\b|\bpaediatric\b|\bgel\b|\bparenteral\b)/i;
+  /(?:\btablet\b|\bcapsule\b|\bsyrup\b|\bsuspension\b|\bsuppository\b|\bdrop\b|\bdrops\b|\binfusion\b|\binjection\b|\boral\b|\biv\b|\bim\b|extended release|\bpediatric\b|\bpaediatric\b|\bgel\b|\bparenteral\b|\benteral\b|\binhaler\b|\bmaxhaler\b)/i;
+
+const STRICT_FORMULATION_LABEL_PATTERN =
+  /^(?:for\s+)?(?:oral|tablet|tablets|capsule|capsules|syrup|suspension|suppository|drop|drops|gel|parenteral|enteral|injection|infusion|iv(?:\s+injection)?(?:\s+or\s+iv\s+infusion)?|iv\s+infusion|im(?:\s+injection)?|powder\s+for\s+suspension|inhaler|inhalation\s+capsule|maxhaler)(?:\s*\([^)]*\))?$/i;
 
 const ADULT_LINE_PATTERN =
   /^(adult|adults|elderly|adults?\s*&\s*children over|adults?\s+and\s+children over|adults?\s+and\s+adolescents|adolescents?\s+weighing|adults?\s+and\s+adolescents|life-threatening infections|urinary tract infections|impaired renal function)/i;
@@ -358,17 +361,39 @@ const isFormulationHeading = (line: string): boolean => {
 const formatDoseSectionHeading = (value: string): string =>
   `🎉 ${capitalizeFirst(stripDoseHeadingSuffix(value))}`;
 
+const stripListMarker = (value: string): string => value.replace(/^\s*[-*•]+\s*/, '');
+
+const extractStandaloneFormulationHeading = (line: string): string => {
+  const withoutMarker = stripListMarker(line.trim());
+  if (!withoutMarker) return '';
+
+  const cleaned = stripMarkdownDecorators(withoutMarker);
+  const withoutEmoji = cleaned.replace(/^🎉\s+/, '').trim();
+  if (!withoutEmoji) return '';
+
+  if (/^🎉\s+/.test(cleaned) && isFormulationHeading(withoutEmoji)) {
+    return withoutEmoji;
+  }
+
+  if (isStandaloneDoseHeading(withoutEmoji) && isFormulationHeading(withoutEmoji)) {
+    return withoutEmoji;
+  }
+
+  const normalizedLabel = stripDoseHeadingSuffix(withoutEmoji);
+  if (!normalizedLabel) return '';
+  if (!STRICT_FORMULATION_LABEL_PATTERN.test(normalizedLabel)) return '';
+  if (!isFormulationHeading(normalizedLabel)) return '';
+  return normalizedLabel;
+};
+
 const normalizeLlmDoseLines = (lines: string[]): string[] =>
   lines.map((line) => {
     const trimmed = line.trim();
     if (!trimmed) return '';
-    if (/^🎉\s+/.test(trimmed)) {
-      return formatDoseSectionHeading(trimmed.replace(/^🎉\s+/, ''));
-    }
 
-    const cleaned = stripMarkdownDecorators(trimmed);
-    if (cleaned && isFormulationHeading(cleaned)) {
-      return formatDoseSectionHeading(cleaned);
+    const heading = extractStandaloneFormulationHeading(trimmed);
+    if (heading) {
+      return formatDoseSectionHeading(heading);
     }
 
     return line.replace(/\s+$/g, '');
@@ -915,7 +940,7 @@ export const formatMedexDoseAnswer = async (
     const childLabel = buildDrugAudienceLinkLabel('child');
     lines.push(
       '',
-      `⚠️ Only ADULT dose and indications given, search child dose and indications separately (${childHref ? `[${childLabel}](${childHref})` : childLabel})`,
+      `⚠️ Only ADULT dose given, search child dose separately (${childHref ? `[${childLabel}](${childHref})` : childLabel})`,
     );
   }
 
@@ -926,8 +951,6 @@ export const formatMedexDoseAnswer = async (
       block(sectionHeading(payload.selected_kind === 'brand' ? 'Selected brand' : 'Example brands'), brandSummaryLines),
     );
   }
-
-  lines.push('', block(sectionHeading('Indications'), formatBulletList(extractIndicationLines(payload))));
 
   const contraindications = splitLines(payload.sections.contraindications);
   if (contraindications.length > 0) {
@@ -980,10 +1003,6 @@ const getSectionBody = async (
     case 'indications_and_dose':
       const dosageFormulationLines = buildDosageFormulationSectionLines(payload);
       return [
-        sectionHeading('Indications'),
-        '',
-        ...formatBulletList(extractIndicationLines(payload)),
-        '',
         ...(dosageFormulationLines.length > 0
           ? ['✅ Dosage Formulations:', '', ...dosageFormulationLines, '']
           : []),

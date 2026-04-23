@@ -51,11 +51,30 @@ const normalizeDrugIntentTypos = (value: string): string =>
 const normalizeDrugQueryText = (value: string): string =>
   normalizeDrugIntentTypos(normalizeIntentLeadTypos(value));
 
+const isBareDrugNameOnlyQuery = (value: string): boolean => {
+  const compact = normalizeDrugQueryText(value).trim();
+  if (!compact) return false;
+  if (/[?]/.test(compact)) return false;
+  if (
+    /\b(dose|doses|dosage|dosing|regimen|schedule|brand|brands|brand\s+name(?:s)?|company|companies|price|prices|cost|costs|indication|indications|side[\s-]?effects?|contra[\s-]?indications?|cautions?|pregnancy|breast[\s-]?feeding|what(?:'s|s|\s+is))\b/i.test(
+      compact,
+    )
+  ) {
+    return false;
+  }
+
+  const tokens = compact.split(/\s+/).filter(Boolean);
+  if (tokens.length < 1 || tokens.length > 3) return false;
+
+  return tokens.every((token) => /^[A-Za-z][A-Za-z0-9.'-]*$/.test(token));
+};
+
 const shouldUseDirectDrugModePath = (content: string): boolean =>
   DRUG_MODE_DIRECT_ROUTE_PATTERN.test(content) ||
   DRUG_MODE_DIRECT_ROUTE_PATTERN.test(normalizeDrugQueryText(content)) ||
   DRUG_MODE_WHAT_IS_ROUTE_PATTERN.test(normalizeDrugQueryText(content)) ||
-  DRUG_MODE_REVERSED_WHAT_IS_ROUTE_PATTERN.test(normalizeDrugQueryText(content));
+  DRUG_MODE_REVERSED_WHAT_IS_ROUTE_PATTERN.test(normalizeDrugQueryText(content)) ||
+  isBareDrugNameOnlyQuery(content);
 
 const DRUG_FOLLOW_UP_INTENT_PATTERNS: Array<{ pattern: RegExp; normalizedIntent: string }> = [
   { pattern: /\b(indications?|uses?)\b/i, normalizedIntent: 'indications' },

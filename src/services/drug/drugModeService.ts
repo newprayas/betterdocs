@@ -2268,18 +2268,6 @@ const buildDoseResponsePrelude = (
         })(),
   );
 
-  const indications = prioritizeDoseSummaryIndications(
-    extractDoseSummaryIndications(promptContext),
-    requestedIndicationQuery,
-  );
-  lines.push('', '**✅ Indications**');
-
-  if (indications.length > 0) {
-    lines.push(...indications.map((indication) => `- ${indication}`));
-  } else {
-    lines.push('- Not found in provided drug dataset.');
-  }
-
   const contraindications = extractDoseSummaryContraindications(promptContext);
   if (contraindications) {
     lines.push('', '**❌ Contraindications**', contraindications);

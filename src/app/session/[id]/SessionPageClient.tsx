@@ -54,6 +54,7 @@ const DocumentLibrary = dynamic(
 
 const DRUG_ACTION_PILLS = [
   "Dose",
+  "Indications",
   "Brands",
   "ADR",
   "Contraindication",
@@ -70,6 +71,8 @@ const buildDrugActionPillQuery = (
   const normalized = normalizePhraseValue(pillLabel);
   if (normalized === "dose")
     return drugName ? `dose of ${drugName}` : "dose of ";
+  if (normalized === "indications")
+    return drugName ? `indications of ${drugName}` : "indications of ";
   if (normalized === "brands")
     return drugName ? `brands of ${drugName}` : "brands of ";
   if (normalized === "adr")
