@@ -1174,9 +1174,9 @@ export default function SessionPage() {
                     className="max-w-4xl mx-auto"
                     onDrugActionClick={handleDrugActionClick}
                     emptyState={emptyChatState}
+                    footer={chatFooter}
                   />
                 </div>
-                {chatFooter}
               </>
             )}
           </div>

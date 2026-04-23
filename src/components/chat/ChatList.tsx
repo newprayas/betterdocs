@@ -26,6 +26,7 @@ interface ChatListProps {
   className?: string;
   onDrugActionClick?: (query: string) => void;
   emptyState?: React.ReactNode;
+  footer?: React.ReactNode;
 }
 
 const ChatListComponent: React.FC<ChatListProps> = ({
@@ -33,6 +34,7 @@ const ChatListComponent: React.FC<ChatListProps> = ({
   className,
   onDrugActionClick,
   emptyState,
+  footer,
 }) => {
   const {
     messages,
@@ -228,6 +230,7 @@ const ChatListComponent: React.FC<ChatListProps> = ({
             </>
           )}
         </div>
+        {footer}
         <div ref={bottomAnchorRef} aria-hidden="true" />
       </div>
     </div>
