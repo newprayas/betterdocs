@@ -80,6 +80,14 @@ Rules:
 - If a route or formulation name appears again later inside the same block, keep it as body text unless the source clearly starts a new section.
 - Do not repeat the same route header multiple times in one block.
 - Keep adult and child dosing separate when both appear.
+- Never use markdown headings like #, ##, or oversized heading-style formatting for route or formulation labels.
+- Route or formulation labels must be short plain lines like:
+  - 🎉 Oral
+  - 🎉 Tablet
+  - 🎉 Injection
+  - 🎉 Parenteral
+- Do not bold these 🎉 route or formulation labels.
+- Prefer concise route or dosage-form labels over long labels when possible.
 - Output only markdown for the dosage body.
 - Do not add explanations or summaries.`;
 
@@ -87,6 +95,13 @@ const stripMarkdownFences = (value: string): string =>
   value
     .replace(/^\s*```(?:markdown|md)?\s*/i, '')
     .replace(/\s*```\s*$/i, '')
+    .trim();
+
+const stripMarkdownDecorators = (value: string): string =>
+  value
+    .replace(/^\s*#{1,6}\s*/g, '')
+    .replace(/^\*\*(.*?)\*\*$/g, '$1')
+    .replace(/^\*(.*?)\*$/g, '$1')
     .trim();
 
 const preserveSectionText = (value?: string | null): string =>
@@ -144,10 +159,12 @@ const formatDoseSectionsWithLlm = async (
       return formatDoseSections(payload, audience);
     }
 
-    return cleaned
-      .replace(/\r\n/g, '\n')
-      .split('\n')
-      .map((line) => line.replace(/\s+$/g, ''));
+    return normalizeLlmDoseLines(
+      cleaned
+        .replace(/\r\n/g, '\n')
+        .split('\n')
+        .map((line) => line.replace(/\s+$/g, '')),
+    );
   } catch (error) {
     console.warn('[MEDEX DOSE FORMAT] LLM formatting failed, falling back to deterministic parser', {
       error: error instanceof Error ? error.message : String(error),
@@ -337,6 +354,25 @@ const isFormulationHeading = (line: string): boolean => {
   if (!FORMULATION_HEADING_PATTERN.test(trimmed)) return false;
   return trimmed.length <= 70;
 };
+
+const formatDoseSectionHeading = (value: string): string =>
+  `🎉 ${capitalizeFirst(stripDoseHeadingSuffix(value))}`;
+
+const normalizeLlmDoseLines = (lines: string[]): string[] =>
+  lines.map((line) => {
+    const trimmed = line.trim();
+    if (!trimmed) return '';
+    if (/^🎉\s+/.test(trimmed)) {
+      return formatDoseSectionHeading(trimmed.replace(/^🎉\s+/, ''));
+    }
+
+    const cleaned = stripMarkdownDecorators(trimmed);
+    if (cleaned && isFormulationHeading(cleaned)) {
+      return formatDoseSectionHeading(cleaned);
+    }
+
+    return line.replace(/\s+$/g, '');
+  });
 
 const parseDoseSections = (payload: MedexResolvedPayload): DoseSection[] => {
   const rawLines = (payload.sections.dosage_and_administration || '')
@@ -558,6 +594,39 @@ const buildSameCompanyAlternateRows = (payload: MedexResolvedPayload): MedexAlte
     });
 };
 
+const buildDosageFormulationSectionLines = (payload: MedexResolvedPayload): string[] => {
+  if (payload.selected_kind !== 'brand') return [];
+
+  const rows = buildSameCompanyAlternateRows(payload);
+  if (rows.length === 0) return [];
+
+  const grouped = new Map<string, MedexAlternateBrandRow[]>();
+  for (const row of rows) {
+    const key = compact(row.dosage_form) || 'Other';
+    const bucket = grouped.get(key) || [];
+    bucket.push(row);
+    grouped.set(key, bucket);
+  }
+
+  const lines: string[] = [];
+  for (const [dosageForm, items] of [...grouped.entries()].sort((left, right) => formulationPriority(left[0]) - formulationPriority(right[0]))) {
+    lines.push(capitalizeFirst(dosageForm));
+    for (const row of items) {
+      const brandName = compact(row.brand_name);
+      const strength = compact(row.strength);
+      const price = simplifyPriceText(row.price_text);
+      lines.push(`- ${[brandName, strength].filter(Boolean).join(' ')}${price ? ` [${price}]` : ''}`);
+    }
+    lines.push('');
+  }
+
+  while (lines.length > 0 && lines[lines.length - 1] === '') {
+    lines.pop();
+  }
+
+  return lines;
+};
+
 const buildFormulationLinesForHeading = (
   payload: MedexResolvedPayload,
   heading: string,
@@ -596,7 +665,7 @@ const formatDoseSections = (
 
   const lines: string[] = [];
   for (const section of sections) {
-    lines.push(`🎉 *${section.heading.toUpperCase()}*`);
+    lines.push(formatDoseSectionHeading(section.heading));
     lines.push('');
 
     const formulationLines = buildFormulationLinesForHeading(payload, section.heading);
@@ -865,6 +934,11 @@ export const formatMedexDoseAnswer = async (
     lines.push('', block('❌ Contraindications', formatBulletList(contraindications)));
   }
 
+  const dosageFormulationLines = buildDosageFormulationSectionLines(payload);
+  if (dosageFormulationLines.length > 0) {
+    lines.push('', block('✅ Dosage Formulations:', dosageFormulationLines));
+  }
+
   lines.push('', block(sectionHeading('Indications and dose'), await formatDoseSectionsWithLlm(payload, options?.audience)));
 
   const actionDrug = resolveGenericName(payload);
@@ -904,11 +978,15 @@ const getSectionBody = async (
 ): Promise<string[]> => {
   switch (section) {
     case 'indications_and_dose':
+      const dosageFormulationLines = buildDosageFormulationSectionLines(payload);
       return [
         sectionHeading('Indications'),
         '',
         ...formatBulletList(extractIndicationLines(payload)),
         '',
+        ...(dosageFormulationLines.length > 0
+          ? ['✅ Dosage Formulations:', '', ...dosageFormulationLines, '']
+          : []),
         sectionHeading('Indications and dose'),
         '',
         ...(await formatDoseSectionsWithLlm(payload)),
