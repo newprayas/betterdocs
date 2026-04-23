@@ -8,7 +8,7 @@ import {
   isMedexNoExactMatchError,
   medexBridgeService,
 } from './medexBridgeService';
-import { formatMedexSectionAnswer } from './medexFormatService';
+import { formatMedexSectionAnswer, type MedexRequestedSection } from './medexFormatService';
 import type {
   AskDrugBroadMatch,
   AskDrugCatalog,
@@ -78,6 +78,21 @@ const ASK_DRUG_ALL_DETAILS_SECTIONS: AskDrugSectionKey[] = [
   'prescribing_and_dispensing_information',
   'patient_and_carer_advice',
 ];
+
+const isIndicationsOnlyNamedDrugQuery = (
+  content: string,
+  requestedSections: AskDrugSectionKey[],
+): boolean => {
+  if (requestedSections.length !== 1 || requestedSections[0] !== 'indications_and_dose') {
+    return false;
+  }
+
+  const normalized = content.toLowerCase();
+  return (
+    /\b(indications?|uses?)\b/.test(normalized) &&
+    !/\b(dose|doses|dosage|dosing|schedule|regimen|how much|how many)\b/.test(normalized)
+  );
+};
 const ASK_DRUG_BROAD_TERM_EXPANSIONS: Record<string, string[]> = {
   vomiting: ['vomiting', 'nausea', 'emesis'],
   nausea: ['nausea', 'vomiting', 'emesis'],
@@ -1791,6 +1806,29 @@ Rules:
     };
   }
 
+  private buildNamedIndicationsOnlyAnswer(
+    entry: AskDrugEntry,
+    displayTitle: string,
+    fallbackGenericName?: string | null,
+    originalDrugName?: string,
+  ): string | null {
+    const indications = this.extractIndicationsOnly(entry);
+    if (indications.length === 0) return null;
+
+    const lines = [`## ${displayTitle}`];
+
+    if (fallbackGenericName && originalDrugName) {
+      lines.push(
+        '',
+        `Resolved via brand-to-generic fallback:`,
+        `${originalDrugName} -> ${fallbackGenericName}`,
+      );
+    }
+
+    lines.push('', '### Indications', '', ...indications.map((indication) => `- ${indication}`));
+    return lines.join('\n').trim();
+  }
+
   private async formatNamedAllDetailsSupplementalSections(
     entry: AskDrugEntry,
     content: string,
@@ -2488,7 +2526,7 @@ ${JSON.stringify(promptContext, null, 2)}`;
         try {
           onStreamEvent?.({ type: 'status', message: 'Ask Drug Search' });
           const medexPayload = await medexBridgeService.queryDrug(parsed.drug_name, true);
-          const medexSections = parsed.sections.includes('all_details')
+          const medexSections: MedexRequestedSection[] = parsed.sections.includes('all_details')
             ? ([
                 'indications_and_dose',
                 'contra_indications',
@@ -2497,8 +2535,10 @@ ${JSON.stringify(promptContext, null, 2)}`;
                 'breast_feeding',
                 'cautions',
                 'interactions',
-              ] satisfies AskDrugRequestedSection[])
-            : requestedSections;
+              ] satisfies MedexRequestedSection[])
+            : isIndicationsOnlyNamedDrugQuery(content, requestedSections)
+              ? ['indications']
+              : requestedSections;
           const medexAnswer = await formatMedexSectionAnswer(
             medexPayload,
             medexSections,
@@ -2683,6 +2723,24 @@ ${JSON.stringify(promptContext, null, 2)}`;
         const displayTitle = fallbackGenericName
           ? `${match!.title} (${parsed.drug_name})`
           : match!.title;
+
+        if (isIndicationsOnlyNamedDrugQuery(content, requestedSections)) {
+          const indicationsOnlyAnswer = this.buildNamedIndicationsOnlyAnswer(
+            match!,
+            displayTitle,
+            fallbackGenericName,
+            parsed.drug_name,
+          );
+
+          if (indicationsOnlyAnswer) {
+            const decoratedResponse = shouldDecorateIndicationLinksForQuery(content)
+              ? decorateIndicationLinks(indicationsOnlyAnswer, parsed.drug_name)
+              : indicationsOnlyAnswer;
+            await this.saveAssistantMessage(sessionId, decoratedResponse);
+            onStreamEvent?.({ type: 'done', content: decoratedResponse });
+            return;
+          }
+        }
 
         const prompt = `User question:
 ${content}

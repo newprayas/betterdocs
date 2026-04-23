@@ -9,6 +9,8 @@ import type {
 import { buildDrugAudienceActionLink, buildDrugAudienceLinkLabel } from './drugActionLinks';
 import { groqService } from '@/services/groq/groqService';
 
+export type MedexRequestedSection = AskDrugRequestedSection | 'indications';
+
 const PREFERRED_BRAND_COMPANIES = [
   'square',
   'incepta',
@@ -972,8 +974,10 @@ export const formatMedexDoseAnswer = async (
   return lines.filter(Boolean).join('\n\n');
 };
 
-const mapSectionLabel = (section: AskDrugRequestedSection): string => {
+const mapSectionLabel = (section: MedexRequestedSection): string => {
   switch (section) {
+    case 'indications':
+      return 'Indications';
     case 'contra_indications':
       return 'Contra indications';
     case 'side_effects':
@@ -997,9 +1001,11 @@ const mapSectionLabel = (section: AskDrugRequestedSection): string => {
 
 const getSectionBody = async (
   payload: MedexResolvedPayload,
-  section: AskDrugRequestedSection,
+  section: MedexRequestedSection,
 ): Promise<string[]> => {
   switch (section) {
+    case 'indications':
+      return formatBulletList(extractIndicationLines(payload));
     case 'indications_and_dose':
       const dosageFormulationLines = buildDosageFormulationSectionLines(payload);
       return [
@@ -1030,7 +1036,7 @@ const getSectionBody = async (
 
 export const formatMedexSectionAnswer = async (
   payload: MedexResolvedPayload,
-  sections: AskDrugRequestedSection[],
+  sections: MedexRequestedSection[],
   originalQuery?: string,
 ): Promise<string> => {
   const displayTitle = resolveDisplayTitle(payload, originalQuery);

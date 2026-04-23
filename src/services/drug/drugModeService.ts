@@ -12,7 +12,12 @@ import {
   isMedexNoExactMatchError,
   medexBridgeService,
 } from './medexBridgeService';
-import { formatMedexBrandsAnswer, formatMedexDoseAnswer } from './medexFormatService';
+import {
+  formatMedexBrandsAnswer,
+  formatMedexDoseAnswer,
+  formatMedexSectionAnswer,
+  type MedexRequestedSection,
+} from './medexFormatService';
 import type {
   AskDrugIndicationsAndDoseStructured,
   DrugCatalog,
@@ -166,6 +171,28 @@ const inferRequestedIndicationFromQuery = (content: string): string | null => {
 
   return cleaned;
 };
+
+const mapRequestedFieldsToMedexSections = (
+  fields: DrugModeRequestedField[],
+): MedexRequestedSection[] =>
+  fields.flatMap((field): MedexRequestedSection[] => {
+    switch (field) {
+      case 'indications':
+        return ['indications'];
+      case 'cautions':
+        return ['cautions'];
+      case 'contraindications':
+        return ['contra_indications'];
+      case 'side_effects':
+        return ['side_effects'];
+      case 'pregnancy':
+        return ['pregnancy'];
+      case 'breast_feeding':
+        return ['breast_feeding'];
+      default:
+        return [];
+    }
+  });
 
 const stripTrailingRequestedDoseAudience = (value: string): string => {
   const trimmed = compactField(value) || '';
@@ -4044,15 +4071,25 @@ Rules:
             message: 'Drug Answer Generation',
           });
 
-          const medexAnswer = shouldRenderBrandNamesOnly
+          const medexAnswer = await (shouldRenderBrandNamesOnly
             ? formatMedexBrandsAnswer(medexPayload, parsed.drug_name)
-            : await formatMedexDoseAnswer(medexPayload, {
-                audience:
-                  intent.answerKind === 'dose_with_brands' || isBareDrugNameQuery(content)
-                    ? this.resolveRequestedDoseAudience(content)
-                    : undefined,
-                originalQuery: parsed.drug_name,
-              });
+            : intent.answerKind === 'sectional'
+              ? (() => {
+                  const medexSections = mapRequestedFieldsToMedexSections(intent.requestedFields);
+                  return medexSections.length > 0
+                    ? formatMedexSectionAnswer(medexPayload, medexSections, parsed.drug_name)
+                    : formatMedexDoseAnswer(medexPayload, {
+                        audience: undefined,
+                        originalQuery: parsed.drug_name,
+                      });
+                })()
+              : formatMedexDoseAnswer(medexPayload, {
+                  audience:
+                    intent.answerKind === 'dose_with_brands' || isBareDrugNameQuery(content)
+                      ? this.resolveRequestedDoseAudience(content)
+                      : undefined,
+                  originalQuery: parsed.drug_name,
+                }));
 
           await this.saveAssistantMessage(sessionId, medexAnswer);
           onStreamEvent?.({
