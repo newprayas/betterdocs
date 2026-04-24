@@ -621,39 +621,6 @@ const buildSameCompanyAlternateRows = (payload: MedexResolvedPayload): MedexAlte
     });
 };
 
-const buildDosageFormulationSectionLines = (payload: MedexResolvedPayload): string[] => {
-  if (payload.selected_kind !== 'brand') return [];
-
-  const rows = buildSameCompanyAlternateRows(payload);
-  if (rows.length === 0) return [];
-
-  const grouped = new Map<string, MedexAlternateBrandRow[]>();
-  for (const row of rows) {
-    const key = compact(row.dosage_form) || 'Other';
-    const bucket = grouped.get(key) || [];
-    bucket.push(row);
-    grouped.set(key, bucket);
-  }
-
-  const lines: string[] = [];
-  for (const [dosageForm, items] of [...grouped.entries()].sort((left, right) => formulationPriority(left[0]) - formulationPriority(right[0]))) {
-    lines.push(capitalizeFirst(dosageForm));
-    for (const row of items) {
-      const brandName = compact(row.brand_name);
-      const strength = compact(row.strength);
-      const price = simplifyPriceText(row.price_text);
-      lines.push(`- ${[brandName, strength].filter(Boolean).join(' ')}${price ? ` [${price}]` : ''}`);
-    }
-    lines.push('');
-  }
-
-  while (lines.length > 0 && lines[lines.length - 1] === '') {
-    lines.pop();
-  }
-
-  return lines;
-};
-
 const buildFormulationLinesForHeading = (
   payload: MedexResolvedPayload,
   heading: string,
@@ -959,11 +926,6 @@ export const formatMedexDoseAnswer = async (
     lines.push('', block('❌ Contraindications', formatBulletList(contraindications)));
   }
 
-  const dosageFormulationLines = buildDosageFormulationSectionLines(payload);
-  if (dosageFormulationLines.length > 0) {
-    lines.push('', block('✅ Dosage Formulations:', dosageFormulationLines));
-  }
-
   lines.push('', block(sectionHeading('Indications and dose'), await formatDoseSectionsWithLlm(payload, options?.audience)));
 
   const actionDrug = resolveGenericName(payload);
@@ -1007,11 +969,7 @@ const getSectionBody = async (
     case 'indications':
       return formatBulletList(extractIndicationLines(payload));
     case 'indications_and_dose':
-      const dosageFormulationLines = buildDosageFormulationSectionLines(payload);
       return [
-        ...(dosageFormulationLines.length > 0
-          ? ['✅ Dosage Formulations:', '', ...dosageFormulationLines, '']
-          : []),
         sectionHeading('Indications and dose'),
         '',
         ...(await formatDoseSectionsWithLlm(payload)),
