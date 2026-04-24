@@ -51,7 +51,6 @@ const ChatListComponent: React.FC<ChatListProps> = ({
   );
   const isLoading = false; // Loading is now handled at the parent level
   const containerRef = useRef<HTMLDivElement>(null);
-  const bottomAnchorRef = useRef<HTMLDivElement>(null);
   const isSessionOpeningRef = useRef(true);
   const previousMessageCountRef = useRef(messages.length);
   const previousIsStreamingRef = useRef(isStreaming);
@@ -79,11 +78,6 @@ const ChatListComponent: React.FC<ChatListProps> = ({
     if (!container) return;
 
     container.scrollTo({ top: container.scrollHeight, behavior });
-    bottomAnchorRef.current?.scrollIntoView({
-      behavior,
-      block: "end",
-      inline: "nearest",
-    });
   };
 
   // Initial session open should land at the bottom instantly.
@@ -231,7 +225,6 @@ const ChatListComponent: React.FC<ChatListProps> = ({
           )}
         </div>
         {footer}
-        <div ref={bottomAnchorRef} aria-hidden="true" />
       </div>
     </div>
   );
@@ -300,7 +293,6 @@ export const StreamingChatList: React.FC<{
   bottomInsetPx = 0,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
-  const bottomAnchorRef = useRef<HTMLDivElement>(null);
   const hasCompletedInitialScrollRef = useRef(false);
 
   const scrollToBottom = (behavior: ScrollBehavior) => {
@@ -308,11 +300,6 @@ export const StreamingChatList: React.FC<{
     if (!container) return;
 
     container.scrollTo({ top: container.scrollHeight, behavior });
-    bottomAnchorRef.current?.scrollIntoView({
-      behavior,
-      block: "end",
-      inline: "nearest",
-    });
   };
 
   // Auto-scroll to bottom when new messages arrive or streaming updates
@@ -373,8 +360,6 @@ export const StreamingChatList: React.FC<{
             onDrugActionClick={onDrugActionClick}
           />
         )}
-
-        <div ref={bottomAnchorRef} aria-hidden="true" />
       </div>
     </div>
   );

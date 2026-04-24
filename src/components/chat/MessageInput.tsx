@@ -95,6 +95,49 @@ export const MessageInput: React.FC<MessageInputProps> = ({
     return textareaRef.current?.value ?? message;
   }, [message, textareaRef]);
 
+  const scrollChatToBottomForKeyboard = useCallback(() => {
+    if (typeof window === "undefined") return;
+
+    const scrollToBottom = () => {
+      const container = document.querySelector(
+        '[data-chat-scroll-container="true"]',
+      ) as HTMLElement | null;
+
+      container?.scrollTo({
+        top: container.scrollHeight,
+        behavior: "auto",
+      });
+    };
+
+    window.requestAnimationFrame(scrollToBottom);
+
+    [80, 180, 320].forEach((delay) => {
+      window.setTimeout(scrollToBottom, delay);
+    });
+  }, []);
+
+  useEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea || typeof window === "undefined") return;
+
+    const handleFocus = () => {
+      scrollChatToBottomForKeyboard();
+    };
+    const handleViewportResize = () => {
+      if (document.activeElement === textarea) {
+        scrollChatToBottomForKeyboard();
+      }
+    };
+
+    textarea.addEventListener("focus", handleFocus);
+    window.visualViewport?.addEventListener("resize", handleViewportResize);
+
+    return () => {
+      textarea.removeEventListener("focus", handleFocus);
+      window.visualViewport?.removeEventListener("resize", handleViewportResize);
+    };
+  }, [scrollChatToBottomForKeyboard, textareaRef]);
+
   // Handle message changes
   const handleMessageChange = useCallback((newValue: string) => {
     setMessageValue(newValue);
