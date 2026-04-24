@@ -227,6 +227,27 @@ const LIBRARY_CATALOG = [
     "category": "Ophthalmology"
   },
   {
+    "id": "dhingra_ent_7ed",
+    "name": "Dhingra Diseases of Ear, Nose and Throat 7th Revised Edition",
+    "filename": "shard_4a2.bin",
+    "size": "11.4 MB",
+    "category": "ENT"
+  },
+  {
+    "id": "scott_brown_ent_7ed",
+    "name": "Scott-Brown's Otorhinolaryngology Head and Neck Surgery 7th Edition",
+    "filename": "shard_8t7.bin",
+    "size": "42.2 MB",
+    "category": "ENT"
+  },
+  {
+    "id": "hazarika_ent_5ed",
+    "name": "Hazarika Textbook of ENT, Nose, Throat and Head-Neck Surgery 5th Edition",
+    "filename": "shard_8q0.bin",
+    "size": "14.6 MB",
+    "category": "ENT"
+  },
+  {
     "id": "joynal_sir_eye_notes",
     "name": "Joynal Sir Eye Lecture Notes",
     "filename": "shard_2o1.bin",
