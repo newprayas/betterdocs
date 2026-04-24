@@ -152,8 +152,8 @@ const ChatListComponent: React.FC<ChatListProps> = ({
       `}
       style={{
         scrollBehavior: "auto",
-        paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 16px)",
-        scrollPaddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 16px)",
+        paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 4px)",
+        scrollPaddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 4px)",
       }}
     >
       <div

@@ -338,7 +338,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
   const isWaiting = waitCountdown > 0;
 
   return (
-    <div className={`border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-3 sm:p-4 ${className}`}>
+    <div className={`border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 pt-2 pb-2 sm:p-4 ${className}`}>
       <div className="max-w-4xl mx-auto">
         {/* Rate Limit Waiting Indicator - styled like ResponseProgressBar */}
         {isWaiting && (

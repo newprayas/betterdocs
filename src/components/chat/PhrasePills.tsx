@@ -156,7 +156,7 @@ const PhrasePillsComponent: React.FC<PhrasePillsProps> = ({
           // Base container styles
           "flex gap-2 sm:gap-3 overflow-x-auto scrollbar-thin",
           "scrollbar-thumb-gray-600 scrollbar-track-transparent",
-          "px-3 sm:px-4 py-3",
+          "px-6 sm:px-7 py-3",
 
           // Mobile touch optimization
           "touch-pan-x -webkit-overflow-scrolling: touch",
@@ -193,7 +193,7 @@ const PhrasePillsComponent: React.FC<PhrasePillsProps> = ({
         ))}
 
         {/* Add some spacing at the end for better scroll experience */}
-        <div className="w-4 sm:w-8 flex-shrink-0" />
+        <div className="w-1 sm:w-2 flex-shrink-0" />
       </div>
     </div>
   );

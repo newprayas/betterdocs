@@ -912,7 +912,7 @@ export default function SessionPage() {
       className="shrink-0 bg-gray-50 dark:bg-gray-900"
       style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
     >
-      <div className="mt-8">
+      <div className="mt-4 sm:mt-8">
         {!isReadingSources && (
           <div className="mb-2 flex justify-end pr-2">
             <div className="flex flex-wrap items-center justify-end gap-2">
@@ -1012,7 +1012,7 @@ export default function SessionPage() {
         )}
       </div>
 
-      <div className="mt-4">
+      <div className="mt-2 sm:mt-4">
         {messages.length > 0 &&
           !isDatasetModeEnabled &&
           !documentsLoading &&
