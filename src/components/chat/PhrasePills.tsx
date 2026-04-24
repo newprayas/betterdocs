@@ -141,7 +141,7 @@ const PhrasePillsComponent: React.FC<PhrasePillsProps> = ({
 
   return (
     <div
-      className={clsx("relative w-full", className)}
+      className={clsx("relative w-full overflow-hidden px-2.5 sm:px-3", className)}
       role="region"
       aria-label={ariaLabel}
     >
