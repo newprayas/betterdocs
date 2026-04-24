@@ -12,6 +12,22 @@ export interface Session {
   messageCount?: number;
   lastMessageAt?: Date;
   latestRewriteQueryResponse?: string | null;
+  rewriteContext?: SessionRewriteContext | null;
+}
+
+export interface SessionRewriteContext {
+  lastUserQuery: string;
+  lastRewrittenQuery: string;
+  lastTopic?: string | null;
+  updatedAt: Date;
+  recentTurns?: SessionRewriteTurn[];
+}
+
+export interface SessionRewriteTurn {
+  userQuery: string;
+  rewrittenQuery: string;
+  topic?: string | null;
+  updatedAt: Date;
 }
 
 export interface SessionCreate {
@@ -27,4 +43,5 @@ export interface SessionUpdate {
   updatedAt?: Date;
   documentCount?: number;
   latestRewriteQueryResponse?: string | null;
+  rewriteContext?: SessionRewriteContext | null;
 }

@@ -13,7 +13,7 @@ import {
   type AnswerContract,
 } from './answerContract';
 import { postProcessRetrievalResults } from './retrievalPostprocess';
-import { MessageSender, type MessageCreate, type Message } from '@/types';
+import { MessageSender, type MessageCreate, type Message, type SessionRewriteTurn } from '@/types';
 import type { Document, RouteIndexRecord } from '@/types';
 import type { ChatStreamEvent } from '../gemini/chatService';
 import type { SimplifiedCitation, SimplifiedCitationGroup, StructuredAnswerResponse } from '@/types/citation';
@@ -172,6 +172,14 @@ interface StandaloneRewriteResult {
   wasRewritten: boolean;
   usedImmediateContext: boolean;
   mode: 'skipped_clear' | 'rewritten' | 'fallback_original';
+  action?: 'continue' | 'fresh';
+  topic?: string | null;
+}
+
+interface RewriteDecision {
+  action: 'continue' | 'fresh';
+  query: string;
+  topic: string | null;
 }
 
 interface RewriteTelemetry {
@@ -630,6 +638,13 @@ export class ChatPipeline {
       .replace(/\buclers\b/gi, 'ulcers')
       .replace(/\bulser\b/gi, 'ulcer')
       .replace(/\bsings\b/gi, 'signs')
+      .replace(/\bcuases\b/gi, 'causes')
+      .replace(/\bmaixallry\b/gi, 'maxillary')
+      .replace(/\bmaxilary\b/gi, 'maxillary')
+      .replace(/\bsinusitis\s+maxillary\b/gi, 'maxillary sinusitis')
+      .replace(/\bantib(?:oi|io)tics?\b/gi, 'antibiotics')
+      .replace(/\bfurunclolosis\b/gi, 'furunculosis')
+      .replace(/\bfurunclosis\b/gi, 'furunculosis')
       .replace(/\binflammed\b/gi, 'inflamed')
       .replace(/\bpiotiosnt\b/gi, 'positions')
       .replace(/\bpiotiosnts\b/gi, 'positions')
@@ -751,6 +766,40 @@ export class ChatPipeline {
     } catch {
       return null;
     }
+  }
+
+  private parseRewriteDecisionOutput(raw: string): RewriteDecision | null {
+    const trimmed = (raw || '').trim();
+    if (!trimmed) return null;
+
+    const candidates = [
+      trimmed,
+      trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1]?.trim() || '',
+      trimmed.match(/\{[\s\S]*\}/)?.[0] || '',
+    ].filter(Boolean);
+
+    for (const candidate of candidates) {
+      try {
+        const parsed = JSON.parse(candidate) as {
+          action?: unknown;
+          query?: unknown;
+          topic?: unknown;
+        };
+        const action = parsed.action === 'continue' ? 'continue' : parsed.action === 'fresh' ? 'fresh' : null;
+        const query = typeof parsed.query === 'string'
+          ? this.normalizeStandaloneQueryShape(this.sanitizeRewriterOutput(parsed.query))
+          : '';
+        if (!action || !query) continue;
+        const topic = typeof parsed.topic === 'string' && parsed.topic.trim()
+          ? this.normalizeStandaloneQueryShape(parsed.topic)
+          : null;
+        return { action, query, topic };
+      } catch {
+        // Try the next candidate.
+      }
+    }
+
+    return null;
   }
 
   private buildRewriteQueryResponse(query: string): string {
@@ -1129,14 +1178,21 @@ export class ChatPipeline {
   }
 
   private extractTopicFromClarifiedQuery(clarifiedQuery: string): string | null {
-    const fromKnownPatterns = this.extractTopicFromQuery(clarifiedQuery);
+    const normalizedClarifiedQuery = this.normalizeCommonMedicalTypos(clarifiedQuery);
+    const fromKnownPatterns = this.extractTopicFromQuery(normalizedClarifiedQuery);
     if (fromKnownPatterns) return fromKnownPatterns;
 
-    const cleaned = clarifiedQuery
+    const cleaned = normalizedClarifiedQuery
       .replace(/\s+/g, ' ')
       .replace(/[?!.]+$/g, '')
       .trim();
     if (!cleaned) return null;
+
+    const whyOccurMatch = cleaned.match(/\bwhy\s+(?:does|do|is|are)\s+(.+?)\s+(?:occur|occurs|happen|happens|develop|develops)\b/i);
+    if (whyOccurMatch?.[1]) {
+      const topic = this.sanitizeExtractedTopic(whyOccurMatch[1]);
+      if (topic) return topic;
+    }
 
     const mimicMatch = cleaned.match(/\b(?:mimic|mimics|mimicking|look like|looks like|simulate|similar to)\s+(?:an?|the)?\s*(.+)$/i);
     if (mimicMatch?.[1]) {
@@ -1153,6 +1209,15 @@ export class ChatPipeline {
     const genericOfMatch = cleaned.match(/\bof\s+(.+)$/i);
     if (genericOfMatch?.[1]) {
       return this.sanitizeExtractedTopic(genericOfMatch[1]);
+    }
+
+    const words = cleaned.split(/\s+/).filter(Boolean);
+    if (
+      words.length <= 5 &&
+      !/\b(what|which|when|how|why|who|where|use|used|give|given|dose|doses|dosage|dosing|duration|antibiotics?|antimicrobials?|drugs?|medicines?|medications?|treatment|management|therapy|features?|signs?|symptoms?|investigations?|diagnosis|dx|rx|tx)\b/i.test(cleaned)
+    ) {
+      const topic = this.sanitizeExtractedTopic(cleaned);
+      if (topic) return topic;
     }
 
     const betweenMatch = cleaned.match(/\bbetween\s+(.+?)\s+and\s+(.+)$/i);
@@ -1186,54 +1251,63 @@ export class ChatPipeline {
     return null;
   }
 
-  private buildContextualRewriteFallback(
-    originalQuery: string,
-    mostRecentClarifiedQuery: string | null
+  private extractRewriteAnchorTopic(
+    previousAssistantClarifiedQuery: string | null,
+    previousUserQuery: string | null
   ): string | null {
-    if (!mostRecentClarifiedQuery) return null;
-
-    const topic = this.extractTopicFromClarifiedQuery(mostRecentClarifiedQuery);
-    if (!topic) return null;
-
-    const normalizedOriginal = originalQuery
-      .replace(/\s+/g, ' ')
-      .replace(/[?!.]+$/g, '')
-      .trim();
-    if (!normalizedOriginal) return null;
-
-    const isContinuation =
-      this.isLikelyContextContinuation(normalizedOriginal) ||
-      this.isLikelyFacetFollowUp(normalizedOriginal);
-    if (!isContinuation) return null;
-
-    // If the user already specifies a concrete topic, do not override.
-    if (/\bof\s+(?!it\b|this\b|that\b|these\b|those\b|them\b)[a-z0-9]/i.test(normalizedOriginal)) {
-      return null;
-    }
-
-    const replacedPronouns = normalizedOriginal
-      .replace(/\bof\s+(it|this|that|these|those|them)\b/gi, `of ${topic}`)
-      .replace(/\b(for|about)\s+(it|this|that|these|those|them)\b/gi, `$1 ${topic}`)
-      .replace(/\b(it|this|that|these|those|them)\b/gi, topic)
-      .replace(/\s+/g, ' ')
-      .trim();
-
-    const containsTopic = replacedPronouns.toLowerCase().includes(topic.toLowerCase());
-    const fallback = containsTopic
-      ? replacedPronouns
-      : `${replacedPronouns} of ${topic}`.replace(/\s+/g, ' ').trim();
-
-    return this.normalizeStandaloneQueryShape(fallback);
+    return (previousAssistantClarifiedQuery ? this.extractTopicFromClarifiedQuery(previousAssistantClarifiedQuery) : null)
+      || (previousUserQuery ? this.extractTopicFromClarifiedQuery(previousUserQuery) : null);
   }
 
-  private isLikelyFacetFollowUp(query: string): boolean {
-    const normalized = query.toLowerCase().replace(/\s+/g, ' ').trim();
-    if (!normalized) return false;
-    const wordCount = normalized.split(' ').filter(Boolean).length;
-    if (wordCount > 5) return false;
+  private getLatestRewriteTopicFromTurns(
+    pastRewriteTurns: Array<{ rewritten_query?: string; topic?: string | null }>
+  ): string | null {
+    for (let i = pastRewriteTurns.length - 1; i >= 0; i--) {
+      const turn = pastRewriteTurns[i];
+      const topic = turn.topic || (turn.rewritten_query ? this.extractTopicFromClarifiedQuery(turn.rewritten_query) : null);
+      if (topic) return topic;
+    }
+    return null;
+  }
 
-    const facetPattern = /\b(types?|classification|histolog(?:y|ical)|causes?|features?|signs?|symptoms?|management|treatment|indications?|diagnosis|investigations?|definition|complications?)\b/;
-    return facetPattern.test(normalized);
+  private buildModelFailureRewriteFallback(
+    normalizedOriginal: string,
+    pastRewriteTurns: Array<{ rewritten_query?: string; topic?: string | null }>
+  ): RewriteDecision {
+    const normalized = normalizedOriginal.toLowerCase().replace(/\s+/g, ' ').trim();
+    const topic = this.getLatestRewriteTopicFromTurns(pastRewriteTurns);
+
+    if (topic && /\b(any\s+other|other|else|more)\b/.test(normalized) && /\b(causes?|etiolog|why|happen|happens|occur|occurs)\b/.test(normalized)) {
+      return {
+        action: 'continue',
+        query: this.normalizeStandaloneQueryShape(`Other causes and etiology of ${topic}`),
+        topic,
+      };
+    }
+
+    if (topic && /\b(causes?|etiolog|why|happen|happens|occur|occurs)\b/.test(normalized)) {
+      return {
+        action: 'continue',
+        query: this.normalizeStandaloneQueryShape(`Causes and etiology of ${topic}`),
+        topic,
+      };
+    }
+
+    const intent = classifyQueryIntent(normalizedOriginal);
+    const expanded = this.buildIntentExpandedQuery(normalizedOriginal, intent);
+    if (expanded) {
+      return {
+        action: 'fresh',
+        query: this.normalizeStandaloneQueryShape(expanded),
+        topic: this.extractTopicFromClarifiedQuery(expanded),
+      };
+    }
+
+    return {
+      action: 'fresh',
+      query: this.normalizeStandaloneQueryShape(normalizedOriginal),
+      topic: this.extractTopicFromClarifiedQuery(normalizedOriginal),
+    };
   }
 
   private applyContinuationFallback(
@@ -4184,6 +4258,7 @@ export class ChatPipeline {
     rewriteContext: {
       previousUserQuery?: string | null;
       previousAssistantClarifiedQuery?: string | null;
+      pastRewriteTurns?: SessionRewriteTurn[];
     }
   ): Promise<StandaloneRewriteResult> {
     const REWRITE_TIMEOUT_MS = 10000;
@@ -4198,51 +4273,53 @@ export class ChatPipeline {
     const normalizedPreviousAssistantClarifiedQueryRaw = typeof rewriteContext.previousAssistantClarifiedQuery === 'string'
       ? rewriteContext.previousAssistantClarifiedQuery.trim()
       : '';
-    const hasPreviousContext = Boolean(normalizedPreviousUserQueryRaw || normalizedPreviousAssistantClarifiedQueryRaw);
-    const shouldUseImmediateContext = hasPreviousContext && this.isLikelyContextContinuation(normalizedOriginal);
-    const normalizedPreviousUserQuery = shouldUseImmediateContext ? normalizedPreviousUserQueryRaw : '';
-    const normalizedPreviousAssistantClarifiedQuery = shouldUseImmediateContext ? normalizedPreviousAssistantClarifiedQueryRaw : '';
-    const contextualFallback = shouldUseImmediateContext
-      ? this.buildContextualRewriteFallback(
-        normalizedOriginal,
-        normalizedPreviousAssistantClarifiedQuery || null
-      )
-      : null;
-    // Detect intent early so we can build a template-expanded query.
-    const earlyIntent = classifyQueryIntent(normalizedOriginal);
-    const templateExpanded = this.buildIntentExpandedQuery(normalizedOriginal, earlyIntent);
-    console.log('[QUERY REWRITER INTENT EXPANSION]', {
-      earlyIntent,
-      templateExpanded: templateExpanded || '(no template — generic_fallback)',
-    });
+
+    const pastRewriteTurns = (rewriteContext.pastRewriteTurns || [])
+      .slice(-2)
+      .map((turn) => ({
+        user_query: this.normalizeStandaloneQueryShape(this.normalizeCommonMedicalTypos(turn.userQuery || '')),
+        rewritten_query: this.normalizeStandaloneQueryShape(this.normalizeCommonMedicalTypos(turn.rewrittenQuery || '')),
+        topic: turn.topic ? this.normalizeStandaloneQueryShape(this.normalizeCommonMedicalTypos(turn.topic)) : null,
+      }))
+      .filter((turn) => turn.user_query || turn.rewritten_query);
+
+    if (
+      pastRewriteTurns.length === 0 &&
+      (normalizedPreviousUserQueryRaw || normalizedPreviousAssistantClarifiedQueryRaw)
+    ) {
+      pastRewriteTurns.push({
+        user_query: this.normalizeStandaloneQueryShape(this.normalizeCommonMedicalTypos(normalizedPreviousUserQueryRaw)),
+        rewritten_query: this.normalizeStandaloneQueryShape(this.normalizeCommonMedicalTypos(normalizedPreviousAssistantClarifiedQueryRaw)),
+        topic: this.extractRewriteAnchorTopic(
+          normalizedPreviousAssistantClarifiedQueryRaw || null,
+          normalizedPreviousUserQueryRaw || null
+        ),
+      });
+    }
 
     const rewriterSystemPrompt =
-      'You rewrite medical user input into one high-quality standalone retrieval query. Your ONLY jobs are: (1) resolve pronouns like it, this, that, its using the prior chat context, (2) correct spelling and grammar, (3) if a target query shape is provided, use it as-is but substitute the correct topic. Preserve the user\'s exact intent. Do not invent a new topic. Return strict JSON only.';
+      'You are a medical query rewrite judge. Decide whether the latest user query continues a previous topic or starts a fresh topic, then rewrite it into one standalone retrieval query. Use the past rewrite turns as context. Preserve the latest user intent/facet. Correct spelling. Do not answer the medical question. Return strict JSON only.';
     const rewriterSystemPromptStrict =
-      'Return STRICT JSON ONLY in this exact schema: {"query":"<standalone medical retrieval query>"}. Your ONLY jobs are: (1) resolve pronouns using prior context, (2) correct spelling. If a target query shape is provided, return it with the correct topic substituted. No markdown, no extra keys, no commentary.';
-
-    const targetQueryShapeInstruction = templateExpanded
-      ? `\nTarget query shape (use this as the output format, substituting the correct medical topic):\n"${templateExpanded}"\n`
-      : '';
+      'Return STRICT JSON ONLY in this schema: {"action":"continue|fresh","query":"<standalone medical retrieval query>","topic":"<medical topic or null>"}. Decide continue vs fresh from the past rewrite turns. No markdown, no extra keys, no commentary.';
 
     const prompt = `
-Rewrite the latest user query into one standalone retrieval query.
+Decide if the latest user query continues the previous conversation topic or starts a new topic.
 Return STRICT JSON ONLY:
-{"query":"..."}
+{"action":"continue|fresh","query":"<standalone medical retrieval query>","topic":"<medical topic or null>"}
 
 Goals:
-1) Resolve pronouns (it, this, that, its, they) by substituting the correct medical topic from the previous context.
-2) Correct spelling and grammar.
-3) If a target query shape is provided below, use it as the output — just make sure the topic is correct.
-4) Use the previous context fields ONLY when the latest query is a clear follow-up (it, this, that, its). If the latest query already names a disease or condition, ignore previous context.
-5) Do NOT change the intent or add extra facets not present in the target shape.
-6) Do NOT invent a new topic.
-${targetQueryShapeInstruction}
-Immediate Previous User Query:
-${normalizedPreviousUserQuery || 'None'}
+1) If the latest query is short, elliptical, pronoun-based, or asks a facet like antibiotics, dose, duration, post-removal care, complications, investigations, features, or surgery, usually continue the most relevant previous topic.
+2) If the latest query clearly names a new disease, condition, anatomy, or procedure, mark it fresh.
+3) For continue, combine the latest intent/facet with the previous topic.
+4) For fresh, use only the latest query's topic.
+5) Correct spelling and grammar.
+6) Do not invent a topic that is not in the latest query or past turns.
+7) Medical shorthand: rx/tx means "Conservative (medical) and surgical management"; dx means diagnosis; inv means investigations; "why it happens" means causes/etiology; "features" means history and physical examination findings.
+8) Prefer retrieval-friendly wording. Example: "rx of maxillary sinusitis" -> "Conservative (medical) and surgical management of maxillary sinusitis".
+9) Example continuation: past topic "maxillary sinusitis" + latest "any other causes?" -> "Other causes and etiology of maxillary sinusitis".
 
-Most Recent Assistant Clarified Query:
-${normalizedPreviousAssistantClarifiedQuery || 'None'}
+Past rewrite turns, oldest to newest:
+${JSON.stringify(pastRewriteTurns)}
 
 Latest User Query:
 ${normalizedOriginal}
@@ -4250,16 +4327,11 @@ ${normalizedOriginal}
 
     const strictPrompt = `
 Return STRICT JSON ONLY:
-{"query":"<standalone medical retrieval query>"}
-Do not add markdown, code fences, labels, or extra keys.
-Resolve pronouns (it, this, that, its) using context. Correct spelling.
-${targetQueryShapeInstruction ? `Use this target shape: "${templateExpanded}" — substitute the correct topic.` : 'Preserve user scope exactly.'}
+{"action":"continue|fresh","query":"<standalone medical retrieval query>","topic":"<medical topic or null>"}
+Use past rewrite turns to decide continue vs fresh. If continuing, preserve latest intent but use the previous topic. If fresh, use the latest topic only.
 
-Immediate Previous User Query:
-${normalizedPreviousUserQuery || 'None'}
-
-Most Recent Assistant Clarified Query:
-${normalizedPreviousAssistantClarifiedQuery || 'None'}
+Past rewrite turns:
+${JSON.stringify(pastRewriteTurns)}
 
 Latest User Query:
 ${normalizedOriginal}
@@ -4267,10 +4339,7 @@ ${normalizedOriginal}
 
       console.log('[QUERY REWRITER CONTEXT]', {
         latestUserQuery: normalizedOriginal,
-        previousUserQuery: normalizedPreviousUserQuery || null,
-        previousAssistantClarifiedQuery: normalizedPreviousAssistantClarifiedQuery || null,
-        contextualFallback: contextualFallback || null,
-        usedImmediateContext: shouldUseImmediateContext,
+        pastRewriteTurns,
       });
     console.log('[QUERY REWRITER PROMPT][SYSTEM][PRIMARY]', rewriterSystemPrompt);
     console.log('[QUERY REWRITER PROMPT][USER][PRIMARY]', prompt);
@@ -4287,7 +4356,7 @@ ${normalizedOriginal}
           'openai/gpt-oss-120b',
           {
             temperature,
-            maxTokens: 128,
+            maxTokens: 320,
             timeoutMs: REWRITE_TIMEOUT_MS,
           }
         );
@@ -4298,21 +4367,21 @@ ${normalizedOriginal}
         rewriterSystemPrompt,
         'openai/gpt-oss-120b',
         {
-          temperature: 0.1,
-          maxTokens: 256,
+          temperature: 0,
+          maxTokens: 320,
           timeoutMs: REWRITE_TIMEOUT_MS,
         }
       );
       console.log('[QUERY REWRITER RAW][PRIMARY]', rewrittenQuery);
 
-      let cleanedQuery = this.parseStructuredRewriteOutput(rewrittenQuery);
+      let decision = this.parseRewriteDecisionOutput(rewrittenQuery);
       if (this.looksLikeMalformedRewriteJsonOutput(rewrittenQuery)) {
         console.warn('[QUERY REWRITER]', 'Primary rewrite returned truncated JSON. Retrying with strict prompt.');
-        cleanedQuery = '';
+        decision = null;
       }
 
       // Hard retry once with stricter prompt if primary output is empty.
-      if (!cleanedQuery) {
+      if (!decision) {
         console.warn('[QUERY REWRITER]', 'Primary rewrite was empty. Retrying with strict prompt.');
         console.log('[QUERY REWRITER PROMPT][SYSTEM][STRICT]', rewriterSystemPromptStrict);
         console.log('[QUERY REWRITER PROMPT][USER][STRICT]', strictPrompt);
@@ -4322,39 +4391,42 @@ ${normalizedOriginal}
           0
         );
         console.log('[QUERY REWRITER RAW][STRICT]', rewrittenQuery);
-        cleanedQuery = this.parseStructuredRewriteOutput(rewrittenQuery);
+        decision = this.parseRewriteDecisionOutput(rewrittenQuery);
         if (this.looksLikeMalformedRewriteJsonOutput(rewrittenQuery)) {
           console.warn('[QUERY REWRITER]', 'Strict rewrite returned truncated JSON. Falling back to original query.');
-          cleanedQuery = '';
+          decision = null;
         }
       }
 
-      if (!cleanedQuery && contextualFallback) {
-        cleanedQuery = contextualFallback;
-      }
-
-      // If LLM rewrite succeeded but template expansion was available,
-      // validate that the rewrite didn't drop the intent expansion.
-      // Fall back to template if the LLM went off-script.
-      if (cleanedQuery && templateExpanded) {
-        const rewriteIntent = classifyQueryIntent(cleanedQuery);
-        if (rewriteIntent !== earlyIntent && earlyIntent !== 'generic_fallback') {
-          console.warn('[QUERY REWRITER]', `LLM rewrite changed intent from ${earlyIntent} to ${rewriteIntent}. Falling back to template expansion.`);
-          cleanedQuery = templateExpanded;
+      if (!decision) {
+        const legacyQuery = this.parseStructuredRewriteOutput(rewrittenQuery);
+        if (legacyQuery) {
+          const fallbackTopic = this.getLatestRewriteTopicFromTurns(pastRewriteTurns);
+          decision = {
+            action: fallbackTopic && legacyQuery.toLowerCase().includes(fallbackTopic.toLowerCase()) ? 'continue' : 'fresh',
+            query: this.normalizeStandaloneQueryShape(legacyQuery),
+            topic: this.extractTopicFromClarifiedQuery(legacyQuery),
+          };
         }
       }
 
+      if (!decision) {
+        decision = this.buildModelFailureRewriteFallback(normalizedOriginal, pastRewriteTurns);
+        console.warn('[QUERY REWRITER]', 'Model rewrite failed. Applied deterministic safety fallback:', decision);
+      }
+
+      const cleanedQuery = decision?.query || '';
       const rewriterRateLimitNotice = this.extractRateLimitNotice(cleanedQuery);
       if (rewriterRateLimitNotice) {
         console.warn('[QUERY REWRITER]', `Rate-limited rewrite response detected. Falling back to original query.`);
         this.rewriteTelemetry.fallbackDueToRateLimit += 1;
         this.rewriteTelemetry.fallbackToOriginal += 1;
         this.logRewriteTelemetrySummary();
-        const fallbackQuery = contextualFallback || this.normalizeStandaloneQueryShape(normalizedOriginal);
+        const fallbackQuery = this.normalizeStandaloneQueryShape(normalizedOriginal);
         return {
           query: fallbackQuery,
           wasRewritten: fallbackQuery.toLowerCase() !== normalizedOriginal.toLowerCase(),
-          usedImmediateContext: shouldUseImmediateContext,
+          usedImmediateContext: false,
           mode: fallbackQuery.toLowerCase() === normalizedOriginal.toLowerCase() ? 'fallback_original' : 'rewritten',
         };
       }
@@ -4366,11 +4438,11 @@ ${normalizedOriginal}
         this.rewriteTelemetry.fallbackDueToWeak += 1;
         this.rewriteTelemetry.fallbackToOriginal += 1;
         this.logRewriteTelemetrySummary();
-        const fallbackQuery = contextualFallback || this.normalizeStandaloneQueryShape(normalizedOriginal);
+        const fallbackQuery = this.normalizeStandaloneQueryShape(normalizedOriginal);
         return {
           query: fallbackQuery,
           wasRewritten: fallbackQuery.toLowerCase() !== normalizedOriginal.toLowerCase(),
-          usedImmediateContext: shouldUseImmediateContext,
+          usedImmediateContext: false,
           mode: fallbackQuery.toLowerCase() === normalizedOriginal.toLowerCase() ? 'fallback_original' : 'rewritten',
         };
       }
@@ -4380,31 +4452,39 @@ ${normalizedOriginal}
         this.rewriteTelemetry.fallbackDueToTruncated += 1;
         this.rewriteTelemetry.fallbackToOriginal += 1;
         this.logRewriteTelemetrySummary();
-        const fallbackQuery = contextualFallback || this.normalizeStandaloneQueryShape(normalizedOriginal);
+        const fallbackQuery = this.normalizeStandaloneQueryShape(normalizedOriginal);
         return {
           query: fallbackQuery,
           wasRewritten: fallbackQuery.toLowerCase() !== normalizedOriginal.toLowerCase(),
-          usedImmediateContext: shouldUseImmediateContext,
+          usedImmediateContext: false,
           mode: fallbackQuery.toLowerCase() === normalizedOriginal.toLowerCase() ? 'fallback_original' : 'rewritten',
         };
       }
 
       const finalRewritten = this.normalizeStandaloneQueryShape(cleanedQuery);
       const wasRewritten = finalRewritten.toLowerCase() !== normalizedOriginal.toLowerCase();
+      const usedImmediateContext = decision?.action === 'continue';
       if (wasRewritten) {
         this.rewriteTelemetry.rewritten += 1;
-        if (shouldUseImmediateContext) {
+        if (usedImmediateContext) {
           this.rewriteTelemetry.rewrittenWithImmediateContext += 1;
         }
       }
 
-      console.log('[QUERY REWRITER]', `Original: "${normalizedOriginal}" -> Rewritten: "${finalRewritten}"`);
+      console.log('[QUERY REWRITER]', {
+        action: decision?.action || null,
+        topic: decision?.topic || null,
+        original: normalizedOriginal,
+        rewritten: finalRewritten,
+      });
       this.logRewriteTelemetrySummary();
       return {
         query: finalRewritten,
         wasRewritten,
-        usedImmediateContext: shouldUseImmediateContext,
+        usedImmediateContext,
         mode: 'rewritten',
+        action: decision?.action,
+        topic: decision?.topic || this.extractTopicFromClarifiedQuery(finalRewritten),
       };
 
     } catch (error) {
@@ -4415,7 +4495,7 @@ ${normalizedOriginal}
       return {
         query: this.normalizeStandaloneQueryShape(normalizedOriginal),
         wasRewritten: false,
-        usedImmediateContext: shouldUseImmediateContext,
+        usedImmediateContext: false,
         mode: 'fallback_original',
       };
     }
@@ -4428,7 +4508,8 @@ ${normalizedOriginal}
     sessionId: string,
     content: string,
     onStreamEvent?: (event: ChatStreamEvent) => void,
-    userMessage?: MessageCreate
+    userMessage?: MessageCreate,
+    clientRecentMessages?: Message[]
   ): Promise<void> {
     try {
       const pipelineStartMs = Date.now();
@@ -4462,17 +4543,37 @@ ${normalizedOriginal}
       const retrievalMode: 'ann_rerank_v1' = 'ann_rerank_v1';
       console.log('[RETRIEVAL MODE]', retrievalMode);
 
-      const recentMessages = await this.indexedDBServices.messageService.getMessagesBySession(
+      const dbRecentMessages = await this.indexedDBServices.messageService.getMessagesBySession(
         sessionId,
         sessionForDocuments.userId,
         20
       );
-      const previousUserQuery = this.extractPreviousUserQuery(recentMessages, content);
-      const previousAssistantClarifiedQuery = this.extractMostRecentClarifiedQuery(recentMessages);
+      const recentMessages = clientRecentMessages?.length ? clientRecentMessages : dbRecentMessages;
+      const persistedRewriteTurns = sessionForDocuments.rewriteContext?.recentTurns?.length
+        ? sessionForDocuments.rewriteContext.recentTurns.slice(-2)
+        : sessionForDocuments.rewriteContext?.lastUserQuery || sessionForDocuments.rewriteContext?.lastRewrittenQuery
+          ? [{
+              userQuery: sessionForDocuments.rewriteContext.lastUserQuery || '',
+              rewrittenQuery: sessionForDocuments.rewriteContext.lastRewrittenQuery || '',
+              topic: sessionForDocuments.rewriteContext.lastTopic || null,
+              updatedAt: sessionForDocuments.rewriteContext.updatedAt || new Date(),
+            }]
+          : [];
+      const previousUserQuery =
+        this.extractPreviousUserQuery(recentMessages, content)
+        || sessionForDocuments.rewriteContext?.lastUserQuery
+        || null;
+      const previousAssistantClarifiedQuery =
+        this.extractMostRecentClarifiedQuery(recentMessages)
+        || sessionForDocuments.rewriteContext?.lastRewrittenQuery
+        || this.parseStructuredRewriteOutput(sessionForDocuments.latestRewriteQueryResponse || '');
       console.log('[QUERY REWRITER CONTEXT SOURCE]', {
         previousUserQuery: previousUserQuery || null,
         previousAssistantClarifiedQuery: previousAssistantClarifiedQuery || null,
+        pastRewriteTurns: persistedRewriteTurns,
         recentMessageCount: recentMessages.length,
+        dbRecentMessageCount: dbRecentMessages.length,
+        sessionRewriteContextTopic: sessionForDocuments.rewriteContext?.lastTopic || null,
       });
 
       // 1. GENERATE STANDALONE QUERY
@@ -4484,13 +4585,33 @@ ${normalizedOriginal}
         {
           previousUserQuery,
           previousAssistantClarifiedQuery,
+          pastRewriteTurns: persistedRewriteTurns,
         }
       );
       const standaloneQuery = standaloneRewrite.query;
       rewriteMs = Date.now() - rewriteStartMs;
+      const rewriteTopic = standaloneRewrite.topic || this.extractTopicFromClarifiedQuery(standaloneQuery);
+      const nextRewriteTurns = [
+        ...persistedRewriteTurns,
+        {
+          userQuery: content,
+          rewrittenQuery: standaloneQuery,
+          topic: rewriteTopic,
+          updatedAt: new Date(),
+        },
+      ].slice(-2);
       await this.indexedDBServices.sessionService.updateSession(
         sessionId,
-        { latestRewriteQueryResponse: this.buildRewriteQueryResponse(standaloneQuery) },
+        {
+          latestRewriteQueryResponse: this.buildRewriteQueryResponse(standaloneQuery),
+          rewriteContext: {
+            lastUserQuery: content,
+            lastRewrittenQuery: standaloneQuery,
+            lastTopic: rewriteTopic,
+            updatedAt: new Date(),
+            recentTurns: nextRewriteTurns,
+          },
+        },
         sessionForDocuments.userId
       );
       const queryIntent = classifyQueryIntent(standaloneQuery);
@@ -6393,7 +6514,7 @@ Remember: Your goal is to provide accurate, well-cited responses based SOLELY on
     await this.indexedDBServices.messageService.deleteMessagesBySession(sessionId, session?.userId);
     await this.indexedDBServices.sessionService.updateSession(
       sessionId,
-      { latestRewriteQueryResponse: null },
+      { latestRewriteQueryResponse: null, rewriteContext: null },
       session?.userId
     );
   }

@@ -215,7 +215,17 @@ export class SessionService {
       ...session,
       createdAt: ensureDate(session.createdAt),
       updatedAt: ensureDate(session.updatedAt),
-      lastMessageAt: session.lastMessageAt ? ensureDate(session.lastMessageAt) : undefined
+      lastMessageAt: session.lastMessageAt ? ensureDate(session.lastMessageAt) : undefined,
+      rewriteContext: session.rewriteContext
+        ? {
+            ...session.rewriteContext,
+            updatedAt: ensureDate(session.rewriteContext.updatedAt),
+            recentTurns: session.rewriteContext.recentTurns?.map((turn) => ({
+              ...turn,
+              updatedAt: ensureDate(turn.updatedAt)
+            }))
+          }
+        : session.rewriteContext
     }));
   }
 
@@ -240,7 +250,17 @@ export class SessionService {
       ...session,
       createdAt: ensureDate(session.createdAt),
       updatedAt: ensureDate(session.updatedAt),
-      lastMessageAt: session.lastMessageAt ? ensureDate(session.lastMessageAt) : undefined
+      lastMessageAt: session.lastMessageAt ? ensureDate(session.lastMessageAt) : undefined,
+      rewriteContext: session.rewriteContext
+        ? {
+            ...session.rewriteContext,
+            updatedAt: ensureDate(session.rewriteContext.updatedAt),
+            recentTurns: session.rewriteContext.recentTurns?.map((turn) => ({
+              ...turn,
+              updatedAt: ensureDate(turn.updatedAt)
+            }))
+          }
+        : session.rewriteContext
     };
   }
 

@@ -568,6 +568,7 @@ export const useChatStore = create<ChatStore>()(
             timestamp: new Date(),
             sessionId,
           };
+          const recentMessagesBeforeSend = get().messages.filter((message) => message.sessionId === sessionId);
           const pipelineRunner: (onEvent: (event: ChatStreamEvent) => void) => Promise<void> =
             sessionMode === 'drug'
               ? shouldRouteToDrugMode
@@ -590,7 +591,13 @@ export const useChatStore = create<ChatStore>()(
                     );
                   }
               : (onEvent) =>
-                  chatPipeline.sendMessage(sessionId, effectiveContent, onEvent, userMessage);
+                  chatPipeline.sendMessage(
+                    sessionId,
+                    effectiveContent,
+                    onEvent,
+                    userMessage,
+                    recentMessagesBeforeSend,
+                  );
 
           const explicitDrugName = extractExplicitDrugNameFromQuery(effectiveContent);
           const explicitDrugContextName =
@@ -1120,7 +1127,7 @@ export const useChatStore = create<ChatStore>()(
             await messageService.deleteMessagesBySession(sessionId, currentUserId || undefined);
             await services.sessionService.updateSession(
               sessionId,
-              { latestRewriteQueryResponse: null },
+              { latestRewriteQueryResponse: null, rewriteContext: null },
               currentUserId || undefined
             );
             set(state => ({
