@@ -1,6 +1,7 @@
 export type QueryIntent =
   | 'definition'
   | 'causes'
+  | 'pathogenesis'
   | 'classification_types'
   | 'position_location'
   | 'risk_factors'
@@ -112,6 +113,17 @@ const INTENT_RULES: IntentRule[] = [
       /\bsites\s+of\b/i,
       /\banatomical\s+location\b/i,
       /\banatomical\s+locations\b/i,
+    ],
+  },
+  {
+    intent: 'pathogenesis',
+    patterns: [
+      /\bpathogenesis\b/i,
+      /\bpathophysiology\b/i,
+      /\bdevelopment\s+of\b/i,
+      /\bdevelop(?:ment|s|ing)?\b/i,
+      /\bmechanism\s+of\s+disease\b/i,
+      /\bdisease\s+mechanism\b/i,
     ],
   },
   {

@@ -638,6 +638,9 @@ export class ChatPipeline {
       .replace(/\buclers\b/gi, 'ulcers')
       .replace(/\bulser\b/gi, 'ulcer')
       .replace(/\bsings\b/gi, 'signs')
+      .replace(/\bthryoid\b/gi, 'thyroid')
+      .replace(/\bthyriod\b/gi, 'thyroid')
+      .replace(/\bgerneal\b/gi, 'general')
       .replace(/\bcuases\b/gi, 'causes')
       .replace(/\bmaixallry\b/gi, 'maxillary')
       .replace(/\bmaxilary\b/gi, 'maxillary')
@@ -936,10 +939,11 @@ export class ChatPipeline {
     treatment_rx: 'Conservative (medical) and surgical management of {topic}',
     clinical_features_history_exam: 'History findings and physical examination findings of {topic}',
     investigations: 'Initial and confirmatory investigations for {topic}',
-    classification_types: 'Classification, types, subtypes, and diagnostic criteria of {topic}',
-    causes: 'Etiology, causes, and pathogenesis of {topic}',
+    classification_types: 'Classification, types, subtypes, varieties, and forms of {topic}',
+    causes: 'Etiology and causes of {topic}',
+    pathogenesis: 'Pathogenesis and development of {topic}',
     risk_factors: 'Risk factors and predisposing factors for {topic}',
-    complications: 'Disease complications and post-operative complications of {topic}',
+    complications: 'Complications of {topic}',
     prognosis: 'Prognosis and factors affecting outcome of {topic}',
     definition: 'Definition and key characteristics of {topic}',
     how_to_procedure: 'Step-by-step operative procedure and technique for {topic}',
@@ -1004,7 +1008,10 @@ export class ChatPipeline {
         /\b(?:classification|types?|subtypes?|grading|stages?|criteria)\b/gi,
       ],
       causes: [
-        /\b(?:causes?|etiology|aetiology|etiopathogenesis|pathogenesis)\b/gi,
+        /\b(?:causes?|etiology|aetiology|etiopathogenesis)\b/gi,
+      ],
+      pathogenesis: [
+        /\b(?:pathogenesis|pathophysiology|development|develops?|developing|mechanism\s+of\s+disease|disease\s+mechanism)\b/gi,
       ],
       risk_factors: [
         /\b(?:risk\s+factors?|predisposing\s+factors?|risk)\b/gi,
@@ -1268,46 +1275,6 @@ export class ChatPipeline {
       if (topic) return topic;
     }
     return null;
-  }
-
-  private buildModelFailureRewriteFallback(
-    normalizedOriginal: string,
-    pastRewriteTurns: Array<{ rewritten_query?: string; topic?: string | null }>
-  ): RewriteDecision {
-    const normalized = normalizedOriginal.toLowerCase().replace(/\s+/g, ' ').trim();
-    const topic = this.getLatestRewriteTopicFromTurns(pastRewriteTurns);
-
-    if (topic && /\b(any\s+other|other|else|more)\b/.test(normalized) && /\b(causes?|etiolog|why|happen|happens|occur|occurs)\b/.test(normalized)) {
-      return {
-        action: 'continue',
-        query: this.normalizeStandaloneQueryShape(`Other causes and etiology of ${topic}`),
-        topic,
-      };
-    }
-
-    if (topic && /\b(causes?|etiolog|why|happen|happens|occur|occurs)\b/.test(normalized)) {
-      return {
-        action: 'continue',
-        query: this.normalizeStandaloneQueryShape(`Causes and etiology of ${topic}`),
-        topic,
-      };
-    }
-
-    const intent = classifyQueryIntent(normalizedOriginal);
-    const expanded = this.buildIntentExpandedQuery(normalizedOriginal, intent);
-    if (expanded) {
-      return {
-        action: 'fresh',
-        query: this.normalizeStandaloneQueryShape(expanded),
-        topic: this.extractTopicFromClarifiedQuery(expanded),
-      };
-    }
-
-    return {
-      action: 'fresh',
-      query: this.normalizeStandaloneQueryShape(normalizedOriginal),
-      topic: this.extractTopicFromClarifiedQuery(normalizedOriginal),
-    };
   }
 
   private applyContinuationFallback(
@@ -4298,7 +4265,7 @@ export class ChatPipeline {
     }
 
     const rewriterSystemPrompt =
-      'You are a medical query rewrite judge. Decide whether the latest user query continues a previous topic or starts a fresh topic, then rewrite it into one standalone retrieval query. Use the past rewrite turns as context. Preserve the latest user intent/facet. Correct spelling. Do not answer the medical question. Return strict JSON only.';
+      'You are a medical textbook RAG query rewrite judge. The rewritten query will be used for vector embeddings, hybrid keyword search, intent classification, and textbook section reranking. Decide whether the latest user query continues a previous topic or starts a fresh topic, then rewrite it into one compact standalone textbook-style retrieval query. Correct spelling. Expand casual wording into canonical medical textbook terms. Do not answer the medical question. Return strict JSON only.';
     const rewriterSystemPromptStrict =
       'Return STRICT JSON ONLY in this schema: {"action":"continue|fresh","query":"<standalone medical retrieval query>","topic":"<medical topic or null>"}. Decide continue vs fresh from the past rewrite turns. No markdown, no extra keys, no commentary.';
 
@@ -4308,15 +4275,38 @@ Return STRICT JSON ONLY:
 {"action":"continue|fresh","query":"<standalone medical retrieval query>","topic":"<medical topic or null>"}
 
 Goals:
-1) If the latest query is short, elliptical, pronoun-based, or asks a facet like antibiotics, dose, duration, post-removal care, complications, investigations, features, or surgery, usually continue the most relevant previous topic.
-2) If the latest query clearly names a new disease, condition, anatomy, or procedure, mark it fresh.
-3) For continue, combine the latest intent/facet with the previous topic.
-4) For fresh, use only the latest query's topic.
-5) Correct spelling and grammar.
-6) Do not invent a topic that is not in the latest query or past turns.
-7) Medical shorthand: rx/tx means "Conservative (medical) and surgical management"; dx means diagnosis; inv means investigations; "why it happens" means causes/etiology; "features" means history and physical examination findings.
-8) Prefer retrieval-friendly wording. Example: "rx of maxillary sinusitis" -> "Conservative (medical) and surgical management of maxillary sinusitis".
-9) Example continuation: past topic "maxillary sinusitis" + latest "any other causes?" -> "Other causes and etiology of maxillary sinusitis".
+1) Decide action:
+- "continue" if the latest query is short, elliptical, pronoun-based, or asks a facet of the previous topic.
+- "fresh" if the latest query clearly names a new disease, condition, anatomy, procedure, drug, or comparison.
+2) For continue, combine the latest intent/facet with the most relevant previous topic.
+3) For fresh, use only the latest query's topic.
+4) Correct spelling and normalize medical terms before rewriting.
+5) Rewrite for textbook retrieval, not conversation. Prefer compact noun phrases that look like textbook headings or index terms.
+6) Keep the query focused. Do not add unrelated facets.
+7) Do not invent a topic that is not in the latest query or past turns.
+
+Use these canonical retrieval shapes when the intent matches:
+- causes / why / why it happens: "Etiology, causes, risk factors, and pathogenesis of {topic}"
+- pathogenesis / development / pathophysiology: "Pathogenesis and development of {topic}"
+- features / presentation: "Clinical features, clinical presentation, symptoms, signs, history findings, and physical examination findings of {topic}"
+- treatment / rx / tx / management: "Conservative (medical) and surgical management of {topic}"
+- antibiotics / drugs / dose / duration: "Antibiotic therapy, drug treatment, dose, regimen, and duration for {topic}"
+- investigations / inv / diagnosis / dx: "Initial and confirmatory investigations, diagnostic workup, imaging, and laboratory diagnosis of {topic}"
+- classification / types: "Classification, types, subtypes, varieties, and forms of {topic}"
+- complications: "Complications, sequelae, and adverse outcomes of {topic}"
+- prognosis: "Prognosis, outcome, and factors affecting outcome of {topic}"
+- anatomy / site / location: "Anatomical site, location, position, and relations of {topic}"
+- procedure / operative steps: "Operative procedure, steps, technique, and post-operative care for {topic}"
+
+Important classification rule:
+- For plain "types of..." or "classification of..." queries, do NOT add staging, grading, severity, diagnostic criteria, or diagnostic workup.
+- Add staging/grading/diagnostic criteria only if the user explicitly asks for those words.
+
+Examples:
+- latest "rx of sinusitis maixallry" -> fresh, "Conservative (medical) and surgical management of maxillary sinusitis", topic "maxillary sinusitis"
+- past topic "maxillary sinusitis" + latest "why it happens" -> continue, "Etiology, causes, risk factors, and pathogenesis of maxillary sinusitis"
+- past topic "thyroid cancer" + latest "features of it like in general thryiod cancer feature" -> continue, "Clinical features, clinical presentation, symptoms, signs, history findings, and physical examination findings of thyroid cancer"
+- past topic "foreign body throat" + latest "post removal treatment" -> continue, "Post-removal management, follow-up care, complications, and post-operative care for foreign body in throat"
 
 Past rewrite turns, oldest to newest:
 ${JSON.stringify(pastRewriteTurns)}
@@ -4329,6 +4319,8 @@ ${normalizedOriginal}
 Return STRICT JSON ONLY:
 {"action":"continue|fresh","query":"<standalone medical retrieval query>","topic":"<medical topic or null>"}
 Use past rewrite turns to decide continue vs fresh. If continuing, preserve latest intent but use the previous topic. If fresh, use the latest topic only.
+The query must be a compact textbook-style retrieval phrase, not a conversational question.
+Use textbook section terms such as etiology, pathogenesis, clinical presentation, symptoms, signs, history findings, physical examination, conservative management, surgical management, diagnostic workup, imaging, laboratory diagnosis, classification, complications, prognosis, anatomical site, operative technique, and post-operative care when relevant.
 
 Past rewrite turns:
 ${JSON.stringify(pastRewriteTurns)}
@@ -4408,11 +4400,6 @@ ${normalizedOriginal}
             topic: this.extractTopicFromClarifiedQuery(legacyQuery),
           };
         }
-      }
-
-      if (!decision) {
-        decision = this.buildModelFailureRewriteFallback(normalizedOriginal, pastRewriteTurns);
-        console.warn('[QUERY REWRITER]', 'Model rewrite failed. Applied deterministic safety fallback:', decision);
       }
 
       const cleanedQuery = decision?.query || '';

@@ -55,6 +55,15 @@ export function getAnswerContract(intent: QueryIntent): AnswerContract {
           { title: 'Secondary/Other Causes', guidance: 'List additional or less common causes. Keep distinct from primary causes.' },
         ],
       };
+    case 'pathogenesis':
+      return {
+        intent,
+        label: 'Pathogenesis',
+        sections: [
+          { title: 'Pathogenesis', guidance: 'Explain the mechanism and sequence of disease development from the source. Keep focus on how the disease develops, not treatment.' },
+          { title: 'Key Mechanisms', guidance: 'List important mechanisms, pathological changes, or pathophysiological steps if present.' },
+        ],
+      };
     case 'classification_types':
       return {
         intent,
