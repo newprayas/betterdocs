@@ -365,7 +365,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
           </div>
         )}
 
-        <div className="flex gap-2 sm:gap-3">
+        <div className="flex items-start gap-2 sm:gap-3">
           {/* Textarea */}
           <div className="flex-1 relative">
             <textarea
@@ -414,7 +414,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
             onClick={handleSend}
             disabled={isDisabled}
             loading={isStreaming}
-            className={`h-12 sm:h-auto self-center px-3 sm:px-4 ${isWaiting ? 'bg-yellow-500 hover:bg-yellow-600' : ''}`}
+            className={`h-12 min-w-16 shrink-0 px-5 sm:min-w-24 sm:px-6 ${isWaiting ? 'bg-yellow-500 hover:bg-yellow-600' : ''}`}
           >
             {isWaiting ? (
               <span className="font-mono">{waitCountdown}s</span>

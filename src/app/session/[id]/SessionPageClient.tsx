@@ -287,16 +287,6 @@ export default function SessionPage() {
     : sessionMode === "drug"
       ? "Ask about doses, brands, indications, side-effects, cautions, pregnancy, renal dose, and more."
       : "Ask a question about your documents to get started";
-  const messagePlaceholder = isPreparingDrugDataset
-    ? "Preparing drug dataset..."
-    : isDrugOnlySessionMode || isDrugModeEnabled
-      ? "Ask questions"
-      : documentsLoading
-        ? "Loading books..."
-        : !hasDocuments
-          ? "Please add a book FIRST to chat"
-          : "Ask questions";
-
   const sortedDocuments = useMemo(
     () =>
       [...sessionDocuments].sort((a, b) =>
@@ -315,6 +305,23 @@ export default function SessionPage() {
     [sortedDocuments],
   );
   const activeDocumentCount = activeDocuments.length;
+  const hasActiveSources = activeDocumentCount > 0;
+  const chatInputDisabled =
+    isStreaming ||
+    isPreparingDrugDataset ||
+    (!isDatasetModeEnabled &&
+      (!hasDocumentDataForSession || !hasDocuments || !hasActiveSources));
+  const messagePlaceholder = isPreparingDrugDataset
+    ? "Preparing drug dataset..."
+    : isDrugOnlySessionMode || isDrugModeEnabled
+      ? "Ask questions"
+      : documentsLoading
+        ? "Loading books..."
+        : !hasDocuments
+          ? "Please add a book FIRST to chat"
+          : !hasActiveSources
+            ? "Enable source first"
+            : "Ask questions";
   const clearActiveElementFocus = () => {
     if (typeof document === "undefined") return;
     const blurActive = () => {
@@ -1030,12 +1037,7 @@ export default function SessionPage() {
           )}
         <MessageInput
           sessionId={sessionId}
-          disabled={
-            isStreaming ||
-            isPreparingDrugDataset ||
-            (!isDatasetModeEnabled &&
-              (!hasDocuments || !hasDocumentDataForSession))
-          }
+          disabled={chatInputDisabled}
           placeholder={messagePlaceholder}
           inputRef={messageInputRef}
           controllerRef={messageInputControllerRef}
